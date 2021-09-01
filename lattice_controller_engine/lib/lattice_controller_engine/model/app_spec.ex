@@ -56,13 +56,13 @@ defmodule LatticeControllerEngine.Model.AppSpec do
              nil -> "Unnamed"
              n -> n
            end,
-           case get_in(yaml, ["metadata", "annotations", "description"]) do
-             nil -> "Unnamed Application"
-             d -> d
-           end,
            case get_in(yaml, ["metadata", "annotations", "version"]) do
              nil -> "v0.0.0"
              v -> v
+           end,
+           case get_in(yaml, ["metadata", "annotations", "description"]) do
+             nil -> "Unnamed Application"
+             d -> d
            end,
            components
          )}

@@ -38,7 +38,6 @@ defmodule LatticeControllerEngineTest.Model.YamlTest do
                        },
                        %LatticeControllerEngine.Model.LinkDefinition{
                          target: "webcap",
-                         type: "linkdef",
                          values: %{"port" => 8080}
                        }
                      ]
@@ -69,9 +68,9 @@ defmodule LatticeControllerEngineTest.Model.YamlTest do
                      ]
                    }
                  ],
-                 description: "v0.0.1",
+                 description: "This is my app",
                  name: "my-example-app",
-                 version: "This is my app"
+                 version: "v0.0.1"
                }
     end
   end
