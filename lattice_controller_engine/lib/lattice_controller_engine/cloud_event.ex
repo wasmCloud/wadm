@@ -12,6 +12,5 @@ defmodule LatticeControllerEngine.CloudEvent do
       data: data
     }
     |> Cloudevents.from_map!()
-
   end
 end

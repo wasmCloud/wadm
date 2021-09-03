@@ -7,7 +7,7 @@ defmodule LatticeControllerEngine.Observed.Lattice do
   lattice events
   """
   alias __MODULE__
-  alias LatticeControllerEngine.Observed.{Provider, Host, LinkDefinition, Instance}
+  alias LatticeControllerEngine.Observed.{Provider, Host, Instance}
 
   # We need the keys to be there, even if they hold empty lists
   @enforce_keys [:actors, :providers, :hosts, :linkdefs]
@@ -35,7 +35,6 @@ defmodule LatticeControllerEngine.Observed.Lattice do
           actors: actormap(),
           providers: providermap(),
           hosts: hostmap(),
-          linkdefs: [LinkDefinition.t()],
           instance_tracking: instance_trackmap()
         }
 
