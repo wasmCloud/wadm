@@ -1,6 +1,6 @@
 defmodule LatticeControllerEngineTest.Observed.HostsTest do
   use ExUnit.Case
-  alias LatticeControllerEngine.Observed.{Lattice, Instance, Provider}
+  alias LatticeControllerEngine.Observed.Lattice
   alias TestSupport.CloudEvents
 
   @test_host "Nxxx"

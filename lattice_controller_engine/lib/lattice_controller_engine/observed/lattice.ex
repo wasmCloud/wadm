@@ -7,7 +7,7 @@ defmodule LatticeControllerEngine.Observed.Lattice do
   lattice events
   """
   alias __MODULE__
-  alias LatticeControllerEngine.Observed.{Provider, Host, Instance}
+  alias LatticeControllerEngine.Observed.{Provider, Host, Instance, LinkDefinition}
 
   # We need the keys to be there, even if they hold empty lists
   @enforce_keys [:actors, :providers, :hosts, :linkdefs]
@@ -35,6 +35,7 @@ defmodule LatticeControllerEngine.Observed.Lattice do
           actors: actormap(),
           providers: providermap(),
           hosts: hostmap(),
+          linkdefs: [LinkDefinition.t()],
           instance_tracking: instance_trackmap()
         }
 
@@ -176,8 +177,74 @@ defmodule LatticeControllerEngine.Observed.Lattice do
     put_actor_instance(l, source_host, pk, instance_id, spec, stamp)
   end
 
+  def apply_event(
+        l = %Lattice{},
+        %Cloudevents.Format.V_1_0.Event{
+          data: %{
+            "actor_id" => actor_id,
+            "link_name" => link_name,
+            "contract_id" => contract_id,
+            "provider_id" => provider_id,
+            "values" => values
+          },
+          source: _source_host,
+          datacontenttype: "application/json",
+          type: "com.wasmcloud.lattice.linkdef_put"
+        }
+      ) do
+    put_linkdef(l, actor_id, link_name, provider_id, contract_id, values)
+  end
+
+  def apply_event(
+        l = %Lattice{},
+        %Cloudevents.Format.V_1_0.Event{
+          data: %{
+            "actor_id" => actor_id,
+            "link_name" => link_name,
+            "provider_id" => provider_id
+          },
+          source: _source_host,
+          datacontenttype: "application/json",
+          type: "com.wasmcloud.lattice.linkdef_del"
+        }
+      ) do
+    del_linkdef(l, actor_id, link_name, provider_id)
+  end
+
   def apply_event(l = %Lattice{}, _evt = %Cloudevents.Format.V_1_0.Event{}) do
     l
+  end
+
+  defp put_linkdef(l = %Lattice{}, actor_id, link_name, provider_id, contract_id, values) do
+    case Enum.find(l.linkdefs, fn link ->
+           link.actor_id == actor_id && link.provider_id == provider_id &&
+             link.link_name == link_name
+         end) do
+      nil ->
+        ld = %LinkDefinition{
+          actor_id: actor_id,
+          link_name: link_name,
+          provider_id: provider_id,
+          contract_id: contract_id,
+          values: values
+        }
+
+        %Lattice{l | linkdefs: [ld | l.linkdefs]}
+
+      _ ->
+        l
+    end
+  end
+
+  defp del_linkdef(l = %Lattice{}, actor_id, link_name, provider_id) do
+    %Lattice{
+      l
+      | linkdefs:
+          Enum.reject(l.linkdefs, fn link ->
+            link.actor_id == actor_id && link.link_name == link_name &&
+              link.provider_id == provider_id
+          end)
+    }
   end
 
   defp remove_actor_instance(l = %Lattice{}, host_id, pk, instance_id, spec) do

@@ -41,4 +41,24 @@ defmodule TestSupport.CloudEvents do
     }
     |> LatticeControllerEngine.CloudEvent.new("host_heartbeat", host)
   end
+
+  def linkdef_put(actor_id, provider_id, link_name, contract_id, values, host) do
+    %{
+      "actor_id" => actor_id,
+      "provider_id" => provider_id,
+      "link_name" => link_name,
+      "contract_id" => contract_id,
+      "values" => values
+    }
+    |> LatticeControllerEngine.CloudEvent.new("linkdef_put", host)
+  end
+
+  def linkdef_del(actor_id, provider_id, link_name, host) do
+    %{
+      "actor_id" => actor_id,
+      "provider_id" => provider_id,
+      "link_name" => link_name
+    }
+    |> LatticeControllerEngine.CloudEvent.new("linkdef_del", host)
+  end
 end
