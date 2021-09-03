@@ -1,6 +1,6 @@
-# LatticeControllerEngine
+# Lattice Controller Engine
 
-**TODO: Add description**
+The core functional OTP application of the Lattice Controller. Any UI or additional tooling for the lattice controller will add this package as a dependency.
 
 ## Installation
 

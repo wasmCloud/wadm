@@ -7,6 +7,7 @@ defmodule LatticeControllerEngine.MixProject do
       version: "0.1.0",
       elixir: "~> 1.12",
       start_permanent: Mix.env() == :prod,
+      elixirc_paths: compiler_paths(Mix.env()),
       deps: deps()
     ]
   end
@@ -22,9 +23,14 @@ defmodule LatticeControllerEngine.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:yaml_elixir, "~> 2.8"}
+      {:yaml_elixir, "~> 2.8"},
+      {:cloudevents, "~> 0.4.0"},
+      {:uuid, "~> 1.1"}
       # {:dep_from_hexpm, "~> 0.3.0"},
       # {:dep_from_git, git: "https://github.com/elixir-lang/my_dep.git", tag: "0.1.0"}
     ]
   end
+
+  def compiler_paths(:test), do: ["lib", "test/support"]
+  def compiler_paths(_), do: ["lib"]
 end
