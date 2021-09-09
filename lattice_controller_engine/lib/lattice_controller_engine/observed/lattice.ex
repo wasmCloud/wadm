@@ -11,7 +11,7 @@ defmodule LatticeControllerEngine.Observed.Lattice do
 
   # We need the keys to be there, even if they hold empty lists
   @enforce_keys [:actors, :providers, :hosts, :linkdefs]
-  defstruct [:actors, :providers, :hosts, :linkdefs, :instance_tracking]
+  defstruct [:actors, :providers, :hosts, :linkdefs, :ocimap, :instance_tracking]
 
   @typedoc """
   A provider key is the provider's public key accompanied by the link name
@@ -21,6 +21,8 @@ defmodule LatticeControllerEngine.Observed.Lattice do
   @type actormap :: %{required(String.t()) => [Instance.t()]}
   @type providermap :: %{required(provider_key()) => Provider.t()}
   @type hostmap :: %{required(String.t()) => Host.t()}
+  # map between OCI image URL/imageref and public key
+  @type ocimap :: %{required(String.t()) => String.t()}
 
   @typedoc """
   Keys are the instance ID, values are ISO 8601 timestamps in UTC
@@ -36,7 +38,8 @@ defmodule LatticeControllerEngine.Observed.Lattice do
           providers: providermap(),
           hosts: hostmap(),
           linkdefs: [LinkDefinition.t()],
-          instance_tracking: instance_trackmap()
+          instance_tracking: instance_trackmap(),
+          ocimap: ocimap()
         }
 
   @spec new :: t()
@@ -46,7 +49,8 @@ defmodule LatticeControllerEngine.Observed.Lattice do
       providers: %{},
       hosts: %{},
       linkdefs: [],
-      instance_tracking: %{}
+      instance_tracking: %{},
+      ocimap: %{}
     }
   end
 
@@ -211,6 +215,29 @@ defmodule LatticeControllerEngine.Observed.Lattice do
     del_linkdef(l, actor_id, link_name, provider_id)
   end
 
+  def apply_event(l = %Lattice{}, %Cloudevents.Format.V_1_0.Event{
+        data: %{
+          "image_ref" => image_ref,
+          "public_key" => public_key
+        },
+        source: _source_host,
+        datacontenttype: "application/json",
+        type: "com.wasmcloud.lattice.ocimap_put"
+      }) do
+    %Lattice{l | ocimap: Map.put(l.ocimap, image_ref, public_key)}
+  end
+
+  def apply_event(l = %Lattice{}, %Cloudevents.Format.V_1_0.Event{
+        data: %{
+          "image_ref" => image_ref
+        },
+        source: _source_host,
+        datacontenttype: "application/json",
+        type: "com.wasmcloud.lattice.ocimap_del"
+      }) do
+    %Lattice{l | ocimap: Map.delete(l.ocimap, image_ref)}
+  end
+
   def apply_event(l = %Lattice{}, _evt = %Cloudevents.Format.V_1_0.Event{}) do
     l
   end
@@ -322,7 +349,7 @@ defmodule LatticeControllerEngine.Observed.Lattice do
     }
   end
 
-  def remove_provider_instance(l, source_host, pk, link_name, instance_id, spec) do
+  defp remove_provider_instance(l, source_host, pk, link_name, instance_id, spec) do
     provider = Map.get(l.providers, {pk, link_name})
 
     instance = %Instance{
@@ -357,10 +384,91 @@ defmodule LatticeControllerEngine.Observed.Lattice do
     %Lattice{l | hosts: Map.put(l.hosts, source_host, host)}
   end
 
+  @spec timestamp_from_iso8601(binary) :: DateTime.t()
   def timestamp_from_iso8601(stamp) when is_binary(stamp) do
     case DateTime.from_iso8601(stamp) do
       {:ok, datetime, 0} -> datetime
       _ -> DateTime.utc_now()
     end
+  end
+
+  @spec running_instances(
+          LatticeControllerEngine.Observed.Lattice.t(),
+          nil | String.t(),
+          String.t()
+        ) :: [%{id: String.t(), instance_id: String.t(), host_id: String.t()}]
+  def running_instances(%Lattice{} = l, pk, spec_id) when is_binary(pk) do
+    if String.starts_with?(pk, "M") do
+      actors_in_appspec(l, spec_id)
+      |> Enum.map(fn %{actor_id: pk, instance_id: iid, host_id: hid} ->
+        %{id: pk, instance_id: iid, host_id: hid}
+      end)
+    else
+      providers_in_appspec(l, spec_id)
+      |> Enum.map(fn %{provider_id: pk, instance_id: iid, host_id: hid} ->
+        %{id: pk, instance_id: iid, host_id: hid}
+      end)
+    end
+  end
+
+  def running_instances(%Lattice{}, nil, _spec_id) do
+    []
+  end
+
+  @spec actors_in_appspec(LatticeControllerEngine.Observed.Lattice.t(), binary) :: [
+          %{actor_id: String.t(), instance_id: String.t(), host_id: String.t()}
+        ]
+  def actors_in_appspec(%Lattice{actors: actors}, appspec) when is_binary(appspec) do
+    for {pk, instances} <- actors,
+        instance <- instances,
+        in_spec?(instance, appspec) do
+      %{
+        actor_id: pk,
+        instance_id: instance.id,
+        host_id: instance.host_id
+      }
+    end
+  end
+
+  @spec providers_in_appspec(LatticeControllerEngine.Observed.Lattice.t(), binary) :: [
+          %{
+            provider_id: String.t(),
+            link_name: String.t(),
+            host_id: String.t(),
+            instance_id: String.t()
+          }
+        ]
+  def providers_in_appspec(%Lattice{providers: providers}, appspec) when is_binary(appspec) do
+    for {{pk, link_name}, %Provider{instances: instances, contract_id: contract_id}} <- providers,
+        instance <- instances,
+        in_spec?(instance, appspec) do
+      %{
+        provider_id: pk,
+        link_name: link_name,
+        contract_id: contract_id,
+        host_id: instance.host_id,
+        instance_id: instance.id
+      }
+    end
+  end
+
+  def lookup_linkdef(%Lattice{linkdefs: linkdefs}, actor_id, provider_id, link_name) do
+    case Enum.filter(linkdefs, fn ld ->
+           ld.actor_id == actor_id && ld.provider_id == provider_id && ld.link_name == link_name
+         end) do
+      [h | _] -> {:ok, h}
+      [] -> :error
+    end
+  end
+
+  def lookup_ociref(%Lattice{ocimap: ocimap}, target) when is_binary(target) do
+    case Map.get(ocimap, target) do
+      nil -> :error
+      pk -> {:ok, pk}
+    end
+  end
+
+  defp in_spec?(%Instance{spec_id: spec_id}, appspec) do
+    spec_id == appspec
   end
 end

@@ -21,6 +21,7 @@ defmodule LatticeControllerEngineTest.Observed.HostsTest do
                      last_seen: stamp
                    }
                  },
+                 ocimap: %{},
                  instance_tracking: %{},
                  linkdefs: [],
                  providers: %{}
@@ -40,6 +41,7 @@ defmodule LatticeControllerEngineTest.Observed.HostsTest do
                      last_seen: stamp2
                    }
                  },
+                 ocimap: %{},
                  instance_tracking: %{},
                  linkdefs: [],
                  providers: %{}

@@ -33,6 +33,7 @@ defmodule LatticeControllerEngineTest.Observed.LinkdefsTest do
                actors: %{},
                hosts: %{},
                instance_tracking: %{},
+               ocimap: %{},
                linkdefs: [
                  %LatticeControllerEngine.Observed.LinkDefinition{
                    actor_id: "Mxxx",

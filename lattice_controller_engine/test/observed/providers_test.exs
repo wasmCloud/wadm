@@ -33,6 +33,7 @@ defmodule LatticeControllerEngineTest.Observed.ProvidersTest do
           "abc123" => stamp1
         },
         linkdefs: [],
+        ocimap: %{},
         providers: %{
           {"Vxxx", "default"} => %Provider{
             contract_id: "wasmcloud:test",
@@ -51,6 +52,17 @@ defmodule LatticeControllerEngineTest.Observed.ProvidersTest do
 
       assert l == orig_desired
 
+      assert Lattice.providers_in_appspec(orig_desired, "testapp") ==
+               [
+                 %{
+                   contract_id: "wasmcloud:test",
+                   host_id: "Nxxx",
+                   instance_id: "abc123",
+                   link_name: "default",
+                   provider_id: "Vxxx"
+                 }
+               ]
+
       stop =
         CloudEvents.provider_stopped(
           "Vxxx",
@@ -66,6 +78,7 @@ defmodule LatticeControllerEngineTest.Observed.ProvidersTest do
       desired = %Lattice{
         actors: %{},
         hosts: %{},
+        ocimap: %{},
         instance_tracking: %{},
         linkdefs: [],
         providers: %{
@@ -117,6 +130,7 @@ defmodule LatticeControllerEngineTest.Observed.ProvidersTest do
                hosts: %{},
                instance_tracking: %{"abc123" => stamp, "abc456" => stamp2},
                linkdefs: [],
+               ocimap: %{},
                providers: %{
                  {"Vxxx", "default"} => %Provider{
                    contract_id: "wasmcloud:test",
@@ -154,6 +168,7 @@ defmodule LatticeControllerEngineTest.Observed.ProvidersTest do
                  "abc789" => stamp3
                },
                linkdefs: [],
+               ocimap: %{},
                providers: %{
                  {"Vxxx", "default"} => %Provider{
                    contract_id: "wasmcloud:test",

@@ -26,6 +26,7 @@ defmodule LatticeControllerEngineTest.Observed.ActorsTest do
                    }
                  ]
                },
+               ocimap: %{},
                hosts: %{},
                instance_tracking: %{
                  "abc123" => stamp1
@@ -43,6 +44,7 @@ defmodule LatticeControllerEngineTest.Observed.ActorsTest do
                actors: %{"Mxxx" => []},
                hosts: %{},
                linkdefs: [],
+               ocimap: %{},
                providers: %{},
                instance_tracking: %{}
              }
@@ -65,6 +67,7 @@ defmodule LatticeControllerEngineTest.Observed.ActorsTest do
                  ]
                },
                hosts: %{},
+               ocimap: %{},
                instance_tracking: %{
                  "abc123" => stamp1,
                  "abc345" => stamp2
@@ -72,6 +75,10 @@ defmodule LatticeControllerEngineTest.Observed.ActorsTest do
                linkdefs: [],
                providers: %{}
              }
+
+      assert Lattice.actors_in_appspec(l, "testapp") == [
+               %{actor_id: "Mxxx", host_id: "Nxxx", instance_id: "abc123"}
+             ]
 
       stop = CloudEvents.actor_stopped("Mxxx", "abc123", @test_spec, @test_host)
       l = Lattice.apply_event(l, stop)
@@ -87,6 +94,7 @@ defmodule LatticeControllerEngineTest.Observed.ActorsTest do
                  ]
                },
                hosts: %{},
+               ocimap: %{},
                instance_tracking: %{
                  "abc345" => stamp2
                },
