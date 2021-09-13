@@ -52,9 +52,7 @@ defmodule LatticeControllerEngine.Model.Decoder do
            "properties" => %{
              "contract" => contract,
              "image" => image
-             # "link_name" => link_name
            }
-           # "traits" => traits
          } = map
        ) do
     traits =

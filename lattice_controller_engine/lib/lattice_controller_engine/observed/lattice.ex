@@ -75,12 +75,12 @@ defmodule LatticeControllerEngine.Observed.Lattice do
         l = %Lattice{},
         %Cloudevents.Format.V_1_0.Event{
           data: %{
-            "public_key" => public_key,
-            "link_name" => link_name,
-            "annotations" => annotations
+            "public_key" => _public_key,
+            "link_name" => _link_name,
+            "annotations" => _annotations
           },
           datacontenttype: "application/json",
-          source: source_host,
+          source: _source_host,
           type: "com.wasmcloud.lattice.health_check_passed"
         }
       ) do
@@ -91,12 +91,12 @@ defmodule LatticeControllerEngine.Observed.Lattice do
         l = %Lattice{},
         %Cloudevents.Format.V_1_0.Event{
           data: %{
-            "public_key" => public_key,
-            "link_name" => link_name,
-            "annotations" => annotations
+            "public_key" => _public_key,
+            "link_name" => _link_name,
+            "annotations" => _annotations
           },
           datacontenttype: "application/json",
-          source: source_host,
+          source: _source_host,
           type: "com.wasmcloud.lattice.health_check_failed"
         }
       ) do
@@ -450,6 +450,10 @@ defmodule LatticeControllerEngine.Observed.Lattice do
         instance_id: instance.id
       }
     end
+  end
+
+  def providers_in_appspec(%Lattice{}, _appspec) do
+    []
   end
 
   def lookup_linkdef(%Lattice{linkdefs: linkdefs}, actor_id, provider_id, link_name) do

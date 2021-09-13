@@ -72,16 +72,16 @@ defmodule LatticeControllerEngine.Model.Validator do
   end
 
   defp validate_trait(%SpreadScaler{} = trait, result) do
-    weight_total = Enum.reduce(trait.spread, 0, fn x, acc -> acc + x.weight end)
+    weight_total =
+      trait.spread
+      |> Enum.map(& &1.weight)
+      |> Enum.sum()
 
-    result =
-      if weight_total != 100 do
-        %{result | errors: ["Spread scaler weight does not add up to 100" | result.errors]}
-      else
-        result
-      end
-
-    result
+    if weight_total != 100 do
+      %{result | errors: ["Spread scaler weight does not add up to 100" | result.errors]}
+    else
+      result
+    end
   end
 
   defp find_capability_component(%AppSpec{components: comps}, comp_name)

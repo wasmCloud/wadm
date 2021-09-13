@@ -78,7 +78,8 @@ defmodule LatticeControllerEngineTest.Reconciler.ScalerTest do
             "N00001" => %{
               id: "N00001",
               labels: %{
-                "style" => "cool"
+                "style" => "cool",
+                "extraneous" => "yup"
               },
               last_seen: DateTime.utc_now()
             },
@@ -92,7 +93,8 @@ defmodule LatticeControllerEngineTest.Reconciler.ScalerTest do
             "N00003" => %{
               id: "N00003",
               labels: %{
-                "style" => "lame"
+                "style" => "lame",
+                "extraneous" => "yup"
               },
               last_seen: DateTime.utc_now()
             },
@@ -150,7 +152,8 @@ defmodule LatticeControllerEngineTest.Reconciler.ScalerTest do
             "N00001" => %{
               id: "N00001",
               labels: %{
-                "style" => "cool"
+                "style" => "cool",
+                "extraneous" => "yup"
               },
               last_seen: DateTime.utc_now()
             },
@@ -171,7 +174,8 @@ defmodule LatticeControllerEngineTest.Reconciler.ScalerTest do
             "N00004" => %{
               id: "N00004",
               labels: %{
-                "style" => "lame"
+                "style" => "lame",
+                "extraneous" => "yup"
               },
               last_seen: DateTime.utc_now()
             }
