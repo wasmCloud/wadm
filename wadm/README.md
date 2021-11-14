@@ -1,4 +1,4 @@
-# Lattice Controller Engine
+# wasmCloud Application Deployment Manager (wadm)
 
 The core functional OTP application of the Lattice Controller. Any UI or additional tooling for the lattice controller will add this package as a dependency.
 
