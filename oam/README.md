@@ -1,5 +1,5 @@
-# ALC Open Application Model
-The Autonomous Lattice Controller uses the [Open Application Model](https://oam.dev) to define application specifications. Because this specification is extensible and _platform agnostic_, it makes for an ideal way to represent applications with metadata specific to wasmCloud.
+# wadm Open Application Model
+The wasmCloud Application Deployment Manager uses the [Open Application Model](https://oam.dev) to define application specifications. Because this specification is extensible and _platform agnostic_, it makes for an ideal way to represent applications with metadata specific to wasmCloud.
 
 ## wasmCloud OAM Components
 The following is a list of the `component`s wasmCloud has added to the model.
