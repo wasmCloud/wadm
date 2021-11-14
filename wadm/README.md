@@ -5,7 +5,7 @@ The core functional OTP application of the wasmCloud Application Deployment Mana
 ## Installation
 
 If [available in Hex](https://hex.pm/docs/publish), the package can be installed
-by adding `lattice_controller_engine` to your list of dependencies in `mix.exs`:
+by adding `wadm` to your list of dependencies in `mix.exs`:
 
 ```elixir
 def deps do
