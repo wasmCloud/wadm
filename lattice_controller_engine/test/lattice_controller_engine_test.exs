@@ -1,2 +1,0 @@
-defmodule LatticeControllerEngineTest do
-end

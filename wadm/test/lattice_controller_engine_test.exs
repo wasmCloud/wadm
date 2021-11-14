@@ -1,0 +1,2 @@
+defmodule WadmTest do
+end
