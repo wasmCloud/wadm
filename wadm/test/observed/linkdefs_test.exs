@@ -1,6 +1,6 @@
 defmodule WadmTest.Observed.LinkdefsTest do
   use ExUnit.Case
-  alias Wadm.Observed.Lattice
+  alias LatticeObserver.Observed.{Lattice, LinkDefinition}
   alias TestSupport.CloudEvents
 
   describe "Observed Lattice Monitors Linkdef Events" do
@@ -29,13 +29,13 @@ defmodule WadmTest.Observed.LinkdefsTest do
 
       l = Lattice.apply_event(l, put2)
 
-      assert l == %Wadm.Observed.Lattice{
+      assert l == %Lattice{
                actors: %{},
                hosts: %{},
                instance_tracking: %{},
                ocimap: %{},
                linkdefs: [
-                 %Wadm.Observed.LinkDefinition{
+                 %LinkDefinition{
                    actor_id: "Mxxx",
                    contract_id: "wasmcloud:testing",
                    link_name: "default",

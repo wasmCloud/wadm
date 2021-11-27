@@ -1,7 +1,7 @@
 defmodule WadmTest.Reconciler.ScalerTest do
   use ExUnit.Case
 
-  alias Wadm.Observed.{Lattice, Instance, Actor, Provider}
+  alias LatticeObserver.Observed.{Lattice, Instance, Actor, Provider}
   alias Wadm.Reconciler
 
   alias Wadm.Model.{

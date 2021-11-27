@@ -1,6 +1,6 @@
 defmodule WadmTest.Observed.ProvidersTest do
   use ExUnit.Case
-  alias Wadm.Observed.{Lattice, Instance, Provider}
+  alias LatticeObserver.Observed.{Lattice, Instance, Provider}
   alias TestSupport.CloudEvents
 
   @test_spec "testapp"
