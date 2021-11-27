@@ -1,6 +1,6 @@
 defmodule WadmTest.Observed.ActorsTest do
   use ExUnit.Case
-  alias Wadm.Observed.{Lattice, Instance}
+  alias LatticeObserver.Observed.{Lattice, Instance}
   alias TestSupport.CloudEvents
 
   @test_spec "testapp"
@@ -83,10 +83,10 @@ defmodule WadmTest.Observed.ActorsTest do
       stop = CloudEvents.actor_stopped("Mxxx", "abc123", @test_spec, @test_host)
       l = Lattice.apply_event(l, stop)
 
-      assert l == %Wadm.Observed.Lattice{
+      assert l == %Lattice{
                actors: %{
                  "Mxxx" => [
-                   %Wadm.Observed.Instance{
+                   %Instance{
                      host_id: "Nxxx",
                      id: "abc345",
                      spec_id: "othertestapp"

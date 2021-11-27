@@ -1,6 +1,6 @@
 defmodule WadmTest.Observed.HostsTest do
   use ExUnit.Case
-  alias Wadm.Observed.Lattice
+  alias LatticeObserver.Observed.{Lattice, Host}
   alias TestSupport.CloudEvents
 
   @test_host "Nxxx"
@@ -12,10 +12,10 @@ defmodule WadmTest.Observed.HostsTest do
       l = Lattice.apply_event(Lattice.new(), hb)
 
       assert l ==
-               %Wadm.Observed.Lattice{
+               %Lattice{
                  actors: %{},
                  hosts: %{
-                   "Nxxx" => %Wadm.Observed.Host{
+                   "Nxxx" => %Host{
                      id: "Nxxx",
                      labels: %{baz: "biz", foo: "bar"},
                      last_seen: stamp
@@ -32,10 +32,10 @@ defmodule WadmTest.Observed.HostsTest do
       l = Lattice.apply_event(l, hb2)
 
       assert l ==
-               %Wadm.Observed.Lattice{
+               %Lattice{
                  actors: %{},
                  hosts: %{
-                   "Nxxx" => %Wadm.Observed.Host{
+                   "Nxxx" => %Host{
                      id: "Nxxx",
                      labels: %{baz: "biz", foo: "bar"},
                      last_seen: stamp2

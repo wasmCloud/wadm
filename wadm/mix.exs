@@ -24,7 +24,7 @@ defmodule Wadm.MixProject do
       {:yaml_elixir, "~> 2.8"},
       {:cloudevents, "~> 0.4.0"},
       {:uuid, "~> 1.1"},
-      {:lattice_observer, git: "https://github.com/wasmcloud/lattice-observer"}
+      {:lattice_observer, git: "https://github.com/janitha09/lattice-observer"}
     ]
   end
 

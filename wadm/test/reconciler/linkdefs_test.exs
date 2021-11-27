@@ -1,7 +1,7 @@
 defmodule WadmTest.Reconciler.LinkdefsTest do
   use ExUnit.Case
 
-  alias Wadm.Observed.{Lattice, Instance}
+  alias LatticeObserver.Observed.{Lattice, Instance}
   alias Wadm.Reconciler
 
   alias Wadm.Model.{
@@ -67,7 +67,7 @@ defmodule WadmTest.Reconciler.LinkdefsTest do
       lattice = %Lattice{
         Lattice.new()
         | linkdefs: [
-            %Wadm.Observed.LinkDefinition{
+            %LatticeObserver.Observed.LinkDefinition{
               actor_id: "Mxxx",
               contract_id: "wasmcloud:testing",
               link_name: "default",
@@ -103,7 +103,7 @@ defmodule WadmTest.Reconciler.LinkdefsTest do
                %Wadm.Reconciler.Command{
                  cmd: :put_linkdef,
                  params: %{
-                   ld: %Wadm.Observed.LinkDefinition{
+                   ld: %LatticeObserver.Observed.LinkDefinition{
                      actor_id: "Mxxx",
                      contract_id: "wasmcloud:testing",
                      link_name: "default",
