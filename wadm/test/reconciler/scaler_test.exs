@@ -126,27 +126,31 @@ defmodule WadmTest.Reconciler.ScalerTest do
     test "Adds 1 when weight is not sufficient" do
       lattice = %Lattice{
         Lattice.new()
-        | ocimap: %{
+        | refmap: %{
             "testregistry.org/testactor:0.0.1" => "M00001"
           },
           actors: %{
-            "M00001" => [
-              %Instance{
-                id: "iid-1",
-                host_id: "N00001",
-                spec_id: "test"
-              },
-              %Instance{
-                id: "iid-2",
-                host_id: "N00002",
-                spec_id: "test"
-              },
-              %Instance{
-                id: "iid-3",
-                host_id: "N00003",
-                spec_id: "test"
-              }
-            ]
+            "M00001" => %Actor{
+              id: "M00001",
+              name: "Test",
+              instances: [
+                %Instance{
+                  id: "iid-1",
+                  host_id: "N00001",
+                  spec_id: "test"
+                },
+                %Instance{
+                  id: "iid-2",
+                  host_id: "N00002",
+                  spec_id: "test"
+                },
+                %Instance{
+                  id: "iid-3",
+                  host_id: "N00003",
+                  spec_id: "test"
+                }
+              ]
+            }
           },
           hosts: %{
             "N00001" => %{
@@ -200,7 +204,7 @@ defmodule WadmTest.Reconciler.ScalerTest do
     test "Reports failure when insufficient matching hosts to reconcile" do
       lattice = %Lattice{
         Lattice.new()
-        | ocimap: %{
+        | refmap: %{
             "testregistry.org/testprovider:0.0.1" => "V00001"
           },
           providers: %{
@@ -276,7 +280,7 @@ defmodule WadmTest.Reconciler.ScalerTest do
     test "Distributes providers evently" do
       lattice = %Lattice{
         Lattice.new()
-        | ocimap: %{
+        | refmap: %{
             "testregistry.org/testprovider:0.0.1" => "V00001"
           },
           providers: %{
@@ -330,37 +334,41 @@ defmodule WadmTest.Reconciler.ScalerTest do
     test "Recommends stopping instances when more are running than necessary" do
       lattice = %Lattice{
         Lattice.new()
-        | ocimap: %{
+        | refmap: %{
             "testregistry.org/testactor:0.0.1" => "M00001"
           },
           actors: %{
-            "M00001" => [
-              %Instance{
-                id: "iid-1",
-                host_id: "N00001",
-                spec_id: "test"
-              },
-              %Instance{
-                id: "iid-4",
-                host_id: "N00001",
-                spec_id: "test"
-              },
-              %Instance{
-                id: "iid-2",
-                host_id: "N00002",
-                spec_id: "test"
-              },
-              %Instance{
-                id: "iid-3",
-                host_id: "N00003",
-                spec_id: "test"
-              },
-              %Instance{
-                id: "iid-5",
-                host_id: "N00004",
-                spec_id: "test"
-              }
-            ]
+            "M00001" => %Actor{
+              id: "M00001",
+              name: "Test",
+              instances: [
+                %Instance{
+                  id: "iid-1",
+                  host_id: "N00001",
+                  spec_id: "test"
+                },
+                %Instance{
+                  id: "iid-4",
+                  host_id: "N00001",
+                  spec_id: "test"
+                },
+                %Instance{
+                  id: "iid-2",
+                  host_id: "N00002",
+                  spec_id: "test"
+                },
+                %Instance{
+                  id: "iid-3",
+                  host_id: "N00003",
+                  spec_id: "test"
+                },
+                %Instance{
+                  id: "iid-5",
+                  host_id: "N00004",
+                  spec_id: "test"
+                }
+              ]
+            }
           },
           hosts: %{
             "N00001" => %{

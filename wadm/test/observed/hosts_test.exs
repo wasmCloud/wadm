@@ -13,18 +13,16 @@ defmodule WadmTest.Observed.HostsTest do
 
       assert l ==
                %Lattice{
-                 actors: %{},
-                 hosts: %{
-                   "Nxxx" => %Host{
-                     id: "Nxxx",
-                     labels: %{baz: "biz", foo: "bar"},
-                     last_seen: stamp
+                 Lattice.new()
+                 | hosts: %{
+                     "Nxxx" => %Host{
+                       id: "Nxxx",
+                       labels: %{baz: "biz", foo: "bar"},
+                       last_seen: stamp,
+                       first_seen: stamp,
+                       status: :healthy
+                     }
                    }
-                 },
-                 ocimap: %{},
-                 instance_tracking: %{},
-                 linkdefs: [],
-                 providers: %{}
                }
 
       hb2 = CloudEvents.host_heartbeat(@test_host, %{foo: "bar", baz: "biz"})
@@ -33,18 +31,16 @@ defmodule WadmTest.Observed.HostsTest do
 
       assert l ==
                %Lattice{
-                 actors: %{},
-                 hosts: %{
-                   "Nxxx" => %Host{
-                     id: "Nxxx",
-                     labels: %{baz: "biz", foo: "bar"},
-                     last_seen: stamp2
+                 Lattice.new()
+                 | hosts: %{
+                     "Nxxx" => %Host{
+                       id: "Nxxx",
+                       labels: %{baz: "biz", foo: "bar"},
+                       status: :healthy,
+                       last_seen: stamp2,
+                       first_seen: stamp
+                     }
                    }
-                 },
-                 ocimap: %{},
-                 instance_tracking: %{},
-                 linkdefs: [],
-                 providers: %{}
                }
     end
   end
