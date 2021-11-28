@@ -1,6 +1,6 @@
 defmodule WadmTest.Observed.ActorsTest do
   use ExUnit.Case
-  alias LatticeObserver.Observed.{Lattice, Instance}
+  alias LatticeObserver.Observed.{Lattice, Instance, Actor}
   alias TestSupport.CloudEvents
 
   @test_spec "testapp"
@@ -17,22 +17,33 @@ defmodule WadmTest.Observed.ActorsTest do
       l = Lattice.apply_event(l, start)
 
       assert l == %Lattice{
-               actors: %{
-                 "Mxxx" => [
-                   %Instance{
-                     host_id: "Nxxx",
-                     id: "abc123",
-                     spec_id: "testapp"
+               Lattice.new()
+               | actors: %{
+                   "Mxxx" => %Actor{
+                     call_alias: "",
+                     capabilities: [],
+                     id: "Mxxx",
+                     instances: [
+                       %LatticeObserver.Observed.Instance{
+                         host_id: "Nxxx",
+                         id: "abc123",
+                         revision: 0,
+                         spec_id: "testapp",
+                         version: ""
+                       }
+                     ],
+                     issuer: "",
+                     name: "unavailable",
+                     tags: []
                    }
-                 ]
-               },
-               ocimap: %{},
-               hosts: %{},
-               instance_tracking: %{
-                 "abc123" => stamp1
-               },
-               linkdefs: [],
-               providers: %{}
+                 },
+                 refmap: %{},
+                 hosts: %{},
+                 instance_tracking: %{
+                   "abc123" => stamp1
+                 },
+                 linkdefs: [],
+                 providers: %{}
              }
 
       stop = CloudEvents.actor_stopped("Mxxx", "abc123", @test_spec, @test_host)
@@ -40,14 +51,7 @@ defmodule WadmTest.Observed.ActorsTest do
       # ensure idempotence
       l = Lattice.apply_event(l, stop)
 
-      assert l == %Lattice{
-               actors: %{"Mxxx" => []},
-               hosts: %{},
-               linkdefs: [],
-               ocimap: %{},
-               providers: %{},
-               instance_tracking: %{}
-             }
+      assert l == Lattice.new()
     end
 
     test "Stores the same actor belonging to multiple specs" do
@@ -60,20 +64,37 @@ defmodule WadmTest.Observed.ActorsTest do
       stamp2 = Lattice.timestamp_from_iso8601(start2.time)
 
       assert l == %Lattice{
-               actors: %{
-                 "Mxxx" => [
-                   %Instance{host_id: "Nxxx", id: "abc345", spec_id: "othertestapp"},
-                   %Instance{host_id: "Nxxx", id: "abc123", spec_id: "testapp"}
-                 ]
-               },
-               hosts: %{},
-               ocimap: %{},
-               instance_tracking: %{
-                 "abc123" => stamp1,
-                 "abc345" => stamp2
-               },
-               linkdefs: [],
-               providers: %{}
+               Lattice.new()
+               | actors: %{
+                   "Mxxx" => %Actor{
+                     call_alias: "",
+                     capabilities: [],
+                     id: "Mxxx",
+                     instances: [
+                       %Instance{
+                         host_id: "Nxxx",
+                         id: "abc345",
+                         revision: 0,
+                         spec_id: "othertestapp",
+                         version: ""
+                       },
+                       %Instance{
+                         host_id: "Nxxx",
+                         id: "abc123",
+                         revision: 0,
+                         spec_id: "testapp",
+                         version: ""
+                       }
+                     ],
+                     issuer: "",
+                     name: "unavailable",
+                     tags: []
+                   }
+                 },
+                 instance_tracking: %{
+                   "abc123" => stamp1,
+                   "abc345" => stamp2
+                 }
              }
 
       assert Lattice.actors_in_appspec(l, "testapp") == [
@@ -84,22 +105,29 @@ defmodule WadmTest.Observed.ActorsTest do
       l = Lattice.apply_event(l, stop)
 
       assert l == %Lattice{
-               actors: %{
-                 "Mxxx" => [
-                   %Instance{
-                     host_id: "Nxxx",
-                     id: "abc345",
-                     spec_id: "othertestapp"
+               Lattice.new()
+               | actors: %{
+                   "Mxxx" => %Actor{
+                     call_alias: "",
+                     capabilities: [],
+                     id: "Mxxx",
+                     instances: [
+                       %LatticeObserver.Observed.Instance{
+                         host_id: "Nxxx",
+                         id: "abc345",
+                         revision: 0,
+                         spec_id: "othertestapp",
+                         version: ""
+                       }
+                     ],
+                     issuer: "",
+                     name: "unavailable",
+                     tags: []
                    }
-                 ]
-               },
-               hosts: %{},
-               ocimap: %{},
-               instance_tracking: %{
-                 "abc345" => stamp2
-               },
-               linkdefs: [],
-               providers: %{}
+                 },
+                 instance_tracking: %{
+                   "abc345" => stamp2
+                 }
              }
     end
   end

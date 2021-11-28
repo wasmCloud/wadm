@@ -30,20 +30,16 @@ defmodule WadmTest.Observed.LinkdefsTest do
       l = Lattice.apply_event(l, put2)
 
       assert l == %Lattice{
-               actors: %{},
-               hosts: %{},
-               instance_tracking: %{},
-               ocimap: %{},
-               linkdefs: [
-                 %LinkDefinition{
-                   actor_id: "Mxxx",
-                   contract_id: "wasmcloud:testing",
-                   link_name: "default",
-                   provider_id: "Vxxx",
-                   values: %{foo: "bar"}
-                 }
-               ],
-               providers: %{}
+               Lattice.new()
+               | linkdefs: [
+                   %LinkDefinition{
+                     actor_id: "Mxxx",
+                     contract_id: "wasmcloud:testing",
+                     link_name: "default",
+                     provider_id: "Vxxx",
+                     values: %{foo: "bar"}
+                   }
+                 ]
              }
     end
 
@@ -59,7 +55,7 @@ defmodule WadmTest.Observed.LinkdefsTest do
         )
 
       l = Lattice.apply_event(Lattice.new(), put)
-      del = CloudEvents.linkdef_del("Mxxx", "Vxxx", "default", "Nxxx")
+      del = CloudEvents.linkdef_del("Mxxx", "Vxxx", "default", "Nxxx", "wasmcloud:test")
       l = Lattice.apply_event(l, del)
       assert l == Lattice.new()
     end

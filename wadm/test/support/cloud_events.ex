@@ -53,11 +53,12 @@ defmodule TestSupport.CloudEvents do
     |> Wadm.CloudEvent.new("linkdef_put", host)
   end
 
-  def linkdef_del(actor_id, provider_id, link_name, host) do
+  def linkdef_del(actor_id, provider_id, link_name, host, contract_id) do
     %{
       "actor_id" => actor_id,
       "provider_id" => provider_id,
-      "link_name" => link_name
+      "link_name" => link_name,
+      "contract_id" => contract_id
     }
     |> Wadm.CloudEvent.new("linkdef_del", host)
   end
