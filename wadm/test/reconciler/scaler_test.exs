@@ -6,7 +6,6 @@ defmodule WadmTest.Reconciler.ScalerTest do
 
   alias Wadm.Model.{
     AppSpec,
-    LinkDefinition,
     ActorComponent,
     CapabilityComponent,
     SpreadScaler,

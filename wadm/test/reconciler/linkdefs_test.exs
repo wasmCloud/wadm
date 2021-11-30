@@ -1,7 +1,7 @@
 defmodule WadmTest.Reconciler.LinkdefsTest do
   use ExUnit.Case
 
-  alias LatticeObserver.Observed.{Lattice, Instance}
+  alias LatticeObserver.Observed.{Lattice}
   alias Wadm.Reconciler
 
   alias Wadm.Model.{
