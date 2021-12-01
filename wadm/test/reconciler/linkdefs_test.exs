@@ -1,7 +1,7 @@
 defmodule WadmTest.Reconciler.LinkdefsTest do
   use ExUnit.Case
 
-  alias Wadm.Observed.{Lattice, Instance}
+  alias LatticeObserver.Observed.{Lattice, Instance}
   alias Wadm.Reconciler
 
   alias Wadm.Model.{
@@ -48,7 +48,7 @@ defmodule WadmTest.Reconciler.LinkdefsTest do
     test "Reconciler fails to recommend linkdef put when keys cannot be looked up from OCI ref (partial map)" do
       lattice = %Lattice{
         Lattice.new()
-        | ocimap: %{
+        | refmap: %{
             "testregistry.org/testactor:0.0.1" => "Mxxx"
           }
       }
@@ -67,7 +67,7 @@ defmodule WadmTest.Reconciler.LinkdefsTest do
       lattice = %Lattice{
         Lattice.new()
         | linkdefs: [
-            %Wadm.Observed.LinkDefinition{
+            %LatticeObserver.Observed.LinkDefinition{
               actor_id: "Mxxx",
               contract_id: "wasmcloud:testing",
               link_name: "default",
@@ -75,7 +75,7 @@ defmodule WadmTest.Reconciler.LinkdefsTest do
               values: %{"foo" => "bar"}
             }
           ],
-          ocimap: %{
+          refmap: %{
             "testregistry.org/testactor:0.0.1" => "Mxxx",
             "testregistry.org/testprovider:0.0.1" => "Vxxx"
           }
@@ -93,7 +93,7 @@ defmodule WadmTest.Reconciler.LinkdefsTest do
     test "Reconciler recommends put when both target and source have OCI ref maps" do
       lattice = %Lattice{
         Lattice.new()
-        | ocimap: %{
+        | refmap: %{
             "testregistry.org/testactor:0.0.1" => "Mxxx",
             "testregistry.org/testprovider:0.0.1" => "Vxxx"
           }
@@ -103,7 +103,7 @@ defmodule WadmTest.Reconciler.LinkdefsTest do
                %Wadm.Reconciler.Command{
                  cmd: :put_linkdef,
                  params: %{
-                   ld: %Wadm.Observed.LinkDefinition{
+                   ld: %LatticeObserver.Observed.LinkDefinition{
                      actor_id: "Mxxx",
                      contract_id: "wasmcloud:testing",
                      link_name: "default",
