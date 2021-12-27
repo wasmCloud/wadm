@@ -35,10 +35,18 @@ defmodule Wadm.Model.AppSpec do
   def new(name, version, description, components \\ []) do
     %AppSpec{
       name: name,
-      version: version,
+      version: version |> trim_v(),
       description: description,
       components: components
     }
+  end
+
+  defp trim_v(ver) do
+    if String.starts_with?(ver |> String.downcase(), "v") do
+      ver |> String.slice(1..-1)
+    else
+      ver
+    end
   end
 
   @doc """
@@ -57,7 +65,7 @@ defmodule Wadm.Model.AppSpec do
              n -> n
            end,
            case get_in(yaml, ["metadata", "annotations", "version"]) do
-             nil -> "v0.0.0"
+             nil -> "0.0.0"
              v -> v
            end,
            case get_in(yaml, ["metadata", "annotations", "description"]) do
