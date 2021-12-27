@@ -15,8 +15,7 @@ defmodule Wadm.Observer do
   @impl true
   def state_changed(old_state, new_state, event, lattice_prefix) do
     if new_state != old_state &&
-         is_relevant?(event) &&
-         should_reconcile?(event) do
+         is_relevant?(event) do
       # Dispatch the new state to all deployment managers listening on this
       # lattice.
       Registry.dispatch(Registry.DeploymentsByLatticeRegistry, lattice_prefix, fn entries ->
@@ -35,6 +34,4 @@ defmodule Wadm.Observer do
 
   # TODO - make real
   def is_relevant?(_event), do: true
-  # TODO - make real
-  def should_reconcile?(_event), do: true
 end
