@@ -28,8 +28,7 @@ defmodule Wadm.MixProject do
       {:horde, "~> 0.8.5"},
       {:gnat, "~> 1.4"},
       {:redix, "~> 1.1"},
-      {:lattice_observer, path: "../../lattice-observer"},
-      # {:lattice_observer, git: "https://github.com/wasmcloud/lattice-observer"},
+      {:lattice_observer, git: "https://github.com/wasmcloud/lattice-observer"},
       {:vapor, git: "https://github.com/autodidaddict/vapor"}
     ]
   end
