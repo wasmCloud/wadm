@@ -17,7 +17,7 @@ defmodule Wadm.Deployments.DeploymentMonitor do
   require Logger
   alias LatticeObserver.Observed.Lattice
 
-  @decay_timer 39_000
+  @decay_timer_ms 39_000
 
   defmodule State do
     defstruct [:lattice, :spec, :prefix, :key]
@@ -44,7 +44,7 @@ defmodule Wadm.Deployments.DeploymentMonitor do
       "Starting Deployment Monitor for deployment #{opts.app_spec.name} v#{opts.app_spec.version}"
     )
 
-    Process.send_after(self(), :decay_lattice, @decay_timer)
+    Process.send_after(self(), :decay_lattice, @decay_timer_ms)
 
     {:ok,
      %State{
@@ -95,7 +95,7 @@ defmodule Wadm.Deployments.DeploymentMonitor do
       | lattice: lattice
     }
 
-    Process.send_after(self(), :decay_lattice, @decay_timer)
+    Process.send_after(self(), :decay_lattice, @decay_timer_ms)
 
     {:noreply, state}
   end
