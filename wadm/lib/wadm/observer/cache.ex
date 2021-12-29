@@ -1,8 +1,10 @@
 defmodule Wadm.Observer.Cache do
   require Logger
 
-  # return empty for now
-  # TODO: load from a real cache
+  # This is using Redis for now
+  # TODO - investigate getting mnesia/mnesiac to work in conjunction with
+  # libcluster
+
   def load_lattice(prefix) when is_binary(prefix) do
     Logger.debug("Fetching observed lattice state ('#{prefix}') from cache")
     key = "wadmcache:#{prefix}"
