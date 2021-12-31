@@ -7,8 +7,8 @@ defmodule WadmTest.Model.ValidatorTest do
 
   describe "Testing AppSpec Validation" do
     setup do
-      {:ok, pass_spec} = AppSpec.from_yaml(YamlElixir.read_from_file!(@simple_path))
-      {:ok, fail_spec} = AppSpec.from_yaml(YamlElixir.read_from_file!(@validfails_path))
+      {:ok, pass_spec} = AppSpec.from_map(YamlElixir.read_from_file!(@simple_path))
+      {:ok, fail_spec} = AppSpec.from_map(YamlElixir.read_from_file!(@validfails_path))
 
       [
         pass_spec: pass_spec,

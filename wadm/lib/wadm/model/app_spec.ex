@@ -50,25 +50,25 @@ defmodule Wadm.Model.AppSpec do
   end
 
   @doc """
-  Takes a map as returned by either of `YamlElixir`'s parse functions and returns either
+  Takes a map as returned by either YAML or JSON parse functions and returns either
   a canonical representation of the wasmCloud OAM application specification model or
   an error and an accompanying reason indicating the cause of the decode failure
   """
-  @spec from_yaml(Map.t()) :: {:ok, AppSpec.t()} | {:error, String.t()}
-  def from_yaml(yaml = %{}) do
-    case Decoder.extract_components(yaml) do
+  @spec from_map(Map.t()) :: {:ok, AppSpec.t()} | {:error, String.t()}
+  def from_map(map = %{}) do
+    case Decoder.extract_components(map) do
       {:ok, components} ->
         {:ok,
          new(
-           case get_in(yaml, ["metadata", "name"]) do
+           case get_in(map, ["metadata", "name"]) do
              nil -> "Unnamed"
              n -> n
            end,
-           case get_in(yaml, ["metadata", "annotations", "version"]) do
+           case get_in(map, ["metadata", "annotations", "version"]) do
              nil -> "0.0.0"
              v -> v
            end,
-           case get_in(yaml, ["metadata", "annotations", "description"]) do
+           case get_in(map, ["metadata", "annotations", "description"]) do
              nil -> "Unnamed Application"
              d -> d
            end,

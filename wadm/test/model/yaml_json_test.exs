@@ -1,5 +1,6 @@
-defmodule WadmTest.Model.YamlTest do
+defmodule WadmTest.Model.YamlJsonTest do
   @simple_path "test/fixtures/simple1.yaml"
+  @simple_path_json "test/fixtures/simple1.json"
 
   use ExUnit.Case
   alias Wadm.Model.AppSpec
@@ -7,12 +8,19 @@ defmodule WadmTest.Model.YamlTest do
   describe "Testing YAML decoding" do
     setup do
       [
-        simple_yaml: YamlElixir.read_from_file!(@simple_path)
+        simple_yaml: YamlElixir.read_from_file!(@simple_path),
+        simple_json: File.read!(@simple_path_json) |> Jason.decode!()
       ]
     end
 
+    test "Decode the simple JSON file", fixture do
+      {:ok, app_spec} = AppSpec.from_map(fixture.simple_json)
+
+      assert app_spec.name == "my-example-app"
+    end
+
     test "Decode the simple YAML file", fixture do
-      {:ok, app_spec} = AppSpec.from_yaml(fixture.simple_yaml)
+      {:ok, app_spec} = AppSpec.from_map(fixture.simple_yaml)
 
       assert app_spec ==
                %Wadm.Model.AppSpec{

@@ -37,6 +37,17 @@ defmodule Wadm.Supervisor do
       Supervisor.child_spec(
         {Gnat.ConnectionSupervisor, gnat_supervisor_settings},
         id: :gnats_connection_supervisor
+      ),
+      Supervisor.child_spec(
+        {Gnat.ConsumerSupervisor,
+         %{
+           connection_name: :gnats_connection_supervisor,
+           module: Wadm.Api.ApiServer,
+           subscription_topics: [
+             %{topic: "wadm.api.>"}
+           ]
+         }},
+        id: :api_server
       )
     ]
 
