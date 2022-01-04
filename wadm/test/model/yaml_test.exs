@@ -70,7 +70,8 @@ defmodule WadmTest.Model.YamlTest do
                  ],
                  description: "This is my app",
                  name: "my-example-app",
-                 version: "v0.0.1"
+                 # we strip the preceding v from version now
+                 version: "0.0.1"
                }
     end
   end
