@@ -19,6 +19,8 @@ defmodule Wadm.Deployments.DeploymentMonitor do
 
   @decay_timer_ms 39_000
 
+  @configuredcache [Wadm.Observer.RedisCache]
+
   defmodule State do
     defstruct [:lattice, :spec, :prefix, :key]
   end
@@ -57,7 +59,8 @@ defmodule Wadm.Deployments.DeploymentMonitor do
 
   @impl true
   def handle_continue(:check_cache, state) do
-    lattice = Wadm.Observer.Cache.load_lattice(state.prefix)
+    lattice = Enum.map(@configuredcache, fn cache -> cache.load_lattice(state.prefix) end)
+    # lattice = configuredcache.load_lattice(state.prefix)
 
     if lattice != nil do
       Logger.debug("Reloading lattice state from cache")
@@ -87,7 +90,9 @@ defmodule Wadm.Deployments.DeploymentMonitor do
       )
 
     if lattice != state.lattice do
-      Wadm.Observer.Cache.write_lattice(lattice)
+      Enum.map(@configuredcache, fn cache -> cache.write_lattice(lattice) end)
+
+      # configuredcache.write_lattice(lattice)
     end
 
     state = %{
@@ -114,7 +119,9 @@ defmodule Wadm.Deployments.DeploymentMonitor do
     lattice = state.lattice |> Lattice.apply_event(event)
 
     if lattice != state.lattice do
-      Wadm.Observer.Cache.write_lattice(lattice)
+      Enum.map(@configuredcache, fn cache -> cache.write_lattice(lattice) end)
+
+      # configuredcache.write_lattice(lattice)
     end
 
     state = %{state | lattice: lattice}
