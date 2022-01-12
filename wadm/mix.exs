@@ -29,7 +29,9 @@ defmodule Wadm.MixProject do
       {:gnat, "~> 1.4"},
       {:redix, "~> 1.1"},
       {:lattice_observer, git: "https://github.com/wasmcloud/lattice-observer"},
-      {:vapor, git: "https://github.com/autodidaddict/vapor"}
+      {:vapor, git: "https://github.com/autodidaddict/vapor"},
+      {:ex_unit_clustered_case, "~> 0.4", only: [:test]},
+      {:mnesiac, "~> 0.3"}
     ]
   end
 

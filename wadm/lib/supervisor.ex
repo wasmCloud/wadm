@@ -25,6 +25,8 @@ defmodule Wadm.Supervisor do
 
     children = [
       {Cluster.Supervisor, [topologies, [name: Wadm.ClusterSupervisor]]},
+      # Mnesiac must be started after the clustering library starts https://github.com/beardedeagle/mnesiac#clustering
+      {Mnesiac.Supervisor, [Node.list(), [name: Wadm.MnesiacSupervisor]]},
       {Horde.Registry, [name: Wadm.HordeRegistry, keys: :unique]},
       # The name of this horde supervisor corresponds to the horde parameter
       # in Horde.Cluster.members()
