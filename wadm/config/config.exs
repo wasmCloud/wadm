@@ -1,5 +1,5 @@
-use Mix.Config
+import Config
 
 config :logger, :console, format: "$time $metadata[$level] $message\n"
 
-import_config "#{Mix.env()}.exs"
+import_config "#{config_env()}.exs"

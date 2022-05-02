@@ -15,17 +15,14 @@ defmodule Wadm.Deployments.DeploymentMonitor do
   """
   use GenServer
   require Logger
-  alias LatticeObserver.Observed.Lattice
-
-  @decay_timer_ms 39_000
 
   defmodule State do
-    defstruct [:lattice, :spec, :prefix, :key]
+    defstruct [:spec, :lattice_id]
   end
 
   @spec start_link(Map.t()) :: GenServer.on_start()
-  def start_link(%{app_spec: _app_spec, lattice_prefix: _prefix, key: key} = opts) do
-    case GenServer.start_link(__MODULE__, opts, name: via_tuple(key)) do
+  def start_link(%{app_spec: app_spec, lattice_id: lattice_id} = opts) do
+    case GenServer.start_link(__MODULE__, opts, name: via_tuple(app_spec.name, lattice_id)) do
       {:ok, pid} ->
         {:ok, pid}
 
@@ -44,113 +41,50 @@ defmodule Wadm.Deployments.DeploymentMonitor do
       "Starting Deployment Monitor for deployment #{opts.app_spec.name} v#{opts.app_spec.version}"
     )
 
-    Process.send_after(self(), :decay_lattice, @decay_timer_ms)
-
     {:ok,
      %State{
        spec: opts.app_spec,
-       prefix: opts.lattice_prefix,
-       key: opts.key,
-       lattice: Lattice.new(opts.lattice_prefix)
-     }, {:continue, :check_cache}}
+       lattice_id: opts.lattice_id
+     }, {:continue, :ensure_lattice_supervisor}}
   end
 
   @impl true
-  def handle_continue(:check_cache, state) do
-    lattice = Wadm.Observer.Cache.load_lattice(state.prefix)
-
-    if lattice != nil do
-      Logger.debug("Reloading lattice state from cache")
-      {:noreply, %{state | lattice: lattice}}
-    else
-      {:noreply, state}
-    end
-  end
-
-  def lattice_prefix(pid) do
-    GenServer.call(pid, :lattice_prefix)
-  end
-
-  @impl true
-  def handle_call(:lattice_prefix, _from, state) do
-    {:reply, state.prefix, state}
-  end
-
-  @impl true
-  def handle_info(:decay_lattice, state) do
-    Logger.debug("Decay tick")
-
-    lattice =
-      state.lattice
-      |> Lattice.apply_event(
-        LatticeObserver.CloudEvent.new_synthetic(%{}, "decay_ticked", "none")
-      )
-
-    if lattice != state.lattice do
-      Wadm.Observer.Cache.write_lattice(lattice)
-    end
-
-    state = %{
-      state
-      | lattice: lattice
-    }
-
-    Process.send_after(self(), :decay_lattice, @decay_timer_ms)
-
-    {:noreply, state}
-  end
-
-  @impl true
-  def handle_info({:handle_event, event}, state) do
-    Logger.debug(
-      "Performing processing check on #{state.spec.name} v#{state.spec.version} (#{event.type})"
-    )
-
-    # TODO
-    #
-    # * Determine what to do with the recommended actions
-    # * Emit actions to distributed work dispatch
-
-    lattice = state.lattice |> Lattice.apply_event(event)
-
-    if lattice != state.lattice do
-      Wadm.Observer.Cache.write_lattice(lattice)
-    end
-
-    state = %{state | lattice: lattice}
-
-    _actions = Wadm.Reconciler.AppSpec.reconcile(state.spec, lattice)
+  def handle_continue(:ensure_lattice_supervisor, state) do
+    # Make sure that there's a lattice supervisor running
+    {:ok, _pid} = Wadm.LatticeSupervisor.start_lattice_supervisor(state.lattice_id)
 
     {:noreply, state}
   end
 
   @spec start_deployment_monitor(AppSpec.t(), String.t()) :: {:error, any} | {:ok, pid()}
-  def start_deployment_monitor(app_spec, lattice_prefix) do
+  def start_deployment_monitor(app_spec, lattice_id) do
     opts = %{
       app_spec: app_spec,
-      lattice_prefix: lattice_prefix,
-      key: child_key(app_spec.name, app_spec.version, lattice_prefix)
+      lattice_id: lattice_id
     }
 
-    # Init (or reuse) deployment monitor
-    Horde.DynamicSupervisor.start_child(
-      Wadm.HordeSupervisor,
-      {Wadm.Deployments.DeploymentMonitor, opts}
-    )
+    pid = get_process(opts.app_spec.name, opts.lattice_id)
 
-    # Init (or reuse) lattice monitor
-    Horde.DynamicSupervisor.start_child(
-      Wadm.HordeSupervisor,
-      {Wadm.Deployments.LatticeMonitor, opts}
-    )
+    if pid == nil do
+      Horde.DynamicSupervisor.start_child(
+        Wadm.HordeSupervisor,
+        {Wadm.Deployments.DeploymentMonitor, opts}
+      )
+    else
+      {:ok, pid}
+    end
   end
 
-  defp child_key(spec_name, version, prefix) do
-    "#{spec_name}-#{version}-#{prefix}" |> Base.url_encode64()
-  end
+  # Within a libcluster-formed BEAM cluster, each deployment manager is
+  # uniquely identified by its spec name and the lattice in which it's
+  # running
+  def via_tuple(spec_name, lattice_id),
+    do: {:via, Horde.Registry, {Wadm.HordeRegistry, "depmon_#{spec_name}_#{lattice_id}"}}
 
-  # Within a libcluster-formed BEAM cluster, each deployment process is
-  # uniquely identified by the hash of its spec name, spec version, and
-  # the lattice ID with which it interacts
-  def via_tuple(name), do: {:via, Horde.Registry, {Wadm.HordeRegistry, name}}
+  def get_process(spec_name, lattice_id) when is_binary(lattice_id) do
+    case Horde.Registry.lookup(Wadm.HordeRegistry, "depmon_#{spec_name}_#{lattice_id}") do
+      [{pid, _val}] -> pid
+      [] -> nil
+    end
+  end
 end
