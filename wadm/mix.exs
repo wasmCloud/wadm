@@ -5,7 +5,7 @@ defmodule Wadm.MixProject do
     [
       app: :wadm,
       version: "0.1.0",
-      elixir: "~> 1.12",
+      elixir: "~> 1.13",
       start_permanent: Mix.env() == :prod,
       elixirc_paths: compiler_paths(Mix.env()),
       deps: deps()
@@ -25,9 +25,10 @@ defmodule Wadm.MixProject do
       {:cloudevents, "~> 0.4.0"},
       {:uuid, "~> 1.1"},
       {:libcluster, "~> 3.3"},
-      {:horde, "~> 0.8.5"},
+      {:horde, "~> 0.8.7"},
       {:gnat, "~> 1.4"},
       {:redix, "~> 1.1"},
+      {:phoenix_pubsub, "~> 2.1"},
       {:lattice_observer, git: "https://github.com/wasmcloud/lattice-observer"},
       {:vapor, git: "https://github.com/autodidaddict/vapor"}
     ]

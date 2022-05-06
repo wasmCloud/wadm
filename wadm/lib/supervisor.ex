@@ -7,6 +7,8 @@ defmodule Wadm.Supervisor do
 
   def init(_opts) do
     config = Vapor.load!(Wadm.ConfigPlan)
+    :ets.new(:config_table, [:named_table, :set, :public])
+    :ets.insert(:config_table, {:config, config})
 
     topologies = [
       wadmcluster: [
@@ -14,43 +16,36 @@ defmodule Wadm.Supervisor do
       ]
     ]
 
-    gnat_supervisor_settings = %{
-      name: :gnats_connection_supervisor,
-      # number of milliseconds to wait between consecutive reconnect attempts (default: 2_000)
-      backoff_period: config.nats.backoff_period,
-      connection_settings: [
-        %{host: config.nats.host, port: config.nats.port}
-      ]
-    }
-
     children = [
       {Cluster.Supervisor, [topologies, [name: Wadm.ClusterSupervisor]]},
-      {Horde.Registry, [name: Wadm.HordeRegistry, keys: :unique]},
-      # The name of this horde supervisor corresponds to the horde parameter
-      # in Horde.Cluster.members()
       {Horde.DynamicSupervisor,
        [name: Wadm.HordeSupervisor, strategy: :one_for_one, members: :auto]},
-      {Redix, host: config.redis.host, name: :redis_cache},
-
-      # TODO - right now we have one nats connection for all lattice observers. That
-      # should be configurable to get NATS connections on a per-lattice basis
+      {Horde.Registry, [name: Wadm.HordeRegistry, keys: :unique, members: :auto]},
+      {Phoenix.PubSub, name: Wadm.PubSub},
       Supervisor.child_spec(
-        {Gnat.ConnectionSupervisor, gnat_supervisor_settings},
-        id: :gnats_connection_supervisor
+        {Gnat.ConnectionSupervisor, Wadm.Api.Connection.settings_from_config(config)},
+        id: :api_connection_supervisor
       ),
       Supervisor.child_spec(
         {Gnat.ConsumerSupervisor,
          %{
-           connection_name: :gnats_connection_supervisor,
+           connection_name: :api_nats,
            module: Wadm.Api.ApiServer,
            subscription_topics: [
-             %{topic: "wadm.api.>"}
+             %{topic: "wadm.api.>", queue_group: "wadm_api_server"}
            ]
          }},
-        id: :api_server
+        id: :wadm_api_consumer_supervisor
       )
     ]
 
     Supervisor.init(children, strategy: :one_for_one)
+  end
+
+  def get_config() do
+    case :ets.lookup(:config_table, :config) do
+      [config: config_map] -> config_map
+      _ -> nil
+    end
   end
 end
