@@ -10,6 +10,7 @@ defmodule Wadm.Model.AppSpec do
     Decoder
   }
 
+  @derive Jason.Encoder
   @enforce_keys [:name]
   defstruct [:name, :version, :description, components: []]
 

@@ -2,6 +2,7 @@ defmodule Wadm.Model.SpreadScaler do
   alias __MODULE__
   alias Wadm.Model.WeightedTarget
 
+  @derive Jason.Encoder
   defstruct [:replicas, :spread]
 
   @typedoc """

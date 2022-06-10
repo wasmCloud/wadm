@@ -11,6 +11,7 @@ defmodule Wadm.Model.LinkDefinition do
           values: Map.t()
         }
 
+  @derive Jason.Encoder
   defstruct [:target, :values]
 
   @spec resolve_target(

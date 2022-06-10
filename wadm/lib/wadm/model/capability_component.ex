@@ -1,6 +1,7 @@
 defmodule Wadm.Model.CapabilityComponent do
   alias __MODULE__
 
+  @derive Jason.Encoder
   defstruct [:name, :contract, :image, link_name: "default", traits: []]
 
   @type trait :: SpreadScaler.t()
