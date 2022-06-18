@@ -27,6 +27,7 @@ defmodule Wadm.Api.ApiServer do
         {:reply, success_result(%{})}
       else
         Logger.debug("Stopping deployment monitor: #{model_name}")
+
         case Horde.DynamicSupervisor.terminate_child(Wadm.HordeSupervisor, monitor) do
           :ok ->
             {:reply, success_result(%{})}

@@ -31,6 +31,11 @@ defmodule Wadm.Model.Store do
 
   @type model_map :: Map.t()
 
+  @spec lattice_models(Redix.connection(), String.t()) ::
+          {:ok, [ModelVersion.t()]} | {:error, String.t()}
+  @doc """
+  Returns the most recent version of each model in the given lattice
+  """
   def lattice_models(redis, lattice_id) when is_binary(lattice_id) do
     setkey = "wadm:#{lattice_id}:models"
 
@@ -47,7 +52,7 @@ defmodule Wadm.Model.Store do
              name: model,
              version: ver,
              description: mm.vetted.description,
-             created: stamp_to_rfc_3339(stamp)
+             created: stamp_to_iso_8601(stamp)
            }
          else
            e ->
@@ -78,7 +83,7 @@ defmodule Wadm.Model.Store do
        |> Enum.chunk_every(2)
        |> Enum.map(&List.to_tuple/1)
        |> Enum.map(fn {v, stamp} ->
-         %ModelVersion{name: model_name, version: v, created: stamp_to_rfc_3339(stamp)}
+         %ModelVersion{name: model_name, version: v, created: stamp_to_iso_8601(stamp)}
        end)}
     else
       {:error, e} ->
@@ -152,6 +157,7 @@ defmodule Wadm.Model.Store do
                ["DEL", detail_key]
              ]
            ) do
+      clean_model_name(redis, model_name, lattice_id)
       :ok
     else
       {:ok, [0, 0]} ->
@@ -160,6 +166,15 @@ defmodule Wadm.Model.Store do
 
       e ->
         {:error, "Failed to delete model version from Redis: #{inspect(e)}"}
+    end
+  end
+
+  defp clean_model_name(redis, model_name, lattice_id) do
+    set_key = "wadm:#{lattice_id}:models"
+
+    with {:ok, []} <- model_versions(redis, model_name, lattice_id),
+         {:ok, 1} <- Redix.command(redis, ["SREM", set_key, model_name]) do
+      Logger.debug("Removed model name #{model_name} from store (no more versions)")
     end
   end
 
@@ -202,7 +217,7 @@ defmodule Wadm.Model.Store do
     end
   end
 
-  defp stamp_to_rfc_3339(stamp) when is_integer(stamp) do
+  defp stamp_to_iso_8601(stamp) when is_integer(stamp) do
     with {:ok, dt} <- DateTime.from_unix(stamp, :millisecond) do
       dt |> DateTime.to_iso8601()
     else
@@ -212,8 +227,8 @@ defmodule Wadm.Model.Store do
     end
   end
 
-  defp stamp_to_rfc_3339(stamp) when is_binary(stamp) do
-    stamp |> Integer.parse() |> elem(0) |> stamp_to_rfc_3339()
+  defp stamp_to_iso_8601(stamp) when is_binary(stamp) do
+    stamp |> Integer.parse() |> elem(0) |> stamp_to_iso_8601()
   end
 
   defp now_to_stamp() do
