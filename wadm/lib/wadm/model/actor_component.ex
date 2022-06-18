@@ -2,6 +2,7 @@ defmodule Wadm.Model.ActorComponent do
   alias __MODULE__
   alias Wadm.Model.{SpreadScaler, LinkDefinition}
 
+  @derive Jason.Encoder
   defstruct [:name, :image, traits: []]
 
   @type trait :: SpreadScaler.t() | LinkDefinition.t()

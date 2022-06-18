@@ -8,5 +8,6 @@ defmodule Wadm.Model.WeightedTarget do
         }
 
   @enforce_keys [:name]
+  @derive Jason.Encoder
   defstruct [:name, :requirements, :weight]
 end

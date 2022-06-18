@@ -27,6 +27,10 @@ defmodule Wadm.Supervisor do
         id: :api_connection_supervisor
       ),
       Supervisor.child_spec(
+        {Redix, host: config.redis.host, name: :model_store},
+        id: :model_store
+      ),
+      Supervisor.child_spec(
         {Gnat.ConsumerSupervisor,
          %{
            connection_name: :api_nats,

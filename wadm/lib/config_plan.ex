@@ -14,6 +14,6 @@ defmodule Wadm.ConfigPlan do
 
   config :redis,
          env([
-           {:host, "REDIS_HOST", default: "localhost"}
+           {:host, "WADM_REDIS_HOST", default: "localhost"}
          ])
 end

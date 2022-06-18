@@ -10,8 +10,10 @@ defmodule Wadm.Deployments.DeploymentMonitor do
 
   Process Drift
   When a node in a wadm cluster shuts down (intentionally or otherwise), this process
-  will be re-started on a new target node _without saving state_. An instant later, that
-  same process will try and reconstitute its state from cache.
+  will be re-started on a new target node. If the lattice monitor for the deployment stayed
+  up, then it will only take the process a few seconds to reorient itself. If the monitor also died,
+  then the resurrection of this process will start a new monitor, which will in turn reprobe the
+  lattice to catch up.
   """
   use GenServer
   require Logger
@@ -47,6 +49,9 @@ defmodule Wadm.Deployments.DeploymentMonitor do
        lattice_id: opts.lattice_id
      }, {:continue, :ensure_lattice_supervisor}}
   end
+
+  @impl true
+  def handle_call(:get_spec, _from, state), do: {:reply, state.spec, state}
 
   @impl true
   def handle_continue(:ensure_lattice_supervisor, state) do
@@ -85,6 +90,20 @@ defmodule Wadm.Deployments.DeploymentMonitor do
     case Horde.Registry.lookup(Wadm.HordeRegistry, "depmon_#{spec_name}_#{lattice_id}") do
       [{pid, _val}] -> pid
       [] -> nil
+    end
+  end
+
+  def get_deployment_status(_pid) do
+    # TODO get the deployment status of a monitor by doing a GenServer.call
+
+    :ready
+  end
+
+  def get_spec(pid) do
+    if Process.alive?(pid) do
+      GenServer.call(pid, :get_spec)
+    else
+      nil
     end
   end
 end
