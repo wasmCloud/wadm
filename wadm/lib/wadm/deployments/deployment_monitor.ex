@@ -17,6 +17,7 @@ defmodule Wadm.Deployments.DeploymentMonitor do
   """
   use GenServer
   require Logger
+  alias Phoenix.PubSub
 
   defmodule State do
     defstruct [:spec, :lattice_id]
@@ -43,6 +44,8 @@ defmodule Wadm.Deployments.DeploymentMonitor do
       "Starting Deployment Monitor for deployment #{opts.app_spec.name} v#{opts.app_spec.version}"
     )
 
+    PubSub.subscribe(Wadm.PubSub, "deployments:#{opts.lattice_id}")
+
     {:ok,
      %State{
        spec: opts.app_spec,
@@ -57,6 +60,17 @@ defmodule Wadm.Deployments.DeploymentMonitor do
   def handle_continue(:ensure_lattice_supervisor, state) do
     # Make sure that there's a lattice supervisor running
     {:ok, _pid} = Wadm.LatticeSupervisor.start_lattice_supervisor(state.lattice_id)
+
+    {:noreply, state}
+  end
+
+  @impl true
+  def handle_info({:lattice_changed, lattice, _event}, state) do
+    Logger.debug("Handling lattice state changed #{lattice.id}")
+
+    commands =
+      Wadm.Reconciler.AppSpec.reconcile(state.spec, lattice)
+      |> Enum.reject(fn command -> command.cmd == :no_action end)
 
     {:noreply, state}
   end

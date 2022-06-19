@@ -22,19 +22,34 @@ defmodule Wadm.LatticeStateMonitor do
   @impl true
   def handle_info({:cloud_event, cloud_event}, state) do
     Logger.debug("Received cloud event: #{inspect(cloud_event)}")
-    {:noreply, state}
+
+    nlattice = state |> Lattice.apply_event(cloud_event)
+
+    if nlattice != state do
+      dispatch_lattice_changed(nlattice, cloud_event)
+    end
+
+    {:noreply, nlattice}
   end
 
   @impl true
   def handle_info(:decay_lattice, state) do
     Logger.debug("Decay tick")
 
-    lattice =
-      state
-      |> Lattice.apply_event(
-        LatticeObserver.CloudEvent.new_synthetic(%{}, "decay_ticked", "none")
-      )
+    event = LatticeObserver.CloudEvent.new_synthetic(%{}, "decay_ticked", "none")
 
-    {:noreply, lattice}
+    nlattice =
+      state
+      |> Lattice.apply_event(event)
+
+    if nlattice != state do
+      dispatch_lattice_changed(nlattice, event)
+    end
+
+    {:noreply, nlattice}
+  end
+
+  defp dispatch_lattice_changed(lattice, event) do
+    PubSub.broadcast(Wadm.PubSub, "deployments:#{lattice.id}", {:lattice_changed, lattice, event})
   end
 end
