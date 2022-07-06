@@ -160,7 +160,19 @@ defmodule Wadm.Deployments.DeploymentMonitor do
   end
 
   defp publish_lattice_control_command({{topic, cmd}, lattice_id}) do
-    _ = Gnat.request(String.to_atom(lattice_id), topic, cmd)
+    case Gnat.request(String.to_atom(lattice_id), topic, cmd) do
+      {:ok, res} ->
+        case Jason.decode(res) do
+          {:ok, %{"accepted" => false, "error" => err}} ->
+            Logger.error("Lattice control interface rejected request: #{err}")
+
+          _ ->
+            Logger.debug("Successfully performed lattice control interface request")
+        end
+
+      {:error, _} ->
+        Logger.error("Timeout occurred attempting to make lattice control interface request")
+    end
   end
 
   @spec start_deployment_monitor(AppSpec.t(), String.t()) :: {:error, any} | {:ok, pid()}

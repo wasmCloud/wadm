@@ -88,9 +88,6 @@ defmodule Wadm.LatticeSupervisor do
     ]
 
     Supervisor.init(children, strategy: :one_for_one)
-    # IO.inspect(e)
-    # e
-    # Supervisor.init([], strategy: :one_for_one)
   end
 
   def via_tuple(lattice_id), do: {:via, Horde.Registry, {Wadm.HordeRegistry, lattice_id}}
