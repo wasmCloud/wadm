@@ -19,8 +19,23 @@ defmodule Wadm.Deployments.DeploymentMonitor do
   require Logger
   alias Phoenix.PubSub
 
+  # Currently using a naive state model. Obvious room for iterative improvement
+  # process starts in initializing
+  # after 45s, if the process is still in "initializing" state (no lattice changed events received)
+  # grab the current state and do a reconcile
+  #
+  # the main post-initializing loop should alternate between idle and reconciling
+  # (no error state modeled yet)
+  @type reconstate() :: :idle | :reconciling | :initializing
+
   defmodule State do
-    defstruct [:spec, :lattice_id]
+    @type t() :: %__MODULE__{
+            spec: Map.t(),
+            lattice_id: String.t(),
+            recon_state: Wadm.Deployments.DeploymentMonitor.reconstate()
+          }
+
+    defstruct [:spec, :lattice_id, :recon_state]
   end
 
   @spec start_link(Map.t()) :: GenServer.on_start()
@@ -49,7 +64,8 @@ defmodule Wadm.Deployments.DeploymentMonitor do
     {:ok,
      %State{
        spec: opts.app_spec,
-       lattice_id: opts.lattice_id
+       lattice_id: opts.lattice_id,
+       recon_state: :initializing
      }, {:continue, :ensure_lattice_supervisor}}
   end
 
@@ -57,22 +73,94 @@ defmodule Wadm.Deployments.DeploymentMonitor do
   def handle_call(:get_spec, _from, state), do: {:reply, state.spec, state}
 
   @impl true
+  def handle_call(:get_recon_status, _from, state) do
+    {:reply, state.recon_state, state}
+  end
+
+  @impl true
   def handle_continue(:ensure_lattice_supervisor, state) do
     # Make sure that there's a lattice supervisor running
     {:ok, _pid} = Wadm.LatticeSupervisor.start_lattice_supervisor(state.lattice_id)
+
+    Process.send_after(self(), :reconcile_initializing, 45_000)
 
     {:noreply, state}
   end
 
   @impl true
+  def handle_info(:remove_backoff, state) do
+    {:noreply, %State{state | recon_state: :idle}}
+  end
+
+  @impl true
+  def handle_info(:reconcile_initializing, state) do
+    # TODO - deal with error state
+    if state.recon_state == :initializing do
+      pid = Wadm.LatticeStateMonitor.get_process(state.lattice_id)
+
+      if pid != nil do
+        {cmd_count, _error_count} = do_reconcile(state.spec, state.lattice_id)
+
+        if cmd_count > 0 do
+          {:noreply, %State{state | recon_state: :reconciling}}
+        else
+          {:noreply, %State{state | recon_state: :idle}}
+        end
+      else
+        {:noreply, %State{state | recon_state: :idle}}
+      end
+    else
+      {:noreply, state}
+    end
+  end
+
+  @impl true
   def handle_info({:lattice_changed, lattice, _event}, state) do
-    Logger.debug("Handling lattice state changed #{lattice.id}")
+    # in backoff/cooldown mode, incoming events have no effect
+    if state.recon_state == :reconciling do
+      {:noreply, state}
+    else
+      Logger.debug(
+        "Deployment monitor #{state.spec.name} handling state change for lattice #{lattice.id}"
+      )
 
-    commands =
-      Wadm.Reconciler.AppSpec.reconcile(state.spec, lattice)
-      |> Enum.reject(fn command -> command.cmd == :no_action end)
+      # TODO make use of the error state
+      _ = do_reconcile(state.spec, lattice)
 
-    {:noreply, state}
+      {:noreply, %State{state | recon_state: :reconciling}}
+    end
+  end
+
+  defp do_reconcile(spec, lattice) do
+    {skips, cmds} =
+      Wadm.Reconciler.AppSpec.reconcile(spec, lattice)
+      |> Enum.split_with(fn command -> command.cmd == :no_action || command.cmd == :error end)
+
+    errors = skips |> Enum.filter(fn command -> command.cmd == :error end)
+
+    if length(errors) > 0 do
+      # TODO - once we move past the naive reconciliation strategy, we might want a
+      # discrete error/failed state
+      Logger.error("Failed to perform reconciliation pass: #{errors |> Enum.join(",")}")
+    end
+
+    Logger.debug("Reconciliation found #{length(skips)} no-ops and #{length(cmds)} commands")
+
+    cmds
+    |> Enum.map(fn cmd ->
+      {Wadm.Reconciler.Command.to_lattice_control_command(spec, lattice.id, cmd), lattice.id}
+    end)
+    |> Enum.each(&publish_lattice_control_command/1)
+
+    # even if we had a failure in the command list, back off so that we don't attempt
+    # to re-reconcile for another 30 seconds
+    Process.send_after(self(), :remove_backoff, 45_000)
+
+    {length(cmds), length(errors)}
+  end
+
+  defp publish_lattice_control_command({{topic, cmd}, lattice_id}) do
+    _ = Gnat.request(String.to_atom(lattice_id), topic, cmd)
   end
 
   @spec start_deployment_monitor(AppSpec.t(), String.t()) :: {:error, any} | {:ok, pid()}
@@ -107,10 +195,8 @@ defmodule Wadm.Deployments.DeploymentMonitor do
     end
   end
 
-  def get_deployment_status(_pid) do
-    # TODO get the deployment status of a monitor by doing a GenServer.call
-
-    :ready
+  def get_deployment_status(pid) do
+    GenServer.call(pid, :get_recon_status)
   end
 
   def get_spec(pid) do

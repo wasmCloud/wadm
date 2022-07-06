@@ -1,0 +1,122 @@
+apiVersion: core.oam.dev/v1beta1
+kind: Application
+metadata:
+  name: petclinic
+  annotations:
+    version: v0.0.1
+    description: "wasmCloud Pet Clinic Sample"
+spec:
+  components:
+    - name: ui
+      type: actor
+      properties:
+        image: wasmcloud.azurecr.io/ui:0.3.1
+      traits:
+        - type: spreadscaler
+          properties:
+            replicas: 1
+            spread: 
+              - name: uiclinicapp
+                requirements:
+                  app: petclinic
+
+    - name: customers
+      type: actor
+      properties:
+        image: wasmcloud.azurecr.io/customers:0.3.0
+      traits:
+        - type: linkdef
+          properties:
+            target: postgres
+            values:
+              uri: postgres://user:pass@your.db.host.com/petclinic
+        - type: spreadscaler
+          properties: 
+            replicas: 1
+            spread:
+              - name: customersclinicapp
+                requirements:
+                  app: petclinic              
+    
+    - name: vets
+      type: actor
+      properties:
+        image: wasmcloud.azurecr.io/vets:0.3.0
+      traits:
+        - type: linkdef
+          properties:
+            target: postgres
+            values:
+              uri: postgres://user:pass@your.db.host.com/petclinic
+        - type: spreadscaler
+          properties:
+            replicas: 1
+            spread:
+              - name: vetsclinicapp
+                requirements:
+                  app: petclinic   
+
+    - name: visits
+      type: actor
+      properties:
+        image: wasmcloud.azurecr.io/visits:0.3.0
+      traits:
+        - type: linkdef
+          properties:
+            target: postgres
+            values:
+              uri: postgres://user:pass@your.db.host.com/petclinic
+
+        - type: spreadscaler
+          properties:
+            replicas: 1
+            spread:
+              - name: visitsclinicapp
+                requirements:
+                  app: petclinic
+
+    - name: clinicapi
+      type: actor
+      properties:
+        image: wasmcloud.azurecr.io/clinicapi:0.3.0
+      traits:
+        - type: spreadscaler
+          properties:
+            replicas: 1
+            spread:
+              - name: clinicapp
+                requirements:
+                  app: petclinic                         
+        - type: linkdef
+          properties:
+            target: httpserver
+            values:
+              config_b64: ewogICAgImFkZHJlc3MiIDogIjAuMC4wLjA6MzAwMCIKfQ==
+
+    - name: httpserver
+      type: capability
+      properties:
+        image: wasmcloud.azurecr.io/httpserver:0.15.0
+        contract: wasmcloud:httpserver
+      traits:
+        - type: spreadscaler
+          properties:
+            replicas: 1
+            spread:
+              - name: httpserverspread
+                requirements:
+                  app: petclinic
+
+    - name: postgres
+      type: capability
+      properties:
+        image: wasmcloud.azurecr.io/sqldb-postgres:0.2.0
+        contract: wasmcloud:sqldb
+      traits:
+        - type: spreadscaler
+          properties:
+            replicas: 1
+            spread:
+              - name: postgresspread
+                requirements:
+                  app: petclinic

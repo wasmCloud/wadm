@@ -143,6 +143,9 @@ defmodule Wadm.Api.ApiServer do
         end
       end
     else
+      {:error, e} ->
+        {:reply, fail_result("Failed to put model spec: #{e}")}
+
       e ->
         {:reply, fail_result("Failed to put model spec: #{inspect(e)}")}
     end

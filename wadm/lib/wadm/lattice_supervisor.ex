@@ -35,9 +35,9 @@ defmodule Wadm.LatticeSupervisor do
   use the start_lattice_supervisor function
   """
   def start_link(lattice_id) do
-    case GenServer.start_link(__MODULE__, lattice_id, name: via_tuple(lattice_id)) do
-      {:ok, pid} ->
-        {:ok, pid}
+    case Supervisor.start_link(__MODULE__, lattice_id, name: via_tuple(lattice_id)) do
+      {:ok, res} ->
+        {:ok, res}
 
       {:error, {:already_started, pid}} ->
         Logger.debug("Already running lattice supervisor at #{inspect(pid)}")
@@ -81,10 +81,16 @@ defmodule Wadm.LatticeSupervisor do
          }},
         id: String.to_atom("evt_#{supervised_lattice_id}")
       ),
-      {Wadm.LatticeStateMonitor, supervised_lattice_id}
+      Supervisor.child_spec(
+        {Wadm.LatticeStateMonitor, supervised_lattice_id},
+        id: String.to_atom("st_#{supervised_lattice_id}")
+      )
     ]
 
     Supervisor.init(children, strategy: :one_for_one)
+    # IO.inspect(e)
+    # e
+    # Supervisor.init([], strategy: :one_for_one)
   end
 
   def via_tuple(lattice_id), do: {:via, Horde.Registry, {Wadm.HordeRegistry, lattice_id}}

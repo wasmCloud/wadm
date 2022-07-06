@@ -77,7 +77,8 @@ defmodule Wadm.Reconciler.Traits do
       end
 
     SpreadScalerReconciler.perform_spread(spec.name, component.image, pk, scaler, actual, 1, %{
-      link_name: component.link_name
+      link_name: component.link_name,
+      contract_id: component.contract
     })
   end
 end
