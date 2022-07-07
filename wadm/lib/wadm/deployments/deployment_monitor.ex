@@ -153,7 +153,7 @@ defmodule Wadm.Deployments.DeploymentMonitor do
     |> Enum.each(&publish_lattice_control_command/1)
 
     # even if we had a failure in the command list, back off so that we don't attempt
-    # to re-reconcile for another 30 seconds
+    # to re-reconcile for another 45 seconds
     Process.send_after(self(), :remove_backoff, 45_000)
 
     {length(cmds), length(errors)}
