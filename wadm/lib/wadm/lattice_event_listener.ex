@@ -9,6 +9,8 @@ defmodule Wadm.LatticeEventListener do
       |> String.split(".")
       |> List.last()
 
+    Logger.debug("Event inbound for lattice #{lattice_id}")
+
     with {:ok, event} <- Jason.decode(body),
          {:ok, cloud_event} <- Cloudevents.from_map(event) do
       dispatch_cloud_event(lattice_id, cloud_event)

@@ -2,6 +2,8 @@ defmodule Wadm.Model.Decoder do
   @capability_component_type "capability"
   @actor_component_type "actor"
 
+  require Logger
+
   alias Wadm.Model.{
     ActorComponent,
     CapabilityComponent,
@@ -134,8 +136,12 @@ defmodule Wadm.Model.Decoder do
       |> Enum.map(fn trait -> trait_from_map(trait) end)
       |> Enum.split_with(fn x ->
         case x do
-          {:ok, _t} -> true
-          {:error, _e} -> false
+          {:ok, _t} ->
+            true
+
+          {:error, e} ->
+            Logger.debug("Trait extract failed: #{e}")
+            false
         end
       end)
 
@@ -192,8 +198,8 @@ defmodule Wadm.Model.Decoder do
      }}
   end
 
-  defp trait_from_map(%{}) do
-    {:error, "Unable to decode trait from map"}
+  defp trait_from_map(%{} = map) do
+    {:error, "Unable to decode trait from map: #{inspect(map)}"}
   end
 
   defp target_from_map(

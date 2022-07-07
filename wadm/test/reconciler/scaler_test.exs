@@ -45,6 +45,7 @@ defmodule WadmTest.Reconciler.ScalerTest do
                           %CapabilityComponent{
                             name: "testprovider1",
                             link_name: "default",
+                            contract: "wasmcloud:test",
                             image: "testregistry.org/testprovider:0.0.1",
                             traits: [
                               %SpreadScaler{
@@ -266,18 +267,18 @@ defmodule WadmTest.Reconciler.ScalerTest do
       assert Reconciler.AppSpec.reconcile(@single_provider_spec, lattice) == [
                %Wadm.Reconciler.Command{
                  cmd: :no_action,
-                 params: %{link_name: "default"},
+                 params: %{link_name: "default", contract_id: "wasmcloud:test"},
                  reason: "Weighted target 'coolhosts' is satisfied"
                },
                %Wadm.Reconciler.Command{
                  cmd: :error,
-                 params: %{link_name: "default"},
+                 params: %{link_name: "default", contract_id: "wasmcloud:test"},
                  reason: "Weighted target 'lamehosts' has insufficient candidate hosts."
                }
              ]
     end
 
-    test "Distributes providers evently" do
+    test "Distributes providers evenly" do
       lattice = %Lattice{
         Lattice.new()
         | refmap: %{
@@ -315,7 +316,8 @@ defmodule WadmTest.Reconciler.ScalerTest do
                  params: %{
                    host_id: "N00001",
                    image: "testregistry.org/testprovider:0.0.1",
-                   link_name: "default"
+                   link_name: "default",
+                   contract_id: "wasmcloud:test"
                  },
                  reason: "Weighted target 'coolhosts' needs more instances."
                },
@@ -324,7 +326,8 @@ defmodule WadmTest.Reconciler.ScalerTest do
                  params: %{
                    host_id: "N00002",
                    image: "testregistry.org/testprovider:0.0.1",
-                   link_name: "default"
+                   link_name: "default",
+                   contract_id: "wasmcloud:test"
                  },
                  reason: "Weighted target 'lamehosts' needs more instances."
                }
