@@ -89,6 +89,14 @@ defmodule Wadm.Deployments.DeploymentMonitor do
 
   @impl true
   def handle_info(:remove_backoff, state) do
+    Wadm.Deployments.CloudEvents.deployment_state_changed(
+      state.spec.name,
+      state.spec.version,
+      state.lattice_id,
+      "idle"
+    )
+    |> Wadm.Deployments.CloudEvents.publish()
+
     {:noreply, %State{state | recon_state: :idle}}
   end
 
@@ -99,14 +107,51 @@ defmodule Wadm.Deployments.DeploymentMonitor do
       pid = Wadm.LatticeStateMonitor.get_process(state.lattice_id)
 
       if pid != nil do
-        {cmd_count, _error_count} = do_reconcile(state.spec, state.lattice_id)
+        {cmd_count, error_count} = do_reconcile(state.spec, state.lattice_id)
+
+        # TODO - when we have a discrete error state we should enumerate each of
+        # these reconciliation failures and make them available as part of the
+        # state for querying/event emission.
+        if error_count > 0 do
+          Wadm.Deployments.CloudEvents.reconciliation_error_occurred(
+            state.spec.name,
+            state.spec.version,
+            state.lattice_id,
+            "#{error_count} errors occurred during reconciliation pass"
+          )
+          |> Wadm.Deployments.CloudEvents.publish()
+        end
 
         if cmd_count > 0 do
+          Wadm.Deployments.CloudEvents.deployment_state_changed(
+            state.spec.name,
+            state.spec.version,
+            state.lattice_id,
+            "reconciling"
+          )
+          |> Wadm.Deployments.CloudEvents.publish()
+
           {:noreply, %State{state | recon_state: :reconciling}}
         else
+          Wadm.Deployments.CloudEvents.deployment_state_changed(
+            state.spec.name,
+            state.spec.version,
+            state.lattice_id,
+            "idle"
+          )
+          |> Wadm.Deployments.CloudEvents.publish()
+
           {:noreply, %State{state | recon_state: :idle}}
         end
       else
+        Wadm.Deployments.CloudEvents.deployment_state_changed(
+          state.spec.name,
+          state.spec.version,
+          state.lattice_id,
+          "idle"
+        )
+        |> Wadm.Deployments.CloudEvents.publish()
+
         {:noreply, %State{state | recon_state: :idle}}
       end
     else
@@ -148,7 +193,8 @@ defmodule Wadm.Deployments.DeploymentMonitor do
 
     cmds
     |> Enum.map(fn cmd ->
-      {Wadm.Reconciler.Command.to_lattice_control_command(spec, lattice.id, cmd), lattice.id}
+      {spec, cmd, Wadm.Reconciler.Command.to_lattice_control_command(spec, lattice.id, cmd),
+       lattice.id}
     end)
     |> Enum.each(&publish_lattice_control_command/1)
 
@@ -159,18 +205,45 @@ defmodule Wadm.Deployments.DeploymentMonitor do
     {length(cmds), length(errors)}
   end
 
-  defp publish_lattice_control_command({{topic, cmd}, lattice_id}) do
+  defp publish_lattice_control_command({spec, orig_command, {topic, cmd}, lattice_id}) do
+    # TODO - include the command data in the params field of these event pubs
     case Gnat.request(String.to_atom(lattice_id), topic, cmd) do
-      {:ok, res} ->
+      {:ok, %{body: res}} ->
         case Jason.decode(res) do
           {:ok, %{"accepted" => false, "error" => err}} ->
+            Wadm.Deployments.CloudEvents.control_action_failed(
+              spec.name,
+              spec.version,
+              lattice_id,
+              "#{orig_command.cmd}",
+              err
+            )
+            |> Wadm.Deployments.CloudEvents.publish()
+
             Logger.error("Lattice control interface rejected request: #{err}")
 
           _ ->
+            Wadm.Deployments.CloudEvents.control_action_taken(
+              spec.name,
+              spec.version,
+              lattice_id,
+              "#{orig_command.cmd}"
+            )
+            |> Wadm.Deployments.CloudEvents.publish()
+
             Logger.debug("Successfully performed lattice control interface request")
         end
 
       {:error, _} ->
+        Wadm.Deployments.CloudEvents.control_action_failed(
+          spec.name,
+          spec.version,
+          lattice_id,
+          "#{orig_command.cmd}",
+          "NATS API request timeout"
+        )
+        |> Wadm.Deployments.CloudEvents.publish()
+
         Logger.error("Timeout occurred attempting to make lattice control interface request")
     end
   end
