@@ -7,6 +7,7 @@ defmodule Wadm.Api.ApiServer do
   require Logger
   use Gnat.Server
   alias Wadm.Model.Store
+  import Wadm.Deployments.CloudEvents
 
   def request(%{topic: topic, body: body}) do
     topic
@@ -30,6 +31,8 @@ defmodule Wadm.Api.ApiServer do
 
         case Horde.DynamicSupervisor.terminate_child(Wadm.HordeSupervisor, monitor) do
           :ok ->
+            spec = Wadm.Deployments.DeploymentMonitor.get_spec(monitor)
+            model_undeployed(model_name, lattice_id, spec.version) |> publish()
             {:reply, success_result(%{})}
 
           e ->
@@ -132,6 +135,8 @@ defmodule Wadm.Api.ApiServer do
       else
         case Wadm.Model.Store.put_model_version(:model_store, body, vetted, lattice_id) do
           :ok ->
+            model_version_created(vetted.name, vetted.version, lattice_id) |> publish()
+
             {:reply,
              success_result(%{
                current_version: vetted.version,
@@ -196,6 +201,7 @@ defmodule Wadm.Api.ApiServer do
              lattice_id
            ) do
         :ok ->
+          model_version_deleted(model_name, vclean(version), lattice_id) |> publish()
           {:reply, success_result(%{version: vclean(version)})}
 
         {:error, e} ->
@@ -242,7 +248,10 @@ defmodule Wadm.Api.ApiServer do
 
   defp start_deployment(model, lattice_id) do
     case Wadm.Deployments.DeploymentMonitor.start_deployment_monitor(model, lattice_id) do
-      {:ok, _pid} ->
+      {:ok, pid} ->
+        spec = Wadm.Deployments.DeploymentMonitor.get_spec(pid)
+        model_deployed(model, lattice_id, spec.version) |> publish()
+
         {:reply, success_result(%{acknowledged: true})}
 
       {:error, e} ->
