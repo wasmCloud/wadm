@@ -12,3 +12,9 @@ You will need the following on your machine in order to run wadm:
 * Elixir v1.13 and OTP 25
 
 You will also want a version of `wash` that is new enough to support the `app` subset of commands for interacting with the wadm API.
+
+## To Release
+Ensure you have the Elixir/OTP prerequisite above, then run the following command to create a [mix release](https://hexdocs.pm/mix/1.13/Mix.Tasks.Release.html) of `wadm`:
+```shell
+MIX_ENV=prod mix do deps.get, compile, release wadm
+```
