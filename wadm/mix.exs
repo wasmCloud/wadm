@@ -9,9 +9,9 @@ defmodule Wadm.MixProject do
       start_permanent: Mix.env() == :prod,
       elixirc_paths: compiler_paths(Mix.env()),
       deps: deps(),
-			releases: [
-				wadm: [],
-			]
+      releases: [
+        wadm: [],
+      ]
     ]
   end
 
