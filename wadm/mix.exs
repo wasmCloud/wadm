@@ -8,7 +8,10 @@ defmodule Wadm.MixProject do
       elixir: "~> 1.13",
       start_permanent: Mix.env() == :prod,
       elixirc_paths: compiler_paths(Mix.env()),
-      deps: deps()
+      deps: deps(),
+      releases: [
+        wadm: [],
+      ]
     ]
   end
 
