@@ -28,10 +28,10 @@ defmodule Wadm.Api.ApiServer do
         {:reply, success_result(%{})}
       else
         Logger.debug("Stopping deployment monitor: #{model_name}")
+        spec = Wadm.Deployments.DeploymentMonitor.get_spec(monitor)
 
         case Horde.DynamicSupervisor.terminate_child(Wadm.HordeSupervisor, monitor) do
           :ok ->
-            spec = Wadm.Deployments.DeploymentMonitor.get_spec(monitor)
             model_undeployed(model_name, lattice_id, spec.version) |> publish()
             {:reply, success_result(%{})}
 
