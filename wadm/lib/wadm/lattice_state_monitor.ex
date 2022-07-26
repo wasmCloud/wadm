@@ -59,8 +59,8 @@ defmodule Wadm.LatticeStateMonitor do
     {:noreply, nlattice}
   end
 
-  # Determine if the old and new states are _meaningfully_ different. We can't
-  # use the root lattice because that maintains "last seen" timestamps on hosts, etc
+  # Determine if the old and new states are _meaningfully_ different. Changes in
+  # hosts, actors, providers, or linkdefs deserve a reconcilation attempt
   defp state_changed?(new_lattice, old_lattice) do
     old_hosts = old_lattice.hosts |> Map.keys() |> Enum.sort()
     new_hosts = new_lattice.hosts |> Map.keys() |> Enum.sort()

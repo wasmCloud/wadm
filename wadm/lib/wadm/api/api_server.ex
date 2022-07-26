@@ -213,6 +213,10 @@ defmodule Wadm.Api.ApiServer do
     end
   end
 
+  defp handle_request(_, _body) do
+    {:reply, fail_result("Received unexpected API request")}
+  end
+
   defp success_result(payload) do
     %{
       result: "success",
