@@ -10,7 +10,7 @@ on:
 jobs:
   create-mix-release:
     # Run on tag push or on manual dispatch. Release will not be created for manual dispatch
-    # if: ${{ startswith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' }}
+    if: ${{ startswith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' }}
     name: Build application release tarball
     strategy:
       fail-fast: false
@@ -86,7 +86,7 @@ jobs:
           path: ${{env.working-directory}}/${{ matrix.release-tarball-filename }}
 
   release-docker:
-    # if: startswith(github.ref, 'refs/tags/') # Only run on tag push
+    if: startswith(github.ref, 'refs/tags/') # Only run on tag push
     name: Release Linux Docker Image
     runs-on: ubuntu-latest
     env:
@@ -126,8 +126,7 @@ jobs:
         with:
           context: wadm/.
           builder: ${{ steps.buildx-builder.outputs.name }}
-          #TODO: PLEASE FOR THE LOVE OF GOD CHANGE IT BACK
-          push: false
+          push: true
           file: ${{env.working-directory}}/Dockerfile
           platforms: linux/amd64,linux/arm64
           tags: |
