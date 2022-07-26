@@ -1,3 +1,4 @@
+![wadm logo](./wadm.png)
 # wasmCloud Application Deployment Manager (wadm) ![deploy jenkins](./deployjenkins.png)
 
 The wasmCloud Application Deployment Manager (**wadm**) was created in response to [this RFC](https://github.com/wasmCloud/wasmcloud-otp/issues/177). When deployed into a lattice, it is capable of managing a set of application deployment specifications, monitoring the current state of an entire lattice, and issuing the appropriate lattice control commands required to close the gap between observed and desired state.
