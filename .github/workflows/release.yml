@@ -52,6 +52,7 @@ jobs:
           mix local.hex --force
 
       - name: Retrieve Mix Dependencies Cache
+        if: ${{ !startswith(matrix.os, 'windows') }}
         uses: actions/cache@v2
         id: mix-cache #id to use in retrieve action
         with:
@@ -123,7 +124,7 @@ jobs:
       - name: Build and release docker image
         uses: docker/build-push-action@v2
         with:
-          context: .
+          context: wadm/.
           builder: ${{ steps.buildx-builder.outputs.name }}
           #TODO: PLEASE FOR THE LOVE OF GOD CHANGE IT BACK
           push: false
