@@ -10,7 +10,7 @@ defmodule Wadm.MixProject do
       elixirc_paths: compiler_paths(Mix.env()),
       deps: deps(),
       releases: [
-        wadm: [],
+        wadm: []
       ]
     ]
   end
