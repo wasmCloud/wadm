@@ -28,10 +28,10 @@ defmodule Wadm.Api.ApiServer do
         {:reply, success_result(%{})}
       else
         Logger.debug("Stopping deployment monitor: #{model_name}")
+        spec = Wadm.Deployments.DeploymentMonitor.get_spec(monitor)
 
         case Horde.DynamicSupervisor.terminate_child(Wadm.HordeSupervisor, monitor) do
           :ok ->
-            spec = Wadm.Deployments.DeploymentMonitor.get_spec(monitor)
             model_undeployed(model_name, lattice_id, spec.version) |> publish()
             {:reply, success_result(%{})}
 
@@ -211,6 +211,10 @@ defmodule Wadm.Api.ApiServer do
       e ->
         {:reply, fail_result("Failed to delete model version: #{inspect(e)}")}
     end
+  end
+
+  defp handle_request(_, _body) do
+    {:reply, fail_result("Received unexpected API request")}
   end
 
   defp success_result(payload) do

@@ -32,10 +32,11 @@ defmodule Wadm.Deployments.DeploymentMonitor do
     @type t() :: %__MODULE__{
             spec: Map.t(),
             lattice_id: String.t(),
-            recon_state: Wadm.Deployments.DeploymentMonitor.reconstate()
+            recon_state: Wadm.Deployments.DeploymentMonitor.reconstate(),
+            needs_reconciliation: boolean()
           }
 
-    defstruct [:spec, :lattice_id, :recon_state]
+    defstruct [:spec, :lattice_id, :recon_state, :needs_reconciliation]
   end
 
   @spec start_link(Map.t()) :: GenServer.on_start()
@@ -65,7 +66,8 @@ defmodule Wadm.Deployments.DeploymentMonitor do
      %State{
        spec: opts.app_spec,
        lattice_id: opts.lattice_id,
-       recon_state: :initializing
+       recon_state: :initializing,
+       needs_reconciliation: false
      }, {:continue, :ensure_lattice_supervisor}}
   end
 
@@ -82,13 +84,26 @@ defmodule Wadm.Deployments.DeploymentMonitor do
     # Make sure that there's a lattice supervisor running
     {:ok, _pid} = Wadm.LatticeSupervisor.start_lattice_supervisor(state.lattice_id)
 
-    Process.send_after(self(), :reconcile_initializing, 45_000)
-
+    Process.send_after(self(), :host_ping, 5_000)
     {:noreply, state}
   end
 
   @impl true
-  def handle_info(:remove_backoff, state) do
+  def handle_info(:host_ping, state) do
+    if Gnat.pub(
+         String.to_atom(state.lattice_id),
+         "wasmbus.ctl.#{state.lattice_id}.ping.hosts",
+         ""
+       ) != :ok do
+      Logger.warn("Could not initiate host ping, first reconcilation pass may fail")
+    end
+
+    Process.send_after(self(), :reconcile_initializing, 5_000)
+    {:noreply, state}
+  end
+
+  @impl true
+  def handle_info(:backoff_if_reconciled, state) do
     Wadm.Deployments.CloudEvents.deployment_state_changed(
       state.spec.name,
       state.spec.version,
@@ -97,7 +112,24 @@ defmodule Wadm.Deployments.DeploymentMonitor do
     )
     |> Wadm.Deployments.CloudEvents.publish()
 
-    {:noreply, %State{state | recon_state: :idle}}
+    # This is a naive way of ensuring that events that occur during reconciliation
+    # and change the lattice aren't handled immediately, but also aren't ignored.
+    if state.needs_reconciliation do
+      pid = Wadm.LatticeStateMonitor.get_process(state.lattice_id)
+      lattice = Wadm.LatticeStateMonitor.get_state(pid)
+
+      case do_reconcile(state.spec, lattice) do
+        # Changes to the lattice did not result in any actions, transition to idle
+        {0, 0} ->
+          {:noreply, %State{state | recon_state: :idle, needs_reconciliation: false}}
+
+        # Changes to the lattice did require actions, return to reconciling
+        {_, _} ->
+          {:noreply, %State{state | recon_state: :reconciling, needs_reconciliation: false}}
+      end
+    else
+      {:noreply, %State{state | recon_state: :idle, needs_reconciliation: false}}
+    end
   end
 
   @impl true
@@ -105,9 +137,10 @@ defmodule Wadm.Deployments.DeploymentMonitor do
     # TODO - deal with error state
     if state.recon_state == :initializing do
       pid = Wadm.LatticeStateMonitor.get_process(state.lattice_id)
+      lattice = Wadm.LatticeStateMonitor.get_state(pid)
 
       if pid != nil do
-        {cmd_count, error_count} = do_reconcile(state.spec, state.lattice_id)
+        {cmd_count, error_count} = do_reconcile(state.spec, lattice)
 
         # TODO - when we have a discrete error state we should enumerate each of
         # these reconciliation failures and make them available as part of the
@@ -161,18 +194,30 @@ defmodule Wadm.Deployments.DeploymentMonitor do
 
   @impl true
   def handle_info({:lattice_changed, lattice, _event}, state) do
-    # in backoff/cooldown mode, incoming events have no effect
-    if state.recon_state == :reconciling do
-      {:noreply, state}
-    else
-      Logger.debug(
-        "Deployment monitor #{state.spec.name} handling state change for lattice #{lattice.id}"
-      )
+    case state.recon_state do
+      # in backoff/cooldown mode, incoming events have no effect but will trigger
+      # a check after cooling off
+      :reconciling ->
+        {:noreply, %State{state | needs_reconciliation: true}}
 
-      # TODO make use of the error state
-      _ = do_reconcile(state.spec, lattice)
+      # state monitor is still initializing and building state
+      :initializing ->
+        {:noreply, state}
 
-      {:noreply, %State{state | recon_state: :reconciling}}
+      :idle ->
+        Logger.debug(
+          "Deployment monitor #{state.spec.name} handling state change for lattice #{lattice.id}"
+        )
+
+        # TODO make use of the error state
+        case do_reconcile(state.spec, lattice) do
+          # If no control actions are taken, stay in idle
+          {0, 0} ->
+            {:noreply, %State{state | recon_state: :idle}}
+
+          {_, _} ->
+            {:noreply, %State{state | recon_state: :reconciling}}
+        end
     end
   end
 
@@ -181,12 +226,15 @@ defmodule Wadm.Deployments.DeploymentMonitor do
       Wadm.Reconciler.AppSpec.reconcile(spec, lattice)
       |> Enum.split_with(fn command -> command.cmd == :no_action || command.cmd == :error end)
 
-    errors = skips |> Enum.filter(fn command -> command.cmd == :error end)
+    errors =
+      skips
+      |> Enum.filter(fn command -> command.cmd == :error end)
+      |> Enum.map(fn err -> err.reason end)
 
     if length(errors) > 0 do
       # TODO - once we move past the naive reconciliation strategy, we might want a
       # discrete error/failed state
-      Logger.error("Failed to perform reconciliation pass: #{errors |> Enum.join(",")}")
+      Logger.error("Failed to perform reconciliation pass: #{errors |> Enum.join(",\n")}")
     end
 
     Logger.debug("Reconciliation found #{length(skips)} no-ops and #{length(cmds)} commands")
@@ -200,7 +248,7 @@ defmodule Wadm.Deployments.DeploymentMonitor do
 
     # even if we had a failure in the command list, back off so that we don't attempt
     # to re-reconcile for another 45 seconds
-    Process.send_after(self(), :remove_backoff, 45_000)
+    Process.send_after(self(), :backoff_if_reconciled, 45_000)
 
     {length(cmds), length(errors)}
   end
