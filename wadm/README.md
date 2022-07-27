@@ -18,3 +18,8 @@ Ensure you have the Elixir/OTP prerequisite above, then run the following comman
 ```shell
 MIX_ENV=prod mix do deps.get, compile, release wadm
 ```
+
+If you'd prefer to create a mix release with `Docker`, you can do the following:
+```shell
+docker build -t wadm:latest .
+```
