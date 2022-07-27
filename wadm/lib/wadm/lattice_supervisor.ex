@@ -53,6 +53,7 @@ defmodule Wadm.LatticeSupervisor do
     Logger.info("Starting lattice supervisor for #{supervised_lattice_id}")
     lattice_id = String.to_atom(supervised_lattice_id)
 
+    config = Wadm.Supervisor.get_config()
     # TODO
     # get NATS configuration and credentials from secret store based on
     # the lattice ID
@@ -60,7 +61,7 @@ defmodule Wadm.LatticeSupervisor do
       name: lattice_id,
       backoff_period: 2000,
       connection_settings: [
-        %{host: "127.0.0.1", port: 4222}
+        %{host: config.nats.api_host, port: config.nats.api_port |> parse_nats_port()}
       ]
     }
 
@@ -98,4 +99,10 @@ defmodule Wadm.LatticeSupervisor do
       [] -> nil
     end
   end
+
+  # Helper function to parse a port number from a string or a number
+  defp parse_nats_port(num) when is_binary(num), do: num |> String.to_integer()
+  defp parse_nats_port(num) when is_integer(num), do: num
+  # Fallback to default
+  defp parse_nats_port(_num), do: 4222
 end
