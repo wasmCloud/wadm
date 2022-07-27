@@ -12,7 +12,10 @@ defmodule Wadm.Supervisor do
 
     topologies = [
       wadmcluster: [
-        strategy: Cluster.Strategy.Gossip
+        strategy: Cluster.Strategy.Gossip,
+        config: [
+          port: config.cluster.gossip_port |> parse_gossip_port()
+        ]
       ]
     ]
 
@@ -52,4 +55,10 @@ defmodule Wadm.Supervisor do
       _ -> nil
     end
   end
+
+  # Helper function to parse a port number from a string or a number
+  defp parse_gossip_port(num) when is_binary(num), do: num |> String.to_integer()
+  defp parse_gossip_port(num) when is_integer(num), do: num
+  # Fallback to default
+  defp parse_gossip_port(_num), do: 45892
 end
