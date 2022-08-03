@@ -57,13 +57,7 @@ defmodule Wadm.LatticeSupervisor do
     # TODO
     # get NATS configuration and credentials from secret store based on
     # the lattice ID
-    gnat_supervisor_settings = %{
-      name: lattice_id,
-      backoff_period: 2000,
-      connection_settings: [
-        %{host: config.nats.api_host, port: config.nats.api_port |> parse_nats_port()}
-      ]
-    }
+    gnat_supervisor_settings = get_gnat_supervisor_settings(lattice_id, config)
 
     children = [
       Supervisor.child_spec(
@@ -98,6 +92,63 @@ defmodule Wadm.LatticeSupervisor do
       [{pid, _val}] -> pid
       [] -> nil
     end
+  end
+
+  defp get_gnat_supervisor_settings(lattice_id, config) do
+    if String.length(config.secrets.vault_token) == 0 do
+      Logger.info("Using default NATS connection for lattice '#{lattice_id}")
+      default_connection(lattice_id, config)
+    else
+      vault_path =
+        (config.secrets.vault_path_template || "nats/creds/%l")
+        |> String.replace("%l", Atom.to_string(lattice_id))
+
+      client =
+        Vault.new(
+          engine: Vault.Engine.KVV2,
+          auth: Vault.Auth.Token,
+          json: Jason,
+          http: Vault.HTTP.Tesla,
+          http_options: [adapter: Tesla.Adapter.Hackney],
+          token: config.secrets.vault_token,
+          host: config.secrets.vault_addr
+        )
+
+      with {:ok, %{"jwt" => jwt, "nkey_seed" => seed}} <- Vault.read(client, vault_path) do
+        Logger.info("Using credentials from vault path #{vault_path} for lattice #{lattice_id}")
+
+        %{
+          name: lattice_id,
+          backoff_period: 2000,
+          connection_settings: [
+            %{
+              host: config.nats.api_host,
+              port: config.nats.api_port |> parse_nats_port(),
+              jwt: jwt,
+              nkey_seed: seed,
+              auth_required: true
+            }
+          ]
+        }
+      else
+        e ->
+          Logger.error(
+            "Failed to read secret from vault: #{inspect(e)}. Using default NATS connection"
+          )
+
+          default_connection(lattice_id, config)
+      end
+    end
+  end
+
+  defp default_connection(lattice_id, config) do
+    %{
+      name: lattice_id,
+      backoff_period: 2000,
+      connection_settings: [
+        %{host: config.nats.api_host, port: config.nats.api_port |> parse_nats_port()}
+      ]
+    }
   end
 
   # Helper function to parse a port number from a string or a number
