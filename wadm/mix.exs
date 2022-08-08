@@ -33,6 +33,9 @@ defmodule Wadm.MixProject do
       {:redix, "~> 1.1"},
       {:erlavro, "~> 2.9", manager: :rebar3, override: true},
       {:phoenix_pubsub, "~> 2.1"},
+      {:libvault, "~> 0.2.3"},
+      {:tesla, "~> 1.4.4"},
+      {:hackney, "~> 1.17"},
       {:lattice_observer, git: "https://github.com/wasmcloud/lattice-observer"},
       {:vapor, git: "https://github.com/autodidaddict/vapor"}
     ]

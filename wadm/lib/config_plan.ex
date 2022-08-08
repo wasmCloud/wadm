@@ -21,4 +21,11 @@ defmodule Wadm.ConfigPlan do
          env([
            {:host, "WADM_REDIS_HOST", default: "localhost"}
          ])
+
+  config :secrets,
+         env([
+           {:vault_token, "WADM_VAULT_TOKEN", default: ""},
+           {:vault_addr, "WADM_VAULT_ADDR", default: "http://127.0.0.1:8200"},
+           {:vault_path_template, "WADM_VAULT_PATH_TEMPLATE", default: ""}
+         ])
 end
