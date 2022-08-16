@@ -41,15 +41,19 @@ defmodule Wadm.Reconciler.Traits do
 
         :error ->
           [
-            Command.new(:put_linkdef, "", %{
-              ld: %Observed.LinkDefinition{
-                actor_id: actor_id,
-                provider_id: provider_id,
-                contract_id: cap.contract,
-                link_name: cap.link_name,
-                values: ld.values
+            Command.new(
+              :put_linkdef,
+              "Link definition has known source, target, and does not exist",
+              %{
+                ld: %Observed.LinkDefinition{
+                  actor_id: actor_id,
+                  provider_id: provider_id,
+                  contract_id: cap.contract,
+                  link_name: cap.link_name,
+                  values: ld.values
+                }
               }
-            })
+            )
           ]
       end
     else
