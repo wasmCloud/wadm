@@ -111,7 +111,7 @@ defmodule WadmTest.Reconciler.LinkdefsTest do
                      values: %{"foo" => "bar"}
                    }
                  },
-                 reason: ""
+                 reason: "Link definition has known source, target, and does not exist"
                }
              ]
     end
