@@ -98,7 +98,7 @@ defmodule Wadm.Deployments.DeploymentMonitor do
          ""
        ) != :ok do
       Logger.warning(
-        "Failed to pings, first reconcilation pass may fail without proper host information"
+        "Failed to ping hosts, first reconcilation pass may fail without proper host information"
       )
     end
 
@@ -205,7 +205,7 @@ defmodule Wadm.Deployments.DeploymentMonitor do
       # without side effects.
       # Other events have no effect but will trigger a check after cooling off
       :reconciling ->
-        case reconcile_actions(state.spec, lattice) do
+        case actions_to_reconcile(state.spec, lattice) do
           {cmds, _skip, _err} ->
             case Enum.filter(cmds, fn %Wadm.Reconciler.Command{cmd: cmd} ->
                    cmd == :put_linkdef
@@ -243,7 +243,7 @@ defmodule Wadm.Deployments.DeploymentMonitor do
     end
   end
 
-  defp reconcile_actions(spec, lattice) do
+  defp actions_to_reconcile(spec, lattice) do
     {skips, cmds} =
       Wadm.Reconciler.AppSpec.reconcile(spec, lattice)
       |> Enum.split_with(fn command -> command.cmd == :no_action || command.cmd == :error end)
@@ -259,7 +259,7 @@ defmodule Wadm.Deployments.DeploymentMonitor do
   defp do_reconcile(spec, lattice, actions \\ nil) do
     {cmds, errors, skips} =
       if actions == nil do
-        reconcile_actions(spec, lattice)
+        actions_to_reconcile(spec, lattice)
       else
         actions
       end
