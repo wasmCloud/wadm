@@ -84,22 +84,25 @@ defmodule Wadm.Deployments.DeploymentMonitor do
     # Make sure that there's a lattice supervisor running
     {:ok, _pid} = Wadm.LatticeSupervisor.start_lattice_supervisor(state.lattice_id)
 
-    Process.send_after(self(), :host_ping, 5_000)
+    Process.send_after(self(), :host_ping, 1_000)
     {:noreply, state}
   end
 
   @impl true
   def handle_info(:host_ping, state) do
+    # We pub instead of requesting here as we don't actually need to use the host
+    # inventories here, we create lattice state based on the heartbeats that are published
     if Wadm.Nats.safe_pub(
          String.to_atom(state.lattice_id),
          "wasmbus.ctl.#{state.lattice_id}.ping.hosts",
          ""
        ) != :ok do
       Logger.warning(
-        "Timed out on host ping, first reconcilation pass may fail without proper host information"
+        "Failed to pings, first reconcilation pass may fail without proper host information"
       )
     end
 
+    # Give hosts across a lattice 5 seconds to send their inventories
     Process.send_after(self(), :reconcile_initializing, 5_000)
     {:noreply, state}
   end
@@ -213,9 +216,6 @@ defmodule Wadm.Deployments.DeploymentMonitor do
               put_cmds ->
                 do_reconcile(state.spec, lattice, {put_cmds, [], []})
             end
-
-          _ ->
-            :ok
         end
 
         # Regardless if we took action or not, we will check at the end of the
@@ -257,8 +257,6 @@ defmodule Wadm.Deployments.DeploymentMonitor do
   end
 
   defp do_reconcile(spec, lattice, actions \\ nil) do
-    # Thought: skips, ld_waits, commands
-    # skips do nothing, ld_waits instantiate a linkdef monitor, commands are executed
     {cmds, errors, skips} =
       if actions == nil do
         reconcile_actions(spec, lattice)
