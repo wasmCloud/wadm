@@ -161,7 +161,7 @@ defmodule Wadm.Model.Store do
       :ok
     else
       {:ok, [0, 0]} ->
-        Logger.warn("Attempt to remove a non-existent model version from the store")
+        Logger.warning("Attempt to remove a non-existent model version from the store")
         :ok
 
       e ->

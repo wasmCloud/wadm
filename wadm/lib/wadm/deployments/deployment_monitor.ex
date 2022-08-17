@@ -84,20 +84,25 @@ defmodule Wadm.Deployments.DeploymentMonitor do
     # Make sure that there's a lattice supervisor running
     {:ok, _pid} = Wadm.LatticeSupervisor.start_lattice_supervisor(state.lattice_id)
 
-    Process.send_after(self(), :host_ping, 5_000)
+    Process.send_after(self(), :host_ping, 1_000)
     {:noreply, state}
   end
 
   @impl true
   def handle_info(:host_ping, state) do
-    if Gnat.pub(
+    # We pub instead of requesting here as we don't actually need to use the host
+    # inventories here, we create lattice state based on the heartbeats that are published
+    if Wadm.Nats.safe_pub(
          String.to_atom(state.lattice_id),
          "wasmbus.ctl.#{state.lattice_id}.ping.hosts",
          ""
        ) != :ok do
-      Logger.warn("Could not initiate host ping, first reconcilation pass may fail")
+      Logger.warning(
+        "Failed to ping hosts, first reconcilation pass may fail without proper host information"
+      )
     end
 
+    # Give hosts across a lattice 5 seconds to send their inventories
     Process.send_after(self(), :reconcile_initializing, 5_000)
     {:noreply, state}
   end
@@ -195,9 +200,23 @@ defmodule Wadm.Deployments.DeploymentMonitor do
   @impl true
   def handle_info({:lattice_changed, lattice, _event}, state) do
     case state.recon_state do
-      # in backoff/cooldown mode, incoming events have no effect but will trigger
-      # a check after cooling off
+      # in backoff/cooldown mode, incoming events will only trigger link definitions
+      # as they are idempotent and can be applied multiple times (in the worst case)
+      # without side effects.
+      # Other events have no effect but will trigger a check after cooling off
       :reconciling ->
+        case actions_to_reconcile(state.spec, lattice) do
+          {cmds, _skip, _err} ->
+            put_cmds =
+              Enum.filter(cmds, fn %Wadm.Reconciler.Command{cmd: cmd} ->
+                cmd == :put_linkdef
+              end)
+
+            do_reconcile(state.spec, lattice, {put_cmds, [], []})
+        end
+
+        # Regardless if we took action or not, we will check at the end of the
+        # reconciliation loop for any more necessary actions
         {:noreply, %State{state | needs_reconciliation: true}}
 
       # state monitor is still initializing and building state
@@ -221,7 +240,7 @@ defmodule Wadm.Deployments.DeploymentMonitor do
     end
   end
 
-  defp do_reconcile(spec, lattice) do
+  defp actions_to_reconcile(spec, lattice) do
     {skips, cmds} =
       Wadm.Reconciler.AppSpec.reconcile(spec, lattice)
       |> Enum.split_with(fn command -> command.cmd == :no_action || command.cmd == :error end)
@@ -230,6 +249,17 @@ defmodule Wadm.Deployments.DeploymentMonitor do
       skips
       |> Enum.filter(fn command -> command.cmd == :error end)
       |> Enum.map(fn err -> err.reason end)
+
+    {cmds, errors, skips}
+  end
+
+  defp do_reconcile(spec, lattice, actions \\ nil) do
+    {cmds, errors, skips} =
+      if actions == nil do
+        actions_to_reconcile(spec, lattice)
+      else
+        actions
+      end
 
     if length(errors) > 0 do
       # TODO - once we move past the naive reconciliation strategy, we might want a
@@ -255,7 +285,7 @@ defmodule Wadm.Deployments.DeploymentMonitor do
 
   defp publish_lattice_control_command({spec, orig_command, {topic, cmd}, lattice_id}) do
     # TODO - include the command data in the params field of these event pubs
-    case Gnat.request(String.to_atom(lattice_id), topic, cmd) do
+    case Wadm.Nats.safe_req(String.to_atom(lattice_id), topic, cmd) do
       {:ok, %{body: res}} ->
         case Jason.decode(res) do
           {:ok, %{"accepted" => false, "error" => err}} ->
