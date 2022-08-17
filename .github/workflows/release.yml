@@ -34,6 +34,9 @@ jobs:
       ELIXIR_VERSION: 1.13.3
     steps:
       - uses: actions/checkout@v2
+      - name: Set up Visual Studio C++ toolchain for Windows
+        uses: ilammy/msvc-dev-cmd@v1
+        if: ${{ startswith(matrix.os, 'windows') }}
       # Install erlang/OTP and elixir
       - name: Install erlang and elixir
         if: ${{ startswith(matrix.os, 'ubuntu') || startswith(matrix.os, 'windows') }}

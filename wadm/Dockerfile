@@ -2,7 +2,7 @@ FROM elixir:1.13.3-slim as builder
 
 # Install deps
 RUN apt update && \
-    apt install git -y
+    apt install git build-essential -y
 
 # Copy source code
 COPY ./ ./
