@@ -32,7 +32,7 @@ defmodule Wadm.Api.ApiServer do
 
         case Horde.DynamicSupervisor.terminate_child(Wadm.HordeSupervisor, monitor) do
           :ok ->
-            model_undeployed(model_name, lattice_id, spec.version) |> publish()
+            model_undeployed(model_name, spec.version, lattice_id) |> publish()
             {:reply, success_result(%{})}
 
           e ->
@@ -184,7 +184,7 @@ defmodule Wadm.Api.ApiServer do
   # resources being managed by a deployment monitor should be purged.
   defp handle_request({lattice_id, "model", "del", model_name}, body) do
     with {:ok, request} <- Jason.decode(body),
-         {:ok, version} <-
+         {:ok, _model_map} <-
            Wadm.Model.Store.get_model_version(
              :model_store,
              model_name,
@@ -201,8 +201,8 @@ defmodule Wadm.Api.ApiServer do
              lattice_id
            ) do
         :ok ->
-          model_version_deleted(model_name, vclean(version), lattice_id) |> publish()
-          {:reply, success_result(%{version: vclean(version)})}
+          model_version_deleted(model_name, vclean(request["version"]), lattice_id) |> publish()
+          {:reply, success_result(%{version: vclean(request["version"])})}
 
         {:error, e} ->
           {:reply, fail_result("Failed to delete model version: #{e}")}
@@ -254,7 +254,7 @@ defmodule Wadm.Api.ApiServer do
     case Wadm.Deployments.DeploymentMonitor.start_deployment_monitor(model, lattice_id) do
       {:ok, pid} ->
         spec = Wadm.Deployments.DeploymentMonitor.get_spec(pid)
-        model_deployed(model, lattice_id, spec.version) |> publish()
+        model_deployed(spec.name, spec.version, lattice_id) |> publish()
 
         {:reply, success_result(%{acknowledged: true})}
 
