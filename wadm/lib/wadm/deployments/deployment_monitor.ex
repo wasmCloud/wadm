@@ -207,15 +207,12 @@ defmodule Wadm.Deployments.DeploymentMonitor do
       :reconciling ->
         case actions_to_reconcile(state.spec, lattice) do
           {cmds, _skip, _err} ->
-            case Enum.filter(cmds, fn %Wadm.Reconciler.Command{cmd: cmd} ->
-                   cmd == :put_linkdef
-                 end) do
-              [] ->
-                :ok
+            put_cmds =
+              Enum.filter(cmds, fn %Wadm.Reconciler.Command{cmd: cmd} ->
+                cmd == :put_linkdef
+              end)
 
-              put_cmds ->
-                do_reconcile(state.spec, lattice, {put_cmds, [], []})
-            end
+            do_reconcile(state.spec, lattice, {put_cmds, [], []})
         end
 
         # Regardless if we took action or not, we will check at the end of the

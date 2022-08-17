@@ -7,7 +7,7 @@ defmodule Wadm.Nats do
     if Process.whereis(process_name) != nil do
       Gnat.pub(process_name, topic, msg)
     else
-      Logger.warn("Publication on #{topic} aborted - connection #{process_name} is down",
+      Logger.warning("Publication on #{topic} aborted - connection #{process_name} is down",
         nats_topic: topic
       )
     end
