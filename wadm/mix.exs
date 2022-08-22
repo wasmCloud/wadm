@@ -35,8 +35,7 @@ defmodule Wadm.MixProject do
       {:libvault, "~> 0.2.3"},
       {:tesla, "~> 1.4.4"},
       {:hackney, "~> 1.17"},
-      {:lattice_observer,
-       git: "https://github.com/wasmcloud/lattice-observer", branch: "fix/cloudevents-noavro"},
+      {:lattice_observer, git: "https://github.com/wasmcloud/lattice-observer"},
       {:vapor, git: "https://github.com/autodidaddict/vapor"}
     ]
   end
