@@ -1,4 +1,4 @@
-FROM elixir:1.13.4-otp-25-alpine as builder
+FROM elixir:1.13.4-alpine as builder
 
 # Install deps
 RUN apk add git bash
