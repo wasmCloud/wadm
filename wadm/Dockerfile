@@ -1,8 +1,7 @@
-FROM elixir:1.13.3-slim as builder
+FROM elixir:1.13.4-alpine as builder
 
 # Install deps
-RUN apt update && \
-    apt install git build-essential -y
+RUN apk add git bash
 
 # Copy source code
 COPY ./ ./
@@ -15,8 +14,10 @@ RUN mix local.rebar --force && \
 RUN MIX_ENV=prod mix do deps.get, compile, release wadm
 
 # Copy release to slim container for efficiency
-FROM debian:bullseye-slim
+FROM alpine:3.16
 WORKDIR /opt/app
+# Required for the erlang VM
+RUN apk add ncurses libgcc libstdc++
 COPY --from=builder _build/prod/rel/wadm /opt/app
 
 CMD ["/opt/app/bin/wadm", "start"]
