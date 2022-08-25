@@ -5,7 +5,7 @@ defmodule Wadm.ConfigPlan do
   config :nats,
          env([
            {:api_host, "WADM_NATS_HOST", default: '127.0.0.1'},
-           {:api_port, "WADM_NATS_PORT", default: 4222},
+           {:api_port, "WADM_NATS_PORT", default: 4222, map: &String.to_integer/1},
            {:api_tls, "WADM_TLS", default: "false"},
            {:api_jwt, "WADM_USER_JWT", default: ""},
            {:api_seed, "WADM_USER_SEED", default: ""},

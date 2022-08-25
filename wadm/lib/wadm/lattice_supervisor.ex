@@ -114,7 +114,7 @@ defmodule Wadm.LatticeSupervisor do
           host: config.secrets.vault_addr
         )
 
-      with {:ok, %{"jwt" => jwt, "nkey_seed" => seed}} <- Vault.read(client, vault_path) do
+      with {:ok, %{"jwt" => jwt, "seed" => seed}} <- Vault.read(client, vault_path) do
         Logger.info("Using credentials from vault path #{vault_path} for lattice #{lattice_id}")
 
         %{
