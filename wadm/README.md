@@ -51,7 +51,7 @@ The following environment variables are used for wadm's vault integration:
 | `WADM_VAULT_ADDR` | `http://127.0.0.1:8200` | The address of the vault instance |
 | `WADM_VAULT_PATH_TEMPLATE` | `(Empty)` | A template used to define the vault path for lattice user credentials |
 
-The credentials stored within a vault secret are pushed as a JSON payload containing the fields `jwt` and `nkey_seed`. When stored properly, you can use the `vault` command line to inspect the credentials as shown below:
+The credentials stored within a vault secret are pushed as a JSON payload containing the fields `jwt` and `seed`. When stored properly, you can use the `vault` command line to inspect the credentials as shown below:
 
 ```
 $ vault kv get /secret/creds/default
