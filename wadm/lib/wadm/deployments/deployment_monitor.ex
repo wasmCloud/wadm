@@ -90,11 +90,12 @@ defmodule Wadm.Deployments.DeploymentMonitor do
 
   @impl true
   def handle_info(:host_ping, state) do
+    config = Wadm.Supervisor.get_config()
     # We pub instead of requesting here as we don't actually need to use the host
     # inventories here, we create lattice state based on the heartbeats that are published
     if Wadm.Nats.safe_pub(
          String.to_atom(state.lattice_id),
-         "wasmbus.ctl.#{state.lattice_id}.ping.hosts",
+         "#{config.nats.ctl_topic_prefix}.#{state.lattice_id}.ping.hosts",
          ""
        ) != :ok do
       Logger.warning(

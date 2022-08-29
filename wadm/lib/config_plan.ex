@@ -9,7 +9,8 @@ defmodule Wadm.ConfigPlan do
            {:api_tls, "WADM_TLS", default: "false"},
            {:api_jwt, "WADM_USER_JWT", default: ""},
            {:api_seed, "WADM_USER_SEED", default: ""},
-           {:api_backoff_period, "WADM_NATS_BACKOFF_PERIOD", default: 4_000}
+           {:api_backoff_period, "WADM_NATS_BACKOFF_PERIOD", default: 4_000},
+           {:ctl_topic_prefix, "WADM_CTL_TOPIC_PREFIX", default: "wasmbus.ctl"}
          ])
 
   config :cluster,

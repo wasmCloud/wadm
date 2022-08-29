@@ -33,7 +33,7 @@ defmodule Wadm.Reconciler.Command do
         }
       ) do
     {
-      "wasmbus.ctl.#{lattice_id}.linkdefs.put",
+      "#{ctl_topic_prefix()}.#{lattice_id}.linkdefs.put",
       %{
         actor_id: linkdef.actor_id,
         provider_id: linkdef.provider_id,
@@ -63,7 +63,7 @@ defmodule Wadm.Reconciler.Command do
         }
       ) do
     {
-      "wasmbus.ctl.#{lattice_id}.cmd.#{host_id}.lp",
+      "#{ctl_topic_prefix()}.#{lattice_id}.cmd.#{host_id}.lp",
       %{
         host_id: host_id,
         provider_ref: image,
@@ -86,7 +86,7 @@ defmodule Wadm.Reconciler.Command do
         }
       ) do
     {
-      "wasmbus.ctl.#{lattice_id}.cmd.#{host_id}.la",
+      "#{ctl_topic_prefix()}.#{lattice_id}.cmd.#{host_id}.la",
       %{
         count: 1,
         actor_ref: image,
@@ -112,7 +112,7 @@ defmodule Wadm.Reconciler.Command do
         }
       ) do
     {
-      "wasmbus.ctl.#{lattice_id}.cmd.#{host_id}.sp",
+      "#{ctl_topic_prefix()}.#{lattice_id}.cmd.#{host_id}.sp",
       %{
         host_id: host_id,
         provider_ref: id,
@@ -137,7 +137,7 @@ defmodule Wadm.Reconciler.Command do
         }
       ) do
     {
-      "wasmbus.ctl.#{lattice_id}.cmd.#{host_id}.sa",
+      "#{ctl_topic_prefix()}.#{lattice_id}.cmd.#{host_id}.sa",
       %{
         actor_ref: id,
         count: 1,
@@ -155,5 +155,9 @@ defmodule Wadm.Reconciler.Command do
 
   defp encode(raw) do
     raw |> Jason.encode!() |> IO.iodata_to_binary()
+  end
+
+  defp ctl_topic_prefix() do
+    Wadm.Supervisor.get_config().nats.ctl_topic_prefix
   end
 end
