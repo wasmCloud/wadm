@@ -12,7 +12,14 @@ defmodule Wadm.Reconciler.AppSpec do
     |> List.flatten()
   end
 
-  def matching_hosts(actual = %LatticeObserver.Observed.Lattice{}, requirements = %{}) do
+  # Matches all hosts when no requirements are specified (or empty requirements)
+  def matching_hosts(actual = %LatticeObserver.Observed.Lattice{}, requirements)
+      when requirements == %{} or requirements == nil do
+    actual.hosts
+    |> Enum.map(fn {host_id, _host} -> host_id end)
+  end
+
+  def matching_hosts(actual = %LatticeObserver.Observed.Lattice{}, requirements) do
     actual.hosts
     |> Enum.filter(fn {_host_id, host} -> subset?(requirements, host.labels) end)
     |> Enum.map(fn {host_id, _host} -> host_id end)
