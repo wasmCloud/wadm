@@ -1,6 +1,7 @@
 defmodule Wadm.Model.Decoder do
   @capability_component_type "capability"
   @actor_component_type "actor"
+  @default_weight 100
 
   require Logger
 
@@ -185,6 +186,27 @@ defmodule Wadm.Model.Decoder do
   end
 
   defp trait_from_map(%{
+         "type" => "spreadscaler",
+         "properties" => %{
+           "replicas" => replicas
+         }
+       }) do
+    case target_from_map(%{"name" => "default"}) do
+      {:ok, target} ->
+        {:ok,
+         %SpreadScaler{
+           replicas: replicas,
+           spread: [
+             target
+           ]
+         }}
+
+      {:error, e} ->
+        {:error, e}
+    end
+  end
+
+  defp trait_from_map(%{
          "type" => "linkdef",
          "properties" => %{
            "target" => target,
@@ -209,11 +231,7 @@ defmodule Wadm.Model.Decoder do
          } = map
        )
        when is_map(requirements) do
-    weight =
-      case map["weight"] do
-        nil -> 100
-        w -> w
-      end
+    weight = get_weight(map["weight"])
 
     {:ok,
      %WeightedTarget{
@@ -223,7 +241,23 @@ defmodule Wadm.Model.Decoder do
      }}
   end
 
+  defp target_from_map(
+         %{
+           "name" => name
+         } = map
+       ) do
+    {:ok,
+     %WeightedTarget{
+       name: name,
+       requirements: nil,
+       weight: get_weight(map["weight"])
+     }}
+  end
+
   defp target_from_map(%{}) do
     {:error, "Unable to decode weighted target from spread specification"}
   end
+
+  defp get_weight(weight) when is_integer(weight), do: weight
+  defp get_weight(_), do: @default_weight
 end
