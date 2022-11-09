@@ -4,7 +4,7 @@ defmodule Wadm.MixProject do
   def project do
     [
       app: :wadm,
-      version: "0.3.0",
+      version: "0.3.1",
       elixir: "~> 1.13",
       start_permanent: Mix.env() == :prod,
       elixirc_paths: compiler_paths(Mix.env()),
