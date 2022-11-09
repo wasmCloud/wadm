@@ -70,6 +70,8 @@ defmodule Wadm.LatticeSupervisor do
            connection_name: lattice_id,
            module: Wadm.LatticeEventListener,
            subscription_topics: [
+             %{topic: "*.wasmbus.rpcevt.*", queue_group: "wadmevtmon"},
+             %{topic: "wasmbus.rpcevt.*", queue_group: "wadmevtmon"},
              %{topic: "*.wasmbus.evt.*", queue_group: "wadmevtmon"},
              %{topic: "wasmbus.evt.*", queue_group: "wadmevtmon"}
            ]
