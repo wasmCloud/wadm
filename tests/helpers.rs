@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use tokio::process::Command;
 
 const WASHBOARD_URL: &str = "localhost:4000";
