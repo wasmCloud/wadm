@@ -11,6 +11,7 @@ use tracing::{error, warn};
 
 mod commands;
 mod events;
+pub mod manager;
 
 pub use commands::*;
 pub use events::*;
@@ -143,4 +144,16 @@ impl<T: Debug> Debug for ScopedMessage<T> {
             .field("inner", &self.inner)
             .finish()
     }
+}
+
+/// A helper trait to allow for constructing any consumer
+#[async_trait::async_trait]
+pub trait CreateConsumer {
+    type Output: Unpin;
+
+    /// Create a type of the specified `Output`
+    async fn create(
+        stream: async_nats::jetstream::stream::Stream,
+        topic: &str,
+    ) -> Result<Self::Output, NatsError>;
 }

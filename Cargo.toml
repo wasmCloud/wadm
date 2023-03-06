@@ -10,6 +10,7 @@ cli = ["clap", "tracing-opentelemetry", "tracing-subscriber", "opentelemetry", "
 [dependencies]
 anyhow = "1"
 async-nats = "0.27"
+async-trait = "0.1"
 atty = { version = "0.2", optional = true }
 clap = { version = "4", features = ["derive", "cargo", "env"], optional = true }
 cloudevents-sdk = "0.7"

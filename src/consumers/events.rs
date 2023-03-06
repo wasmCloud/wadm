@@ -15,7 +15,7 @@ use async_nats::{
 use futures::{Stream, TryStreamExt};
 use tracing::{error, warn};
 
-use super::ScopedMessage;
+use super::{CreateConsumer, ScopedMessage};
 use crate::events::*;
 
 /// The name of the durable NATS stream and consumer that contains incoming lattice events
@@ -45,18 +45,6 @@ impl EventConsumer {
 
         // Safety: We can unwrap here because we already checked that we got 3 items on the split above
         let lattice_id = topic.rsplit_once('.').unwrap().1.to_owned();
-
-        // let stream = js_context.get_or_create_stream(Config {
-        //     name: EVENTS_CONSUMER_NAME.to_owned(),
-        //     description: Some("A stream that stores all events coming in on the wasmbus.evt topics in a cluster".to_string()),
-        //     num_replicas: 1,
-        //     retention: async_nats::jetstream::stream::RetentionPolicy::WorkQueue,
-        //     subjects,
-        //     max_age: DEFAULT_EXPIRY_TIME,
-        //     storage: async_nats::jetstream::stream::StorageType::File,
-        //     allow_rollup: false,
-        //     ..Default::default()
-        // }).await?;
 
         let consumer_name = format!("{EVENTS_CONSUMER_PREFIX}_{lattice_id}");
         let consumer = stream
@@ -148,5 +136,17 @@ impl Stream for EventConsumer {
             }
             Poll::Pending => Poll::Pending,
         }
+    }
+}
+
+#[async_trait::async_trait]
+impl CreateConsumer for EventConsumer {
+    type Output = EventConsumer;
+
+    async fn create(
+        stream: async_nats::jetstream::stream::Stream,
+        topic: &str,
+    ) -> Result<Self::Output, NatsError> {
+        EventConsumer::new(stream, topic).await
     }
 }
