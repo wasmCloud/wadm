@@ -49,7 +49,7 @@ pub struct ActorClaims {
     pub version: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize, Default, Eq, PartialEq, Clone)]
 pub struct Linkdef {
     // TODO: parse as an nkey?
     pub actor_id: String,

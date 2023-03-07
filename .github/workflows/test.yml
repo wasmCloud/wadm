@@ -1,0 +1,51 @@
+name: Test Wadm (v0.4)
+
+on:
+  pull_request:
+    branches: [ wadm_0.4 ]
+
+jobs:
+  test:
+    name: Test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ ubuntu-22.04 ]
+        nats_version: [ 2.9.15 ]
+
+    services:
+      nats:
+        image: ${{ matrix.nats_version }}-alpine
+        env:
+          JETSTREAM: ""
+
+    steps:
+      - uses: actions/checkout@v2
+
+      # Cache: rust
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: "${{ matrix.os }}-rust-cache"
+
+      # Cache: nats-server binary
+      - name: Cache nats binary
+        id: cache-nats
+        uses: actions/cache@v3
+        env:
+          cache-name: cache-nats-binary
+        with:
+          path: /usr/bin/nats
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ matrix.nats_version }}
+
+      # Install: nats-serveer
+      - name: Install nats binary
+        if: ${{ steps.cache-nats.outputs.cache-hit != 'true' }}
+        run: |
+          curl -L https://github.com/nats-io/nats-server/releases/download/v${{ matrix.nats_version }}/nats-server-v${{ matrix.nats_version }}-linux-amd64.zip -o nats-server.zip
+          unzip nats-server.zip -d nats-server
+          sudo cp nats-server/nats-server-v${{ matrix.nats_version }}-linux-amd64/nats-server /usr/bin
+
+      # Run all integration tests
+      - name: Run integration tests
+        run: |
+          make test-int

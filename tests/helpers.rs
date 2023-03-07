@@ -17,7 +17,7 @@ impl Drop for CleanupGuard {
                         String::from_utf8_lossy(&o.stderr)
                     )
                 }
-                Err(e) => eprintln!("Error stopping wasmcloud host: {}", e),
+                Err(e) => eprintln!("Error stopping wasmcloud host: {e}"),
                 _ => (),
             }
         }
@@ -57,7 +57,7 @@ pub async fn wait_for_server(url: &str) {
         match tokio::net::TcpStream::connect(url).await {
             Ok(_) => break,
             Err(e) => {
-                eprintln!("Waiting for server {} to come up, attempt {}. Will retry in 1 second. Got error {:?}", url, wait_count, e);
+                eprintln!("Waiting for server {url} to come up, attempt {wait_count}. Will retry in 1 second. Got error {e:?}");
                 wait_count += 1;
                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             }
