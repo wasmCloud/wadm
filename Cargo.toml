@@ -3,15 +3,33 @@ name = "wadm"
 version = "0.4.0"
 edition = "2021"
 
+[features]
+default = []
+cli = ["clap", "tracing-opentelemetry", "tracing-subscriber", "opentelemetry", "opentelemetry-otlp", "atty", "uuid"]
+
 [dependencies]
+anyhow = "1"
 async-nats = "0.27"
+atty = { version = "0.2", optional = true }
+clap = { version = "4", features = ["derive", "cargo", "env"], optional = true }
+cloudevents-sdk = "0.7"
 futures = "0.3"
+# One version back to avoid clashes with 0.10 of otlp
+opentelemetry = { version = "0.17", features = ["rt-tokio"], optional = true }
+# 0.10 to avoid protoc dep
+opentelemetry-otlp = { version = "0.10", features = ["http-proto", "reqwest-client"], optional = true }
+# TODO: Actually leverage prometheus
+prometheus = { version = "0.13", optional = true }
+serde = "1"
+serde_json = "1"
+sha2 = "0.10.2"
 thiserror = "1"
 tokio = { version = "1", features = ["full"] }
 tracing = { version = "0.1", features = ["log"] }
-serde = "1"
-cloudevents-sdk = "0.6"
-serde_json = "1"
+tracing-futures = "0.2"
+tracing-opentelemetry = { version = "0.17", optional = true }
+tracing-subscriber = { version = "0.3.7", features = ["env-filter", "json"], optional = true }
+uuid = { version = "1", optional = true }
 
 [dev-dependencies]
 serial_test = "1"
@@ -19,3 +37,4 @@ serial_test = "1"
 [[bin]]
 name = "wadm"
 path = "bin/main.rs"
+required-features = ["cli"]

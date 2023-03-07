@@ -197,5 +197,18 @@
         "specversion": "1.0",
         "time": "2023-02-14T19:26:05.119347Z",
         "type": "com.wasmcloud.lattice.host_started"
+    },
+    {
+        "data": {
+            "error": "\"Failed to fetch OCI bytes: Registry error: url https://wasmcloud.azurecr.io/v2/httpserver/manifests/latest, envelope: OCI API errors: [OCI API error: manifest tagged by \\\"latest\\\" is not found]\"",
+            "link_name": "default",
+            "provider_ref": "wasmcloud.azurecr.io/httpserver"
+        },
+        "datacontenttype": "application/json",
+        "id": "5a55cf82-713a-4043-be51-ab532d1c8a4d",
+        "source": "NBPNYTVN27FQIEUI6M5L7I4MAJONGNB3E3JUZHQCMYI4JOHQKNKPN5SG",
+        "specversion": "1.0",
+        "time": "2023-03-05T00:14:53.990820Z",
+        "type": "com.wasmcloud.lattice.provider_start_failed"
     }
 ]
