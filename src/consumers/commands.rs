@@ -1,4 +1,4 @@
-//! A module for creating and consuming a stream of events from a wasmcloud lattice
+//! A module for creating and consuming a stream of commands from NATS
 
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -14,7 +14,7 @@ use async_nats::{
 use futures::{Stream, TryStreamExt};
 use tracing::{error, warn};
 
-use super::ScopedMessage;
+use super::{CreateConsumer, ScopedMessage};
 use crate::commands::*;
 
 /// The name of the durable NATS stream and consumer that contains incoming lattice events
@@ -119,5 +119,17 @@ impl Stream for CommandConsumer {
             }
             Poll::Pending => Poll::Pending,
         }
+    }
+}
+
+#[async_trait::async_trait]
+impl CreateConsumer for CommandConsumer {
+    type Output = CommandConsumer;
+
+    async fn create(
+        stream: async_nats::jetstream::stream::Stream,
+        topic: &str,
+    ) -> Result<Self::Output, NatsError> {
+        CommandConsumer::new(stream, topic).await
     }
 }
