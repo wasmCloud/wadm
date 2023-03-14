@@ -106,6 +106,7 @@ impl TryFrom<CloudEvent> for Event {
             ActorStopped::TYPE => ActorStopped::try_from(value).map(Event::ActorStopped),
             ProviderStarted::TYPE => ProviderStarted::try_from(value).map(Event::ProviderStarted),
             ProviderStopped::TYPE => ProviderStopped::try_from(value).map(Event::ProviderStopped),
+            ProviderStartFailed::TYPE => ProviderStartFailed::try_from(value).map(Event::ProviderStartFailed),
             ProviderHealthCheckPassed::TYPE => {
                 ProviderHealthCheckPassed::try_from(value).map(Event::ProviderHealthCheckPassed)
             }
