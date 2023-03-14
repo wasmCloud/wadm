@@ -39,17 +39,17 @@ endif
 # Build #
 #########
 
-lint: check-cargo-clippy
+lint: check-cargo-clippy ## Run code lint
 	$(CARGO) fmt --all --check
 	$(CARGO) clippy --all-features --all-targets --workspace
 
-lint-watch: check-cargo-clippy
+lint-watch: check-cargo-clippy ## Run code lint (continuously)
 	$(CARGO) watch -- $(MAKE) lint
 
 build: ## Build wadm
 	$(CARGO) build
 
-build-watch: check-cargo-watch ## Build wadm continuously
+build-watch: check-cargo-watch ## Build wadm (continuously)
 	$(CARGO) watch -- $(MAKE) build
 
 ########
@@ -69,16 +69,20 @@ else
 	$(CARGO) test $(CARGO_TEST_TARGET) -- --nocapture
 endif
 
-test-watch:
+test-watch: ## Run tests (continuously)
 	$(CARGO) watch -- $(MAKE) test
 
-test-int:
+test-int:: ## Run integration tests
+ifeq (,$(CARGO_TEST_TARGET))
+	$(CARGO) test -- --nocapture
+else
 	$(CARGO) test --test $(CARGO_TEST_TARGET) -- --nocapture
+endif
 
-test-int-all:
-	$(MAKE) test-int CARGO_TEST_TARGET='*'
-
-test-int-watch:
+test-int-watch: ## Run integration tests (continuously)
 	$(CARGO) watch -- $(MAKE) test-int
+
+test-int-all:: ## Run all integration tests
+	$(MAKE) test-int CARGO_TEST_TARGET='*'
 
 .PHONY: check-cargo-watch check-cargo-clippy lint build build-watch test test-watch test-int test-int-all test-int-watch
