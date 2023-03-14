@@ -29,7 +29,8 @@ pub async fn setup_test() -> CleanupGuard {
     // Start wasmcloud host if we don't find one running
     let already_running = if tokio::net::TcpStream::connect(WASHBOARD_URL).await.is_err() {
         let output = Command::new("wash")
-            .args(["up", "-d"])
+            // NOTE: NATS server should have been started prior (ex. via Makefile)
+            .args(["up", "-d", "--nats-connect-only"])
             .status()
             .await
             .expect("Unable to run wash up");
