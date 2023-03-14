@@ -4,6 +4,7 @@ pub mod commands;
 pub mod consumers;
 pub mod events;
 pub mod nats_utils;
+pub mod storage;
 
 /// Default amount of time events should stay in the stream. This is the 2x heartbeat interval, plus
 /// some wiggle room. Exported to make setting defaults easy

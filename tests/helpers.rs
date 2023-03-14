@@ -17,7 +17,7 @@ impl Drop for CleanupGuard {
                         String::from_utf8_lossy(&o.stderr)
                     )
                 }
-                Err(e) => eprintln!("Error stopping wasmcloud host: {}", e),
+                Err(e) => eprintln!("Error stopping wasmcloud host: {e}"),
                 _ => (),
             }
         }
@@ -29,7 +29,8 @@ pub async fn setup_test() -> CleanupGuard {
     // Start wasmcloud host if we don't find one running
     let already_running = if tokio::net::TcpStream::connect(WASHBOARD_URL).await.is_err() {
         let output = Command::new("wash")
-            .args(["up", "-d"])
+            // NOTE: NATS server should have been started prior (ex. via Makefile)
+            .args(["up", "-d", "--nats-connect-only"])
             .status()
             .await
             .expect("Unable to run wash up");
@@ -57,7 +58,7 @@ pub async fn wait_for_server(url: &str) {
         match tokio::net::TcpStream::connect(url).await {
             Ok(_) => break,
             Err(e) => {
-                eprintln!("Waiting for server {} to come up, attempt {}. Will retry in 1 second. Got error {:?}", url, wait_count, e);
+                eprintln!("Waiting for server {url} to come up, attempt {wait_count}. Will retry in 1 second. Got error {e:?}");
                 wait_count += 1;
                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             }

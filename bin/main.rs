@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use async_nats::jetstream::{self, stream::Config, Context};
 use clap::Parser;
+use std::path::PathBuf;
 use tokio::sync::Semaphore;
 use tracing::{debug, error, trace};
 
@@ -13,7 +14,11 @@ use wadm::{
     commands::*, events::*, DEFAULT_COMMANDS_TOPIC, DEFAULT_EVENTS_TOPIC, DEFAULT_EXPIRY_TIME,
 };
 
+use wadm::storage::{NatsAuthConfig, NatsKvStorageConfig, NatsKvStorageEngine};
+
 mod logging;
+
+const DEFAULT_STORAGE_NKV_URL: &str = "localhost:4222";
 
 #[derive(Parser, Debug)]
 #[command(name = clap::crate_name!(), version = clap::crate_version!(), about = "wasmCloud Application Deployment Manager", long_about = None)]
@@ -75,6 +80,47 @@ struct Args {
         env = "WADM_MAX_JOBS"
     )]
     max_jobs: usize,
+
+    /// URL of the Nats Jetstream KV that will be used for storage
+    #[arg(long = "storage-nkv-url", env = "STORAGE_NATSKV_URL")]
+    storage_nkv_url: Option<String>,
+
+    /// Optional prefix for the server tate that will be stored.
+    /// this prefix will be prepended to the bucket name of the lattice
+    /// (ex. <prefix>_lattice_<lattice id>).
+    #[arg(
+        long = "storage-nkv-lattice-bucket-prefix",
+        env = "WADM_STORAGE_NATSKV_LATTICE_BUCKET_PREFIX"
+    )]
+    storage_nkv_lattice_bucket_prefix: Option<String>,
+
+    /// (Optional) NATS NKey authentication
+    #[arg(long = "storage-nkv-nkey", env = "WADM_STORAGE_NATSKV_NKEY")]
+    storage_nkv_nats_auth_nkey: Option<String>,
+
+    /// (Optional) NATS credential file to use when authenticating
+    #[arg(
+        long = "storage-nkv-nats-auth-creds-file",
+        env = "WADM_STORAGE_NATSKV_NATS_AUTH_CREDS_FILE",
+        conflicts_with = "storage_nkv_nats_auth_jwt_seed"
+    )]
+    storage_nkv_nats_auth_creds_file: Option<String>,
+
+    /// (Optional) NATS JWT seed to use when authenticating
+    #[arg(
+        long = "storage-nkv-nats-auth-jwt-seed",
+        env = "WADM_STORAGE_NATSKV_NATS_AUTH_JWT_SEED",
+        conflicts_with = "storage_nkv_nats_auth_creds_file"
+    )]
+    storage_nkv_nats_auth_jwt_seed: Option<String>,
+
+    /// (Optional) NATS JWT file to use when authenticating
+    #[arg(
+        long = "storage-nkv-nats-auth-jwt-path",
+        env = "WADM_STORAGE_NATSKV_NATS_AUTH_JWT_PATH",
+        conflicts_with = "storage_nkv_nats_auth_creds_file"
+    )]
+    storage_nkv_nats_auth_jwt_path: Option<String>,
 }
 
 #[tokio::main]
@@ -86,6 +132,24 @@ async fn main() -> anyhow::Result<()> {
         args.tracing_enabled,
         args.tracing_endpoint,
     );
+
+    // Build storage adapter for lattice state (on by default)
+    let natskv_storage_config = NatsKvStorageConfig {
+        nats_url: args
+            .storage_nkv_url
+            .unwrap_or(DEFAULT_STORAGE_NKV_URL.into()),
+        lattice_bucket_prefix: args.storage_nkv_lattice_bucket_prefix,
+        auth: Some(NatsAuthConfig {
+            creds_file: args.storage_nkv_nats_auth_creds_file,
+            jwt_seed: args.storage_nkv_nats_auth_jwt_seed,
+            jwt_path: args.storage_nkv_nats_auth_jwt_path.map(PathBuf::from),
+        }),
+    };
+
+    // TODO: use the storage engine
+    let _storage = NatsKvStorageEngine::new(natskv_storage_config)
+        .await
+        .map_err(|e| anyhow::anyhow!("{e:?}"))?;
 
     // TODO: All the NATS connection options and jetstream stuff
     let client = async_nats::connect("127.0.0.1:4222").await?;
