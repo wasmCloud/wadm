@@ -15,7 +15,7 @@ jobs:
 
     services:
       nats:
-        image: ${{ matrix.nats_version }}-alpine
+        image: nats:${{ matrix.nats_version }}-alpine
         env:
           JETSTREAM: ""
 
