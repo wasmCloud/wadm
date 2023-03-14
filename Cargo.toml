@@ -36,10 +36,6 @@ nkeys = "0.2.0"
 
 [dev-dependencies]
 serial_test = "1"
-port-selector = "0.1.6"
-bollard = "0.14.0"
-random-string = "1.0.0"
-tempfile = "3.4.0"
 
 [[bin]]
 name = "wadm"

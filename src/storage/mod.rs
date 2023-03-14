@@ -20,23 +20,8 @@ pub struct WithStateMetadata<T> {
 }
 
 /////////////
-// Engines //
+// Storage //
 /////////////
-
-/// Pluggable engines can be asked for their metadata
-/// to enable generic (possibly dyn) usage
-#[async_trait]
-pub trait EngineMetadata {
-    /// Get the name of the lattice storage
-    async fn name() -> String;
-
-    /// Get the version of the lattice storage
-    async fn version() -> Version;
-}
-
-/////////////////////
-// Storage Engines //
-/////////////////////
 
 /// Errors that are related to storage engines
 #[derive(Debug, Error)]
@@ -49,10 +34,6 @@ pub enum StorageEngineError {
     #[error("Unknown error has occured")]
     Unknown,
 }
-
-/////////////
-// Storage //
-/////////////
 
 /// Errors that are related to storage
 #[derive(Debug, Error)]
@@ -81,12 +62,17 @@ pub struct StoreOptions {
 }
 
 /// A trait that indicates the ability of a struct to store state
-/// Objects that implement Store can save some given State, identifiable by StateId, and updatable with the given StateBuilder
-///
+/// Objects that implement Store can retrieve, save and delete some given State, identifiable by StateId
 #[async_trait]
 pub trait Store {
     type State;
     type StateId;
+
+    /// Get the name of the lattice storage
+    async fn name() -> String;
+
+    /// Get the version of the lattice storage
+    async fn version() -> Version;
 
     /// Get a particular piece of state
     async fn get(&self, id: Self::StateId) -> Result<WithStateMetadata<Self::State>, StorageError>;

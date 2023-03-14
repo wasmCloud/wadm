@@ -74,7 +74,7 @@ test-watch: ## Run tests (continuously)
 
 test-int:: ## Run integration tests
 ifeq (,$(CARGO_TEST_TARGET))
-	$(CARGO) test -- --nocapture
+	$(CARGO) test --test ="*" -- --nocapture
 else
 	$(CARGO) test --test $(CARGO_TEST_TARGET) -- --nocapture
 endif

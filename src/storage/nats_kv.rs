@@ -18,7 +18,7 @@ use serde::ser::StdError;
 use serde::{Deserialize, Serialize};
 use serde_json::{from_slice, to_vec, Error as SerdeJsonError};
 
-use super::{EngineMetadata, LatticeStorage, StorageEngineError, StorageError, StoreOptions};
+use super::{LatticeStorage, StorageEngineError, StorageError, StoreOptions};
 
 use super::state::LatticeState;
 
@@ -33,30 +33,23 @@ const STORAGE_ENGINE_VERSION: Version = Version {
     build: BuildMetadata::EMPTY,
 };
 
-////////////
-// Engine //
-////////////
+const LATTICE_BUCKET_STATE_KEY: &str = "state";
 
-#[derive(Debug)]
-pub struct NatsKvStorageEngine {
-    /// Configuration for the NATS KV storage engine
-    config: NatsKvStorageConfig,
-
-    /// NATS client
-    client: NatsClient,
+impl From<SerdeJsonError> for StorageError {
+    fn from(e: SerdeJsonError) -> Self {
+        StorageError::Unknown(format!("de/serialization error occurred: {e}"))
+    }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct NatsKvStorageConfig {
-    /// URL to the nats instance
-    pub nats_url: String,
-
-    /// Prefix to use with lattice buckets
-    pub lattice_bucket_prefix: Option<String>,
-
-    /// Authentication config for use with NATS
-    pub auth: Option<NatsAuthConfig>,
+impl From<Box<dyn StdError + std::marker::Send + Sync>> for StorageError {
+    fn from(e: Box<dyn StdError + std::marker::Send + Sync>) -> Self {
+        StorageError::Unknown(format!("de/serialization error occurred: {e}"))
+    }
 }
+
+//////////
+// NATS //
+//////////
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct NatsAuthConfig {
@@ -65,40 +58,7 @@ pub struct NatsAuthConfig {
     pub jwt_path: Option<PathBuf>,
 }
 
-impl From<nkeys::error::Error> for StorageEngineError {
-    fn from(err: nkeys::error::Error) -> StorageEngineError {
-        StorageEngineError::Engine(Box::new(format!("failed to process nkeys: {err}")))
-    }
-}
-
-impl From<std::io::Error> for StorageEngineError {
-    fn from(err: std::io::Error) -> StorageEngineError {
-        StorageEngineError::Engine(Box::new(format!("unexpected I/O error: {err}")))
-    }
-}
-
-/// Engine errors that can be encountered by NatsKvStorageEngine
-#[derive(Debug, thiserror::Error)]
-pub enum EngineError {
-    /// The connection to NATS could not be made
-    #[error("Faield to connect to Nats: {0}")]
-    NatsConnectionFailed(#[from] async_nats::Error),
-
-    /// An I/O error
-    #[error("I/O Error: {0}")]
-    Io(#[from] IoError),
-
-    /// A catch all error for uenxpected non-fatal errors
-    #[error("{0}")]
-    Other(String),
-}
-
-impl From<EngineError> for StorageEngineError {
-    fn from(e: EngineError) -> StorageEngineError {
-        StorageEngineError::Engine(Box::new(e))
-    }
-}
-
+/// Build NATS connection options
 async fn build_nats_options(
     cfg: &NatsAuthConfig,
 ) -> Result<NatsConnectOptions, StorageEngineError> {
@@ -136,17 +96,74 @@ async fn build_nats_options(
     }
 }
 
+////////////
+// Engine //
+////////////
+
+/// Engine errors that can be encountered by NatsKvStorageEngine
+#[derive(Debug, thiserror::Error)]
+pub enum EngineError {
+    /// The connection to NATS could not be made
+    #[error("Faield to connect to Nats: {0}")]
+    NatsConnectionFailed(#[from] async_nats::Error),
+
+    /// An I/O error
+    #[error("I/O Error: {0}")]
+    Io(#[from] IoError),
+
+    /// A catch all error for uenxpected non-fatal errors
+    #[error("{0}")]
+    Other(String),
+}
+
+impl From<EngineError> for StorageEngineError {
+    fn from(e: EngineError) -> StorageEngineError {
+        StorageEngineError::Engine(Box::new(e))
+    }
+}
+
+impl From<nkeys::error::Error> for StorageEngineError {
+    fn from(err: nkeys::error::Error) -> StorageEngineError {
+        StorageEngineError::Engine(Box::new(format!("failed to process nkeys: {err}")))
+    }
+}
+
+impl From<std::io::Error> for StorageEngineError {
+    fn from(err: std::io::Error) -> StorageEngineError {
+        StorageEngineError::Engine(Box::new(format!("unexpected I/O error: {err}")))
+    }
+}
+
+#[derive(Debug)]
+pub struct NatsKvStorageEngine {
+    /// Configuration for the NATS KV storage engine
+    config: NatsKvStorageConfig,
+
+    /// NATS client
+    client: NatsClient,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct NatsKvStorageConfig {
+    /// URL to the nats instance
+    pub nats_url: String,
+
+    /// Prefix to use with lattice buckets
+    pub lattice_bucket_prefix: Option<String>,
+
+    /// Authentication config for use with NATS
+    pub auth: Option<NatsAuthConfig>,
+}
+
 impl NatsKvStorageEngine {
     pub async fn new(
         config: NatsKvStorageConfig,
     ) -> Result<NatsKvStorageEngine, StorageEngineError> {
-        // Build NATS config
         let nats_config = match &config.auth {
             Some(ac) => build_nats_options(ac).await?,
             None => NatsConnectOptions::default(),
         };
 
-        // Connect NATS
         let client = async_nats::connect_with_options(&config.nats_url, nats_config)
             .await
             .map_err(|e| StorageEngineError::Engine(Box::new(format!("failed to connect: {e}"))))?;
@@ -246,7 +263,10 @@ impl NatsKvStorageEngine {
 }
 
 #[async_trait]
-impl EngineMetadata for NatsKvStorageEngine {
+impl Store for NatsKvStorageEngine {
+    type State = LatticeState;
+    type StateId = String;
+
     async fn name() -> String {
         String::from(STORAGE_ENGINE_NAME)
     }
@@ -254,12 +274,6 @@ impl EngineMetadata for NatsKvStorageEngine {
     async fn version() -> Version {
         STORAGE_ENGINE_VERSION
     }
-}
-
-#[async_trait]
-impl Store for NatsKvStorageEngine {
-    type State = LatticeState;
-    type StateId = String;
 
     async fn get(&self, id: String) -> Result<WithStateMetadata<LatticeState>, StorageError> {
         Ok(self.read(id).await?)
@@ -288,25 +302,3 @@ impl Store for NatsKvStorageEngine {
 }
 
 impl LatticeStorage for NatsKvStorageEngine {}
-
-/////////////////////////////
-// Storage Implementations //
-/////////////////////////////
-
-//////////////////////////
-// Store - LatticeState //
-//////////////////////////
-
-impl From<SerdeJsonError> for StorageError {
-    fn from(e: SerdeJsonError) -> Self {
-        StorageError::Unknown(format!("de/serialization error occurred: {e}"))
-    }
-}
-
-impl From<Box<dyn StdError + std::marker::Send + Sync>> for StorageError {
-    fn from(e: Box<dyn StdError + std::marker::Send + Sync>) -> Self {
-        StorageError::Unknown(format!("de/serialization error occurred: {e}"))
-    }
-}
-
-const LATTICE_BUCKET_STATE_KEY: &str = "state";
