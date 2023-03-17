@@ -106,7 +106,9 @@ impl TryFrom<CloudEvent> for Event {
             ActorStopped::TYPE => ActorStopped::try_from(value).map(Event::ActorStopped),
             ProviderStarted::TYPE => ProviderStarted::try_from(value).map(Event::ProviderStarted),
             ProviderStopped::TYPE => ProviderStopped::try_from(value).map(Event::ProviderStopped),
-            ProviderStartFailed::TYPE => ProviderStartFailed::try_from(value).map(Event::ProviderStartFailed),
+            ProviderStartFailed::TYPE => {
+                ProviderStartFailed::try_from(value).map(Event::ProviderStartFailed)
+            }
             ProviderHealthCheckPassed::TYPE => {
                 ProviderHealthCheckPassed::try_from(value).map(Event::ProviderHealthCheckPassed)
             }
@@ -191,7 +193,7 @@ pub enum ConversionError {
 // EVENTS START HERE
 //
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ActorStarted {
     pub annotations: HashMap<String, String>,
     pub api_version: usize,
@@ -205,7 +207,7 @@ pub struct ActorStarted {
 
 event_impl!(ActorStarted, "com.wasmcloud.lattice.actor_started");
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ActorStopped {
     pub instance_id: String,
     // TODO: Parse as nkey?
@@ -214,7 +216,7 @@ pub struct ActorStopped {
 
 event_impl!(ActorStopped, "com.wasmcloud.lattice.actor_stopped");
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ProviderStarted {
     pub annotations: HashMap<String, String>,
     pub claims: ProviderClaims,
@@ -229,7 +231,7 @@ pub struct ProviderStarted {
 
 event_impl!(ProviderStarted, "com.wasmcloud.lattice.provider_started");
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ProviderStartFailed {
     pub error: String,
     pub link_name: String,
@@ -241,7 +243,7 @@ event_impl!(
     "com.wasmcloud.lattice.provider_start_failed"
 );
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ProviderStopped {
     pub contract_id: String,
     // TODO: parse as UUID?
@@ -255,7 +257,7 @@ pub struct ProviderStopped {
 
 event_impl!(ProviderStopped, "com.wasmcloud.lattice.provider_stopped");
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ProviderHealthCheckPassed {
     #[serde(flatten)]
     data: ProviderHealthCheckInfo,
@@ -266,7 +268,7 @@ event_impl!(
     "com.wasmcloud.lattice.health_check_passed"
 );
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ProviderHealthCheckFailed {
     #[serde(flatten)]
     data: ProviderHealthCheckInfo,
@@ -277,7 +279,7 @@ event_impl!(
     "com.wasmcloud.lattice.health_check_failed"
 );
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct LinkdefSet {
     #[serde(flatten)]
     pub linkdef: Linkdef,
@@ -285,7 +287,7 @@ pub struct LinkdefSet {
 
 event_impl!(LinkdefSet, "com.wasmcloud.lattice.linkdef_set");
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct LinkdefDeleted {
     #[serde(flatten)]
     pub linkdef: Linkdef,
@@ -293,7 +295,7 @@ pub struct LinkdefDeleted {
 
 event_impl!(LinkdefDeleted, "com.wasmcloud.lattice.linkdef_deleted");
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct HostStarted {
     pub labels: HashMap<String, String>,
     pub friendly_name: String,
@@ -309,7 +311,7 @@ event_impl!(
     id
 );
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct HostStopped {
     pub labels: HashMap<String, String>,
     // TODO: Parse as nkey?
@@ -324,15 +326,17 @@ event_impl!(
     id
 );
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct HostHeartbeat {
     pub actors: HashMap<String, usize>,
     pub friendly_name: String,
     pub labels: HashMap<String, String>,
+    #[serde(default)]
+    pub annotations: HashMap<String, String>,
     pub providers: Vec<ProviderInfo>,
     pub uptime_human: String,
     pub uptime_seconds: usize,
-    pub version: String,
+    pub version: semver::Version,
     // TODO: Parse as nkey?
     #[serde(default)]
     pub id: String,

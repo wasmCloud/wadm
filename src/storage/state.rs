@@ -1,51 +1,19 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
+use chrono::{DateTime, Utc};
 use semver::Version;
 use serde::{Deserialize, Serialize};
 
-use crate::events::Linkdef;
-
-////////////
-// Claims //
-////////////
-
-/// A Claim that can be applied to a given lattice
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
-pub struct Claim {
-    /// Name of the claim
-    pub name: String,
-
-    /// Version of the claim (semver)
-    pub version: Version,
-
-    /// Revision of the claim
-    pub revision: usize,
-
-    /// Subscriber public (n)key
-    pub subscriber: String,
-
-    /// Issuer public (n)key
-    pub issuer: String,
-
-    /// Call alias that can be used for the claim (if present)
-    pub call_alias: Option<String>,
-
-    /// Capabilities that this claim uses
-    #[serde(rename = "caps")]
-    pub capabilities: Vec<String>,
-
-    /// Tags that have been set on the claim
-    pub tags: HashMap<String, ()>,
-}
-
-///////////////
-// Providers //
-///////////////
+use super::StateKind;
+use crate::events::{ActorStarted, HostHeartbeat, HostStarted, ProviderInfo, ProviderStarted};
 
 /// A wasmCloud Capability provider
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+// NOTE: We probably aren't going to use this _right now_ so we've kept it pretty minimal. But it is
+// possible that we could query wadm for more general data about the lattice in the future, so we do
+// want to store this
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct Provider {
-    /// ID of the provider, normally a public (n)key
+    /// ID of the provider, normally a public nkey
     pub id: String,
 
     /// Name of the provider
@@ -57,15 +25,48 @@ pub struct Provider {
     /// Contract ID
     pub contract_id: String,
 
-    /// Tags set on the provider
-    pub tags: Vec<String>,
+    /// The reference used to start the provider. Can be empty if it was started from a file
+    pub reference: String,
+
+    /// The linkname the provider was started with
+    pub link_name: String,
 }
 
-////////////
-// Actors //
-////////////
+impl StateKind for Provider {
+    const KIND: &'static str = "provider";
+}
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+impl From<ProviderStarted> for Provider {
+    fn from(value: ProviderStarted) -> Self {
+        Provider {
+            id: value.public_key,
+            name: value.claims.name,
+            issuer: value.claims.issuer,
+            contract_id: value.contract_id,
+            reference: value.image_ref,
+            link_name: value.link_name,
+        }
+    }
+}
+
+impl From<&ProviderStarted> for Provider {
+    fn from(value: &ProviderStarted) -> Self {
+        Provider {
+            id: value.public_key.clone(),
+            name: value.claims.name.clone(),
+            issuer: value.claims.issuer.clone(),
+            contract_id: value.contract_id.clone(),
+            reference: value.image_ref.clone(),
+            link_name: value.link_name.clone(),
+        }
+    }
+}
+
+/// A wasmCloud Actor
+// NOTE: We probably aren't going to use this _right now_ so we've kept it pretty minimal. But it is
+// possible that we could query wadm for more general data about the lattice in the future, so we do
+// want to store this
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct Actor {
     /// ID of the actor, normally a public (n)key
     pub id: String,
@@ -79,67 +80,141 @@ pub struct Actor {
     /// Issuer of the (signed) actor
     pub issuer: String,
 
-    /// Tags set on the provider
-    pub tags: Vec<String>,
-
     /// Call alias to use for the actor
-    pub call_alias: String,
+    pub call_alias: Option<String>,
+
+    /// The count of actors running in the lattice
+    pub count: usize,
+
+    /// The reference used to start the actor. Can be empty if it was started from a file
+    pub reference: String,
 }
 
-////////////
-// Hosts //
-////////////
+impl StateKind for Actor {
+    const KIND: &'static str = "actor";
+}
 
-/// A wasmCLoud host
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+impl From<ActorStarted> for Actor {
+    fn from(value: ActorStarted) -> Self {
+        Actor {
+            id: value.public_key,
+            name: value.claims.name,
+            capabilities: value.claims.capabilites,
+            issuer: value.claims.issuer,
+            call_alias: value.claims.call_alias,
+            count: 1,
+            reference: value.image_ref,
+        }
+    }
+}
+
+impl From<&ActorStarted> for Actor {
+    fn from(value: &ActorStarted) -> Self {
+        Actor {
+            id: value.public_key.clone(),
+            name: value.claims.name.clone(),
+            capabilities: value.claims.capabilites.clone(),
+            issuer: value.claims.issuer.clone(),
+            call_alias: value.claims.call_alias.clone(),
+            count: 1,
+            reference: value.image_ref.clone(),
+        }
+    }
+}
+
+/// A wasmCloud host
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct Host {
-    /// ID of the host
+    /// A map of actor IDs to the number of instances of the actor running on the host
+    // NOTE(thomastaylor312): If we ever start storing a _ton_ of actors and it gets slow, we might
+    // want to consider switching out the hash algorithm to something like `ahash` to speed up
+    // lookups and deserialization
+    pub actors: HashMap<String, usize>,
+
+    /// The randomly generated friendly name of the host
+    pub friendly_name: String,
+
+    /// An arbitrary hashmap of string labels attached to the host
+    pub labels: HashMap<String, String>,
+
+    /// Additional annotations that have been added to the host
+    pub annotations: HashMap<String, String>,
+
+    /// A set of running providers on the host
+    pub providers: HashSet<ProviderInfo>,
+
+    /// The current uptime of the host in seconds
+    pub uptime_seconds: usize,
+
+    /// The host version that is running
+    // NOTE(thomastaylor312): Right now a host started event doesn't emit the version, so a newly
+    // started host can't be registered with one. We should probably add that to the host started
+    // event and then modify it here
+    pub version: Option<Version>,
+
+    /// The ID of this host, in the form of its nkey encoded public key
     pub id: String,
 
-    /// Name (human-friendly) of the provider
-    pub name: String,
-
-    /// Host Uptime
-    pub uptime_seconds: u64,
-
-    /// Labels set on the provider
-    pub labels: Vec<String>,
-
-    /// Version of the host
-    pub version: Version,
+    /// The time when this host was last seen, as a RFC3339 timestamp
+    pub last_seen: DateTime<Utc>,
 }
 
-/////////////
-// Lattice //
-/////////////
-
-/// Lattice-wide parameters
-#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
-pub struct LatticeParameters {
-    host_status_decay_rate_seconds: Option<u32>,
+impl StateKind for Host {
+    const KIND: &'static str = "host";
 }
 
-/// Struct that represents lattice state
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
-pub struct LatticeState {
-    /// ID of the lattice
-    pub id: String,
+impl From<HostStarted> for Host {
+    fn from(value: HostStarted) -> Self {
+        Host {
+            friendly_name: value.friendly_name,
+            id: value.id,
+            labels: value.labels,
+            last_seen: Utc::now(),
+            ..Default::default()
+        }
+    }
+}
 
-    /// Parameters for the lattice itself
-    pub parameters: LatticeParameters,
+impl From<&HostStarted> for Host {
+    fn from(value: &HostStarted) -> Self {
+        Host {
+            friendly_name: value.friendly_name.clone(),
+            id: value.id.clone(),
+            labels: value.labels.clone(),
+            last_seen: Utc::now(),
+            ..Default::default()
+        }
+    }
+}
 
-    /// Actors that are in the lattice, keyed by actor ID
-    pub actors: HashMap<String, Actor>,
+impl From<HostHeartbeat> for Host {
+    fn from(value: HostHeartbeat) -> Self {
+        Host {
+            actors: value.actors,
+            friendly_name: value.friendly_name,
+            labels: value.labels,
+            annotations: value.annotations,
+            providers: value.providers.into_iter().collect(),
+            uptime_seconds: value.uptime_seconds,
+            version: Some(value.version),
+            id: value.id,
+            last_seen: Utc::now(),
+        }
+    }
+}
 
-    /// Hosts that are members of the lattice, keyed by host ID
-    pub hosts: HashMap<String, Host>,
-
-    /// Providers that are used by the lattice keyed by contract name and provider ID
-    pub providers: HashMap<String, HashMap<String, Provider>>,
-
-    /// Link Definitions active in the lattice, keyed by link ID
-    pub link_defs: HashMap<String, Linkdef>,
-
-    /// Claims that have been applied to the lattice, keyed by claim name
-    pub claims: HashMap<String, Claim>,
+impl From<&HostHeartbeat> for Host {
+    fn from(value: &HostHeartbeat) -> Self {
+        Host {
+            actors: value.actors.clone(),
+            friendly_name: value.friendly_name.clone(),
+            labels: value.labels.clone(),
+            annotations: value.annotations.clone(),
+            providers: value.providers.iter().cloned().collect(),
+            uptime_seconds: value.uptime_seconds,
+            version: Some(value.version.clone()),
+            id: value.id.clone(),
+            last_seen: Utc::now(),
+        }
+    }
 }

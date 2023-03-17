@@ -2330,6 +2330,7 @@ dependencies = [
  "async-nats",
  "async-trait",
  "atty",
+ "chrono",
  "clap",
  "cloudevents-sdk",
  "futures",

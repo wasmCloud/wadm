@@ -2,7 +2,9 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+/// All unique data needed to identify a provider. For this reason, this type implements PartialEq
+/// and Hash since it can serve as a key
+#[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Hash)]
 pub struct ProviderInfo {
     pub contract_id: String,
     pub link_name: String,
@@ -10,7 +12,7 @@ pub struct ProviderInfo {
     pub public_key: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct ProviderClaims {
     pub expires_human: String,
     // TODO: Should we actually parse the nkey?
@@ -25,14 +27,14 @@ pub struct ProviderClaims {
     pub version: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct ProviderHealthCheckInfo {
     pub link_name: String,
     // TODO: Should we make this a parsed nkey?
     pub public_key: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct ActorClaims {
     pub call_alias: Option<String>,
     #[serde(rename = "caps")]

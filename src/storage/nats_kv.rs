@@ -1,304 +1,205 @@
-//! Storage engine backed by NATS Kv
+//! Storage engine backed by NATS KV
 //!
-//! This storage engine enables storing any WADM related information using NATS Kv as a backend
-
-use async_trait::async_trait;
+//! This storage engine enables storing any WADM related state information using NATS KV as a
+//! backend
+//!
+//! ## Data Structure
+//!
+//! Currently this provider stores state serialized as JSON, though we reserve the right to change
+//! the encoding in the future. Because of this, DO NOT depend on accessing this data other than
+//! through this module
+//!
+//! All data is currently stored in a single encoded map per type (host, actor, provider), where the
+//! keys are the ID as given by [`StateId::id`]. Once again, we reserve the right to change this
+//! structure in the future
+use std::collections::HashMap;
 use std::io::Error as IoError;
-use std::path::PathBuf;
 
 use async_nats::{
-    jetstream::kv::Config as JetstreamKvConfig, jetstream::kv::Store as JetstreamKvStore,
-    Client as NatsClient, ConnectOptions as NatsConnectOptions,
+    jetstream::kv::{Operation, Store as KvStore},
+    Error as NatsError,
 };
+use async_trait::async_trait;
+use serde::{de::DeserializeOwned, Serialize};
+use tracing::{debug, error, field::Empty, instrument, trace};
+use tracing_futures::Instrument;
 
-use tokio::fs::read as read_file;
+use super::{StateKind, Store};
 
-use semver::{BuildMetadata, Prerelease, Version};
-use serde::ser::StdError;
-use serde::{Deserialize, Serialize};
-use serde_json::{from_slice, to_vec, Error as SerdeJsonError};
-
-use super::{LatticeStorage, StorageEngineError, StorageError, StoreOptions};
-
-use super::state::LatticeState;
-
-use crate::storage::{Store, WithStateMetadata};
-
-const STORAGE_ENGINE_NAME: &str = "nats_kv";
-const STORAGE_ENGINE_VERSION: Version = Version {
-    major: 0,
-    minor: 1,
-    patch: 0,
-    pre: Prerelease::EMPTY,
-    build: BuildMetadata::EMPTY,
-};
-
-const LATTICE_BUCKET_STATE_KEY: &str = "state";
-
-impl From<SerdeJsonError> for StorageError {
-    fn from(e: SerdeJsonError) -> Self {
-        StorageError::Unknown(format!("de/serialization error occurred: {e}"))
-    }
-}
-
-impl From<Box<dyn StdError + std::marker::Send + Sync>> for StorageError {
-    fn from(e: Box<dyn StdError + std::marker::Send + Sync>) -> Self {
-        StorageError::Unknown(format!("de/serialization error occurred: {e}"))
-    }
-}
-
-//////////
-// NATS //
-//////////
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct NatsAuthConfig {
-    pub creds_file: Option<String>,
-    pub jwt_seed: Option<String>,
-    pub jwt_path: Option<PathBuf>,
-}
-
-/// Build NATS connection options
-async fn build_nats_options(
-    cfg: &NatsAuthConfig,
-) -> Result<NatsConnectOptions, StorageEngineError> {
-    match cfg {
-        // Use JWT + seed if present
-        NatsAuthConfig {
-            jwt_path: Some(path),
-            jwt_seed: Some(seed),
-            ..
-        } => {
-            let file_contents = read_file(path).await?;
-            let jwt = String::from_utf8_lossy(&file_contents);
-            let kp = std::sync::Arc::new(nkeys::KeyPair::from_seed(seed)?);
-
-            Ok(async_nats::ConnectOptions::with_jwt(
-                jwt.into(),
-                move |nonce| {
-                    let key_pair = kp.clone();
-                    async move { key_pair.sign(&nonce).map_err(async_nats::AuthError::new) }
-                },
-            ))
-        }
-
-        // Use creds file if present
-        NatsAuthConfig {
-            creds_file: Some(path),
-            ..
-        } => Ok(
-            NatsConnectOptions::with_credentials_file(path.clone().into())
-                .await
-                .map_err(EngineError::from)?,
-        ),
-
-        _ => Ok(NatsConnectOptions::default()),
-    }
-}
-
-////////////
-// Engine //
-////////////
-
-/// Engine errors that can be encountered by NatsKvStorageEngine
+/// Errors that can be encountered by NATS KV Store implemenation
 #[derive(Debug, thiserror::Error)]
-pub enum EngineError {
-    /// The connection to NATS could not be made
-    #[error("Faield to connect to Nats: {0}")]
-    NatsConnectionFailed(#[from] async_nats::Error),
-
-    /// An I/O error
+pub enum NatsStoreError {
+    /// An I/O error occured
     #[error("I/O Error: {0}")]
     Io(#[from] IoError),
+
+    /// An error occured when performing a NATS operation
+    #[error("NATS error: {0:?}")]
+    Nats(#[from] NatsError),
+
+    /// Errors that result from serializing or deserializing the data from the store
+    #[error("Error when encoding or decoding data to store: {0}")]
+    SerDe(#[from] serde_json::Error),
 
     /// A catch all error for uenxpected non-fatal errors
     #[error("{0}")]
     Other(String),
 }
 
-impl From<EngineError> for StorageEngineError {
-    fn from(e: EngineError) -> StorageEngineError {
-        StorageEngineError::Engine(Box::new(e))
-    }
+/// A [`Store`] implementation backed by NATS KV.
+#[derive(Debug, Clone)]
+pub struct NatsKvStore {
+    store: KvStore,
 }
 
-impl From<nkeys::error::Error> for StorageEngineError {
-    fn from(err: nkeys::error::Error) -> StorageEngineError {
-        StorageEngineError::Engine(Box::new(format!("failed to process nkeys: {err}")))
-    }
-}
-
-impl From<std::io::Error> for StorageEngineError {
-    fn from(err: std::io::Error) -> StorageEngineError {
-        StorageEngineError::Engine(Box::new(format!("unexpected I/O error: {err}")))
-    }
-}
-
-#[derive(Debug)]
-pub struct NatsKvStorageEngine {
-    /// Configuration for the NATS KV storage engine
-    config: NatsKvStorageConfig,
-
-    /// NATS client
-    client: NatsClient,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct NatsKvStorageConfig {
-    /// URL to the nats instance
-    pub nats_url: String,
-
-    /// Prefix to use with lattice buckets
-    pub lattice_bucket_prefix: Option<String>,
-
-    /// Authentication config for use with NATS
-    pub auth: Option<NatsAuthConfig>,
-}
-
-impl NatsKvStorageEngine {
-    pub async fn new(
-        config: NatsKvStorageConfig,
-    ) -> Result<NatsKvStorageEngine, StorageEngineError> {
-        let nats_config = match &config.auth {
-            Some(ac) => build_nats_options(ac).await?,
-            None => NatsConnectOptions::default(),
-        };
-
-        let client = async_nats::connect_with_options(&config.nats_url, nats_config)
-            .await
-            .map_err(|e| StorageEngineError::Engine(Box::new(format!("failed to connect: {e}"))))?;
-
-        Ok(NatsKvStorageEngine { config, client })
+impl NatsKvStore {
+    /// Returns a new [`Store`] implementation backed by the given KV NATS bucket
+    pub fn new(store: KvStore) -> NatsKvStore {
+        NatsKvStore { store }
     }
 
-    /// Build the top level bucket for the lattice
-    fn build_lattice_bucket_name(&self, lattice_id: String) -> String {
-        let mut bucket = format!("lattice_{lattice_id}");
-        if let Some(prefix) = &self.config.lattice_bucket_prefix {
-            bucket = format!("{prefix}_{bucket}");
-        }
-        bucket
-    }
-
-    /// Get or create the KV store for NATS jetstream
-    async fn get_or_create_kv_store(
+    /// Returns the map of the data with the revision of the current data
+    async fn internal_list<T>(
         &self,
-        bucket: String,
-    ) -> Result<JetstreamKvStore, StorageError> {
-        // Build jetstream client
-        let jetstream = async_nats::jetstream::new(self.client.clone());
-
-        // Use existing KV bucket if already present
-        if let Ok(kv) = jetstream.get_key_value(&bucket).await {
-            return Ok(kv);
-        }
-
-        // Create Jetstream KV store
-        let kv = jetstream
-            .create_key_value(JetstreamKvConfig {
-                bucket,
-                history: 10,
-                ..Default::default()
-            })
-            .await
-            .map_err(|e| StorageError::Engine(format!("failed to create jetstream kv: {e}")))?;
-
-        Ok(kv)
-    }
-
-    /// Read a value out of the store
-    async fn read(&self, id: String) -> Result<WithStateMetadata<LatticeState>, StorageError> {
-        let bucket = self.build_lattice_bucket_name(id);
-        let kv = self.get_or_create_kv_store(bucket.clone()).await?;
-
-        let lattice;
-        match kv.entry(LATTICE_BUCKET_STATE_KEY).await? {
+        lattice_id: &str,
+    ) -> Result<(HashMap<String, T>, u64), NatsStoreError>
+    where
+        T: DeserializeOwned + StateKind,
+    {
+        let key = generate_key::<T>(lattice_id);
+        tracing::Span::current().record("key", &key);
+        debug!("Fetching data from store");
+        match self.store.entry(key).await? {
+            Some(entry) if !matches!(entry.operation, Operation::Delete | Operation::Purge) => {
+                trace!(len = %entry.value.len(), "Fetched bytes from store...deserializing");
+                serde_json::from_slice::<'_, HashMap<String, T>>(&entry.value)
+                    .map(|d| (d, entry.revision))
+                    .map_err(NatsStoreError::from)
+            }
+            // If it was a delete entry, we still need to return the revision
             Some(entry) => {
-                lattice = from_slice(&entry.value)?;
-                Ok(WithStateMetadata {
-                    state: lattice,
-                    revision: Some(entry.revision),
-                })
+                trace!("Data was deleted, returning last revision");
+                debug!("No data found for key, returning empty");
+                Ok((HashMap::with_capacity(0), entry.revision))
             }
-            None => Err(StorageError::Engine(format!(
-                "No lattice state in bucket [{bucket}]"
-            ))),
+            None => {
+                debug!("No data found for key, returning empty");
+                Ok((HashMap::with_capacity(0), 0))
+            }
         }
     }
-
-    /// Write a value to the store
-    async fn write(
-        &mut self,
-        obj: &LatticeState,
-        id: Option<String>,
-        opts: StoreOptions,
-    ) -> Result<WithStateMetadata<String>, StorageError> {
-        let id = id.unwrap_or(obj.id.clone());
-        let bucket = self.build_lattice_bucket_name(id.clone());
-        let kv = self.get_or_create_kv_store(bucket.clone()).await?;
-
-        let revision = match opts {
-            // Compare and set semantics
-            StoreOptions {
-                require_cas: true,
-                revision: Some(rev),
-                ..
-            } => {
-                kv.update(LATTICE_BUCKET_STATE_KEY, to_vec(&obj)?.into(), rev)
-                    .await?
-            }
-
-            // Best-effort semantics
-            _ => {
-                kv.put(LATTICE_BUCKET_STATE_KEY, to_vec(&obj)?.into())
-                    .await?
-            }
-        };
-
-        Ok(WithStateMetadata {
-            state: id,
-            revision: Some(revision),
-        })
-    }
 }
 
+// NOTE(thomastaylor312): This implementation should be good enough to start. If we need to optimize
+// this for large multitenant deployments, the easiest things to start with would be to swap out the
+// default hashes in our HashMaps/Sets to use something like `ahash` (which can help with
+// deserialization, see this blog post for more details:
+// https://morestina.net/blog/1843/the-stable-hashmap-trap). We can also swap out encoding formats
+// to something like bincode or cbor and focus on things like avoiding allocations
 #[async_trait]
-impl Store for NatsKvStorageEngine {
-    type State = LatticeState;
-    type StateId = String;
+impl Store for NatsKvStore {
+    type Error = NatsStoreError;
 
-    async fn name() -> String {
-        String::from(STORAGE_ENGINE_NAME)
+    /// Get the state for the specified kind with the given ID.
+    ///
+    /// The ID can vary depending on the type, but should be the unique ID for the object (e.g. a
+    /// host key)
+    #[instrument(level = "debug", skip(self))]
+    async fn get<T>(&self, lattice_id: &str, id: &str) -> Result<Option<T>, Self::Error>
+    where
+        T: DeserializeOwned + StateKind,
+    {
+        let mut all_data = self.list::<T>(lattice_id).await?;
+
+        // Just pop out the owned data since we are gonna drop
+        Ok(all_data.remove(id))
     }
 
-    async fn version() -> Version {
-        STORAGE_ENGINE_VERSION
+    /// Returns a map of all items of the given type.
+    ///
+    /// The map key is the value as given by [`StateId::id`]
+    #[instrument(level = "debug", skip(self), fields(key = Empty))]
+    async fn list<T>(&self, lattice_id: &str) -> Result<HashMap<String, T>, Self::Error>
+    where
+        T: DeserializeOwned + StateKind,
+    {
+        let key = generate_key::<T>(lattice_id);
+        tracing::Span::current().record("key", &key);
+        debug!("Fetching data from store");
+        self.internal_list::<T>(lattice_id)
+            .in_current_span()
+            .await
+            .map(|(data, _)| data)
     }
 
-    async fn get(&self, id: String) -> Result<WithStateMetadata<LatticeState>, StorageError> {
-        Ok(self.read(id).await?)
+    /// Store a piece of state. This should overwrite existing state entries
+    #[instrument(level = "debug", skip(self, data), fields(key = Empty))]
+    async fn store<T>(&self, lattice_id: &str, id: String, data: T) -> Result<(), Self::Error>
+    where
+        T: Serialize + DeserializeOwned + StateKind + Send,
+    {
+        let key = generate_key::<T>(lattice_id);
+        tracing::Span::current().record("key", &key);
+        let (mut current_data, revision) = self
+            .internal_list::<T>(lattice_id)
+            .in_current_span()
+            .await?;
+        debug!("Updating data in store");
+        if current_data.insert(id, data).is_some() {
+            // NOTE: We may want to return the old data in the future. For now, keeping it simple
+            trace!("Replaced existing data");
+        } else {
+            trace!("Inserted new entry");
+        };
+        let serialized = serde_json::to_vec(&current_data)?;
+        // NOTE(thomastaylor312): This could not matter, but because this is JSON and not consuming
+        // the data it is serializing, we are now holding a vec of the serialized data and the
+        // actual struct in memory. So this drops it immediately to hopefully keep memory usage down
+        // on busy servers
+        drop(current_data);
+        trace!(len = serialized.len(), "Writing bytes to store");
+        self.store
+            .update(key, serialized.into(), revision)
+            .await
+            .map(|_| ())
+            .map_err(NatsStoreError::from)
     }
 
-    async fn store(
-        &mut self,
-        state: LatticeState,
-        store_opts: StoreOptions,
-    ) -> Result<WithStateMetadata<String>, StorageError> {
-        Ok(self.write(&state, None, store_opts).await?)
-    }
-
-    // Delete an existing piece of state
-    async fn delete(&self, id: String) -> Result<(), StorageError> {
-        // Retrieve the kv store for a given lattice
-        let bucket = self.build_lattice_bucket_name(id);
-        let kv = self.get_or_create_kv_store(bucket.clone()).await?;
-
-        let _ = kv.delete(bucket).await.map_err(|err| {
-            StorageError::Engine(format!("failed to delete lattice state: {err}"))
-        })?;
-
-        Ok(())
+    /// Delete an existing piece of state
+    #[instrument(level = "debug", skip(self), fields(key = Empty))]
+    async fn delete<T>(&self, lattice_id: &str, id: &str) -> Result<(), Self::Error>
+    where
+        T: Serialize + DeserializeOwned + StateKind + Send,
+    {
+        let key = generate_key::<T>(lattice_id);
+        tracing::Span::current().record("key", &key);
+        let (mut current_data, revision) = self
+            .internal_list::<T>(lattice_id)
+            .in_current_span()
+            .await?;
+        debug!("Updating data in store");
+        if current_data.remove(id).is_some() {
+            // NOTE: We may want to return the old data in the future. For now, keeping it simple
+            trace!("Removed existing data");
+        } else {
+            trace!("Data did not exist");
+            return Ok(());
+        };
+        let serialized = serde_json::to_vec(&current_data)?;
+        // NOTE(thomastaylor312): This could not matter, but because this is JSON and not consuming
+        // the data it is serializing, we are now holding a vec of the serialized data and the
+        // actual struct in memory. So this drops it immediately to hopefully keep memory usage down
+        // on busy servers
+        drop(current_data);
+        trace!(len = serialized.len(), "Writing bytes to store");
+        self.store
+            .update(key, serialized.into(), revision)
+            .await
+            .map(|_| ())
+            .map_err(NatsStoreError::from)
     }
 }
 
-impl LatticeStorage for NatsKvStorageEngine {}
+fn generate_key<T: StateKind>(lattice_id: &str) -> String {
+    format!("{}_{lattice_id}", T::KIND)
+}

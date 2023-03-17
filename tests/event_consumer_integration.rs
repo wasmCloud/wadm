@@ -58,6 +58,9 @@ struct HostResponse {
 }
 
 #[tokio::test]
+// TODO: Stop ignoring this test once https://github.com/wasmCloud/wash/issues/402 is fixed. Please
+// note this test should probably be changed to an e2e test as the order of events is somewhat flaky
+#[ignore]
 #[serial]
 async fn test_event_stream() {
     let _guard = helpers::setup_test().await;
@@ -214,6 +217,11 @@ async fn test_event_stream() {
 }
 
 #[tokio::test]
+// TODO: Stop ignoring this test once https://github.com/wasmCloud/wash/issues/402 is fixed. This
+// does work when you run it individually. Please note that there is problems when running this
+// against 0.60+ hosts as the KV bucket for linkdefs makes it so that all those linkdefs are emitted
+// as published events when the host starts
+#[ignore]
 #[serial]
 async fn test_nack_and_rereceive() {
     let _guard = helpers::setup_test().await;
