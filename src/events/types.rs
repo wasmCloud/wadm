@@ -203,18 +203,32 @@ pub struct ActorStarted {
     pub instance_id: String,
     // TODO: Parse as nkey?
     pub public_key: String,
+    #[serde(default)]
+    pub host_id: String,
 }
 
-event_impl!(ActorStarted, "com.wasmcloud.lattice.actor_started");
+event_impl!(
+    ActorStarted,
+    "com.wasmcloud.lattice.actor_started",
+    source,
+    host_id
+);
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ActorStopped {
     pub instance_id: String,
     // TODO: Parse as nkey?
     pub public_key: String,
+    #[serde(default)]
+    pub host_id: String,
 }
 
-event_impl!(ActorStopped, "com.wasmcloud.lattice.actor_stopped");
+event_impl!(
+    ActorStopped,
+    "com.wasmcloud.lattice.actor_stopped",
+    source,
+    host_id
+);
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ProviderStarted {
@@ -227,20 +241,31 @@ pub struct ProviderStarted {
     pub link_name: String,
     // TODO: parse as nkey?
     pub public_key: String,
+    #[serde(default)]
+    pub host_id: String,
 }
 
-event_impl!(ProviderStarted, "com.wasmcloud.lattice.provider_started");
+event_impl!(
+    ProviderStarted,
+    "com.wasmcloud.lattice.provider_started",
+    source,
+    host_id
+);
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ProviderStartFailed {
     pub error: String,
     pub link_name: String,
     pub provider_ref: String,
+    #[serde(default)]
+    pub host_id: String,
 }
 
 event_impl!(
     ProviderStartFailed,
-    "com.wasmcloud.lattice.provider_start_failed"
+    "com.wasmcloud.lattice.provider_start_failed",
+    source,
+    host_id
 );
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -253,30 +278,45 @@ pub struct ProviderStopped {
     pub public_key: String,
     // We should probably do an actual enum here, but elixir definitely isn't doing it
     pub reason: String,
+    #[serde(default)]
+    pub host_id: String,
 }
 
-event_impl!(ProviderStopped, "com.wasmcloud.lattice.provider_stopped");
+event_impl!(
+    ProviderStopped,
+    "com.wasmcloud.lattice.provider_stopped",
+    source,
+    host_id
+);
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ProviderHealthCheckPassed {
     #[serde(flatten)]
-    data: ProviderHealthCheckInfo,
+    pub data: ProviderHealthCheckInfo,
+    #[serde(default)]
+    pub host_id: String,
 }
 
 event_impl!(
     ProviderHealthCheckPassed,
-    "com.wasmcloud.lattice.health_check_passed"
+    "com.wasmcloud.lattice.health_check_passed",
+    source,
+    host_id
 );
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ProviderHealthCheckFailed {
     #[serde(flatten)]
-    data: ProviderHealthCheckInfo,
+    pub data: ProviderHealthCheckInfo,
+    #[serde(default)]
+    pub host_id: String,
 }
 
 event_impl!(
     ProviderHealthCheckFailed,
-    "com.wasmcloud.lattice.health_check_failed"
+    "com.wasmcloud.lattice.health_check_failed",
+    source,
+    host_id
 );
 
 #[derive(Debug, Serialize, Deserialize)]

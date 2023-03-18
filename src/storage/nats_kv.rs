@@ -132,11 +132,23 @@ impl Store for NatsKvStore {
             .map(|(data, _)| data)
     }
 
-    /// Store a piece of state. This should overwrite existing state entries
+    /// Store multiple items of the same type. This should overwrite existing state entries. This
+    /// allows for stores to perform multiple writes simultaneously or to leverage transactions
+    ///
+    /// The given data can be anything that can be turned into an iterator of (key, value). This
+    /// means you can pass a [`HashMap`](std::collections::HashMap) or something like
+    /// `["key".to_string(), Actor{...}]`
+    ///
+    /// This function has several required bounds. It needs to be serialize and deserialize because
+    /// some implementations will need to deserialize the current data before modifying it.
+    /// [`StateKind`] is needed in order to store and access the data correctly,
+    /// and, lastly, [`Send`] is needed because this is an async function and the data needs to be
+    /// sendable between threads
     #[instrument(level = "debug", skip(self, data), fields(key = Empty))]
-    async fn store<T>(&self, lattice_id: &str, id: String, data: T) -> Result<(), Self::Error>
+    async fn store_many<T, D>(&self, lattice_id: &str, data: D) -> Result<(), Self::Error>
     where
         T: Serialize + DeserializeOwned + StateKind + Send,
+        D: IntoIterator<Item = (String, T)> + Send,
     {
         let key = generate_key::<T>(lattice_id);
         tracing::Span::current().record("key", &key);
@@ -145,12 +157,14 @@ impl Store for NatsKvStore {
             .in_current_span()
             .await?;
         debug!("Updating data in store");
-        if current_data.insert(id, data).is_some() {
-            // NOTE: We may want to return the old data in the future. For now, keeping it simple
-            trace!("Replaced existing data");
-        } else {
-            trace!("Inserted new entry");
-        };
+        for (id, item) in data.into_iter() {
+            if current_data.insert(id, item).is_some() {
+                // NOTE: We may want to return the old data in the future. For now, keeping it simple
+                trace!("Replaced existing data");
+            } else {
+                trace!("Inserted new entry");
+            };
+        }
         let serialized = serde_json::to_vec(&current_data)?;
         // NOTE(thomastaylor312): This could not matter, but because this is JSON and not consuming
         // the data it is serializing, we are now holding a vec of the serialized data and the

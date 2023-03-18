@@ -1,10 +1,10 @@
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
-use async_nats::jetstream::Context;
 use clap::Parser;
 use tokio::sync::Semaphore;
-use tracing::{debug, error, trace};
+use tracing::{debug, trace};
 
 use wadm::{
     commands::*,
@@ -12,8 +12,8 @@ use wadm::{
         manager::{ConsumerManager, WorkResult, Worker},
         *,
     },
-    events::*,
-    storage::nats_kv::NatsKvStore,
+    storage::{nats_kv::NatsKvStore, reaper::Reaper},
+    workers::EventWorker,
     DEFAULT_COMMANDS_TOPIC, DEFAULT_EVENTS_TOPIC,
 };
 
@@ -123,6 +123,15 @@ struct Args {
         default_value = "wadm_state"
     )]
     state_bucket: String,
+
+    /// The amount of time in seconds to give for hosts to fail to heartbeat and be removed from the
+    /// store
+    #[arg(
+        long = "cleanup-interval",
+        env = "WADM_CLEANUP_INTERVAL",
+        default_value = "120"
+    )]
+    cleanup_interval: u64,
 }
 
 #[tokio::main]
@@ -136,19 +145,42 @@ async fn main() -> anyhow::Result<()> {
     );
 
     // Build storage adapter for lattice state (on by default)
-    let (_client, context) = nats::get_client_and_context(
+    let (client, context) = nats::get_client_and_context(
+        args.nats_server.clone(),
+        args.domain.clone(),
+        args.nats_seed.clone(),
+        args.nats_jwt.clone(),
+        args.nats_creds.clone(),
+    )
+    .await?;
+
+    let _alt_client = nats::get_alt_client(
         args.nats_server,
-        args.domain,
         args.nats_seed,
         args.nats_jwt,
         args.nats_creds,
     )
     .await?;
 
+    // TODO: We will probably need to set up all the flags (like lattice prefix and topic prefix) down the line
+    let ctl_client_builder = wasmcloud_control_interface::ClientBuilder::new(client);
+    let ctl_client = if let Some(domain) = args.domain {
+        ctl_client_builder
+            .js_domain(domain)
+            .build()
+            .await
+            .map_err(|e| anyhow::anyhow!("{e:?}"))?
+    } else {
+        ctl_client_builder
+            .build()
+            .await
+            .map_err(|e| anyhow::anyhow!("{e:?}"))?
+    };
+
     let store = nats::ensure_kv_bucket(&context, args.state_bucket, 1).await?;
 
     // TODO: use the storage engine
-    let _state_storage = NatsKvStore::new(store);
+    let state_storage = NatsKvStore::new(store);
 
     let event_stream = nats::ensure_stream(
         &context,
@@ -169,55 +201,40 @@ async fn main() -> anyhow::Result<()> {
     )
     .await?;
 
-    let host_id = args
-        .host_id
-        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let permit_pool = Arc::new(Semaphore::new(args.max_jobs));
     let events_manager: ConsumerManager<EventConsumer> =
         ConsumerManager::new(permit_pool.clone(), event_stream);
     let commands_manager: ConsumerManager<CommandConsumer> =
         ConsumerManager::new(permit_pool.clone(), command_stream);
     events_manager
-        .add_for_lattice("wasmbus.evt.default", EventWorker { context, host_id })
+        .add_for_lattice(
+            "wasmbus.evt.default",
+            EventWorker::new(state_storage.clone(), ctl_client),
+        )
         .await
         .map_err(|e| anyhow::anyhow!("{e:?}"))?;
     commands_manager
         .add_for_lattice("wadm.cmd.default", CommandWorker)
         .await
         .map_err(|e| anyhow::anyhow!("{e:?}"))?;
+
+    // Give the workers time to catch up before starting the reaper
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    // TODO(thomastaylor312): We might want to figure out how not to run this globally. Doing a
+    // synthetic event sent to the stream could be nice, but all the wadm processes would still fire
+    // off that tick, resulting in multiple people handling. We could maybe get it to work with the
+    // right duplicate window, but we have no idea when each process could fire a tick. Worst case
+    // scenario right now is that multiple fire simultaneously and a few of them just delete nothing
+    let _reaper = Reaper::new(
+        state_storage,
+        Duration::from_secs(args.cleanup_interval / 2),
+        ["default".to_owned()],
+    );
     tokio::signal::ctrl_c().await?;
     Ok(())
 }
 
 // Everything blow here will likely be moved when we do full implementation
-
-struct EventWorker {
-    context: Context,
-    host_id: String,
-}
-
-#[async_trait::async_trait]
-impl Worker for EventWorker {
-    type Message = Event;
-
-    async fn do_work(&self, mut message: ScopedMessage<Self::Message>) -> WorkResult<()> {
-        debug!(event = ?message.as_ref(), "Handling received event");
-        // THIS IS WHERE WE'D DO REAL WORK
-        message.ack().await?;
-
-        // NOTE: There is a possible race condition here where we send the command, and it
-        // doesn't work even though we've acked the message. Worst case here is that we end
-        // up not starting/creating something, which would be fixed on the next heartbeat.
-        // This is better than the other option of double starting something when the ack
-        // fails (think if something resulted in starting 100 actors on a host and then it
-        // did it again)
-        if let Err(e) = send_fake_command(&self.context, &self.host_id, &message).await {
-            error!(error = %e, "Got error when sending command, will have to catch up on next reconcile");
-        }
-
-        Ok(())
-    }
-}
 
 struct CommandWorker;
 
@@ -241,54 +258,4 @@ impl Worker for CommandWorker {
 
         Ok(())
     }
-}
-
-// For testing only, to send a fake command in response to an event
-async fn send_fake_command(context: &Context, host_id: &str, event: &Event) -> anyhow::Result<()> {
-    use wadm::nats_utils::ensure_send;
-    let command: Command = match event {
-        Event::ActorStarted(actor) => {
-            StartActor {
-                reference: actor.image_ref.clone(),
-                // So we know where it came from
-                host_id: host_id.to_owned(),
-                count: 2,
-            }
-            .into()
-        }
-        Event::ProviderStopped(prov) => {
-            StopProvider {
-                // So we know where it came from
-                contract_id: prov.contract_id.clone(),
-                host_id: host_id.to_owned(),
-                provider_id: prov.public_key.clone(),
-                link_name: Some(prov.link_name.clone()),
-            }
-            .into()
-        }
-        Event::LinkdefSet(ld) => {
-            PutLinkdef {
-                // So we know where it came from
-                contract_id: ld.linkdef.contract_id.clone(),
-                actor_id: ld.linkdef.actor_id.clone(),
-                provider_id: ld.linkdef.provider_id.clone(),
-                link_name: ld.linkdef.link_name.clone(),
-                values: vec![("wadm_host".to_string(), host_id.to_owned())]
-                    .into_iter()
-                    .collect(),
-            }
-            .into()
-        }
-        _ => {
-            StopActor {
-                // So we know where it came from
-                actor_id: host_id.to_owned(),
-                host_id: "notreal".to_string(),
-                count: 2,
-            }
-            .into()
-        }
-    };
-    trace!(?command, "Sending command");
-    ensure_send(context, "wadm.cmd.default".to_string(), &command).await
 }
