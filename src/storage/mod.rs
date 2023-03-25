@@ -70,16 +70,32 @@ pub trait Store {
         T: Serialize + DeserializeOwned + StateKind + Send,
         D: IntoIterator<Item = (String, T)> + Send;
 
-    /// Delete an existing piece of state
+    /// Delete a state entry
+    ///
+    /// By default this will just call [`Store::delete_many`] with a single item in the list of data
+    async fn delete<T>(&self, lattice_id: &str, id: &str) -> Result<(), Self::Error>
+    where
+        T: Serialize + DeserializeOwned + StateKind + Send,
+    {
+        self.delete_many::<T, _, _>(lattice_id, [id]).await
+    }
+
+    /// Delete multiple state entries. This allows for stores to perform multiple delete
+    /// simultaneously or to leverage transactions. This is for advanced use cases
+    ///
+    /// The given data can be anything that can be turned into an iterator of (key, value). This
+    /// means you can pass a [`Vec`](std::collections::Vec) or something like `["key"]`
     ///
     /// This function has several required bounds. It needs to be serialize and deserialize because
     /// some implementations will need to deserialize the current data before modifying it.
     /// [`StateKind`] is needed in order to store and access the data correctly, and, lastly,
     /// [`Send`] is needed because this is an async function and the modified data needs to be
     /// sendable between threads
-    async fn delete<T>(&self, lattice_id: &str, id: &str) -> Result<(), Self::Error>
+    async fn delete_many<T, D, K>(&self, lattice_id: &str, data: D) -> Result<(), Self::Error>
     where
-        T: Serialize + DeserializeOwned + StateKind + Send;
+        T: Serialize + DeserializeOwned + StateKind + Send,
+        D: IntoIterator<Item = K> + Send,
+        K: AsRef<str>;
 }
 
 /// Scoped store is a convenience wrapper around a store that automatically passes the given
@@ -165,12 +181,25 @@ impl<S: Store + Sync> ScopedStore<S> {
         self.inner.store_many(&self.lattice_id, data).await
     }
 
-    /// Delete an existing piece of state
+    /// Delete a state entry
     pub async fn delete<T>(&self, id: &str) -> Result<(), S::Error>
     where
         T: Serialize + DeserializeOwned + StateKind + Send,
     {
         self.inner.delete::<T>(&self.lattice_id, id).await
+    }
+
+    /// Delete multiple state entries. This allows for stores to perform multiple delete
+    /// simultaneously or to leverage transactions
+    pub async fn delete_many<T, D, K>(&self, data: D) -> Result<(), S::Error>
+    where
+        T: Serialize + DeserializeOwned + StateKind + Send,
+        D: IntoIterator<Item = K> + Send,
+        K: AsRef<str>,
+    {
+        self.inner
+            .delete_many::<T, _, _>(&self.lattice_id, data)
+            .await
     }
 }
 

@@ -8,8 +8,6 @@ default = []
 cli = ["clap", "tracing-opentelemetry", "tracing-subscriber", "opentelemetry", "opentelemetry-otlp", "atty", "uuid"]
 
 [dependencies]
-# workaround for exported NATS deps
-alt_nats = {package = "async-nats", version = "0.23"}
 anyhow = "1"
 async-nats = "0.27"
 async-trait = "0.1"
@@ -45,6 +43,3 @@ serial_test = "1"
 name = "wadm"
 path = "bin/main.rs"
 required-features = ["cli"]
-
-[patch.crates-io]
-wasmcloud-control-interface = { git = "https://github.com/thomastaylor312/control-interface-client.git", branch = "chore/update_rpc_version" }

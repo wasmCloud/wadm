@@ -125,7 +125,7 @@ struct Args {
     state_bucket: String,
 
     /// The amount of time in seconds to give for hosts to fail to heartbeat and be removed from the
-    /// store
+    /// store. By default, this is 120s because it is 4x the host heartbeat interval
     #[arg(
         long = "cleanup-interval",
         env = "WADM_CLEANUP_INTERVAL",
@@ -151,14 +151,6 @@ async fn main() -> anyhow::Result<()> {
         args.nats_seed.clone(),
         args.nats_jwt.clone(),
         args.nats_creds.clone(),
-    )
-    .await?;
-
-    let _alt_client = nats::get_alt_client(
-        args.nats_server,
-        args.nats_seed,
-        args.nats_jwt,
-        args.nats_creds,
     )
     .await?;
 

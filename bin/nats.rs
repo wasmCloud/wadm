@@ -37,22 +37,6 @@ pub async fn get_client_and_context(
     Ok((client, context))
 }
 
-pub async fn get_alt_client(
-    url: String,
-    seed: Option<String>,
-    jwt_path: Option<PathBuf>,
-    creds_path: Option<PathBuf>,
-) -> Result<alt_nats::Client> {
-    let client = if seed.is_none() && jwt_path.is_none() && creds_path.is_none() {
-        alt_nats::connect(url).await?
-    } else {
-        let opts = build_alt_nats_options(seed, jwt_path, creds_path).await?;
-        alt_nats::connect_with_options(url, opts).await?
-    };
-
-    Ok(client)
-}
-
 async fn build_nats_options(
     seed: Option<String>,
     jwt_path: Option<PathBuf>,
@@ -69,33 +53,6 @@ async fn build_nats_options(
             }))
         }
         (None, None, Some(creds)) => async_nats::ConnectOptions::with_credentials_file(creds)
-            .await
-            .map_err(anyhow::Error::from),
-        _ => {
-            // We shouldn't ever get here due to the requirements on the flags, but return a helpful error just in case
-            Err(anyhow::anyhow!(
-                "Got too many options. Make sure to provide a seed and jwt or a creds path"
-            ))
-        }
-    }
-}
-
-async fn build_alt_nats_options(
-    seed: Option<String>,
-    jwt_path: Option<PathBuf>,
-    creds_path: Option<PathBuf>,
-) -> Result<alt_nats::ConnectOptions> {
-    match (seed, jwt_path, creds_path) {
-        (Some(seed), Some(jwt), None) => {
-            let jwt = tokio::fs::read_to_string(jwt).await?;
-            let kp = std::sync::Arc::new(get_seed(seed).await?);
-
-            Ok(alt_nats::ConnectOptions::with_jwt(jwt, move |nonce| {
-                let key_pair = kp.clone();
-                async move { key_pair.sign(&nonce).map_err(alt_nats::AuthError::new) }
-            }))
-        }
-        (None, None, Some(creds)) => alt_nats::ConnectOptions::with_credentials_file(creds)
             .await
             .map_err(anyhow::Error::from),
         _ => {

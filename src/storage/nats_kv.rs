@@ -179,11 +179,12 @@ impl Store for NatsKvStore {
             .map_err(NatsStoreError::from)
     }
 
-    /// Delete an existing piece of state
-    #[instrument(level = "debug", skip(self), fields(key = Empty))]
-    async fn delete<T>(&self, lattice_id: &str, id: &str) -> Result<(), Self::Error>
+    #[instrument(level = "debug", skip(self, data), fields(key = Empty))]
+    async fn delete_many<T, D, K>(&self, lattice_id: &str, data: D) -> Result<(), Self::Error>
     where
         T: Serialize + DeserializeOwned + StateKind + Send,
+        D: IntoIterator<Item = K> + Send,
+        K: AsRef<str>,
     {
         let key = generate_key::<T>(lattice_id);
         tracing::Span::current().record("key", &key);
@@ -192,13 +193,21 @@ impl Store for NatsKvStore {
             .in_current_span()
             .await?;
         debug!("Updating data in store");
-        if current_data.remove(id).is_some() {
-            // NOTE: We may want to return the old data in the future. For now, keeping it simple
-            trace!("Removed existing data");
-        } else {
-            trace!("Data did not exist");
+        let mut updated = false;
+        for id in data.into_iter() {
+            if current_data.remove(id.as_ref()).is_some() {
+                // NOTE: We may want to return the old data in the future. For now, keeping it simple
+                trace!(id = %id.as_ref(), "Removing existing data");
+                updated = true;
+            } else {
+                trace!(id = %id.as_ref(), "ID doesn't exist in store, ignoring");
+            };
+        }
+        // If we updated nothing, return early
+        if !updated {
             return Ok(());
-        };
+        }
+
         let serialized = serde_json::to_vec(&current_data)?;
         // NOTE(thomastaylor312): This could not matter, but because this is JSON and not consuming
         // the data it is serializing, we are now holding a vec of the serialized data and the

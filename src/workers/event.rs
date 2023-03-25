@@ -1,6 +1,6 @@
 use std::collections::{hash_map::Entry, HashMap, HashSet};
 
-use tracing::{debug, instrument, trace};
+use tracing::{debug, instrument, trace, warn};
 use wasmcloud_control_interface::Client;
 
 use crate::consumers::{
@@ -104,7 +104,7 @@ impl<S: Store + Send + Sync> EventWorker<S> {
             }
 
             if current.count.is_empty() {
-                debug!("Last actor instance was removed, removing actor from storage");
+                trace!("Last actor instance was removed, removing actor from storage");
                 self.store
                     .delete::<Actor>(lattice_id, &actor.public_key)
                     .await
@@ -189,12 +189,22 @@ impl<S: Store + Send + Sync> EventWorker<S> {
         self.store.store_many(lattice_id, actors_to_update).await?;
 
         trace!("Fetching providers from store to remove stopped instances");
-        let mut all_providers = self.store.list::<Provider>(lattice_id).await?;
+        let all_providers = self.store.list::<Provider>(lattice_id).await?;
 
         let providers_to_update = current.providers.into_iter().filter_map(|info| {
             let key = crate::storage::provider_id(&info.public_key, &info.link_name);
-            let mut prov = all_providers.remove(&key)?;
-            prov.hosts.remove(&host.id).map(|_| (key, prov))
+            // NOTE: We can do this without cloning, but it led to some confusing code involving
+            // `remove` from the owned `all_providers` map. This is more readable at the expense of
+            // a clone for few providers
+            match all_providers.get(&key).cloned() {
+                // If we successfully remove the host, map it to the right type, otherwise we can
+                // continue onward
+                Some(mut prov) => prov.hosts.remove(&host.id).map(|_| (key, prov)),
+                None => {
+                    warn!(key = %key, "Didn't find provider in storage even though host said it existed");
+                    None
+                }
+            }
         });
         trace!("Storing updated providers in store");
         self.store
@@ -244,7 +254,9 @@ impl<S: Store + Send + Sync> EventWorker<S> {
             }
         } else {
             trace!("No current provider found in store");
-            Provider::from(provider)
+            let mut prov = Provider::from(provider);
+            prov.hosts = HashMap::from([(provider.host_id.clone(), ProviderStatus::default())]);
+            prov
         };
         debug!("Storing updated provider in store");
         self.store
@@ -394,8 +406,6 @@ impl<S: Store + Send + Sync> EventWorker<S> {
             .cloned()
             .collect();
 
-        // TODO: FIXME
-
         let actors_to_update = host.actors.iter().filter_map(|(id, count)| {
             match actors.remove(id) {
                 Some(mut current) => {
@@ -441,10 +451,13 @@ impl<S: Store + Send + Sync> EventWorker<S> {
         host: &HostHeartbeat,
     ) -> anyhow::Result<()> {
         debug!("Fetching current provider state");
-        let mut providers = self.store.list::<Provider>(lattice_id).await?;
+        let providers = self.store.list::<Provider>(lattice_id).await?;
         let providers_to_update = host.providers.iter().filter_map(|info| {
             let provider_id = crate::storage::provider_id(&info.public_key, &info.link_name);
-            match providers.remove(&provider_id) {
+            // NOTE: We can do this without cloning, but it led to some confusing code involving
+            // `remove` from the owned `providers` map. This is more readable at the expense of
+            // a clone for few providers
+            match providers.get(&provider_id).cloned() {
                 Some(mut prov) => {
                     let mut has_changes = false;
                     // A health check from a provider we hadn't registered doesn't have a link name,

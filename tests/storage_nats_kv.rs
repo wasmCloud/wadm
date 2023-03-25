@@ -280,7 +280,7 @@ async fn test_multiple_lattice() {
 }
 
 #[tokio::test]
-async fn test_store_many() {
+async fn test_store_and_delete_many() {
     let store = NatsKvStore::new(create_test_store("store_many_test".to_string()).await);
 
     let lattice_id = "storemany";
@@ -336,4 +336,18 @@ async fn test_store_many() {
         "Should have found actor with id {}",
         actor2.id
     );
+
+    // Now try to delete them all
+    store
+        .delete_many::<Actor, _, _>(lattice_id, [&actor1.id, &actor2.id])
+        .await
+        .expect("Should be able to delete many");
+
+    // Double check that the list is empty now
+    let all_actors = store
+        .list::<Actor>(lattice_id)
+        .await
+        .expect("Should be able to get all actors");
+
+    assert!(all_actors.is_empty(), "All actors should have no items");
 }

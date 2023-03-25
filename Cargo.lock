@@ -74,40 +74,6 @@ checksum = "ca6c635b3aa665c649ad1415f1573c85957dfa47690ec27aebe7ec17efe3c643"
 
 [[package]]
 name = "async-nats"
-version = "0.23.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9323e13cccc5d28a249e3d0c22600129703c75283a73fc3ebb3dbd2d51bef1cb"
-dependencies = [
- "base64 0.13.1",
- "base64-url",
- "bytes",
- "futures",
- "http",
- "itertools",
- "itoa",
- "lazy_static",
- "nkeys",
- "nuid",
- "once_cell",
- "regex",
- "ring",
- "rustls-native-certs",
- "rustls-pemfile",
- "serde",
- "serde_json",
- "serde_nanos",
- "serde_repr",
- "subslice",
- "time 0.3.20",
- "tokio",
- "tokio-retry",
- "tokio-rustls",
- "tracing",
- "url",
-]
-
-[[package]]
-name = "async-nats"
 version = "0.27.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47a445ce9f6605511fe594b31a6ba174bc874fef6bfa628cea51e9bfe450e2f7"
@@ -2874,8 +2840,7 @@ name = "wadm"
 version = "0.4.0"
 dependencies = [
  "anyhow",
- "async-nats 0.23.0",
- "async-nats 0.27.1",
+ "async-nats",
  "async-trait",
  "atty",
  "chrono",
@@ -3028,7 +2993,7 @@ version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e61f6be0a90660de63951fb782dbb37979d03203c60176b6041ec36f6d367136"
 dependencies = [
- "async-nats 0.27.1",
+ "async-nats",
  "async-trait",
  "atty",
  "base64 0.13.1",
@@ -3065,9 +3030,10 @@ dependencies = [
 [[package]]
 name = "wasmcloud-control-interface"
 version = "0.24.0"
-source = "git+https://github.com/thomastaylor312/control-interface-client.git?branch=chore/update_rpc_version#f52f9098233257a140eb2321a161b8388f10992a"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1105968693598b601247e74b24d8edee7c36eaeaa44fbd5333a38fa23d33de7c"
 dependencies = [
- "async-nats 0.27.1",
+ "async-nats",
  "cloudevents-sdk 0.6.0",
  "data-encoding",
  "futures",

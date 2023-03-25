@@ -76,7 +76,7 @@ impl From<ProviderStarted> for Provider {
             contract_id: value.contract_id,
             reference: value.image_ref,
             link_name: value.link_name,
-            hosts: HashMap::from([(value.host_id, ProviderStatus::default())]),
+            ..Default::default()
         }
     }
 }
@@ -90,7 +90,7 @@ impl From<&ProviderStarted> for Provider {
             contract_id: value.contract_id.clone(),
             reference: value.image_ref.clone(),
             link_name: value.link_name.clone(),
-            hosts: HashMap::from([(value.host_id.clone(), ProviderStatus::default())]),
+            ..Default::default()
         }
     }
 }
@@ -116,7 +116,7 @@ pub struct Actor {
     /// Call alias to use for the actor
     pub call_alias: Option<String>,
 
-    /// The count of actors running in the lattice, broken down by host
+    /// The count of actors running in the lattice, broken down by host_id
     pub count: HashMap<String, usize>,
 
     /// The reference used to start the actor. Can be empty if it was started from a file
@@ -143,8 +143,8 @@ impl From<ActorStarted> for Actor {
             capabilities: value.claims.capabilites,
             issuer: value.claims.issuer,
             call_alias: value.claims.call_alias,
-            count: HashMap::from([(value.host_id, 1)]),
             reference: value.image_ref,
+            ..Default::default()
         }
     }
 }
@@ -157,8 +157,8 @@ impl From<&ActorStarted> for Actor {
             capabilities: value.claims.capabilites.clone(),
             issuer: value.claims.issuer.clone(),
             call_alias: value.claims.call_alias.clone(),
-            count: HashMap::from([(value.host_id.clone(), 1)]),
             reference: value.image_ref.clone(),
+            ..Default::default()
         }
     }
 }

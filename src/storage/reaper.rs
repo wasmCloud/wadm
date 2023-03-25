@@ -1,5 +1,5 @@
 //! Contains helpers for reaping Hosts that haven't received a heartbeat within a configured amount
-//! of time
+//! of time and actors and providers on hosts that no longer exist
 
 use std::collections::HashMap;
 
@@ -7,7 +7,7 @@ use chrono::{Duration, Utc};
 use tokio::{task::JoinHandle, time};
 use tracing::{debug, error, info, instrument, trace};
 
-use super::{Host, Store};
+use super::{Actor, Host, Provider, Store};
 
 /// A struct that can reap various pieces of data from the given store
 pub struct Reaper<S> {
@@ -21,7 +21,8 @@ impl<S: Store + Clone + Send + Sync + 'static> Reaper<S> {
     /// `check_interval` for all passed lattice IDs. This reaper will immediately begin executing
     /// spawned tasks. When the reaper is dropped, it will stop polling all tasks. This function
     /// will panic if you pass it a duration that is larger than the maximum value accepted by the
-    /// `chrono` library. As this is a rare case, we don't actually return an error an panic instead
+    /// `chrono` library. As this is a rare case, we don't actually return an error and panic
+    /// instead
     ///
     /// The reaper will wait for 2 * `check_interval` before removing anything. For example, if
     /// `check_interval` is set to 30s, then after 30s, the item is considered to be in a "warning"
@@ -38,7 +39,14 @@ impl<S: Store + Clone + Send + Sync + 'static> Reaper<S> {
         let handles = lattices_to_observe.into_iter().map(move |id| {
             (
                 id.clone(),
-                tokio::spawn(reaper_fn(cloned_store.clone(), id, interval)),
+                tokio::spawn(
+                    Undertaker {
+                        store: cloned_store.clone(),
+                        lattice_id: id,
+                        interval,
+                    }
+                    .reap(),
+                ),
             )
         });
         Reaper {
@@ -52,7 +60,14 @@ impl<S: Store + Clone + Send + Sync + 'static> Reaper<S> {
     pub fn observe(&mut self, lattice_id: String) {
         self.handles.insert(
             lattice_id.clone(),
-            tokio::spawn(reaper_fn(self.store.clone(), lattice_id, self.interval)),
+            tokio::spawn(
+                Undertaker {
+                    store: self.store.clone(),
+                    lattice_id,
+                    interval: self.interval,
+                }
+                .reap(),
+            ),
         );
     }
 
@@ -64,30 +79,55 @@ impl<S: Store + Clone + Send + Sync + 'static> Reaper<S> {
     }
 }
 
-#[instrument(level = "debug", skip(store))]
-async fn reaper_fn<S: Store>(store: S, lattice_id: String, check_interval: Duration) {
-    debug!("Starting reaper");
-    // SAFETY: We created this Duration from a std Duration, so it should unwrap back just fine
-    let mut ticker = time::interval(check_interval.to_std().unwrap());
-    ticker.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
+struct Undertaker<S> {
+    store: S,
+    lattice_id: String,
+    interval: Duration,
+}
 
-    loop {
-        ticker.tick().await;
-        trace!("Tick fired, fetching host list");
-        let nodes = match store.list::<Host>(&lattice_id).await {
+impl<S: Store + Clone + Send + Sync + 'static> Undertaker<S> {
+    #[instrument(level = "debug", skip(self), fields(lattice_id = %self.lattice_id, check_interval = %self.interval))]
+    async fn reap(self) {
+        debug!("Starting reaper");
+        // SAFETY: We created this Duration from a std Duration, so it should unwrap back just fine
+        let mut ticker = time::interval(self.interval.to_std().unwrap());
+        ticker.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
+
+        loop {
+            ticker.tick().await;
+            trace!("Tick fired, running reap tasks");
+            // We want to reap hosts first so that the state is up to date for reaping actors and providers
+            self.reap_hosts().await;
+            // Now get the current list of hosts
+            let hosts = match self.store.list::<Host>(&self.lattice_id).await {
+                Ok(n) => n,
+                Err(e) => {
+                    error!(error = %e, "Error when fetching hosts from store. Will retry on next tick");
+                    continue;
+                }
+            };
+            // Reap actors and providers simultaneously
+            futures::join!(self.reap_actors(&hosts), self.reap_providers(&hosts));
+            trace!("Completed reap tasks");
+        }
+    }
+
+    #[instrument(level = "debug", skip(self), fields(lattice_id = %self.lattice_id))]
+    async fn reap_hosts(&self) {
+        let hosts = match self.store.list::<Host>(&self.lattice_id).await {
             Ok(n) => n,
             Err(e) => {
                 error!(error = %e, "Error when fetching hosts from store. Will retry on next tick");
-                continue;
+                return;
             }
         };
 
-        let hosts_to_remove = nodes.into_iter().filter_map(|(id, host)| {
+        let hosts_to_remove = hosts.into_iter().filter_map(|(id, host)| {
             let elapsed = Utc::now() - host.last_seen;
-            if elapsed > (check_interval * 2) {
+            if elapsed > (self.interval * 2) {
                 info!(%id, friendly_name = %host.friendly_name, "Host has not been seen for 2 intervals. Will reap node");
                 Some(id)
-            } else if elapsed > check_interval {
+            } else if elapsed > self.interval {
                 info!(%id, friendly_name = %host.friendly_name, "Host has not been seen for 1 interval. Next check will reap node from store");
                 None
             } else {
@@ -95,15 +135,100 @@ async fn reaper_fn<S: Store>(store: S, lattice_id: String, check_interval: Durat
             }
         });
 
-        // NOTE(thomastaylor): We probably will never be deleting more than a few at a time anyway,
-        // so doing this serially is fine. If it does become a problem, we can add a `delete_many`
-        // function to `Store`
-        for id in hosts_to_remove {
-            if let Err(e) = store.delete::<Host>(&lattice_id, &id).await {
-                error!(error = %e, host_id = %id, "Error when deleting host from store. Will retry on next tick")
-            }
-            info!(host_id = %id, "Removed host from store");
+        if let Err(e) = self
+            .store
+            .delete_many::<Host, _, _>(&self.lattice_id, hosts_to_remove)
+            .await
+        {
+            error!(error = %e, "Error when deleting hosts from store. Will retry on next tick")
         }
-        trace!("Completed reap check");
+    }
+
+    #[instrument(level = "debug", skip(self, hosts), fields(lattice_id = %self.lattice_id))]
+    async fn reap_actors(&self, hosts: &HashMap<String, Host>) {
+        let actors = match self.store.list::<Actor>(&self.lattice_id).await {
+            Ok(n) => n,
+            Err(e) => {
+                error!(error = %e, "Error when fetching actors from store. Will retry on next tick");
+                return;
+            }
+        };
+
+        let (actors_to_remove, actors_to_update): (HashMap<String, Actor>, HashMap<String, Actor>) =
+            actors
+                .into_iter()
+                .filter_map(|(id, mut actor)| {
+                    let current_num_hosts = actor.count.len();
+                    // Only keep the instances where the host exists
+                    actor.count.retain(|host_id, _| hosts.contains_key(host_id));
+                    // If we got rid of something, that means this needs to update
+                    (current_num_hosts != actor.count.len()).then_some((id, actor))
+                })
+                .partition(|(_, actor)| actor.count.is_empty());
+
+        debug!(to_remove = %actors_to_remove.len(), to_update = %actors_to_update.len(), "Filtered out list of actors to update and reap");
+
+        if let Err(e) = self
+            .store
+            .store_many(&self.lattice_id, actors_to_update)
+            .await
+        {
+            error!(error = %e, "Error when storing updated actors. Will retry on next tick");
+            return;
+        }
+
+        if let Err(e) = self
+            .store
+            .delete_many::<Actor, _, _>(&self.lattice_id, actors_to_remove.keys())
+            .await
+        {
+            error!(error = %e, "Error when deleting actors from store. Will retry on next tick")
+        }
+    }
+
+    #[instrument(level = "debug", skip(self, hosts), fields(lattice_id = %self.lattice_id))]
+    async fn reap_providers(&self, hosts: &HashMap<String, Host>) {
+        let providers = match self.store.list::<Provider>(&self.lattice_id).await {
+            Ok(n) => n,
+            Err(e) => {
+                error!(error = %e, "Error when fetching actors from store. Will retry on next tick");
+                return;
+            }
+        };
+
+        let (providers_to_remove, providers_to_update): (
+            HashMap<String, Provider>,
+            HashMap<String, Provider>,
+        ) = providers
+            .into_iter()
+            .filter_map(|(id, mut provider)| {
+                let current_num_hosts = provider.hosts.len();
+                // Only keep the instances where the host exists
+                provider
+                    .hosts
+                    .retain(|host_id, _| hosts.contains_key(host_id));
+                // If we got rid of something, that means this needs to update
+                (current_num_hosts != provider.hosts.len()).then_some((id, provider))
+            })
+            .partition(|(_, provider)| provider.hosts.is_empty());
+
+        debug!(to_remove = %providers_to_remove.len(), to_update = %providers_to_update.len(), "Filtered out list of providers to update and reap");
+
+        if let Err(e) = self
+            .store
+            .store_many(&self.lattice_id, providers_to_update)
+            .await
+        {
+            error!(error = %e, "Error when storing updated providers. Will retry on next tick");
+            return;
+        }
+
+        if let Err(e) = self
+            .store
+            .delete_many::<Provider, _, _>(&self.lattice_id, providers_to_remove.keys())
+            .await
+        {
+            error!(error = %e, "Error when deleting providers from store. Will retry on next tick")
+        }
     }
 }
