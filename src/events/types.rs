@@ -193,7 +193,7 @@ pub enum ConversionError {
 // EVENTS START HERE
 //
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ActorStarted {
     pub annotations: HashMap<String, String>,
     pub api_version: usize,
@@ -214,7 +214,7 @@ event_impl!(
     host_id
 );
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ActorStopped {
     pub instance_id: String,
     // TODO: Parse as nkey?
@@ -230,7 +230,7 @@ event_impl!(
     host_id
 );
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ProviderStarted {
     pub annotations: HashMap<String, String>,
     pub claims: ProviderClaims,
@@ -252,7 +252,7 @@ event_impl!(
     host_id
 );
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ProviderStartFailed {
     pub error: String,
     pub link_name: String,
@@ -268,7 +268,7 @@ event_impl!(
     host_id
 );
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ProviderStopped {
     pub contract_id: String,
     // TODO: parse as UUID?
@@ -289,7 +289,7 @@ event_impl!(
     host_id
 );
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ProviderHealthCheckPassed {
     #[serde(flatten)]
     pub data: ProviderHealthCheckInfo,
@@ -304,7 +304,7 @@ event_impl!(
     host_id
 );
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ProviderHealthCheckFailed {
     #[serde(flatten)]
     pub data: ProviderHealthCheckInfo,
@@ -319,7 +319,7 @@ event_impl!(
     host_id
 );
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct LinkdefSet {
     #[serde(flatten)]
     pub linkdef: Linkdef,
@@ -327,7 +327,7 @@ pub struct LinkdefSet {
 
 event_impl!(LinkdefSet, "com.wasmcloud.lattice.linkdef_set");
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct LinkdefDeleted {
     #[serde(flatten)]
     pub linkdef: Linkdef,
@@ -335,7 +335,7 @@ pub struct LinkdefDeleted {
 
 event_impl!(LinkdefDeleted, "com.wasmcloud.lattice.linkdef_deleted");
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct HostStarted {
     pub labels: HashMap<String, String>,
     pub friendly_name: String,
@@ -351,7 +351,7 @@ event_impl!(
     id
 );
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct HostStopped {
     pub labels: HashMap<String, String>,
     // TODO: Parse as nkey?
@@ -366,7 +366,7 @@ event_impl!(
     id
 );
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct HostHeartbeat {
     pub actors: HashMap<String, usize>,
     pub friendly_name: String,

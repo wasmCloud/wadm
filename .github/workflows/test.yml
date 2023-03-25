@@ -12,7 +12,6 @@ jobs:
       matrix:
         os: [ubuntu-22.04]
         nats_version: [2.9.15]
-        wash_version: [0.16.2]
 
     steps:
       - uses: actions/checkout@v2
@@ -35,7 +34,7 @@ jobs:
       # GH Actions doesn't currently support passing args to service containers and there is no way
       # to use an environment variable to turn on jetstream for nats, so we manually start it here
       - name: Start NATS
-        run: docker run --rm -d --name kv-provider-test -p 127.0.0.1:4222:4222 nats:${{ matrix.nats_version }} -js
+        run: docker run --rm -d --name wadm-test -p 127.0.0.1:4222:4222 nats:${{ matrix.nats_version }} -js
 
       # Run all tests
       - name: Run tests

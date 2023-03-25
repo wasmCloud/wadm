@@ -8,6 +8,9 @@ pub mod nats_utils;
 pub mod storage;
 pub mod workers;
 
+#[cfg(test)]
+pub mod test_util;
+
 /// Default amount of time events should stay in the stream. This is the 2x heartbeat interval, plus
 /// some wiggle room. Exported to make setting defaults easy
 pub const DEFAULT_EXPIRY_TIME: Duration = Duration::from_secs(70);
