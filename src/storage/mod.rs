@@ -3,9 +3,10 @@ use serde::{de::DeserializeOwned, Serialize};
 use std::{collections::HashMap, ops::Deref};
 
 pub mod nats_kv;
+pub mod reaper;
 mod state;
 
-pub use state::{Actor, Host, Provider};
+pub use state::{Actor, Host, Provider, ProviderStatus};
 
 /// A trait that must be implemented with a unique identifier for the given type. This is used in
 /// the construction of keys for a store
@@ -25,7 +26,7 @@ pub trait StateKind {
 // struct just to get the ID. If we need the type guarantees in the future, we can always add it in
 #[async_trait]
 pub trait Store {
-    type Error: std::error::Error;
+    type Error: std::error::Error + Send + Sync + 'static;
 
     /// Get the state for the specified kind with the given ID. Returns None if it doesn't exist
     ///
@@ -44,25 +45,57 @@ pub trait Store {
 
     /// Store a piece of state with the given ID. This should overwrite existing state entries
     ///
+    /// By default this will just call [`Store::store_many`] with a single item in the list of data
+    async fn store<T>(&self, lattice_id: &str, id: String, data: T) -> Result<(), Self::Error>
+    where
+        T: Serialize + DeserializeOwned + StateKind + Send,
+    {
+        self.store_many(lattice_id, [(id, data)]).await
+    }
+
+    /// Store multiple items of the same type. This should overwrite existing state entries. This
+    /// allows for stores to perform multiple writes simultaneously or to leverage transactions
+    ///
+    /// The given data can be anything that can be turned into an iterator of (key, value). This
+    /// means you can pass a [`HashMap`](std::collections::HashMap) or something like
+    /// `["key".to_string(), Actor{...}]`
+    ///
     /// This function has several required bounds. It needs to be serialize and deserialize because
     /// some implementations will need to deserialize the current data before modifying it.
     /// [`StateKind`] is needed in order to store and access the data correctly,
     /// and, lastly, [`Send`] is needed because this is an async function and the data needs to be
     /// sendable between threads
-    async fn store<T>(&self, lattice_id: &str, id: String, data: T) -> Result<(), Self::Error>
+    async fn store_many<T, D>(&self, lattice_id: &str, data: D) -> Result<(), Self::Error>
     where
-        T: Serialize + DeserializeOwned + StateKind + Send;
+        T: Serialize + DeserializeOwned + StateKind + Send,
+        D: IntoIterator<Item = (String, T)> + Send;
 
-    /// Delete an existing piece of state
+    /// Delete a state entry
+    ///
+    /// By default this will just call [`Store::delete_many`] with a single item in the list of data
+    async fn delete<T>(&self, lattice_id: &str, id: &str) -> Result<(), Self::Error>
+    where
+        T: Serialize + DeserializeOwned + StateKind + Send,
+    {
+        self.delete_many::<T, _, _>(lattice_id, [id]).await
+    }
+
+    /// Delete multiple state entries. This allows for stores to perform multiple delete
+    /// simultaneously or to leverage transactions. This is for advanced use cases
+    ///
+    /// The given data can be anything that can be turned into an iterator of (key, value). This
+    /// means you can pass a [`Vec`](std::collections::Vec) or something like `["key"]`
     ///
     /// This function has several required bounds. It needs to be serialize and deserialize because
     /// some implementations will need to deserialize the current data before modifying it.
     /// [`StateKind`] is needed in order to store and access the data correctly, and, lastly,
     /// [`Send`] is needed because this is an async function and the modified data needs to be
     /// sendable between threads
-    async fn delete<T>(&self, lattice_id: &str, id: &str) -> Result<(), Self::Error>
+    async fn delete_many<T, D, K>(&self, lattice_id: &str, data: D) -> Result<(), Self::Error>
     where
-        T: Serialize + DeserializeOwned + StateKind + Send;
+        T: Serialize + DeserializeOwned + StateKind + Send,
+        D: IntoIterator<Item = K> + Send,
+        K: AsRef<str>;
 }
 
 /// Scoped store is a convenience wrapper around a store that automatically passes the given
@@ -95,7 +128,7 @@ impl<S: Clone> Clone for ScopedStore<S> {
     }
 }
 
-impl<S: Store> ScopedStore<S> {
+impl<S: Store + Sync> ScopedStore<S> {
     /// Creates a new store scoped to the given lattice ID
     pub fn new(lattice_id: &str, store: S) -> ScopedStore<S> {
         ScopedStore {
@@ -138,17 +171,41 @@ impl<S: Store> ScopedStore<S> {
         self.inner.store(&self.lattice_id, id, data).await
     }
 
-    /// Delete an existing piece of state
+    /// Store multiple items of the same type. This should overwrite existing state entries. This
+    /// allows for stores to perform multiple writes simultaneously or to leverage transactions
+    pub async fn store_many<T, D>(&self, data: D) -> Result<(), S::Error>
+    where
+        T: Serialize + DeserializeOwned + StateKind + Send,
+        D: IntoIterator<Item = (String, T)> + Send,
+    {
+        self.inner.store_many(&self.lattice_id, data).await
+    }
+
+    /// Delete a state entry
     pub async fn delete<T>(&self, id: &str) -> Result<(), S::Error>
     where
         T: Serialize + DeserializeOwned + StateKind + Send,
     {
         self.inner.delete::<T>(&self.lattice_id, id).await
     }
+
+    /// Delete multiple state entries. This allows for stores to perform multiple delete
+    /// simultaneously or to leverage transactions
+    pub async fn delete_many<T, D, K>(&self, data: D) -> Result<(), S::Error>
+    where
+        T: Serialize + DeserializeOwned + StateKind + Send,
+        D: IntoIterator<Item = K> + Send,
+        K: AsRef<str>,
+    {
+        self.inner
+            .delete_many::<T, _, _>(&self.lattice_id, data)
+            .await
+    }
 }
 
 /// A helper function for generating a unique ID for any given provider. This is exposed purely to
 /// be a common way of creating a key to access/store provider information
-pub fn provider_id(public_key: &str, link_name: &str, contract_id: &str) -> String {
-    format!("{}/{}/{}", public_key, link_name, contract_id)
+pub fn provider_id(public_key: &str, link_name: &str) -> String {
+    // TODO: Update this to also use contract ID when 0.62 comes out
+    format!("{}/{}", public_key, link_name)
 }

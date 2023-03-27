@@ -13,7 +13,7 @@ use async_nats::{
     Error as NatsError,
 };
 use futures::{Stream, TryStreamExt};
-use tracing::{error, warn};
+use tracing::{debug, error, warn};
 
 use super::{CreateConsumer, ScopedMessage};
 use crate::events::*;
@@ -113,7 +113,7 @@ impl Stream for EventConsumer {
                 let evt = match Event::try_from(raw_evt) {
                     Ok(evt) => evt,
                     Err(e) => {
-                        warn!(error = ?e, "Unable to decode as event. Skipping message");
+                        debug!(error = ?e, "Unable to decode as event. Skipping message");
                         let waker = cx.waker().clone();
                         tokio::spawn(async move {
                             if let Err(e) = msg.ack().await {

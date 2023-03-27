@@ -33,14 +33,19 @@ pub enum WorkError {
     #[error(transparent)]
     NatsError(#[from] async_nats::Error),
     /// A catch all error for non-described errors that are not fatal
-    #[error("{0}")]
-    Other(String),
+    #[error(transparent)]
+    Other(Box<dyn std::error::Error + Send>),
 }
 
 impl WorkError {
     /// Convenience method for turning any error message into a fatal error
     pub fn into_fatal(e: impl std::error::Error + Send + 'static) -> WorkError {
         WorkError::Fatal(Box::new(e))
+    }
+
+    /// Convenience method for turning any error message into an `Other` error
+    pub fn into_other(e: impl std::error::Error + Send + 'static) -> WorkError {
+        WorkError::Other(Box::new(e))
     }
 }
 
@@ -58,7 +63,8 @@ pub trait Worker {
     type Message: Debug + Send;
     /// Process the given work to completion. Almost all errors returned are things that could be
     /// retried. But if for some reason a fatal error occurs, return `WorkError::Fatal` to indicate
-    /// that work should stop.
+    /// that work should stop. Any worker MUST handle acking the message (or passing it to another
+    /// worker). By default, when a [`ScopedMessage`] is dropped, it will nack it
     async fn do_work(&self, message: ScopedMessage<Self::Message>) -> WorkResult<()>;
 }
 

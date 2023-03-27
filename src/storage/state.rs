@@ -30,6 +30,37 @@ pub struct Provider {
 
     /// The linkname the provider was started with
     pub link_name: String,
+
+    /// The hosts this provider is running on
+    pub hosts: HashMap<String, ProviderStatus>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub enum ProviderStatus {
+    /// The provider is starting and hasn't returned a heartbeat yet
+    Pending,
+    /// The provider is running
+    Running,
+    /// The provider failed to start
+    // TODO(thomastaylor312): In the future, we'll probably want to decay out a provider from state
+    // if it hasn't had a heartbeat
+    Failed,
+}
+
+impl Default for ProviderStatus {
+    fn default() -> Self {
+        Self::Pending
+    }
+}
+
+impl ToString for ProviderStatus {
+    fn to_string(&self) -> String {
+        match self {
+            Self::Pending => "pending".to_string(),
+            Self::Running => "running".to_string(),
+            Self::Failed => "failed".to_string(),
+        }
+    }
 }
 
 impl StateKind for Provider {
@@ -45,6 +76,7 @@ impl From<ProviderStarted> for Provider {
             contract_id: value.contract_id,
             reference: value.image_ref,
             link_name: value.link_name,
+            ..Default::default()
         }
     }
 }
@@ -58,6 +90,7 @@ impl From<&ProviderStarted> for Provider {
             contract_id: value.contract_id.clone(),
             reference: value.image_ref.clone(),
             link_name: value.link_name.clone(),
+            ..Default::default()
         }
     }
 }
@@ -83,11 +116,19 @@ pub struct Actor {
     /// Call alias to use for the actor
     pub call_alias: Option<String>,
 
-    /// The count of actors running in the lattice
-    pub count: usize,
+    /// The count of actors running in the lattice, broken down by host_id
+    pub count: HashMap<String, usize>,
 
     /// The reference used to start the actor. Can be empty if it was started from a file
     pub reference: String,
+}
+
+impl Actor {
+    /// A helper method that returns the total count of running copies of this actor, regardless of
+    /// which host they are running on
+    pub fn count(&self) -> usize {
+        self.count.values().sum()
+    }
 }
 
 impl StateKind for Actor {
@@ -102,8 +143,8 @@ impl From<ActorStarted> for Actor {
             capabilities: value.claims.capabilites,
             issuer: value.claims.issuer,
             call_alias: value.claims.call_alias,
-            count: 1,
             reference: value.image_ref,
+            ..Default::default()
         }
     }
 }
@@ -116,8 +157,8 @@ impl From<&ActorStarted> for Actor {
             capabilities: value.claims.capabilites.clone(),
             issuer: value.claims.issuer.clone(),
             call_alias: value.claims.call_alias.clone(),
-            count: 1,
             reference: value.image_ref.clone(),
+            ..Default::default()
         }
     }
 }

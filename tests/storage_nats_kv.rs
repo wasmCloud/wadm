@@ -8,7 +8,7 @@ use chrono::Utc;
 
 use wadm::{
     events::ProviderInfo,
-    storage::{nats_kv::NatsKvStore, Actor, Host, Provider, Store as WadmStore},
+    storage::{nats_kv::NatsKvStore, Actor, Host, Provider, ProviderStatus, Store as WadmStore},
 };
 
 /// Helper function that sets up a store with the given ID as its name. This ID should be unique per
@@ -49,7 +49,7 @@ async fn test_round_trip() {
         name: "Test Actor".to_string(),
         capabilities: vec!["wasmcloud:httpserver".to_string()],
         issuer: "afakekey".to_string(),
-        count: 1,
+        count: HashMap::from([("testhost".to_string(), 1)]),
         reference: "fake.oci.repo/testactor:0.1.0".to_string(),
         ..Default::default()
     };
@@ -59,7 +59,7 @@ async fn test_round_trip() {
         name: "Another Actor".to_string(),
         capabilities: vec!["wasmcloud:httpserver".to_string()],
         issuer: "afakekey".to_string(),
-        count: 1,
+        count: HashMap::from([("testhost".to_string(), 1)]),
         reference: "fake.oci.repo/anotheractor:0.1.0".to_string(),
         ..Default::default()
     };
@@ -85,6 +85,7 @@ async fn test_round_trip() {
         contract_id: "wasmcloud:httpserver".to_string(),
         reference: "fake.oci.repo/testprovider:0.1.0".to_string(),
         link_name: "default".to_string(),
+        hosts: [("testhost".to_string(), ProviderStatus::default())].into(),
     };
 
     store
@@ -92,8 +93,7 @@ async fn test_round_trip() {
         .await
         .expect("Should be able to store a host");
 
-    let provider_id =
-        wadm::storage::provider_id(&provider.id, &provider.link_name, &provider.contract_id);
+    let provider_id = wadm::storage::provider_id(&provider.id, &provider.link_name);
     store
         .store(lattice_id, provider_id.clone(), provider.clone())
         .await
@@ -223,7 +223,7 @@ async fn test_multiple_lattice() {
         name: "Test Actor".to_string(),
         capabilities: vec!["wasmcloud:httpserver".to_string()],
         issuer: "afakekey".to_string(),
-        count: 1,
+        count: HashMap::from([("testhost".to_string(), 1)]),
         reference: "fake.oci.repo/testactor:0.1.0".to_string(),
         ..Default::default()
     };
@@ -233,7 +233,7 @@ async fn test_multiple_lattice() {
         name: "Another Actor".to_string(),
         capabilities: vec!["wasmcloud:httpserver".to_string()],
         issuer: "afakekey".to_string(),
-        count: 1,
+        count: HashMap::from([("testhost".to_string(), 1)]),
         reference: "fake.oci.repo/anotheractor:0.1.0".to_string(),
         ..Default::default()
     };
@@ -277,4 +277,77 @@ async fn test_multiple_lattice() {
         actor.name, actor2.name,
         "Should have returned the correct actor"
     );
+}
+
+#[tokio::test]
+async fn test_store_and_delete_many() {
+    let store = NatsKvStore::new(create_test_store("store_many_test".to_string()).await);
+
+    let lattice_id = "storemany";
+
+    let actor1 = Actor {
+        id: "testactor".to_string(),
+        name: "Test Actor".to_string(),
+        capabilities: vec!["wasmcloud:httpserver".to_string()],
+        issuer: "afakekey".to_string(),
+        count: HashMap::from([("testhost".to_string(), 1)]),
+        reference: "fake.oci.repo/testactor:0.1.0".to_string(),
+        ..Default::default()
+    };
+
+    let actor2 = Actor {
+        id: "anotheractor".to_string(),
+        name: "Another Actor".to_string(),
+        capabilities: vec!["wasmcloud:httpserver".to_string()],
+        issuer: "afakekey".to_string(),
+        count: HashMap::from([("testhost".to_string(), 1)]),
+        reference: "fake.oci.repo/anotheractor:0.1.0".to_string(),
+        ..Default::default()
+    };
+
+    store
+        .store_many(
+            lattice_id,
+            [
+                (actor1.id.clone(), actor1.clone()),
+                (actor2.id.clone(), actor2.clone()),
+            ],
+        )
+        .await
+        .expect("Should be able to store multiple actors");
+
+    let all_actors = store
+        .list::<Actor>(lattice_id)
+        .await
+        .expect("Should be able to get all actors");
+
+    assert_eq!(
+        all_actors.len(),
+        2,
+        "Should have found the correct number of actors"
+    );
+    assert!(
+        all_actors.contains_key(&actor1.id),
+        "Should have found actor with id {}",
+        actor1.id
+    );
+    assert!(
+        all_actors.contains_key(&actor2.id),
+        "Should have found actor with id {}",
+        actor2.id
+    );
+
+    // Now try to delete them all
+    store
+        .delete_many::<Actor, _, _>(lattice_id, [&actor1.id, &actor2.id])
+        .await
+        .expect("Should be able to delete many");
+
+    // Double check that the list is empty now
+    let all_actors = store
+        .list::<Actor>(lattice_id)
+        .await
+        .expect("Should be able to get all actors");
+
+    assert!(all_actors.is_empty(), "All actors should have no items");
 }
