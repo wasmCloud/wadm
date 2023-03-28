@@ -49,4 +49,4 @@ spec:
             spread:
               - name: haslights
                 requirements:
-                  ledenabled: true                
+                  ledstatus: enabled                
