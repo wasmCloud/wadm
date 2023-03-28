@@ -75,7 +75,7 @@
                                 {
                                     "name": "haslights",
                                     "requirements": {
-                                        "ledenabled": true
+                                        "ledstatus": "enabled"
                                     }
                                 }
                             ]

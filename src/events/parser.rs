@@ -60,18 +60,9 @@ fn default_weight() -> Option<i32> {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum SpreadRequirementValues {
-    String(String),
-    Bool(bool),
-    I32(i32),
-    Char(char),
-}
-
-#[derive(Debug, Serialize, Deserialize)]
 pub struct Spread {
     pub name: String,
-    pub requirements: BTreeMap<String, SpreadRequirementValues>,
+    pub requirements: BTreeMap<String, String>,
     #[serde(default = "default_weight", skip_serializing_if = "Option::is_none")]
     pub weight: Option<i32>,
 }
@@ -171,19 +162,13 @@ mod test {
         let mut spread_vec: Vec<Spread> = Vec::new();
         let spread_item = Spread {
             name: "eastcoast".to_string(),
-            requirements: BTreeMap::from([(
-                "zone".to_string(),
-                SpreadRequirementValues::String("us-east-1".to_string()),
-            )]),
+            requirements: BTreeMap::from([("zone".to_string(), "us-east-1".to_string())]),
             weight: Some(80),
         };
         spread_vec.push(spread_item);
         let spread_item = Spread {
             name: "westcoast".to_string(),
-            requirements: BTreeMap::from([(
-                "zone".to_string(),
-                SpreadRequirementValues::String("us-west-1".to_string()),
-            )]),
+            requirements: BTreeMap::from([("zone".to_string(), "us-west-1".to_string())]),
             weight: Some(20),
         };
         spread_vec.push(spread_item);
@@ -237,10 +222,7 @@ mod test {
         let mut spread_vec: Vec<Spread> = Vec::new();
         let spread_item = Spread {
             name: "haslights".to_string(),
-            requirements: BTreeMap::from([(
-                "zone".to_string(),
-                SpreadRequirementValues::Bool(true),
-            )]),
+            requirements: BTreeMap::from([("zone".to_string(), "enabled".to_string())]),
             weight: default_weight(),
         };
         spread_vec.push(spread_item);

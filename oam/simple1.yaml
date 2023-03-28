@@ -50,5 +50,5 @@ spec:
             spread:
               - name: haslights
                 requirements:
-                  ledenabled: true
+                  ledstatus: enabled
                 # default weight is 100
