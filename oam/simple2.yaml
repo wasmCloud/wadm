@@ -28,7 +28,7 @@ spec:
           properties:
             target: webcap
             values:
-              port: 8080
+              port: "8080"
 
     - name: webcap
       type: capability
@@ -41,7 +41,7 @@ spec:
       type: capability
       properties:
         image: wasmcloud.azurecr.io/ledblinky:0.0.1
-        contract: wasmcloud:blinkenlights        
+        contract: wasmcloud:blinkenlights
       traits:
         - type: spreadscaler
           properties:
@@ -49,4 +49,4 @@ spec:
             spread:
               - name: haslights
                 requirements:
-                  ledstatus: enabled                
+                  ledenabled: "true"
