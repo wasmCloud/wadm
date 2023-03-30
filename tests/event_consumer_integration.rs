@@ -8,6 +8,9 @@ use wadm::{
 };
 
 mod helpers;
+use helpers::{setup_test_wash, TestWashConfig};
+
+use anyhow::Result;
 
 const HTTP_SERVER_PROVIDER_ID: &str = "VAG3QITQQ2ODAOWB5TTQSDJ53XK3SHBEIFNK4AYJ5RKAX2UNSCAPHA5M";
 const HTTP_SERVER_REFERENCE: &str = "wasmcloud.azurecr.io/httpserver:0.16.0";
@@ -19,12 +22,14 @@ const WASMBUS_EVENT_TOPIC: &str = "wasmbus.evt.default";
 const STREAM_NAME: &str = "test_wadm_events";
 
 // Timeout accounts for time to pull stuff from registry
-const TIMEOUT_DURATION: Duration = Duration::from_secs(10);
+const DEFAULT_TIMEOUT_DURATION: Duration = Duration::from_secs(10);
+// Link operations take a slightly longer time to work through
+const LINK_OPERATION_TIMEOUT_DURATION: Duration = Duration::from_secs(30);
 
-async fn get_event_consumer() -> EventConsumer {
-    let client = async_nats::connect("127.0.0.1:4222")
+async fn get_event_consumer(nats_url: String) -> EventConsumer {
+    let client = async_nats::connect(&nats_url)
         .await
-        .expect("Unable to setup nats client");
+        .expect("Unable to setup nats event consumer client");
     let context = async_nats::jetstream::new(client);
     // If the stream exists, purge it
     let stream = if let Ok(stream) = context.get_stream(STREAM_NAME).await {
@@ -58,21 +63,21 @@ struct HostResponse {
 }
 
 #[tokio::test]
-// TODO: Stop ignoring this test once https://github.com/wasmCloud/wash/issues/402 is fixed. Please
+// TODO: Run in parallel once https://github.com/wasmCloud/wash/issues/402 is fixed. Please
 // note this test should probably be changed to an e2e test as the order of events is somewhat flaky
-#[ignore]
 #[serial]
-async fn test_event_stream() {
-    let _guard = helpers::setup_test().await;
+async fn test_event_stream() -> Result<()> {
+    let config = TestWashConfig::random().await?;
+    let _guard = setup_test_wash(&config).await;
 
-    let mut stream = get_event_consumer().await;
+    let mut stream = get_event_consumer(config.nats_url()).await;
 
     // NOTE: the first heartbeat doesn't come for 30s so we are ignoring it for now
 
     // Start an actor
     helpers::run_wash_command(["ctl", "start", "actor", ECHO_REFERENCE]).await;
 
-    let mut evt = wait_for_event(&mut stream).await;
+    let mut evt = wait_for_event(&mut stream, DEFAULT_TIMEOUT_DURATION).await;
     if let Event::ActorStarted(actor) = evt.as_ref() {
         assert_eq!(
             actor.public_key, ECHO_ACTOR_ID,
@@ -87,7 +92,7 @@ async fn test_event_stream() {
     // Start a provider
     helpers::run_wash_command(["ctl", "start", "provider", HTTP_SERVER_REFERENCE]).await;
 
-    let mut evt = wait_for_event(&mut stream).await;
+    let mut evt = wait_for_event(&mut stream, DEFAULT_TIMEOUT_DURATION).await;
     if let Event::ProviderStarted(provider) = evt.as_ref() {
         assert_eq!(
             provider.public_key, HTTP_SERVER_PROVIDER_ID,
@@ -110,7 +115,7 @@ async fn test_event_stream() {
     ])
     .await;
 
-    let mut evt = wait_for_event(&mut stream).await;
+    let mut evt = wait_for_event(&mut stream, LINK_OPERATION_TIMEOUT_DURATION).await;
     if let Event::LinkdefSet(link) = evt.as_ref() {
         assert_eq!(
             link.linkdef.actor_id, ECHO_ACTOR_ID,
@@ -128,13 +133,13 @@ async fn test_event_stream() {
     evt.ack().await.expect("Should be able to ack event");
 
     // 0.60 still has a bug with duplicate linkdef put events, so grab an extra event
-    let mut evt = wait_for_event(&mut stream).await;
+    let mut evt = wait_for_event(&mut stream, LINK_OPERATION_TIMEOUT_DURATION).await;
     evt.ack().await.expect("Should be able to ack event");
 
     // Delete link
     helpers::run_wash_command(["ctl", "link", "del", ECHO_ACTOR_ID, CONTRACT_ID]).await;
 
-    let mut evt = wait_for_event(&mut stream).await;
+    let mut evt = wait_for_event(&mut stream, LINK_OPERATION_TIMEOUT_DURATION).await;
     if let Event::LinkdefDeleted(link) = evt.as_ref() {
         assert_eq!(
             link.linkdef.actor_id, ECHO_ACTOR_ID,
@@ -173,7 +178,7 @@ async fn test_event_stream() {
     ])
     .await;
 
-    let mut evt = wait_for_event(&mut stream).await;
+    let mut evt = wait_for_event(&mut stream, DEFAULT_TIMEOUT_DURATION).await;
     if let Event::ProviderStopped(provider) = evt.as_ref() {
         assert_eq!(
             provider.public_key, HTTP_SERVER_PROVIDER_ID,
@@ -188,7 +193,7 @@ async fn test_event_stream() {
     // Stop an actor
     helpers::run_wash_command(["ctl", "stop", "actor", &host_id, ECHO_ACTOR_ID]).await;
 
-    let mut evt = wait_for_event(&mut stream).await;
+    let mut evt = wait_for_event(&mut stream, DEFAULT_TIMEOUT_DURATION).await;
     if let Event::ActorStopped(actor) = evt.as_ref() {
         assert_eq!(
             actor.public_key, ECHO_ACTOR_ID,
@@ -203,7 +208,7 @@ async fn test_event_stream() {
     // Stop the host
     helpers::run_wash_command(["ctl", "stop", "host", &host_id]).await;
 
-    let mut evt = wait_for_event(&mut stream).await;
+    let mut evt = wait_for_event(&mut stream, DEFAULT_TIMEOUT_DURATION).await;
     if let Event::HostStopped(host) = evt.as_ref() {
         assert_eq!(
             host.id, host_id,
@@ -214,25 +219,27 @@ async fn test_event_stream() {
         panic!("Event wasn't an actor stopped event");
     }
     evt.ack().await.expect("Should be able to ack event");
+
+    Ok(())
 }
 
 #[tokio::test]
-// TODO: Stop ignoring this test once https://github.com/wasmCloud/wash/issues/402 is fixed. This
+// TODO: Run in parallel once https://github.com/wasmCloud/wash/issues/402 is fixed. This
 // does work when you run it individually. Please note that there is problems when running this
 // against 0.60+ hosts as the KV bucket for linkdefs makes it so that all those linkdefs are emitted
 // as published events when the host starts
-#[ignore]
 #[serial]
-async fn test_nack_and_rereceive() {
-    let _guard = helpers::setup_test().await;
+async fn test_nack_and_rereceive() -> Result<()> {
+    let config = TestWashConfig::random().await?;
+    let _guard = setup_test_wash(&config).await;
 
-    let mut stream = get_event_consumer().await;
+    let mut stream = get_event_consumer(config.nats_url()).await;
 
     // Start an actor
     helpers::run_wash_command(["ctl", "start", "actor", ECHO_REFERENCE]).await;
 
     // Get the event and then nack it
-    let mut evt = wait_for_event(&mut stream).await;
+    let mut evt = wait_for_event(&mut stream, DEFAULT_TIMEOUT_DURATION).await;
     // Make sure we got the right event
     if let Event::ActorStarted(actor) = evt.as_ref() {
         assert_eq!(
@@ -247,7 +254,7 @@ async fn test_nack_and_rereceive() {
     evt.nack().await;
 
     // Now do it again and make sure we get the same event
-    let mut evt = wait_for_event(&mut stream).await;
+    let mut evt = wait_for_event(&mut stream, DEFAULT_TIMEOUT_DURATION).await;
     if let Event::ActorStarted(actor) = evt.as_ref() {
         assert_eq!(
             actor.public_key, ECHO_ACTOR_ID,
@@ -259,14 +266,22 @@ async fn test_nack_and_rereceive() {
     }
 
     evt.ack().await.expect("Should be able to ack event");
+
+    Ok(())
 }
 
 async fn wait_for_event(
     mut stream: impl Stream<Item = Result<ScopedMessage<Event>, async_nats::Error>> + Unpin,
+    duration: Duration,
 ) -> ScopedMessage<Event> {
-    let mut evt = timeout(TIMEOUT_DURATION, stream.try_next())
+    let mut evt = timeout(duration, stream.try_next())
         .await
-        .expect("Should have received event before timeout")
+        .unwrap_or_else(|_| {
+            panic!(
+                "Should have received event before timeout {}s",
+                duration.as_secs()
+            )
+        })
         .expect("Stream shouldn't have had an error")
         .expect("Stream shouldn't have ended");
 
@@ -279,7 +294,7 @@ async fn wait_for_event(
     ) {
         evt.ack().await.expect("Should be able to ack message");
         // Just a copy paste here so we don't have to deal with async recursion
-        timeout(TIMEOUT_DURATION, stream.try_next())
+        timeout(duration, stream.try_next())
             .await
             .expect("Should have received event before timeout")
             .expect("Stream shouldn't have had an error")

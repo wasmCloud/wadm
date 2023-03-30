@@ -18,7 +18,7 @@ const TIMEOUT_DURATION: Duration = Duration::from_secs(2);
 async fn get_command_consumer() -> (async_nats::Client, CommandConsumer) {
     let client = async_nats::connect("127.0.0.1:4222")
         .await
-        .expect("Unable to setup nats client");
+        .expect("Unable to setup nats command consumer client");
     let context = async_nats::jetstream::new(client.clone());
     // If the stream exists, purge it
     let stream = if let Ok(stream) = context.get_stream(STREAM_NAME).await {
