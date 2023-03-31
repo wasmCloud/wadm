@@ -4,7 +4,9 @@ use chrono::Utc;
 
 use wadm::{
     events::ProviderInfo,
-    storage::{nats_kv::NatsKvStore, Actor, Host, Provider, ProviderStatus, Store as WadmStore},
+    storage::{
+        nats_kv::NatsKvStore, Actor, Host, Provider, ProviderStatus, ReadStore, Store as WadmStore,
+    },
 };
 
 mod helpers;

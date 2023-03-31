@@ -626,7 +626,7 @@ mod test {
 
     use super::*;
 
-    use crate::test_util::TestStore;
+    use crate::{storage::ReadStore, test_util::TestStore};
 
     #[async_trait::async_trait]
     impl ClaimsSource for HashMap<String, Claims> {

@@ -16,7 +16,7 @@ pub struct TestStore {
 }
 
 #[async_trait::async_trait]
-impl crate::storage::Store for TestStore {
+impl crate::storage::ReadStore for TestStore {
     type Error = Infallible;
 
     async fn get<T>(&self, lattice_id: &str, id: &str) -> Result<Option<T>, Self::Error>
@@ -48,7 +48,10 @@ impl crate::storage::Store for TestStore {
             .map(|raw| serde_json::from_slice(raw).unwrap())
             .unwrap_or_default())
     }
+}
 
+#[async_trait::async_trait]
+impl crate::storage::Store for TestStore {
     async fn store_many<T, D>(&self, lattice_id: &str, data: D) -> Result<(), Self::Error>
     where
         T: Serialize + DeserializeOwned + StateKind + Send,

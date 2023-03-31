@@ -24,7 +24,7 @@ use serde::{de::DeserializeOwned, Serialize};
 use tracing::{debug, error, field::Empty, instrument, trace};
 use tracing_futures::Instrument;
 
-use super::{StateKind, Store};
+use super::{ReadStore, StateKind, Store};
 
 /// Errors that can be encountered by NATS KV Store implemenation
 #[derive(Debug, thiserror::Error)]
@@ -97,7 +97,7 @@ impl NatsKvStore {
 // https://morestina.net/blog/1843/the-stable-hashmap-trap). We can also swap out encoding formats
 // to something like bincode or cbor and focus on things like avoiding allocations
 #[async_trait]
-impl Store for NatsKvStore {
+impl ReadStore for NatsKvStore {
     type Error = NatsStoreError;
 
     /// Get the state for the specified kind with the given ID.
@@ -131,7 +131,10 @@ impl Store for NatsKvStore {
             .await
             .map(|(data, _)| data)
     }
+}
 
+#[async_trait]
+impl Store for NatsKvStore {
     /// Store multiple items of the same type. This should overwrite existing state entries. This
     /// allows for stores to perform multiple writes simultaneously or to leverage transactions
     ///

@@ -238,7 +238,10 @@ mod test {
     use super::*;
     use std::{collections::HashSet, sync::Arc};
 
-    use crate::{storage::ProviderStatus, test_util::TestStore};
+    use crate::{
+        storage::{ProviderStatus, ReadStore},
+        test_util::TestStore,
+    };
 
     #[tokio::test]
     async fn test_reaping() {
