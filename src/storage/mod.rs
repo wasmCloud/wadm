@@ -15,17 +15,8 @@ pub trait StateKind {
     const KIND: &'static str;
 }
 
-/// A trait that indicates the ability of a struct to store state
-///
-/// Internals of how to validate state (such as compare and swap semantics) are left up to
-/// implementors and should not be the concern of consumers of any given store
-// NOTE(thomastaylor312): To our future selves: I originally had a trait called `StateIdentity` that
-// I used rather than having the consumer generate the key. However, that seemed to be a bit
-// overkill for now, and it creates a bunch of extra work. Any type that needs to be used as an ID
-// would need to implement the type and it could lead to the annoying issue of needing to define a
-// struct just to get the ID. If we need the type guarantees in the future, we can always add it in
 #[async_trait]
-pub trait Store {
+pub trait ReadStore {
     type Error: std::error::Error + Send + Sync + 'static;
 
     /// Get the state for the specified kind with the given ID. Returns None if it doesn't exist
@@ -42,7 +33,19 @@ pub trait Store {
     async fn list<T>(&self, lattice_id: &str) -> Result<HashMap<String, T>, Self::Error>
     where
         T: DeserializeOwned + StateKind;
+}
 
+/// A trait that indicates the ability of a struct to store state
+///
+/// Internals of how to validate state (such as compare and swap semantics) are left up to
+/// implementors and should not be the concern of consumers of any given store
+// NOTE(thomastaylor312): To our future selves: I originally had a trait called `StateIdentity` that
+// I used rather than having the consumer generate the key. However, that seemed to be a bit
+// overkill for now, and it creates a bunch of extra work. Any type that needs to be used as an ID
+// would need to implement the type and it could lead to the annoying issue of needing to define a
+// struct just to get the ID. If we need the type guarantees in the future, we can always add it in
+#[async_trait]
+pub trait Store: ReadStore {
     /// Store a piece of state with the given ID. This should overwrite existing state entries
     ///
     /// By default this will just call [`Store::store_many`] with a single item in the list of data
@@ -101,22 +104,6 @@ pub trait Store {
 // Helper for making sure you can wrap any non-clonable store in an Arc
 #[async_trait]
 impl<S: Store + Send + Sync> Store for std::sync::Arc<S> {
-    type Error = S::Error;
-
-    async fn get<T>(&self, lattice_id: &str, id: &str) -> Result<Option<T>, Self::Error>
-    where
-        T: DeserializeOwned + StateKind,
-    {
-        self.as_ref().get(lattice_id, id).await
-    }
-
-    async fn list<T>(&self, lattice_id: &str) -> Result<HashMap<String, T>, Self::Error>
-    where
-        T: DeserializeOwned + StateKind,
-    {
-        self.as_ref().list(lattice_id).await
-    }
-
     async fn store_many<T, D>(&self, lattice_id: &str, data: D) -> Result<(), Self::Error>
     where
         T: Serialize + DeserializeOwned + StateKind + Send,
@@ -132,6 +119,25 @@ impl<S: Store + Send + Sync> Store for std::sync::Arc<S> {
         K: AsRef<str>,
     {
         self.as_ref().delete_many::<T, _, _>(lattice_id, data).await
+    }
+}
+
+#[async_trait]
+impl<S: Store + Send + Sync> ReadStore for std::sync::Arc<S> {
+    type Error = S::Error;
+
+    async fn get<T>(&self, lattice_id: &str, id: &str) -> Result<Option<T>, Self::Error>
+    where
+        T: DeserializeOwned + StateKind,
+    {
+        self.as_ref().get(lattice_id, id).await
+    }
+
+    async fn list<T>(&self, lattice_id: &str) -> Result<HashMap<String, T>, Self::Error>
+    where
+        T: DeserializeOwned + StateKind,
+    {
+        self.as_ref().list(lattice_id).await
     }
 }
 
