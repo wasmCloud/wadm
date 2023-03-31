@@ -1,7 +1,14 @@
 #![allow(dead_code)]
 
 use std::net::{Ipv4Addr, SocketAddrV4, TcpListener};
-use std::ops::Range;
+
+use async_nats::{
+    jetstream::{
+        self,
+        kv::{Config as KvConfig, Store},
+    },
+    Client,
+};
 use tokio::process::Child;
 use tokio::process::Command;
 
@@ -9,9 +16,6 @@ use anyhow::Result;
 
 const DEFAULT_WASMCLOUD_PORT: u16 = 4000;
 const DEFAULT_NATS_PORT: u16 = 4222;
-
-const DEFAULT_RANDOM_PORT_MIN: u16 = 1024;
-const DEFAULT_RANDOM_PORT_MAX: u16 = 65535;
 
 /// Get a TCP random port
 fn get_random_tcp_port() -> u16 {
@@ -129,6 +133,9 @@ async fn start_wash_instance(cfg: &TestWashConfig) -> Result<CleanupGuard> {
 /// Set up and run a wash instance that can be used for a test
 pub async fn setup_test_wash(cfg: &TestWashConfig) -> CleanupGuard {
     match tokio::net::TcpStream::connect(cfg.washboard_url()).await {
+        // NOTE: DO NOT use unwrap_or here. Otherwise we allocate a cleanup guard that then gets
+        // dropped, which runs `wash down`
+        #[allow(clippy::unnecessary_lazy_evaluations)]
         Err(_) => start_wash_instance(cfg)
             .await
             .unwrap_or_else(|_| CleanupGuard {
@@ -179,4 +186,36 @@ where
         )
     }
     output.stdout
+}
+
+/// Helper function that sets up a store with the given ID as its name. This ID should be unique per
+/// test
+pub async fn create_test_store(id: String) -> Store {
+    let client = async_nats::connect("127.0.0.1:4222")
+        .await
+        .expect("Should be able to connect to NATS");
+
+    create_test_store_with_client(client, id).await
+}
+
+/// Same as [`create_test_store`], but allows you to pass an existing client instead
+pub async fn create_test_store_with_client(client: Client, id: String) -> Store {
+    let context = jetstream::new(client);
+
+    // First make sure we clean up the store. We can't just do a cleanup on `Drop` because
+    // `tokio::test` uses a single threaded runtime and blocks forever and it isn't really worth
+    // spinning up more cores to handle this. We don't care about the result because it could not
+    // exist
+    let _ = context.delete_key_value(&id).await;
+
+    context
+        .create_key_value(KvConfig {
+            bucket: id,
+            history: 1,
+            num_replicas: 1,
+            storage: jetstream::stream::StorageType::Memory,
+            ..Default::default()
+        })
+        .await
+        .expect("Unable to create KV bucket")
 }

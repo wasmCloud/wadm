@@ -98,6 +98,43 @@ pub trait Store {
         K: AsRef<str>;
 }
 
+// Helper for making sure you can wrap any non-clonable store in an Arc
+#[async_trait]
+impl<S: Store + Send + Sync> Store for std::sync::Arc<S> {
+    type Error = S::Error;
+
+    async fn get<T>(&self, lattice_id: &str, id: &str) -> Result<Option<T>, Self::Error>
+    where
+        T: DeserializeOwned + StateKind,
+    {
+        self.as_ref().get(lattice_id, id).await
+    }
+
+    async fn list<T>(&self, lattice_id: &str) -> Result<HashMap<String, T>, Self::Error>
+    where
+        T: DeserializeOwned + StateKind,
+    {
+        self.as_ref().list(lattice_id).await
+    }
+
+    async fn store_many<T, D>(&self, lattice_id: &str, data: D) -> Result<(), Self::Error>
+    where
+        T: Serialize + DeserializeOwned + StateKind + Send,
+        D: IntoIterator<Item = (String, T)> + Send,
+    {
+        self.as_ref().store_many(lattice_id, data).await
+    }
+
+    async fn delete_many<T, D, K>(&self, lattice_id: &str, data: D) -> Result<(), Self::Error>
+    where
+        T: Serialize + DeserializeOwned + StateKind + Send,
+        D: IntoIterator<Item = K> + Send,
+        K: AsRef<str>,
+    {
+        self.as_ref().delete_many::<T, _, _>(lattice_id, data).await
+    }
+}
+
 /// Scoped store is a convenience wrapper around a store that automatically passes the given
 /// lattice_id to [`Store`] implementations on every call
 pub struct ScopedStore<S> {

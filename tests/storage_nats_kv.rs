@@ -1,9 +1,5 @@
 use std::collections::{HashMap, HashSet};
 
-use async_nats::jetstream::{
-    self,
-    kv::{Config as KvConfig, Store},
-};
 use chrono::Utc;
 
 use wadm::{
@@ -11,32 +7,9 @@ use wadm::{
     storage::{nats_kv::NatsKvStore, Actor, Host, Provider, ProviderStatus, Store as WadmStore},
 };
 
-/// Helper function that sets up a store with the given ID as its name. This ID should be unique per
-/// test
-async fn create_test_store(id: String) -> Store {
-    let client = async_nats::connect("127.0.0.1:4222")
-        .await
-        .expect("Should be able to connect to NATS");
+mod helpers;
 
-    let context = jetstream::new(client);
-
-    // First make sure we clean up the store. We can't just do a cleanup on `Drop` because
-    // `tokio::test` uses a single threaded runtime and blocks forever and it isn't really worth
-    // spinning up more cores to handle this. We don't care about the result because it could not
-    // exist
-    let _ = context.delete_key_value(&id).await;
-
-    context
-        .create_key_value(KvConfig {
-            bucket: id,
-            history: 1,
-            num_replicas: 1,
-            storage: jetstream::stream::StorageType::Memory,
-            ..Default::default()
-        })
-        .await
-        .expect("Unable to create KV bucket")
-}
+use helpers::create_test_store;
 
 #[tokio::test]
 async fn test_round_trip() {

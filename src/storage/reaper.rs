@@ -232,3 +232,115 @@ impl<S: Store + Clone + Send + Sync + 'static> Undertaker<S> {
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use std::{collections::HashSet, sync::Arc};
+
+    use crate::{storage::ProviderStatus, test_util::TestStore};
+
+    #[tokio::test]
+    async fn test_reaping() {
+        let store = Arc::new(TestStore::default());
+
+        let lattice_id = "reaper";
+        let actor_id = "testactor";
+        let host1_id = "host1";
+        let host2_id = "host2";
+
+        // Prepopulate the store
+        store
+            .store_many(
+                lattice_id,
+                [
+                    (
+                        actor_id.to_string(),
+                        Actor {
+                            id: actor_id.to_string(),
+                            count: HashMap::from([
+                                (host1_id.to_string(), 1),
+                                (host2_id.to_string(), 1),
+                            ]),
+                            ..Default::default()
+                        },
+                    ),
+                    (
+                        "idontexist".to_string(),
+                        Actor {
+                            id: "idontexist".to_string(),
+                            count: HashMap::from([(host1_id.to_string(), 1)]),
+                            ..Default::default()
+                        },
+                    ),
+                ],
+            )
+            .await
+            .unwrap();
+
+        store
+            .store(
+                lattice_id,
+                "fakeprovider".to_string(),
+                Provider {
+                    id: "fakeprovider".to_string(),
+                    hosts: HashMap::from([(host1_id.to_string(), ProviderStatus::Running)]),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+
+        store
+            .store_many(
+                lattice_id,
+                [
+                    (
+                        host1_id.to_string(),
+                        Host {
+                            actors: HashMap::from([(actor_id.to_string(), 1)]),
+                            providers: HashSet::default(),
+                            id: host1_id.to_string(),
+                            last_seen: Utc::now(),
+                            ..Default::default()
+                        },
+                    ),
+                    (
+                        host2_id.to_string(),
+                        Host {
+                            actors: HashMap::default(),
+                            providers: HashSet::default(),
+                            id: host2_id.to_string(),
+                            // Make this host stick around for longer
+                            last_seen: Utc::now() + Duration::milliseconds(600),
+                            ..Default::default()
+                        },
+                    ),
+                ],
+            )
+            .await
+            .unwrap();
+
+        let reap_interval = std::time::Duration::from_millis(500);
+        // Interval + wiggle
+        let wait = reap_interval + std::time::Duration::from_millis(100);
+        let _reaper = Reaper::new(store.clone(), reap_interval, [lattice_id.to_owned()]);
+
+        // Wait for first node to be reaped (two ticks)
+        tokio::time::sleep(wait * 2).await;
+
+        // Now check that the providers, actors, and hosts were reaped
+        let hosts = store.list::<Host>(lattice_id).await.unwrap();
+        assert_eq!(hosts.len(), 1, "Only one host should be left");
+        let actors = store.list::<Actor>(lattice_id).await.unwrap();
+        assert_eq!(actors.len(), 1, "Only one actor should remain in the store");
+        actors
+            .get(actor_id)
+            .expect("Should have the correct actor in the store");
+
+        assert!(
+            store.list::<Provider>(lattice_id).await.unwrap().is_empty(),
+            "No providers should exist"
+        );
+    }
+}
