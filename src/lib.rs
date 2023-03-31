@@ -5,6 +5,7 @@ pub mod consumers;
 pub mod events;
 pub mod model;
 pub mod nats_utils;
+pub mod server;
 pub mod storage;
 pub mod workers;
 

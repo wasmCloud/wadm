@@ -2,6 +2,8 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+pub(crate) mod internal;
+
 /// The default weight for a spread
 pub const DEFAULT_SPREAD_WEIGHT: usize = 100;
 /// The default link name
@@ -12,6 +14,12 @@ pub const OAM_VERSION: &str = "core.oam.dev/v1beta1";
 // NOTE(thomastaylor312): If we ever end up supporting more than one kind, we should use an enum for
 // this
 pub const APPLICATION_KIND: &str = "Application";
+/// The version key, as predefined by the [OAM
+/// spec](https://github.com/oam-dev/spec/blob/master/metadata.md#annotations-format)
+pub const VERSION_ANNOTATION_KEY: &str = "version";
+/// The description key, as predefined by the [OAM
+/// spec](https://github.com/oam-dev/spec/blob/master/metadata.md#annotations-format)
+pub const DESCRIPTION_ANNOTATION_KEY: &str = "description";
 
 /// An OAM manifest
 #[derive(Debug, Serialize, Deserialize)]
@@ -25,6 +33,25 @@ pub struct Manifest {
     pub metadata: Metadata,
     /// The specification for this manifest
     pub spec: Specification,
+}
+
+impl Manifest {
+    /// Returns a reference to the current version
+    pub fn version(&self) -> &str {
+        self.metadata
+            .annotations
+            .get(VERSION_ANNOTATION_KEY)
+            .map(|v| v.as_str())
+            .unwrap_or_default()
+    }
+
+    /// Returns a reference to the current description if it exists
+    pub fn description(&self) -> Option<&str> {
+        self.metadata
+            .annotations
+            .get(DESCRIPTION_ANNOTATION_KEY)
+            .map(|v| v.as_str())
+    }
 }
 
 /// The metadata describing the manifest
@@ -293,8 +320,11 @@ mod test {
         let metadata = Metadata {
             name: "my-example-app".to_string(),
             annotations: BTreeMap::from([
-                ("version".to_string(), "v0.0.1".to_string()),
-                ("description".to_string(), "This is my app".to_string()),
+                (VERSION_ANNOTATION_KEY.to_string(), "v0.0.1".to_string()),
+                (
+                    DESCRIPTION_ANNOTATION_KEY.to_string(),
+                    "This is my app".to_string(),
+                ),
             ]),
         };
         let manifest = Manifest {

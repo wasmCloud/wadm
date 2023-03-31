@@ -12,6 +12,7 @@ use wadm::{
         manager::{ConsumerManager, WorkResult, Worker},
         *,
     },
+    server::{Server, DEFAULT_WADM_TOPIC_PREFIX},
     storage::{nats_kv::NatsKvStore, reaper::Reaper},
     workers::EventWorker,
     DEFAULT_COMMANDS_TOPIC, DEFAULT_EVENTS_TOPIC,
@@ -132,6 +133,23 @@ struct Args {
         default_value = "120"
     )]
     cleanup_interval: u64,
+
+    /// The API topic prefix to use. This is an advanced setting that should only be used if you
+    /// know what you are doing
+    #[arg(
+        long = "api-prefix",
+        env = "WADM_API_PREFIX",
+        default_value = DEFAULT_WADM_TOPIC_PREFIX
+    )]
+    api_prefix: String,
+
+    /// Name of the bucket used for storage of manifests
+    #[arg(
+        long = "manifest-bucket-name",
+        env = "WADM_MANIFEST_BUCKET_NAME",
+        default_value = "wadm_manifests"
+    )]
+    manifest_bucket: String,
 }
 
 #[tokio::main]
@@ -155,7 +173,7 @@ async fn main() -> anyhow::Result<()> {
     .await?;
 
     // TODO: We will probably need to set up all the flags (like lattice prefix and topic prefix) down the line
-    let ctl_client_builder = wasmcloud_control_interface::ClientBuilder::new(client);
+    let ctl_client_builder = wasmcloud_control_interface::ClientBuilder::new(client.clone());
     let ctl_client = if let Some(domain) = args.domain {
         ctl_client_builder
             .js_domain(domain)
@@ -171,8 +189,11 @@ async fn main() -> anyhow::Result<()> {
 
     let store = nats::ensure_kv_bucket(&context, args.state_bucket, 1).await?;
 
-    // TODO: use the storage engine
     let state_storage = NatsKvStore::new(store);
+
+    let store = nats::ensure_kv_bucket(&context, args.manifest_bucket, 1).await?;
+
+    let manifest_storage = NatsKvStore::new(store);
 
     let event_stream = nats::ensure_stream(
         &context,
@@ -222,7 +243,14 @@ async fn main() -> anyhow::Result<()> {
         Duration::from_secs(args.cleanup_interval / 2),
         ["default".to_owned()],
     );
-    tokio::signal::ctrl_c().await?;
+
+    let server = Server::new(manifest_storage, client, Some(&args.api_prefix)).await?;
+    tokio::select! {
+        res = server.serve() => {
+            res?
+        }
+        _ = tokio::signal::ctrl_c() => {}
+    }
     Ok(())
 }
 
