@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::model::Manifest;
+
 /// The request body for getting a manifest
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GetModelRequest {
@@ -7,6 +9,47 @@ pub struct GetModelRequest {
     pub version: Option<String>,
 }
 
+/// The response from a get request
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GetModelResponse {
+    pub result: GetResult,
+    #[serde(default)]
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub manifest: Option<Manifest>,
+}
+
+/// Possible outcomes of a get request
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum GetResult {
+    Error,
+    Success,
+    NotFound,
+}
+
+/// The type returned when putting a model
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PutModelResponse {
+    pub result: PutResult,
+    #[serde(default)]
+    pub total_versions: usize,
+    #[serde(default)]
+    pub current_version: String,
+    #[serde(default)]
+    pub message: String,
+}
+
+/// Possible outcomes of a put request
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum PutResult {
+    Error,
+    Created,
+    NewVersion,
+}
+
+/// Summary of a given model returned when listing
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ModelSummary {
     pub name: String,
@@ -16,12 +59,14 @@ pub struct ModelSummary {
     pub status: StatusType,
 }
 
+/// Information about a given version of a model, returned as part of a list of all versions
 #[derive(Debug, Serialize, Deserialize)]
 pub struct VersionInfo {
     pub version: String,
     pub deployed: bool,
 }
 
+/// A request for deleting a model
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DeleteModelRequest {
     #[serde(default)]
@@ -30,6 +75,7 @@ pub struct DeleteModelRequest {
     pub delete_all: bool,
 }
 
+/// A response from a delete request
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DeleteModelResponse {
     pub result: DeleteResult,
@@ -39,6 +85,7 @@ pub struct DeleteModelResponse {
     pub undeploy: bool,
 }
 
+/// All possible outcomes of a delete operation
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DeleteResult {
@@ -56,6 +103,7 @@ pub struct Status {
     // TODO: Fill out the rest of the status stuff
 }
 
+/// Common high-level status information
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct StatusInfo {
     #[serde(rename = "type")]
@@ -64,6 +112,7 @@ pub struct StatusInfo {
     pub message: String,
 }
 
+/// All possible status types
 #[derive(Debug, Serialize, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum StatusType {

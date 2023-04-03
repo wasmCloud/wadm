@@ -48,6 +48,11 @@ impl<S: Store + Send + Sync> Server<S> {
 
         let topic = format!("{prefix}.>");
         info!(%topic, "Creating API subscriber");
+        // NOTE(thomastaylor312): Technically there is a condition where two people try to send an
+        // update to the same manifest. We are protected against this overwriting each other (we
+        // ensure the revision is the same in the underlying store), but it will lead to a weird
+        // error reply about a storage error. This is more of an inconvenience that we can probably
+        // solve for when we get concrete error types in NATS
         let subscriber = client
             .queue_subscribe(topic, QUEUE_GROUP.to_owned())
             .await

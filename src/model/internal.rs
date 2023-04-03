@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 use crate::model::Manifest;
 use crate::storage::StateKind;
 
+/// This struct represents a single manfiest, with its version history. Internally these are stored
+/// as an indexmap keyed by version name
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub(crate) struct StoredManifest {
     // Ordering matters for how we store a manifest, so we need to use an index map to preserve
@@ -94,7 +96,7 @@ impl StoredManifest {
     }
 
     /// Returns whether or not this is a new (empty) manifest
-    pub fn is_new(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.manifests.is_empty()
     }
 

@@ -6,7 +6,8 @@ use crate::{model::internal::StoredManifest, storage::Store};
 
 use super::{
     parser::parse_manifest, DeleteModelRequest, DeleteModelResponse, DeleteResult, GetModelRequest,
-    ModelSummary, StatusType, VersionInfo,
+    GetModelResponse, GetResult, ModelSummary, PutModelResponse, PutResult, StatusType,
+    VersionInfo,
 };
 
 pub(crate) struct Handler<S> {
@@ -50,26 +51,31 @@ impl<S: Store + Send + Sync> Handler<S> {
             }
         };
 
-        let current_version = manifest.version().to_owned();
+        let mut resp = PutModelResponse {
+            // If we successfully insert, the given manifest version will be the new current version
+            current_version: manifest.version().to_owned(),
+            result: if current_manifests.is_empty() {
+                PutResult::Created
+            } else {
+                PutResult::NewVersion
+            },
+            total_versions: 0,
+            message: "Successfully put manifest".to_owned(),
+        };
 
         // TODO: Trigger deploy of new manifest if the previous manifest was deployed
-        let result = if current_manifests.is_new() {
-            "created"
-        } else {
-            "newversion"
-        };
 
         if !current_manifests.add_version(manifest) {
             self.send_error(
                 msg.reply,
-                format!("Manifest version {current_version} already exists"),
+                format!("Manifest version {} already exists", resp.current_version),
             )
             .await;
             return;
         }
-        let total_versions = current_manifests.count();
+        resp.total_versions = current_manifests.count();
 
-        trace!(total_manifests = %total_versions, "Storing manifests");
+        trace!(total_manifests = %resp.total_versions, "Storing manifests");
         if let Err(e) = self
             .store
             .store(lattice_id, name.to_owned(), current_manifests)
@@ -84,14 +90,9 @@ impl<S: Store + Send + Sync> Handler<S> {
         trace!("Storage complete, sending reply");
         self.send_reply(
             msg.reply,
-            // SAFETY: We are constructing all data here
-            serde_json::to_vec(&json!({
-                "result": result,
-                "total_versions": total_versions,
-                "current_version": current_version,
-                "message": "Successfully put manifest",
-            }))
-            .unwrap(),
+            // NOTE: We are constructing all data here, so this shouldn't fail, but just in case we
+            // unwrap to nothing
+            serde_json::to_vec(&resp).unwrap_or_default(),
         )
         .await
     }
@@ -118,9 +119,16 @@ impl<S: Store + Send + Sync> Handler<S> {
         let manifests: StoredManifest = match self.store.get(lattice_id, name).await {
             Ok(Some(m)) => m,
             Ok(None) => {
-                self.send_error(
+                self.send_reply(
                     msg.reply,
-                    format!("Model with the name {name} doesn't exist"),
+                    // NOTE: We are constructing all data here, so this shouldn't fail, but just in
+                    // case we unwrap to nothing
+                    serde_json::to_vec(&GetModelResponse {
+                        result: GetResult::NotFound,
+                        message: format!("Model with the name {name} not found"),
+                        manifest: None,
+                    })
+                    .unwrap_or_default(),
                 )
                 .await;
                 return;
@@ -135,23 +143,37 @@ impl<S: Store + Send + Sync> Handler<S> {
         let reply = match req.version {
             Some(version) => {
                 if let Some(current) = manifests.get_version(&version) {
-                    // SAFETY: We _just_ deserialized this from the store above, so we should be just fine
-                    serde_json::to_vec(current).unwrap()
+                    GetModelResponse {
+                        manifest: Some(current.to_owned()),
+                        result: GetResult::Success,
+                        message: format!("Fetched model {name} with version {version}"),
+                    }
                 } else {
-                    self.send_error(
+                    self.send_reply(
                         msg.reply,
-                        format!("Model {name} with version {} doesn't exist", version),
+                        // NOTE: We are constructing all data here, so this shouldn't fail, but just
+                        // in case we unwrap to nothing
+                        serde_json::to_vec(&GetModelResponse {
+                            result: GetResult::NotFound,
+                            message: format!("Model {name} with version {} doesn't exist", version),
+                            manifest: None,
+                        })
+                        .unwrap_or_default(),
                     )
                     .await;
                     return;
                 }
             }
-            None => {
-                // SAFETY: We _just_ deserialized this from the store above, so we should be just fine
-                serde_json::to_vec(manifests.get_current()).unwrap()
-            }
+            None => GetModelResponse {
+                manifest: Some(manifests.get_current().to_owned()),
+                result: GetResult::Success,
+                message: format!("Fetched model {name}"),
+            },
         };
-        self.send_reply(msg.reply, reply).await
+        // NOTE: We _just_ deserialized this from the store above, so we should be just fine. but
+        // just in case we unwrap to the default
+        self.send_reply(msg.reply, serde_json::to_vec(&reply).unwrap_or_default())
+            .await
     }
 
     #[instrument(level = "debug", skip(self, msg))]
@@ -182,9 +204,9 @@ impl<S: Store + Send + Sync> Handler<S> {
                 return;
             }
         };
-        // SAFETY: We _just_ deserialized this from the store above and then manually constructed
-        // it, so we should be just fine
-        self.send_reply(msg.reply, serde_json::to_vec(&data).unwrap())
+        // NOTE: We _just_ deserialized this from the store above and then manually constructed it,
+        // so we should be just fine. Just in case though, we unwrap to default
+        self.send_reply(msg.reply, serde_json::to_vec(&data).unwrap_or_default())
             .await
     }
 
@@ -215,9 +237,9 @@ impl<S: Store + Send + Sync> Handler<S> {
                 return;
             }
         };
-        // SAFETY: We _just_ deserialized this from the store above and then manually constructed
-        // it, so we should be just fine
-        self.send_reply(msg.reply, serde_json::to_vec(&data).unwrap())
+        // NOTE: We _just_ deserialized this from the store above and then manually constructed it,
+        // so we should be just fine. Just in case though, we unwrap to default
+        self.send_reply(msg.reply, serde_json::to_vec(&data).unwrap_or_default())
             .await
     }
 
@@ -245,7 +267,7 @@ impl<S: Store + Send + Sync> Handler<S> {
                     DeleteModelResponse {
                         result: DeleteResult::Deleted,
                         message: "All models deleted".to_string(),
-                        // By default if it is all gone, we definited undeployed things
+                        // By default if it is all gone, we definitely undeployed things
                         undeploy: true,
                     }
                 }
@@ -261,7 +283,8 @@ impl<S: Store + Send + Sync> Handler<S> {
         } else {
             match self.store.get::<StoredManifest>(lattice_id, name).await {
                 Ok(Some(mut current)) => {
-                    if current.delete_version(&req.version) {
+                    let deleted = current.delete_version(&req.version);
+                    if deleted && !current.is_empty() {
                         // If the version we deleted was the deployed one, undeploy it
                         let undeploy = if current.current_version() == req.version {
                             current.undeploy();
@@ -276,6 +299,25 @@ impl<S: Store + Send + Sync> Handler<S> {
                                 result: DeleteResult::Deleted,
                                 message: format!("Model version {} deleted", req.version),
                                 undeploy,
+                            })
+                            .unwrap_or_else(|e| {
+                                error!(error = %e, "Unable to delete data");
+                                DeleteModelResponse {
+                                    result: DeleteResult::Deleted,
+                                    message: "Internal storage error".to_string(),
+                                    undeploy: false,
+                                }
+                            })
+                    } else if deleted && current.is_empty() {
+                        // If we deleted the last one, delete the model from the store
+                        self.store
+                            .delete::<StoredManifest>(lattice_id, name)
+                            .await
+                            .map(|_| DeleteModelResponse {
+                                result: DeleteResult::Deleted,
+                                message: "Last model version deleted".to_string(),
+                                // By default if it is all gone, we definitely undeployed things
+                                undeploy: true,
                             })
                             .unwrap_or_else(|e| {
                                 error!(error = %e, "Unable to delete data");
@@ -309,9 +351,12 @@ impl<S: Store + Send + Sync> Handler<S> {
             }
         };
 
-        // SAFETY: We control all the data getting sent in here
-        self.send_reply(msg.reply, serde_json::to_vec(&reply_data).unwrap())
-            .await
+        // NOTE: We control all the data getting sent in here, but we unwrap to default just in case
+        self.send_reply(
+            msg.reply,
+            serde_json::to_vec(&reply_data).unwrap_or_default(),
+        )
+        .await
     }
 
     /// Sends a reply to the topic with the given data, logging an error if one occurs when
@@ -334,14 +379,17 @@ impl<S: Store + Send + Sync> Handler<S> {
     /// Sends an error reply
     #[instrument(level = "error", skip(self, error_message))]
     pub async fn send_error(&self, reply: Option<String>, error_message: String) {
-        // SAFETY: We control the construction of the JSON here and all data going in,
-        // so this shouldn't fail except in some sort of really odd case. And even then
-        // it will just panic
+        // SAFETY: We control the construction of the JSON here and all data going in, so this
+        // shouldn't fail except in some sort of really odd case. In those cases, we just unwrap to
+        // a default
         let response = serde_json::to_vec(&json!({
+            // NOTE: This is a cheating response. Basically all of our API methods have an error
+            // variant in their result enum that serializes to this, so we just make it easy on
+            // ourselves rather than taking concrete types
             "result": "error",
             "message": error_message,
         }))
-        .unwrap();
+        .unwrap_or_default();
         self.send_reply(reply, response).await;
     }
 }

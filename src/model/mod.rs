@@ -22,7 +22,7 @@ pub const VERSION_ANNOTATION_KEY: &str = "version";
 pub const DESCRIPTION_ANNOTATION_KEY: &str = "description";
 
 /// An OAM manifest
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Manifest {
     /// The OAM version of the manifest
     #[serde(rename = "apiVersion")]
@@ -55,7 +55,7 @@ impl Manifest {
 }
 
 /// The metadata describing the manifest
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Metadata {
     /// The name of the manifest. This should be unique
     pub name: String,
@@ -65,14 +65,14 @@ pub struct Metadata {
 }
 
 /// A representation of an OAM specification
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Specification {
     /// The list of components for describing an application
     pub components: Vec<Component>,
 }
 
 /// A component definition
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Component {
     /// The name of this component
     pub name: String,
@@ -89,7 +89,7 @@ pub struct Component {
 }
 
 /// All possible component types we support
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum ComponentType {
     /// An Actor component
     #[serde(rename = "actor")]
@@ -100,20 +100,20 @@ pub enum ComponentType {
 }
 
 /// Properties that can be defined for a component
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(untagged)]
 pub enum Properties {
     Actor(ActorProperties),
     Capability(CapabilityProperties),
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ActorProperties {
     /// The image reference to use
     pub image: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CapabilityProperties {
     /// The image reference to use
     pub image: String,
@@ -124,7 +124,7 @@ pub struct CapabilityProperties {
     pub link_name: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Trait {
     /// The type of trait specified
     // NOTE(thomastaylor312): Same thing goes here as described in the note for Component. We should
@@ -136,7 +136,7 @@ pub struct Trait {
 }
 
 /// All supported trait types in wadm
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum TraitType {
     /// A spreadscaler trait
     #[serde(rename = "spreadscaler")]
@@ -147,7 +147,7 @@ pub enum TraitType {
 }
 
 /// Properties for defining traits
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(untagged)]
 pub enum TraitProperty {
     Linkdef(LinkdefProperty),
@@ -155,7 +155,7 @@ pub enum TraitProperty {
 }
 
 /// Properties for linkdefs
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct LinkdefProperty {
     /// The target this linkdef applies to. This should be the name of an actor component
     pub target: String,
@@ -165,7 +165,7 @@ pub struct LinkdefProperty {
 }
 
 /// Properties for spread scalers
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SpreadScalerProperty {
     /// Number of replicas to scale
     pub replicas: usize,
@@ -174,7 +174,7 @@ pub struct SpreadScalerProperty {
 }
 
 /// Configuration for various spreading requirements
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Spread {
     /// The name of this spread requirement
     pub name: String,
