@@ -2,6 +2,8 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+pub(crate) mod internal;
+
 /// The default weight for a spread
 pub const DEFAULT_SPREAD_WEIGHT: usize = 100;
 /// The default link name
@@ -12,9 +14,15 @@ pub const OAM_VERSION: &str = "core.oam.dev/v1beta1";
 // NOTE(thomastaylor312): If we ever end up supporting more than one kind, we should use an enum for
 // this
 pub const APPLICATION_KIND: &str = "Application";
+/// The version key, as predefined by the [OAM
+/// spec](https://github.com/oam-dev/spec/blob/master/metadata.md#annotations-format)
+pub const VERSION_ANNOTATION_KEY: &str = "version";
+/// The description key, as predefined by the [OAM
+/// spec](https://github.com/oam-dev/spec/blob/master/metadata.md#annotations-format)
+pub const DESCRIPTION_ANNOTATION_KEY: &str = "description";
 
 /// An OAM manifest
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Manifest {
     /// The OAM version of the manifest
     #[serde(rename = "apiVersion")]
@@ -27,8 +35,27 @@ pub struct Manifest {
     pub spec: Specification,
 }
 
+impl Manifest {
+    /// Returns a reference to the current version
+    pub fn version(&self) -> &str {
+        self.metadata
+            .annotations
+            .get(VERSION_ANNOTATION_KEY)
+            .map(|v| v.as_str())
+            .unwrap_or_default()
+    }
+
+    /// Returns a reference to the current description if it exists
+    pub fn description(&self) -> Option<&str> {
+        self.metadata
+            .annotations
+            .get(DESCRIPTION_ANNOTATION_KEY)
+            .map(|v| v.as_str())
+    }
+}
+
 /// The metadata describing the manifest
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Metadata {
     /// The name of the manifest. This should be unique
     pub name: String,
@@ -38,14 +65,14 @@ pub struct Metadata {
 }
 
 /// A representation of an OAM specification
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Specification {
     /// The list of components for describing an application
     pub components: Vec<Component>,
 }
 
 /// A component definition
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Component {
     /// The name of this component
     pub name: String,
@@ -62,7 +89,7 @@ pub struct Component {
 }
 
 /// All possible component types we support
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum ComponentType {
     /// An Actor component
     #[serde(rename = "actor")]
@@ -73,20 +100,20 @@ pub enum ComponentType {
 }
 
 /// Properties that can be defined for a component
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(untagged)]
 pub enum Properties {
     Actor(ActorProperties),
     Capability(CapabilityProperties),
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ActorProperties {
     /// The image reference to use
     pub image: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CapabilityProperties {
     /// The image reference to use
     pub image: String,
@@ -97,7 +124,7 @@ pub struct CapabilityProperties {
     pub link_name: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Trait {
     /// The type of trait specified
     // NOTE(thomastaylor312): Same thing goes here as described in the note for Component. We should
@@ -109,7 +136,7 @@ pub struct Trait {
 }
 
 /// All supported trait types in wadm
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum TraitType {
     /// A spreadscaler trait
     #[serde(rename = "spreadscaler")]
@@ -120,7 +147,7 @@ pub enum TraitType {
 }
 
 /// Properties for defining traits
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(untagged)]
 pub enum TraitProperty {
     Linkdef(LinkdefProperty),
@@ -128,7 +155,7 @@ pub enum TraitProperty {
 }
 
 /// Properties for linkdefs
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct LinkdefProperty {
     /// The target this linkdef applies to. This should be the name of an actor component
     pub target: String,
@@ -138,7 +165,7 @@ pub struct LinkdefProperty {
 }
 
 /// Properties for spread scalers
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SpreadScalerProperty {
     /// Number of replicas to scale
     pub replicas: usize,
@@ -147,7 +174,7 @@ pub struct SpreadScalerProperty {
 }
 
 /// Configuration for various spreading requirements
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Spread {
     /// The name of this spread requirement
     pub name: String,
@@ -293,8 +320,11 @@ mod test {
         let metadata = Metadata {
             name: "my-example-app".to_string(),
             annotations: BTreeMap::from([
-                ("version".to_string(), "v0.0.1".to_string()),
-                ("description".to_string(), "This is my app".to_string()),
+                (VERSION_ANNOTATION_KEY.to_string(), "v0.0.1".to_string()),
+                (
+                    DESCRIPTION_ANNOTATION_KEY.to_string(),
+                    "This is my app".to_string(),
+                ),
             ]),
         };
         let manifest = Manifest {

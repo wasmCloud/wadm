@@ -1,0 +1,530 @@
+use std::collections::HashMap;
+
+use serde::de::DeserializeOwned;
+use wadm::{
+    model::{Manifest, VERSION_ANNOTATION_KEY},
+    server::*,
+    storage::nats_kv::NatsKvStore,
+};
+
+mod helpers;
+
+struct TestServer {
+    prefix: String,
+    client: async_nats::Client,
+    handle: tokio::task::JoinHandle<anyhow::Result<()>>,
+}
+
+impl Drop for TestServer {
+    fn drop(&mut self) {
+        self.handle.abort()
+    }
+}
+
+impl TestServer {
+    fn get_topic(&self, topic: &str) -> String {
+        format!("{}.{}", self.prefix, topic)
+    }
+
+    // NOTE: The given subject should not include the prefix
+    async fn get_response<T: DeserializeOwned>(
+        &self,
+        subject: &str,
+        data: Vec<u8>,
+        header: Option<(&str, &str)>,
+    ) -> T {
+        let msg = if let Some((k, v)) = header {
+            let mut headers = async_nats::HeaderMap::new();
+            headers.insert(k, v);
+            self.client
+                .request_with_headers(self.get_topic(subject), headers, data.into())
+                .await
+                .expect("Should be able to perform request")
+        } else {
+            self.client
+                .request(self.get_topic(subject), data.into())
+                .await
+                .expect("Should be able to perform request")
+        };
+        serde_json::from_slice(&msg.payload).expect("Should return a valid response")
+    }
+}
+
+async fn setup_server(id: String) -> TestServer {
+    let client = async_nats::connect("127.0.0.1:4222")
+        .await
+        .expect("Should be able to connect to NATS");
+    let store = helpers::create_test_store_with_client(client.clone(), id.clone()).await;
+
+    let server = Server::new(NatsKvStore::new(store), client.clone(), Some(&id))
+        .await
+        .expect("Should be able to setup server");
+
+    TestServer {
+        prefix: id,
+        handle: tokio::spawn(server.serve()),
+        client,
+    }
+}
+
+#[tokio::test]
+async fn test_crud_operations() {
+    let test_server = setup_server("crud_operations".to_owned()).await;
+
+    // First test with a raw file (a common operation)
+    let raw = tokio::fs::read("./oam/petclinic.yaml")
+        .await
+        .expect("Unable to load file");
+    let resp: PutModelResponse = test_server
+        .get_response("default.model.put.petclinic", raw, None)
+        .await;
+
+    assert_put_response(resp, PutResult::Created, "v0.0.1", 1);
+
+    let raw = tokio::fs::read("./oam/simple1.yaml")
+        .await
+        .expect("Should be able to load file");
+    // Get the manifest in memory so we can manipulate data like the version
+    let mut manifest: Manifest =
+        serde_yaml::from_slice(&raw).expect("Should be able to parse as manifest");
+
+    let resp: PutModelResponse = test_server
+        .get_response("default.model.put.my-example-app", raw, None)
+        .await;
+    assert_put_response(resp, PutResult::Created, "v0.0.1", 1);
+
+    // Check that we can get back the manifest
+    let resp: GetModelResponse = test_server
+        .get_response("default.model.get.my-example-app", Vec::new(), None)
+        .await;
+    assert_manifest(
+        &manifest,
+        resp.manifest
+            .as_ref()
+            .expect("Response should have a manifest"),
+    );
+
+    // Now check that the data returned is correct
+    let resp: Vec<ModelSummary> = test_server
+        .get_response("default.model.list", Vec::new(), None)
+        .await;
+
+    assert_eq!(resp.len(), 2, "Should have two models in storage");
+    let summary = resp
+        .iter()
+        .find(|m| m.name == "my-example-app")
+        .expect("Should be able to find the correct model");
+    assert_eq!(summary.version, "v0.0.1", "Should have the correct data");
+    let summary = resp
+        .iter()
+        .find(|m| m.name == "petclinic")
+        .expect("Should be able to find the correct model");
+    assert_eq!(summary.version, "v0.0.1", "Should have the correct data");
+
+    // Now put two more versions of the same manifest
+    manifest
+        .metadata
+        .annotations
+        .insert(VERSION_ANNOTATION_KEY.to_owned(), "v0.0.2".to_owned());
+    let resp: PutModelResponse = test_server
+        .get_response(
+            "default.model.put.my-example-app",
+            serde_yaml::to_vec(&manifest).unwrap(),
+            None,
+        )
+        .await;
+    assert_put_response(resp, PutResult::NewVersion, "v0.0.2", 2);
+
+    manifest
+        .metadata
+        .annotations
+        .insert(VERSION_ANNOTATION_KEY.to_owned(), "v0.0.3".to_owned());
+    let resp: PutModelResponse = test_server
+        .get_response(
+            "default.model.put.my-example-app",
+            serde_yaml::to_vec(&manifest).unwrap(),
+            None,
+        )
+        .await;
+    assert_put_response(resp, PutResult::NewVersion, "v0.0.3", 3);
+
+    // Make sure we still only have 2 manifests
+    let resp: Vec<ModelSummary> = test_server
+        .get_response("default.model.list", Vec::new(), None)
+        .await;
+
+    assert_eq!(resp.len(), 2, "Should still have two models in storage");
+
+    // Now list the versions of a manifest
+    let resp: Vec<VersionInfo> = test_server
+        .get_response("default.model.versions.my-example-app", Vec::new(), None)
+        .await;
+    let mut iter = resp.into_iter();
+    assert_eq!(
+        iter.next().unwrap().version,
+        "v0.0.1",
+        "Should find the correct version"
+    );
+    assert_eq!(
+        iter.next().unwrap().version,
+        "v0.0.2",
+        "Should find the correct version"
+    );
+    assert_eq!(
+        iter.next().unwrap().version,
+        "v0.0.3",
+        "Should find the correct version"
+    );
+    assert!(iter.next().is_none(), "Should only have 3 versions");
+
+    // Then get a specific version
+    let resp: GetModelResponse = test_server
+        .get_response(
+            "default.model.get.my-example-app",
+            serde_json::to_vec(&GetModelRequest {
+                version: Some("v0.0.2".to_owned()),
+            })
+            .unwrap(),
+            None,
+        )
+        .await;
+    // Swap back the version so it matches
+    manifest
+        .metadata
+        .annotations
+        .insert(VERSION_ANNOTATION_KEY.to_owned(), "v0.0.2".to_owned());
+    assert_manifest(
+        &manifest,
+        resp.manifest.as_ref().expect("Should have manifest set"),
+    );
+
+    // Then delete a manifest version
+    let resp: DeleteModelResponse = test_server
+        .get_response(
+            "default.model.del.my-example-app",
+            serde_json::to_vec(&DeleteModelRequest {
+                version: "v0.0.2".to_owned(),
+                delete_all: false,
+            })
+            .unwrap(),
+            None,
+        )
+        .await;
+    assert!(
+        matches!(resp.result, DeleteResult::Deleted),
+        "Should have gotten deleted response"
+    );
+    assert!(!resp.message.is_empty(), "Should have a message set");
+
+    // Make sure we only receive the proper number of versions now (in the right order)
+    let resp: Vec<VersionInfo> = test_server
+        .get_response("default.model.versions.my-example-app", Vec::new(), None)
+        .await;
+    let mut iter = resp.into_iter();
+    assert_eq!(
+        iter.next().unwrap().version,
+        "v0.0.1",
+        "Should find the correct version"
+    );
+    assert_eq!(
+        iter.next().unwrap().version,
+        "v0.0.3",
+        "Should find the correct version"
+    );
+    assert!(iter.next().is_none(), "Should only have 2 versions");
+
+    // Delete all
+    let resp: DeleteModelResponse = test_server
+        .get_response(
+            "default.model.del.my-example-app",
+            serde_json::to_vec(&DeleteModelRequest {
+                version: String::new(),
+                delete_all: true,
+            })
+            .unwrap(),
+            None,
+        )
+        .await;
+    assert!(
+        matches!(resp.result, DeleteResult::Deleted),
+        "Should have gotten deleted response"
+    );
+
+    // Getting the deleted model should return an error
+    let resp: GetModelResponse = test_server
+        .get_response("default.model.get.my-example-app", Vec::new(), None)
+        .await;
+    assert!(
+        matches!(resp.result, GetResult::NotFound),
+        "Deleted model should no longer exist"
+    );
+
+    // Delete last remaining
+    let resp: DeleteModelResponse = test_server
+        .get_response(
+            "default.model.del.petclinic",
+            serde_json::to_vec(&DeleteModelRequest {
+                version: "v0.0.1".to_owned(),
+                delete_all: false,
+            })
+            .unwrap(),
+            None,
+        )
+        .await;
+    assert!(
+        matches!(resp.result, DeleteResult::Deleted),
+        "Should have gotten deleted response"
+    );
+
+    let resp: GetModelResponse = test_server
+        .get_response("default.model.get.petclinic", Vec::new(), None)
+        .await;
+    assert!(
+        matches!(resp.result, GetResult::NotFound),
+        "Deleting last model should remove model from storage"
+    );
+}
+
+#[tokio::test]
+async fn test_bad_requests() {
+    let test_server = setup_server("bad_requests".to_owned()).await;
+    // Duplicate version
+    let raw = tokio::fs::read("./oam/petclinic.yaml")
+        .await
+        .expect("Unable to load file");
+    let resp: PutModelResponse = test_server
+        .get_response("default.model.put.petclinic", raw, None)
+        .await;
+
+    assert_put_response(resp, PutResult::Created, "v0.0.1", 1);
+
+    // https://imgflip.com/memegenerator/195657242/Do-it-again
+    let raw = tokio::fs::read("./oam/petclinic.yaml")
+        .await
+        .expect("Unable to load file");
+    let resp: PutModelResponse = test_server
+        .get_response("default.model.put.petclinic", raw, None)
+        .await;
+
+    assert!(
+        matches!(resp.result, PutResult::Error),
+        "Should have gotten an error with a duplicate version"
+    );
+    assert!(!resp.message.is_empty(), "Should not have an empty message");
+
+    // Mismatched name on put
+
+    let raw = tokio::fs::read("./oam/petclinic.yaml")
+        .await
+        .expect("Unable to load file");
+    let resp: PutModelResponse = test_server
+        .get_response("default.model.put.foobar", raw, None)
+        .await;
+
+    assert!(
+        matches!(resp.result, PutResult::Error),
+        "Should have gotten an error with a name mismatch"
+    );
+    assert!(!resp.message.is_empty(), "Should not have an empty message");
+}
+
+#[tokio::test]
+async fn test_delete_noop() {
+    let test_server = setup_server("delete_noop".to_owned()).await;
+
+    // Delete something that doesn't exist
+    let resp: DeleteModelResponse = test_server
+        .get_response(
+            "default.model.del.my-example-app",
+            serde_json::to_vec(&DeleteModelRequest {
+                version: "v0.0.2".to_owned(),
+                delete_all: false,
+            })
+            .unwrap(),
+            None,
+        )
+        .await;
+    assert!(
+        matches!(resp.result, DeleteResult::Noop),
+        "Should have gotten noop response"
+    );
+    assert!(!resp.message.is_empty(), "Should have a message set");
+
+    // Delete a non-existent version
+    let raw = tokio::fs::read("./oam/petclinic.yaml")
+        .await
+        .expect("Unable to load file");
+    let resp: PutModelResponse = test_server
+        .get_response("default.model.put.petclinic", raw, None)
+        .await;
+
+    assert_put_response(resp, PutResult::Created, "v0.0.1", 1);
+
+    let resp: DeleteModelResponse = test_server
+        .get_response(
+            "default.model.del.petclinic",
+            serde_json::to_vec(&DeleteModelRequest {
+                version: "v0.0.2".to_owned(),
+                delete_all: false,
+            })
+            .unwrap(),
+            None,
+        )
+        .await;
+    assert!(
+        matches!(resp.result, DeleteResult::Noop),
+        "Should have gotten noop response"
+    );
+    assert!(!resp.message.is_empty(), "Should have a message set");
+}
+
+#[tokio::test]
+async fn test_invalid_topics() {
+    let test_server = setup_server("invalid_topics".to_owned()).await;
+
+    // Put in a manifest to make sure we have something that could be fetched if we aren't handing
+    // invalid topics correctly
+    let raw = tokio::fs::read("./oam/petclinic.yaml")
+        .await
+        .expect("Unable to load file");
+    let resp: PutModelResponse = test_server
+        .get_response("default.model.put.petclinic", raw, None)
+        .await;
+
+    assert_put_response(resp, PutResult::Created, "v0.0.1", 1);
+
+    // Too short
+    let resp: HashMap<String, String> = test_server
+        .get_response("default.model", Vec::new(), None)
+        .await;
+
+    assert_eq!(
+        resp.get("result").expect("Response should have valid data"),
+        "error"
+    );
+    assert!(
+        resp.get("message")
+            .expect("Response should have valid data")
+            .starts_with("Invalid subject"),
+        "error"
+    );
+
+    // Extra things on end
+    let resp: HashMap<String, String> = test_server
+        .get_response("default.model.get.petclinic.foo.bar", Vec::new(), None)
+        .await;
+
+    assert_eq!(
+        resp.get("result").expect("Response should have valid data"),
+        "error"
+    );
+    assert!(
+        resp.get("message")
+            .expect("Response should have valid data")
+            .starts_with("Invalid subject"),
+        "error"
+    );
+
+    // Random topic
+    let resp: HashMap<String, String> = test_server
+        .get_response("default.blah.get.petclinic", Vec::new(), None)
+        .await;
+
+    assert_eq!(
+        resp.get("result").expect("Response should have valid data"),
+        "error"
+    );
+    assert!(
+        resp.get("message")
+            .expect("Response should have valid data")
+            .starts_with("Unsupported subject"),
+        "error"
+    );
+}
+
+#[tokio::test]
+async fn test_manifest_parsing() {
+    let test_server = setup_server("manifest_parsing".to_owned()).await;
+
+    // Test json manifest with no hint
+    let raw = tokio::fs::read("./oam/simple1.json")
+        .await
+        .expect("Unable to load file");
+    let mut manifest: Manifest = serde_json::from_slice(&raw).unwrap();
+    let resp: PutModelResponse = test_server
+        .get_response("default.model.put.my-example-app", raw, None)
+        .await;
+
+    assert_put_response(resp, PutResult::Created, "v0.0.1", 1);
+
+    // Test yaml manifest with hint
+    let raw = tokio::fs::read("./oam/petclinic.yaml")
+        .await
+        .expect("Unable to load file");
+    let resp: PutModelResponse = test_server
+        .get_response(
+            "default.model.put.petclinic",
+            raw,
+            Some(("Content-Type", "application/yaml")),
+        )
+        .await;
+
+    assert_put_response(resp, PutResult::Created, "v0.0.1", 1);
+
+    // Test json manifest with hint
+    manifest
+        .metadata
+        .annotations
+        .insert(VERSION_ANNOTATION_KEY.to_owned(), "v0.0.2".to_string());
+    let raw = serde_json::to_vec(&manifest).unwrap();
+    let resp: PutModelResponse = test_server
+        .get_response(
+            "default.model.put.my-example-app",
+            raw,
+            Some(("Content-Type", "application/json")),
+        )
+        .await;
+
+    assert_put_response(resp, PutResult::NewVersion, "v0.0.2", 2);
+}
+
+fn assert_put_response(
+    resp: PutModelResponse,
+    result: PutResult,
+    current_version: &str,
+    total_versions: usize,
+) {
+    assert_eq!(
+        resp.result, result,
+        "Should have gotten proper result in response. Error: {}",
+        resp.message
+    );
+    assert_eq!(
+        resp.current_version, current_version,
+        "Current version should be set correctly"
+    );
+    assert!(!resp.message.is_empty(), "A message should be set");
+    assert_eq!(
+        resp.total_versions, total_versions,
+        "Total number of versions should be set correctly"
+    );
+}
+
+fn assert_manifest(expected: &Manifest, received: &Manifest) {
+    assert_eq!(
+        expected.metadata.name, received.metadata.name,
+        "Data should match"
+    );
+    assert_eq!(
+        expected.metadata.annotations, received.metadata.annotations,
+        "Data should match"
+    );
+    // NOTE(thomastaylor312): As we continue to improve wadm, we should probably do some deep
+    // equality checking to make sure all the components are right. For now this serves as a basic
+    // sanity check
+    assert_eq!(
+        expected.spec.components.len(),
+        received.spec.components.len(),
+        "Should have same number of components"
+    );
+}
