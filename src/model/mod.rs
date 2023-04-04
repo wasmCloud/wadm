@@ -20,6 +20,13 @@ pub const VERSION_ANNOTATION_KEY: &str = "version";
 /// The description key, as predefined by the [OAM
 /// spec](https://github.com/oam-dev/spec/blob/master/metadata.md#annotations-format)
 pub const DESCRIPTION_ANNOTATION_KEY: &str = "description";
+/// The identifier for the builtin spreadscaler trait type
+pub const SPREADSCALER_TRAIT: &str = "spreadscaler";
+/// The identifier for the builtin linkdef trait type
+pub const LINKDEF_TRAIT: &str = "linkdef";
+/// The string used for indicating a latest version. It is explicitly forbidden to use as a version
+/// for a manifest
+pub const LATEST_VERSION: &str = "latest";
 
 /// An OAM manifest
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -99,6 +106,13 @@ pub enum ComponentType {
     Capability,
 }
 
+// This impl is here more for convenience
+impl Default for ComponentType {
+    fn default() -> Self {
+        Self::Actor
+    }
+}
+
 /// Properties that can be defined for a component
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(untagged)]
@@ -126,24 +140,30 @@ pub struct CapabilityProperties {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Trait {
-    /// The type of trait specified
-    // NOTE(thomastaylor312): Same thing goes here as described in the note for Component. We should
-    // probably combine these and do a custom deserialize
+    /// The type of trait specified. This should be a unique string for the type of scaler. As we
+    /// plan on supporting custom scalers, these traits are not enumerated
     #[serde(rename = "type")]
-    pub trait_type: TraitType,
+    pub trait_type: String,
     /// The properties of this trait
     pub properties: TraitProperty,
 }
 
-/// All supported trait types in wadm
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub enum TraitType {
-    /// A spreadscaler trait
-    #[serde(rename = "spreadscaler")]
-    SpreadScaler,
-    /// A linkdef trait
-    #[serde(rename = "linkdef")]
-    Linkdef,
+impl Trait {
+    /// Helper that creates a new linkdef type trait with the given properties
+    pub fn new_linkdef(props: LinkdefProperty) -> Trait {
+        Trait {
+            trait_type: LINKDEF_TRAIT.to_owned(),
+            properties: TraitProperty::Linkdef(props),
+        }
+    }
+
+    /// Helper that creates a new spreadscaler type trait with the given properties
+    pub fn new_spreadscaler(props: SpreadScalerProperty) -> Trait {
+        Trait {
+            trait_type: SPREADSCALER_TRAIT.to_owned(),
+            properties: TraitProperty::SpreadScaler(props),
+        }
+    }
 }
 
 /// Properties for defining traits
@@ -152,6 +172,8 @@ pub enum TraitType {
 pub enum TraitProperty {
     Linkdef(LinkdefProperty),
     SpreadScaler(SpreadScalerProperty),
+    // NOTE: this _MUST_ come last or it will match all deserialization types
+    Custom(serde_json::Value),
 }
 
 /// Properties for linkdefs
@@ -189,7 +211,7 @@ pub struct Spread {
 #[cfg(test)]
 mod test {
     use std::io::BufReader;
-    use std::path::PathBuf;
+    use std::path::Path;
 
     use anyhow::Result;
     use serde_json;
@@ -197,38 +219,53 @@ mod test {
 
     use super::*;
 
-    pub(crate) fn deserialize_yaml(filepath: PathBuf) -> Result<Manifest> {
+    pub(crate) fn deserialize_yaml(filepath: impl AsRef<Path>) -> Result<Manifest> {
         let file = std::fs::File::open(filepath)?;
         let reader = BufReader::new(file);
         let yaml_string: Manifest = serde_yaml::from_reader(reader)?;
-        println!("Read YAML string: {:?}", yaml_string);
         Ok(yaml_string)
     }
 
-    pub(crate) fn deserialize_json(filepath: PathBuf) -> Result<Manifest> {
+    pub(crate) fn deserialize_json(filepath: impl AsRef<Path>) -> Result<Manifest> {
         let file = std::fs::File::open(filepath)?;
         let reader = BufReader::new(file);
         let json_string: Manifest = serde_json::from_reader(reader)?;
-        println!("Read JSON string: {:?}", json_string);
         Ok(json_string)
     }
 
     #[test]
     fn test_oam_deserializer() {
-        let filepath = PathBuf::from("./oam/simple1.json");
-        let res = deserialize_json(filepath);
+        let res = deserialize_json("./oam/simple1.json");
         match res {
             Ok(parse_results) => parse_results,
             Err(error) => panic!("Error {:?}", error),
         };
 
-        let filepath = PathBuf::from("./oam/simple1.yaml");
-        let res = deserialize_yaml(filepath);
+        let res = deserialize_yaml("./oam/simple1.yaml");
         match res {
             Ok(parse_results) => parse_results,
             Err(error) => panic!("Error {:?}", error),
         };
     }
+
+    #[test]
+    fn test_custom_traits() {
+        let manifest = deserialize_yaml("./oam/custom.yaml").expect("Should be able to parse");
+        println!("{manifest:?}");
+        assert!(
+            manifest
+                .spec
+                .components
+                .into_iter()
+                .any(|component| component
+                    .traits
+                    .unwrap_or_default()
+                    .into_iter()
+                    .any(|t| matches!(t.properties, TraitProperty::Custom(_)))),
+            "Should have found custom properties"
+        );
+    }
+
     #[test]
     fn test_oam_serializer() {
         let mut spread_vec: Vec<Spread> = Vec::new();
@@ -249,19 +286,13 @@ mod test {
             replicas: 4,
             spread: spread_vec,
         };
-        let trait_item = Trait {
-            trait_type: TraitType::SpreadScaler,
-            properties: TraitProperty::SpreadScaler(spreadscalerprop),
-        };
+        let trait_item = Trait::new_spreadscaler(spreadscalerprop);
         trait_vec.push(trait_item);
         let linkdefprop = LinkdefProperty {
             target: "webcap".to_string(),
             values: BTreeMap::from([("port".to_string(), "4000".to_string())]),
         };
-        let trait_item = Trait {
-            trait_type: TraitType::Linkdef,
-            properties: TraitProperty::Linkdef(linkdefprop),
-        };
+        let trait_item = Trait::new_linkdef(linkdefprop);
         trait_vec.push(trait_item);
         let mut component_vec: Vec<Component> = Vec::new();
         let component_item = Component {
@@ -297,10 +328,7 @@ mod test {
             spread: spread_vec,
         };
         let mut trait_vec: Vec<Trait> = Vec::new();
-        let trait_item = Trait {
-            trait_type: TraitType::SpreadScaler,
-            properties: TraitProperty::SpreadScaler(spreadscalerprop),
-        };
+        let trait_item = Trait::new_spreadscaler(spreadscalerprop);
         trait_vec.push(trait_item);
         let component_item = Component {
             name: "ledblinky".to_string(),
@@ -333,17 +361,44 @@ mod test {
             metadata,
             spec,
         };
-        let serialized_json = serde_json::to_string(&manifest);
+        let serialized_json =
+            serde_json::to_vec(&manifest).expect("Should be able to serialize JSON");
 
-        match serialized_json {
-            Ok(parse_results) => parse_results,
-            Err(error) => panic!("Error {:?}", error),
-        };
-        let serialized_yaml = serde_yaml::to_string(&manifest);
+        let serialized_yaml =
+            serde_yaml::to_vec(&manifest).expect("Should be able to serialize YAML");
 
-        match serialized_yaml {
-            Ok(parse_results) => parse_results,
-            Err(error) => panic!("Error {:?}", error),
-        };
+        // Test the round trip back in
+        let json_manifest: Manifest = serde_json::from_slice(&serialized_json)
+            .expect("Should be able to deserialize JSON roundtrip");
+        let yaml_manifest: Manifest = serde_yaml::from_slice(&serialized_yaml)
+            .expect("Should be able to deserialize YAML roundtrip");
+
+        // Make sure the manifests don't contain any custom traits (to test that we aren't parsing
+        // the tagged enum poorly)
+        assert!(
+            !json_manifest
+                .spec
+                .components
+                .into_iter()
+                .any(|component| component
+                    .traits
+                    .unwrap_or_default()
+                    .into_iter()
+                    .any(|t| matches!(t.properties, TraitProperty::Custom(_)))),
+            "Should have found custom properties"
+        );
+
+        assert!(
+            !yaml_manifest
+                .spec
+                .components
+                .into_iter()
+                .any(|component| component
+                    .traits
+                    .unwrap_or_default()
+                    .into_iter()
+                    .any(|t| matches!(t.properties, TraitProperty::Custom(_)))),
+            "Should have found custom properties"
+        );
     }
 }
