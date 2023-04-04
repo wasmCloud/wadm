@@ -2,12 +2,16 @@ use async_nats::{Client, Message};
 use serde_json::json;
 use tracing::{debug, error, instrument, trace};
 
-use crate::{model::internal::StoredManifest, storage::Store};
+use crate::{
+    model::{internal::StoredManifest, LATEST_VERSION},
+    storage::Store,
+};
 
 use super::{
-    parser::parse_manifest, DeleteModelRequest, DeleteModelResponse, DeleteResult, GetModelRequest,
-    GetModelResponse, GetResult, ModelSummary, PutModelResponse, PutResult, StatusType,
-    VersionInfo,
+    parser::parse_manifest, DeleteModelRequest, DeleteModelResponse, DeleteResult,
+    DeployModelRequest, DeployModelResponse, DeployResult, GetModelRequest, GetModelResponse,
+    GetResult, ModelSummary, PutModelResponse, PutResult, Status, StatusInfo, StatusResponse,
+    StatusResult, StatusType, UndeployModelRequest, VersionInfo, VersionResponse,
 };
 
 pub(crate) struct Handler<S> {
@@ -41,6 +45,15 @@ impl<S: Store + Send + Sync> Handler<S> {
             "Manifest is valid. Fetching current manifests from store"
         );
 
+        if manifest.version() == LATEST_VERSION {
+            self.send_error(
+                msg.reply,
+                format!("A manifest with a version {LATEST_VERSION} is not allowed in wadm"),
+            )
+            .await;
+            return;
+        }
+
         let mut current_manifests: StoredManifest = match self.store.get(lattice_id, name).await {
             Ok(d) => d.unwrap_or_default(),
             Err(e) => {
@@ -62,8 +75,6 @@ impl<S: Store + Send + Sync> Handler<S> {
             total_versions: 0,
             message: "Successfully put manifest".to_owned(),
         };
-
-        // TODO: Trigger deploy of new manifest if the previous manifest was deployed
 
         if !current_manifests.add_version(manifest) {
             self.send_error(
@@ -134,7 +145,7 @@ impl<S: Store + Send + Sync> Handler<S> {
                 return;
             }
             Err(e) => {
-                error!(error = %e, "Unable to store updated data");
+                error!(error = %e, "Unable to fetch data");
                 self.send_error(msg.reply, "Internal storage error".to_string())
                     .await;
                 return;
@@ -215,21 +226,28 @@ impl<S: Store + Send + Sync> Handler<S> {
     // ordered by time of creation. When we document, we should change this to reflect that
     #[instrument(level = "debug", skip(self, msg))]
     pub async fn list_versions(&self, msg: Message, lattice_id: &str, name: &str) {
-        let data: Vec<VersionInfo> = match self.store.get::<StoredManifest>(lattice_id, name).await
-        {
-            Ok(Some(manifest)) => manifest
-                .all_versions()
-                .into_iter()
-                .cloned()
-                .map(|v| {
-                    let deployed = manifest.is_deployed(&v);
-                    VersionInfo {
-                        version: v,
-                        deployed,
-                    }
-                })
-                .collect(),
-            Ok(None) => Vec::with_capacity(0),
+        let data: VersionResponse = match self.store.get::<StoredManifest>(lattice_id, name).await {
+            Ok(Some(manifest)) => VersionResponse {
+                result: GetResult::Success,
+                message: "Successfully fetched versions".to_string(),
+                versions: manifest
+                    .all_versions()
+                    .into_iter()
+                    .cloned()
+                    .map(|v| {
+                        let deployed = manifest.is_deployed(&v);
+                        VersionInfo {
+                            version: v,
+                            deployed,
+                        }
+                    })
+                    .collect(),
+            },
+            Ok(None) => VersionResponse {
+                result: GetResult::NotFound,
+                message: format!("Model with the name {name} not found"),
+                versions: Vec::with_capacity(0),
+            },
             Err(e) => {
                 error!(error = %e, "Unable to fetch data");
                 self.send_error(msg.reply, "Internal storage error".to_string())
@@ -303,7 +321,7 @@ impl<S: Store + Send + Sync> Handler<S> {
                             .unwrap_or_else(|e| {
                                 error!(error = %e, "Unable to delete data");
                                 DeleteModelResponse {
-                                    result: DeleteResult::Deleted,
+                                    result: DeleteResult::Error,
                                     message: "Internal storage error".to_string(),
                                     undeploy: false,
                                 }
@@ -357,6 +375,236 @@ impl<S: Store + Send + Sync> Handler<S> {
             serde_json::to_vec(&reply_data).unwrap_or_default(),
         )
         .await
+    }
+
+    #[instrument(level = "debug", skip(self, msg))]
+    pub async fn deploy_model(&self, msg: Message, lattice_id: &str, name: &str) {
+        let req: DeployModelRequest = if msg.payload.is_empty() {
+            DeployModelRequest { version: None }
+        } else {
+            match serde_json::from_reader(std::io::Cursor::new(msg.payload)) {
+                Ok(r) => r,
+                Err(e) => {
+                    self.send_error(
+                        msg.reply,
+                        format!("Unable to parse deploy model request: {e:?}"),
+                    )
+                    .await;
+                    return;
+                }
+            }
+        };
+        trace!(?req, "Got request");
+
+        trace!("Fetching current data from store");
+        let mut manifests: StoredManifest = match self.store.get(lattice_id, name).await {
+            Ok(Some(m)) => m,
+            Ok(None) => {
+                self.send_reply(
+                    msg.reply,
+                    // NOTE: We are constructing all data here, so this shouldn't fail, but just in
+                    // case we unwrap to nothing
+                    serde_json::to_vec(&DeployModelResponse {
+                        result: DeployResult::NotFound,
+                        message: format!("Model with the name {name} not found"),
+                    })
+                    .unwrap_or_default(),
+                )
+                .await;
+                return;
+            }
+            Err(e) => {
+                error!(error = %e, "Unable to fetch data");
+                self.send_error(msg.reply, "Internal storage error".to_string())
+                    .await;
+                return;
+            }
+        };
+
+        if !manifests.deploy(req.version) {
+            trace!("Requested version does not exist");
+            self.send_reply(
+                msg.reply,
+                // NOTE: We are constructing all data here, so this shouldn't fail, but just in
+                // case we unwrap to nothing
+                serde_json::to_vec(&DeployModelResponse {
+                    result: DeployResult::Error,
+                    message: format!(
+                        "Model with the name {name} does not have the specified version to deploy"
+                    ),
+                })
+                .unwrap_or_default(),
+            )
+            .await;
+            return;
+        }
+        let reply = self
+            .store
+            .store(lattice_id, name.to_owned(), manifests)
+            .await
+            .map(|_| DeployModelResponse {
+                result: DeployResult::Acknowledged,
+                message: "Deployed model".to_string(),
+            })
+            .unwrap_or_else(|e| {
+                error!(error = %e, "Unable to store updated data");
+                DeployModelResponse {
+                    result: DeployResult::Error,
+                    message: "Internal storage error".to_string(),
+                }
+            });
+        trace!(resp = ?reply, "Sending response");
+        self.send_reply(
+            msg.reply,
+            // NOTE: We are constructing all data here, so this shouldn't fail, but just in
+            // case we unwrap to nothing
+            serde_json::to_vec(&reply).unwrap_or_default(),
+        )
+        .await;
+    }
+
+    // NOTE(thomastaylor312): This is different than wadm 0.3. By default we destructively undeploy
+    // unless specified in the request. We also have the exact same acknowledgement types as a
+    // deploy request
+    #[instrument(level = "debug", skip(self, msg))]
+    pub async fn undeploy_model(&self, msg: Message, lattice_id: &str, name: &str) {
+        let req: UndeployModelRequest = if msg.payload.is_empty() {
+            UndeployModelRequest {
+                non_destructive: false,
+            }
+        } else {
+            match serde_json::from_reader(std::io::Cursor::new(msg.payload)) {
+                Ok(r) => r,
+                Err(e) => {
+                    self.send_error(
+                        msg.reply,
+                        format!("Unable to parse deploy model request: {e:?}"),
+                    )
+                    .await;
+                    return;
+                }
+            }
+        };
+        trace!(?req, "Got request");
+
+        trace!("Fetching current data from store");
+        let mut manifests: StoredManifest = match self.store.get(lattice_id, name).await {
+            Ok(Some(m)) => m,
+            Ok(None) => {
+                self.send_reply(
+                    msg.reply,
+                    // NOTE: We are constructing all data here, so this shouldn't fail, but just in
+                    // case we unwrap to nothing
+                    serde_json::to_vec(&DeployModelResponse {
+                        result: DeployResult::NotFound,
+                        message: format!("Model with the name {name} not found"),
+                    })
+                    .unwrap_or_default(),
+                )
+                .await;
+                return;
+            }
+            Err(e) => {
+                error!(error = %e, "Unable to fetch data");
+                self.send_error(msg.reply, "Internal storage error".to_string())
+                    .await;
+                return;
+            }
+        };
+
+        // TODO: When we notify about the manifest change, send the non_destructive flag along with
+        // the event
+
+        let reply = if manifests.undeploy() {
+            trace!("Manifest undeployed. Storing updated manifest");
+            self.store
+                .store(lattice_id, name.to_owned(), manifests)
+                .await
+                .map(|_| DeployModelResponse {
+                    result: DeployResult::Acknowledged,
+                    message: "Undeployed model".to_string(),
+                })
+                .unwrap_or_else(|e| {
+                    error!(error = %e, "Unable to store updated data");
+                    DeployModelResponse {
+                        result: DeployResult::Error,
+                        message: "Internal storage error".to_string(),
+                    }
+                })
+        } else {
+            trace!("Manifest was already undeployed");
+            DeployModelResponse {
+                result: DeployResult::Acknowledged,
+                message: "Undeployed model".to_string(),
+            }
+        };
+        trace!(resp = ?reply, "Sending response");
+        self.send_reply(
+            msg.reply,
+            // NOTE: We are constructing all data here, so this shouldn't fail, but just in
+            // case we unwrap to nothing
+            serde_json::to_vec(&reply).unwrap_or_default(),
+        )
+        .await;
+    }
+
+    #[instrument(level = "debug", skip(self, msg))]
+    pub async fn model_status(&self, msg: Message, lattice_id: &str, name: &str) {
+        trace!("Fetching current manifest from store");
+        let manifests: StoredManifest = match self.store.get(lattice_id, name).await {
+            Ok(Some(m)) => m,
+            Ok(None) => {
+                self.send_reply(
+                    msg.reply,
+                    // NOTE: We are constructing all data here, so this shouldn't fail, but just in
+                    // case we unwrap to nothing
+                    serde_json::to_vec(&StatusResponse {
+                        result: StatusResult::NotFound,
+                        message: format!("Model with the name {name} not found"),
+                        status: None,
+                    })
+                    .unwrap_or_default(),
+                )
+                .await;
+                return;
+            }
+            Err(e) => {
+                error!(error = %e, "Unable to fetch data");
+                self.send_error(msg.reply, "Internal storage error".to_string())
+                    .await;
+                return;
+            }
+        };
+
+        let current = manifests.get_current();
+        let status = Status {
+            version: current.version().to_owned(),
+            info: StatusInfo {
+                status_type: manifests
+                    .status()
+                    .iter()
+                    .map(|comp| comp.info.status_type)
+                    .sum(),
+                message: manifests
+                    .status_message()
+                    .map(|s| s.to_owned())
+                    .unwrap_or_default(),
+            },
+            components: manifests.status().to_vec(),
+        };
+
+        self.send_reply(
+            msg.reply,
+            // NOTE: We are constructing all data here, so this shouldn't fail, but just in
+            // case we unwrap to nothing
+            serde_json::to_vec(&StatusResponse {
+                result: StatusResult::Ok,
+                message: "Successfully fetched status".to_string(),
+                status: Some(status),
+            })
+            .unwrap_or_default(),
+        )
+        .await;
     }
 
     /// Sends a reply to the topic with the given data, logging an error if one occurs when

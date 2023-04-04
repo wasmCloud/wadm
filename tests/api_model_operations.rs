@@ -46,7 +46,12 @@ impl TestServer {
                 .await
                 .expect("Should be able to perform request")
         };
-        serde_json::from_slice(&msg.payload).expect("Should return a valid response")
+        serde_json::from_slice(&msg.payload).unwrap_or_else(|e| {
+            panic!(
+                "Should return a valid response. Body: {}\nError: {e}",
+                String::from_utf8_lossy(&msg.payload)
+            )
+        })
     }
 }
 
@@ -156,10 +161,14 @@ async fn test_crud_operations() {
     assert_eq!(resp.len(), 2, "Should still have two models in storage");
 
     // Now list the versions of a manifest
-    let resp: Vec<VersionInfo> = test_server
+    let resp: VersionResponse = test_server
         .get_response("default.model.versions.my-example-app", Vec::new(), None)
         .await;
-    let mut iter = resp.into_iter();
+    assert!(
+        matches!(resp.result, GetResult::Success),
+        "Versions should have a success result"
+    );
+    let mut iter = resp.versions.into_iter();
     assert_eq!(
         iter.next().unwrap().version,
         "v0.0.1",
@@ -217,10 +226,14 @@ async fn test_crud_operations() {
     assert!(!resp.message.is_empty(), "Should have a message set");
 
     // Make sure we only receive the proper number of versions now (in the right order)
-    let resp: Vec<VersionInfo> = test_server
+    let resp: VersionResponse = test_server
         .get_response("default.model.versions.my-example-app", Vec::new(), None)
         .await;
-    let mut iter = resp.into_iter();
+    assert!(
+        matches!(resp.result, GetResult::Success),
+        "Versions should have a success result"
+    );
+    let mut iter = resp.versions.into_iter();
     assert_eq!(
         iter.next().unwrap().version,
         "v0.0.1",
@@ -312,8 +325,26 @@ async fn test_bad_requests() {
     );
     assert!(!resp.message.is_empty(), "Should not have an empty message");
 
-    // Mismatched name on put
+    // Setting manifest to latest
+    let raw = tokio::fs::read("./oam/petclinic.yaml")
+        .await
+        .expect("Unable to load file");
+    let mut manifest: Manifest = serde_yaml::from_slice(&raw).unwrap();
+    manifest
+        .metadata
+        .annotations
+        .insert(VERSION_ANNOTATION_KEY.to_owned(), "latest".to_owned());
+    let resp: PutModelResponse = test_server
+        .get_response("default.model.put.petclinic", raw, None)
+        .await;
 
+    assert!(
+        matches!(resp.result, PutResult::Error),
+        "Should have gotten an error with a latest version"
+    );
+    assert!(!resp.message.is_empty(), "Should not have an empty message");
+
+    // Mismatched name on put
     let raw = tokio::fs::read("./oam/petclinic.yaml")
         .await
         .expect("Unable to load file");
@@ -486,6 +517,176 @@ async fn test_manifest_parsing() {
         .await;
 
     assert_put_response(resp, PutResult::NewVersion, "v0.0.2", 2);
+}
+
+#[tokio::test]
+async fn test_deploy() {
+    let test_server = setup_server("deploy_ops".to_owned()).await;
+
+    // Create a manifest with 2 versions
+    let raw = tokio::fs::read("./oam/petclinic.yaml")
+        .await
+        .expect("Unable to load file");
+    let mut manifest: Manifest = serde_yaml::from_slice(&raw).unwrap();
+    let resp: PutModelResponse = test_server
+        .get_response("default.model.put.petclinic", raw, None)
+        .await;
+
+    assert_put_response(resp, PutResult::Created, "v0.0.1", 1);
+    manifest
+        .metadata
+        .annotations
+        .insert(VERSION_ANNOTATION_KEY.to_owned(), "v0.0.2".to_string());
+    let resp: PutModelResponse = test_server
+        .get_response(
+            "default.model.put.petclinic",
+            serde_yaml::to_vec(&manifest).unwrap(),
+            None,
+        )
+        .await;
+    assert_put_response(resp, PutResult::NewVersion, "v0.0.2", 2);
+
+    // Try to deploy and undeploy something that doesn't exist
+    let resp: DeployModelResponse = test_server
+        .get_response("default.model.deploy.foobar", Vec::new(), None)
+        .await;
+    assert!(
+        matches!(resp.result, DeployResult::NotFound),
+        "Should have gotten not found response"
+    );
+
+    let resp: DeployModelResponse = test_server
+        .get_response("default.model.undeploy.foobar", Vec::new(), None)
+        .await;
+    assert!(
+        matches!(resp.result, DeployResult::NotFound),
+        "Should have gotten not found response"
+    );
+
+    // Deploy using no body
+    let resp: DeployModelResponse = test_server
+        .get_response("default.model.deploy.petclinic", Vec::new(), None)
+        .await;
+    assert!(
+        matches!(resp.result, DeployResult::Acknowledged),
+        "Should have gotten acknowledged response"
+    );
+
+    let resp: VersionResponse = test_server
+        .get_response("default.model.versions.petclinic", Vec::new(), None)
+        .await;
+    for info in resp.versions.into_iter() {
+        match info.version.as_str() {
+            "v0.0.1" => assert!(!info.deployed, "The correct version should be deployed"),
+            "v0.0.2" => assert!(info.deployed, "The correct version should be deployed"),
+            _ => panic!("Got unexpected version {}", info.version),
+        }
+    }
+
+    // Now deploy with a specific version
+    let resp: DeployModelResponse = test_server
+        .get_response(
+            "default.model.deploy.petclinic",
+            serde_json::to_vec(&DeployModelRequest {
+                version: Some("v0.0.1".to_string()),
+            })
+            .unwrap(),
+            None,
+        )
+        .await;
+    assert!(
+        matches!(resp.result, DeployResult::Acknowledged),
+        "Should have gotten acknowledged response"
+    );
+
+    let resp: VersionResponse = test_server
+        .get_response("default.model.versions.petclinic", Vec::new(), None)
+        .await;
+    for info in resp.versions.into_iter() {
+        match info.version.as_str() {
+            "v0.0.1" => assert!(info.deployed, "The correct version should be deployed"),
+            "v0.0.2" => assert!(!info.deployed, "The correct version should be deployed"),
+            _ => panic!("Got unexpected version {}", info.version),
+        }
+    }
+
+    // Try to deploy latest
+    let resp: DeployModelResponse = test_server
+        .get_response(
+            "default.model.deploy.petclinic",
+            serde_json::to_vec(&DeployModelRequest {
+                version: Some("latest".to_string()),
+            })
+            .unwrap(),
+            None,
+        )
+        .await;
+    assert!(
+        matches!(resp.result, DeployResult::Acknowledged),
+        "Should have gotten acknowledged response"
+    );
+
+    let resp: VersionResponse = test_server
+        .get_response("default.model.versions.petclinic", Vec::new(), None)
+        .await;
+    for info in resp.versions.into_iter() {
+        match info.version.as_str() {
+            "v0.0.1" => assert!(!info.deployed, "The correct version should be deployed"),
+            "v0.0.2" => assert!(info.deployed, "The correct version should be deployed"),
+            _ => panic!("Got unexpected version {}", info.version),
+        }
+    }
+
+    // Undeploy stuff
+    let resp: DeployModelResponse = test_server
+        .get_response("default.model.undeploy.petclinic", Vec::new(), None)
+        .await;
+    assert!(
+        matches!(resp.result, DeployResult::Acknowledged),
+        "Should have gotten acknowledged response"
+    );
+
+    let resp: VersionResponse = test_server
+        .get_response("default.model.versions.petclinic", Vec::new(), None)
+        .await;
+    assert!(
+        resp.versions.into_iter().all(|info| !info.deployed),
+        "No version should be deployed"
+    );
+}
+
+#[tokio::test]
+async fn test_status() {
+    let test_server = setup_server("status".to_owned()).await;
+
+    // Create a manifest with 2 versions
+    let raw = tokio::fs::read("./oam/petclinic.yaml")
+        .await
+        .expect("Unable to load file");
+    let resp: PutModelResponse = test_server
+        .get_response("default.model.put.petclinic", raw, None)
+        .await;
+    assert_put_response(resp, PutResult::Created, "v0.0.1", 1);
+
+    let resp: StatusResponse = test_server
+        .get_response("default.model.status.petclinic", Vec::new(), None)
+        .await;
+
+    // This is just checking it returns a valid default status. e2e tests will have to check actual
+    // status updates
+    assert_eq!(
+        resp.result,
+        StatusResult::Ok,
+        "Should have the proper result"
+    );
+    assert_eq!(
+        resp.status
+            .expect("Should have a status set")
+            .info
+            .status_type,
+        StatusType::Undeployed,
+        "Should have the correct default status"
+    );
 }
 
 fn assert_put_response(

@@ -3,7 +3,10 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 use crate::model::Manifest;
+use crate::server::ComponentStatus;
 use crate::storage::StateKind;
+
+use super::LATEST_VERSION;
 
 /// This struct represents a single manfiest, with its version history. Internally these are stored
 /// as an indexmap keyed by version name
@@ -16,6 +19,9 @@ pub(crate) struct StoredManifest {
     deployed_version: Option<String>,
     // TODO: Figure out which status to store (probably just the status for each component). We can
     // convert it to the external facing type from the server as needed
+    status: Vec<ComponentStatus>,
+    // An optional top level status message to help with debugging or status for the whole manifest
+    status_message: Option<String>,
 }
 
 impl StateKind for StoredManifest {
@@ -47,16 +53,12 @@ impl StoredManifest {
         self.manifests.shift_remove(version).is_some()
     }
 
-    /// Returns an iterator over all stored manifests in creation order
-    pub fn all_manifests(&self) -> impl IntoIterator<Item = &Manifest> {
-        self.manifests.values()
-    }
-
     /// Returns an iterator over all stored versions in creation order
     pub fn all_versions(&self) -> impl IntoIterator<Item = &String> {
         self.manifests.keys()
     }
 
+    #[allow(unused)]
     /// Returns a reference to the deployed version (if it is set)
     pub fn deployed_version(&self) -> Option<&str> {
         self.deployed_version.as_deref()
@@ -70,14 +72,34 @@ impl StoredManifest {
             .unwrap_or(false)
     }
 
-    /// Sets this manifest as undeployed
-    pub fn undeploy(&mut self) {
-        self.deployed_version = None
+    /// Sets this manifest as undeployed. Returning true if it was currently deployed
+    pub fn undeploy(&mut self) -> bool {
+        self.deployed_version.take().is_some()
     }
 
-    /// Sets the given version as the deployed manifest
-    pub fn deploy(&mut self, version: &str) {
-        self.deployed_version = Some(version.to_owned())
+    /// Attempts to deploy the given version. If none is passed or the version is "latest", it will
+    /// deploy the latest version.
+    ///
+    /// Returns true if it was deployed, false otherwise
+    pub fn deploy(&mut self, version: Option<String>) -> bool {
+        match version {
+            Some(v) if v == LATEST_VERSION => {
+                self.deployed_version = Some(self.current_version().to_owned());
+                true
+            }
+            None => {
+                self.deployed_version = Some(self.current_version().to_owned());
+                true
+            }
+            Some(v) => {
+                if self.manifests.contains_key(&v) {
+                    self.deployed_version = Some(v);
+                    true
+                } else {
+                    false
+                }
+            }
+        }
     }
 
     /// Returns a reference to the current manifest
@@ -103,5 +125,15 @@ impl StoredManifest {
     /// Returns the total count of manifests
     pub fn count(&self) -> usize {
         self.manifests.len()
+    }
+
+    /// Returns a reference to the current status message, if any
+    pub fn status_message(&self) -> Option<&str> {
+        self.status_message.as_deref()
+    }
+
+    /// Returns a reference to the current status
+    pub fn status(&self) -> &Vec<ComponentStatus> {
+        &self.status
     }
 }

@@ -128,25 +128,32 @@ impl<S: Store + Send + Sync> Server<S> {
                     category: "model",
                     operation: "deploy",
                     object_name: Some(name),
-                } => todo!(),
+                } => self.handler.deploy_model(msg, lattice_id, name).await,
                 ParsedSubject {
                     lattice_id,
                     category: "model",
                     operation: "undeploy",
                     object_name: Some(name),
-                } => todo!(),
+                } => self.handler.undeploy_model(msg, lattice_id, name).await,
                 ParsedSubject {
                     lattice_id,
                     category: "model",
                     operation: "status",
                     object_name: Some(name),
-                } => todo!(),
+                } => self.handler.model_status(msg, lattice_id, name).await,
                 ParsedSubject {
-                    lattice_id,
+                    lattice_id: _,
                     category: "model",
                     operation: "history",
-                    object_name: Some(name),
-                } => todo!(),
+                    object_name: Some(_name),
+                } => {
+                    // TODO(thomastaylor312): For now I don't want to figure out how we want to
+                    // store this history. Obviously it should be a different key (which we don't
+                    // really support custom ones right now with the Store trait), and I honestly
+                    // wonder if it would be better to emit to a NATS topic and collect to a stream
+                    // for retrieval (with rollups) rather than us storing it
+                    self.handler.send_error(msg.reply, "Model deployment history is not currently supported. It may be added in a future version".to_string()).await;
+                }
                 _ => {
                     let err = format!("Unsupported subject: {}", msg.subject);
                     self.handler.send_error(msg.reply, err).await;
