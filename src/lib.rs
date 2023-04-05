@@ -20,3 +20,9 @@ pub const DEFAULT_EXPIRY_TIME: Duration = Duration::from_secs(70);
 pub const DEFAULT_EVENTS_TOPIC: &str = "wasmbus.evt.*";
 /// Default topic to listen to for all commands
 pub const DEFAULT_COMMANDS_TOPIC: &str = "wadm.cmd.*";
+/// Managed by annotation used for labeling things properly in wadm
+pub const MANAGED_BY_ANNOTATION: &str = "wasmcloud.com/managed-by";
+/// Identifier for managed by annotation. This is the value [`MANAGED_BY_ANNOTATION`] is set to
+pub const MANAGED_BY_IDENTIFIER: &str = "wadm";
+/// The default link name. In the future, this will likely be pulled in from another crate
+pub const DEFAULT_LINK_NAME: &str = "default";

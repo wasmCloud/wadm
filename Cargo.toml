@@ -17,6 +17,7 @@ clap = { version = "4", features = ["derive", "cargo", "env"], optional = true }
 cloudevents-sdk = "0.7"
 futures = "0.3"
 indexmap = { version = "1", features = ["serde-1"] }
+lazy_static = "1"
 nkeys = "0.2.0"
 # One version back to avoid clashes with 0.10 of otlp
 opentelemetry = { version = "0.17", features = ["rt-tokio"], optional = true }

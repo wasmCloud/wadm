@@ -4,22 +4,20 @@ use std::time::Duration;
 
 use clap::Parser;
 use tokio::sync::Semaphore;
-use tracing::{debug, trace};
 
 use wadm::{
-    commands::*,
-    consumers::{
-        manager::{ConsumerManager, WorkResult, Worker},
-        *,
-    },
+    consumers::{manager::ConsumerManager, *},
     server::{Server, DEFAULT_WADM_TOPIC_PREFIX},
     storage::{nats_kv::NatsKvStore, reaper::Reaper},
-    workers::EventWorker,
+    workers::{CommandWorker, EventWorker},
     DEFAULT_COMMANDS_TOPIC, DEFAULT_EVENTS_TOPIC,
 };
 
+mod connections;
 mod logging;
 mod nats;
+
+use connections::{ControlClientConfig, ControlClientPool};
 
 #[derive(Parser, Debug)]
 #[command(name = clap::crate_name!(), version = clap::crate_version!(), about = "wasmCloud Application Deployment Manager", long_about = None)]
@@ -173,19 +171,16 @@ async fn main() -> anyhow::Result<()> {
     .await?;
 
     // TODO: We will probably need to set up all the flags (like lattice prefix and topic prefix) down the line
-    let ctl_client_builder = wasmcloud_control_interface::ClientBuilder::new(client.clone());
-    let ctl_client = if let Some(domain) = args.domain {
-        ctl_client_builder
-            .js_domain(domain)
-            .build()
-            .await
-            .map_err(|e| anyhow::anyhow!("{e:?}"))?
-    } else {
-        ctl_client_builder
-            .build()
-            .await
-            .map_err(|e| anyhow::anyhow!("{e:?}"))?
-    };
+    // TODO: This will be used in a follow up that watches for new lattices and starts observing them
+    let connection_pool = ControlClientPool::new(
+        client.clone(),
+        ControlClientConfig {
+            js_domain: args.domain,
+            topic_prefix: None,
+        },
+    );
+
+    let ctl_client = connection_pool.get_connection("default").await?;
 
     let store = nats::ensure_kv_bucket(&context, args.state_bucket, 1).await?;
 
@@ -222,12 +217,12 @@ async fn main() -> anyhow::Result<()> {
     events_manager
         .add_for_lattice(
             "wasmbus.evt.default",
-            EventWorker::new(state_storage.clone(), ctl_client),
+            EventWorker::new(state_storage.clone(), ctl_client.clone()),
         )
         .await
         .map_err(|e| anyhow::anyhow!("{e:?}"))?;
     commands_manager
-        .add_for_lattice("wadm.cmd.default", CommandWorker)
+        .add_for_lattice("wadm.cmd.default", CommandWorker::new(ctl_client))
         .await
         .map_err(|e| anyhow::anyhow!("{e:?}"))?;
 
@@ -252,30 +247,4 @@ async fn main() -> anyhow::Result<()> {
         _ = tokio::signal::ctrl_c() => {}
     }
     Ok(())
-}
-
-// Everything blow here will likely be moved when we do full implementation
-
-struct CommandWorker;
-
-#[async_trait::async_trait]
-impl Worker for CommandWorker {
-    type Message = Command;
-
-    async fn do_work(&self, mut message: ScopedMessage<Self::Message>) -> WorkResult<()> {
-        debug!(event = ?message.as_ref(), "Handling received command");
-        message.ack().await?;
-
-        // NOTE: There is a possible race condition here where we send the lattice control
-        // message, and it doesn't work even though we've acked the message. Worst case here
-        // is that we end up not starting/creating something, which would be fixed on the
-        // next heartbeat. This is better than the other option of double starting something
-        // when the ack fails (think if something resulted in starting 100 actors on a host
-        // and then it did it again)
-
-        // THIS IS WHERE WE'D DO REAL WORK
-        trace!("I'm sending something to the lattice control topics!");
-
-        Ok(())
-    }
 }

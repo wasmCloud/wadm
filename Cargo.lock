@@ -2867,6 +2867,7 @@ dependencies = [
  "cloudevents-sdk 0.7.0",
  "futures",
  "indexmap",
+ "lazy_static",
  "nkeys",
  "opentelemetry",
  "opentelemetry-otlp",
