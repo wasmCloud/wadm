@@ -26,12 +26,13 @@ struct SimpleScalerConfig {
 /// This is primarily to demonstrate the functionality and ergonomics of the
 /// [Scaler](crate::scaler::Scaler) trait and doesn't make any guarantees
 /// about spreading replicas evenly
-struct SimpleActorScaler {
+struct SimpleActorScaler<S: ReadStore + Send + Sync> {
     pub config: SimpleScalerConfig,
+    store: S,
 }
 
 #[async_trait]
-impl Scaler for SimpleActorScaler {
+impl<S: ReadStore + Send + Sync> Scaler for SimpleActorScaler<S> {
     type Config = SimpleScalerConfig;
 
     fn update_config(&mut self, config: Self::Config) -> Result<bool> {
@@ -39,30 +40,27 @@ impl Scaler for SimpleActorScaler {
         Ok(true)
     }
 
-    async fn handle_event<S: ReadStore + Send + Sync>(
-        &self,
-        store: S,
-        event: Event,
-    ) -> Result<HashSet<Command>> {
+    async fn handle_event(&self, event: Event) -> Result<HashSet<Command>> {
         match event {
             Event::ActorStarted(_) | Event::ActorStopped(_) | Event::HostStopped(_) => {
-                self.compute_actor_commands(store).await
+                self.compute_actor_commands(&self.store).await
             }
             // No other event impacts the job of this scaler so we can ignore it
             _ => Ok(HashSet::new()),
         }
     }
 
-    async fn reconcile<S: ReadStore + Send + Sync>(&self, store: S) -> Result<HashSet<Command>> {
-        self.compute_actor_commands(store).await
+    async fn reconcile(&self) -> Result<HashSet<Command>> {
+        self.compute_actor_commands(&self.store).await
     }
 }
 
-impl SimpleActorScaler {
+impl<S: ReadStore + Send + Sync> SimpleActorScaler<S> {
     #[allow(unused)]
     /// Construct a new SimpleActorScaler with specified configuration values
-    fn new(actor_reference: String, lattice_id: String, replicas: usize) -> Self {
+    fn new(store: S, actor_reference: String, lattice_id: String, replicas: usize) -> Self {
         Self {
+            store,
             config: SimpleScalerConfig {
                 actor_reference,
                 lattice_id,
@@ -74,10 +72,7 @@ impl SimpleActorScaler {
     /// Given a readable store containing the state of the lattice, compute the
     /// required commands to either stop extra actor instances or start new
     /// actor instances to reach the configured replica count
-    async fn compute_actor_commands<S: ReadStore + Send + Sync>(
-        &self,
-        store: S,
-    ) -> Result<HashSet<Command>> {
+    async fn compute_actor_commands(&self, store: &S) -> Result<HashSet<Command>> {
         // NOTE(brooksmtownsend): This will fail to look up the actor ID if an actor is not running in the lattice currently.
         // This is acceptable for the simplescaler but might require a helper function in the future
         let actor_id = store
@@ -187,10 +182,14 @@ mod test {
         let replicas = 12;
 
         let store = Arc::new(TestStore::default());
-        let simple_scaler =
-            SimpleActorScaler::new(actor_reference, lattice_id.to_string(), replicas);
+        let simple_scaler = SimpleActorScaler::new(
+            store.clone(),
+            actor_reference,
+            lattice_id.to_string(),
+            replicas,
+        );
 
-        let cmds = simple_scaler.reconcile(store).await;
+        let cmds = simple_scaler.reconcile().await;
         assert!(cmds.is_err());
         assert_eq!(
             cmds.unwrap_err().to_string(),
@@ -231,13 +230,14 @@ mod test {
         // Expected Actions: Start 12 replicas of the actor on the one host
 
         let simple_scaler = SimpleActorScaler::new(
+            store.clone(),
             actor_reference.to_string(),
             lattice_id.to_string(),
             replicas,
         );
 
         let cmds = simple_scaler
-            .reconcile(store)
+            .reconcile()
             .await
             .expect("Should have computed a set of commands");
         assert_eq!(cmds.len(), 1);
@@ -346,13 +346,14 @@ mod test {
         // - 2 stopped actors on the first host and 3 on the other
 
         let simple_scaler = SimpleActorScaler::new(
+            store.clone(),
             actor_reference.to_string(),
             lattice_id.to_string(),
             replicas,
         );
 
         let cmds = simple_scaler
-            .reconcile(store)
+            .reconcile()
             .await
             .expect("Should have computed a set of commands");
 
