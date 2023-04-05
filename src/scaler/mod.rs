@@ -5,6 +5,7 @@ use std::collections::HashSet;
 use crate::{commands::Command, events::Event};
 
 mod simplescaler;
+pub mod spreadscaler;
 
 /// A trait describing a struct that can be configured to compute the difference between
 /// desired state and configured state, returning a set of commands to approach desired state.
