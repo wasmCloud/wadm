@@ -263,7 +263,7 @@ impl StreamWrapper {
             .await
             .expect("Should be able to create test stream")
         };
-        let stream = CommandConsumer::new(stream, &topic)
+        let stream = CommandConsumer::new(stream, &topic, "default")
             .await
             .expect("Unable to setup stream");
         StreamWrapper {

@@ -81,7 +81,7 @@ async fn get_seed(seed: String) -> Result<nkeys::KeyPair> {
 pub async fn ensure_stream(
     context: &Context,
     name: String,
-    subject: String,
+    subjects: Vec<String>,
     description: Option<String>,
 ) -> Result<Stream> {
     context
@@ -90,7 +90,7 @@ pub async fn ensure_stream(
             description,
             num_replicas: 1,
             retention: async_nats::jetstream::stream::RetentionPolicy::WorkQueue,
-            subjects: vec![subject],
+            subjects,
             max_age: DEFAULT_EXPIRY_TIME,
             storage: async_nats::jetstream::stream::StorageType::File,
             allow_rollup: false,

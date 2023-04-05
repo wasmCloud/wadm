@@ -193,19 +193,14 @@ pub struct StatusInfo {
 }
 
 /// All possible status types
-#[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone, Copy)]
+#[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone, Copy, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum StatusType {
+    #[default]
     Undeployed,
     Compensating,
     Ready,
     Failed,
-}
-
-impl Default for StatusType {
-    fn default() -> Self {
-        StatusType::Undeployed
-    }
 }
 
 // Implementing add makes it easy for use to get an aggregate status by summing all of them together

@@ -57,13 +57,19 @@ impl<S: Store + Clone + Send + Sync + 'static> Reaper<S> {
     }
 
     /// Adds a new lattice to be reaped
-    pub fn observe(&mut self, lattice_id: String) {
+    pub fn observe(&mut self, lattice_id: &str) {
+        // If the handle exists and is still running, just leave it
+        if let Some(handle) = self.handles.get(lattice_id) {
+            if !handle.is_finished() {
+                return;
+            }
+        }
         self.handles.insert(
-            lattice_id.clone(),
+            lattice_id.to_owned(),
             tokio::spawn(
                 Undertaker {
                     store: self.store.clone(),
-                    lattice_id,
+                    lattice_id: lattice_id.to_owned(),
                     interval: self.interval,
                 }
                 .reap(),

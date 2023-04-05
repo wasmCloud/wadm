@@ -362,8 +362,9 @@ mod test {
         let serialized_json =
             serde_json::to_vec(&manifest).expect("Should be able to serialize JSON");
 
-        let serialized_yaml =
-            serde_yaml::to_vec(&manifest).expect("Should be able to serialize YAML");
+        let serialized_yaml = serde_yaml::to_string(&manifest)
+            .expect("Should be able to serialize YAML")
+            .into_bytes();
 
         // Test the round trip back in
         let json_manifest: Manifest = serde_json::from_slice(&serialized_json)
