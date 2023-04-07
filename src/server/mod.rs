@@ -160,7 +160,7 @@ impl<S: Store + Send + Sync> Server<S> {
                 }
             }
         }
-        return Err(anyhow::anyhow!("Subscriber terminated"));
+        Err(anyhow::anyhow!("Subscriber terminated"))
     }
 
     fn parse_subject<'a>(&self, subject: &'a str) -> anyhow::Result<ParsedSubject<'a>> {

@@ -134,7 +134,7 @@ async fn test_crud_operations() {
     let resp: PutModelResponse = test_server
         .get_response(
             "default.model.put.my-example-app",
-            serde_yaml::to_vec(&manifest).unwrap(),
+            serde_yaml::to_string(&manifest).unwrap().into_bytes(),
             None,
         )
         .await;
@@ -147,7 +147,7 @@ async fn test_crud_operations() {
     let resp: PutModelResponse = test_server
         .get_response(
             "default.model.put.my-example-app",
-            serde_yaml::to_vec(&manifest).unwrap(),
+            serde_yaml::to_string(&manifest).unwrap().into_bytes(),
             None,
         )
         .await;
@@ -540,7 +540,7 @@ async fn test_deploy() {
     let resp: PutModelResponse = test_server
         .get_response(
             "default.model.put.petclinic",
-            serde_yaml::to_vec(&manifest).unwrap(),
+            serde_yaml::to_string(&manifest).unwrap().into_bytes(),
             None,
         )
         .await;

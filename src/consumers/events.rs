@@ -33,19 +33,17 @@ impl EventConsumer {
     /// Creates a new event consumer, returning an error if unable to create or access the durable
     /// consumer on the given stream.
     ///
-    /// The `topic` param should be a valid topic where lattice events are expected to be sent (e.g.
-    /// `wasmbus.evt.<lattice_prefix>`). An error will be returned if the topic is not in a
-    /// recognized format. This is due to the need to fetch the lattice id off of the topic and
-    /// match the correct inbound events
-    pub async fn new(stream: JsStream, topic: &str) -> Result<EventConsumer, NatsError> {
-        // Basically there should always be 3 strings when split per topic. <bus prefix>.evt.<lattice_id>
-        if topic.split('.').count() != 3 {
-            return Err(format!("Subject {topic} is not valid").into());
+    /// The `topic` param should be a valid topic where lattice events are expected to be sent and
+    /// should match the given lattice ID. An error will be returned if the given lattice ID is not
+    /// contained in the topic
+    pub async fn new(
+        stream: JsStream,
+        topic: &str,
+        lattice_id: &str,
+    ) -> Result<EventConsumer, NatsError> {
+        if !topic.contains(lattice_id) {
+            return Err(format!("Topic {topic} does not match for lattice ID {lattice_id}").into());
         }
-
-        // Safety: We can unwrap here because we already checked that we got 3 items on the split above
-        let lattice_id = topic.rsplit_once('.').unwrap().1.to_owned();
-
         let consumer_name = format!("{EVENTS_CONSUMER_PREFIX}_{lattice_id}");
         let consumer = stream
             .get_or_create_consumer(
@@ -72,7 +70,7 @@ impl EventConsumer {
             .await?;
         Ok(EventConsumer {
             stream: messages,
-            lattice_id,
+            lattice_id: lattice_id.to_owned(),
         })
     }
 }
@@ -146,7 +144,8 @@ impl CreateConsumer for EventConsumer {
     async fn create(
         stream: async_nats::jetstream::stream::Stream,
         topic: &str,
+        lattice_id: &str,
     ) -> Result<Self::Output, NatsError> {
-        EventConsumer::new(stream, topic).await
+        EventConsumer::new(stream, topic, lattice_id).await
     }
 }

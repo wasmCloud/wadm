@@ -6,18 +6,23 @@ use clap::Parser;
 use tokio::sync::Semaphore;
 
 use wadm::{
-    consumers::{manager::ConsumerManager, *},
+    consumers::{
+        manager::{ConsumerManager, WorkerCreator},
+        *,
+    },
+    nats_utils::LatticeIdParser,
     server::{Server, DEFAULT_WADM_TOPIC_PREFIX},
     storage::{nats_kv::NatsKvStore, reaper::Reaper},
     workers::{CommandWorker, EventWorker},
-    DEFAULT_COMMANDS_TOPIC, DEFAULT_EVENTS_TOPIC,
+    DEFAULT_COMMANDS_TOPIC, DEFAULT_EVENTS_TOPIC, DEFAULT_MULTITENANT_EVENTS_TOPIC,
 };
 
 mod connections;
 mod logging;
 mod nats;
+mod observer;
 
-use connections::{ControlClientConfig, ControlClientPool};
+use connections::{ControlClientConfig, ControlClientConstructor};
 
 #[derive(Parser, Debug)]
 #[command(name = clap::crate_name!(), version = clap::crate_version!(), about = "wasmCloud Application Deployment Manager", long_about = None)]
@@ -148,6 +153,12 @@ struct Args {
         default_value = "wadm_manifests"
     )]
     manifest_bucket: String,
+
+    /// Run wadm in multitenant mode. This is for advanced multitenant use cases with segmented NATS
+    /// account traffic and not simple cases where all lattices use credentials from the same
+    /// account. See the deployment guide for more information
+    #[arg(long = "multitenant", env = "WADM_MULTITENANT")]
+    multitenant: bool,
 }
 
 #[tokio::main]
@@ -171,16 +182,13 @@ async fn main() -> anyhow::Result<()> {
     .await?;
 
     // TODO: We will probably need to set up all the flags (like lattice prefix and topic prefix) down the line
-    // TODO: This will be used in a follow up that watches for new lattices and starts observing them
-    let connection_pool = ControlClientPool::new(
+    let connection_pool = ControlClientConstructor::new(
         client.clone(),
         ControlClientConfig {
             js_domain: args.domain,
             topic_prefix: None,
         },
     );
-
-    let ctl_client = connection_pool.get_connection("default").await?;
 
     let store = nats::ensure_kv_bucket(&context, args.state_bucket, 1).await?;
 
@@ -190,10 +198,19 @@ async fn main() -> anyhow::Result<()> {
 
     let manifest_storage = NatsKvStore::new(store);
 
+    let event_stream_topics = if args.multitenant {
+        vec![
+            DEFAULT_EVENTS_TOPIC.to_owned(),
+            DEFAULT_MULTITENANT_EVENTS_TOPIC.to_owned(),
+        ]
+    } else {
+        vec![DEFAULT_EVENTS_TOPIC.to_owned()]
+    };
+
     let event_stream = nats::ensure_stream(
         &context,
         args.event_stream_name,
-        DEFAULT_EVENTS_TOPIC.to_owned(),
+        event_stream_topics.clone(),
         Some(
             "A stream that stores all events coming in on the wasmbus.evt topics in a cluster"
                 .to_string(),
@@ -204,47 +221,96 @@ async fn main() -> anyhow::Result<()> {
     let command_stream = nats::ensure_stream(
         &context,
         args.command_stream_name,
-        DEFAULT_COMMANDS_TOPIC.to_owned(),
+        vec![DEFAULT_COMMANDS_TOPIC.to_owned()],
         Some("A stream that stores all commands for wadm".to_string()),
     )
     .await?;
 
     let permit_pool = Arc::new(Semaphore::new(args.max_jobs));
-    let events_manager: ConsumerManager<EventConsumer> =
-        ConsumerManager::new(permit_pool.clone(), event_stream);
-    let commands_manager: ConsumerManager<CommandConsumer> =
-        ConsumerManager::new(permit_pool.clone(), command_stream);
-    events_manager
-        .add_for_lattice(
-            "wasmbus.evt.default",
-            EventWorker::new(state_storage.clone(), ctl_client.clone()),
-        )
-        .await
-        .map_err(|e| anyhow::anyhow!("{e:?}"))?;
-    commands_manager
-        .add_for_lattice("wadm.cmd.default", CommandWorker::new(ctl_client))
-        .await
-        .map_err(|e| anyhow::anyhow!("{e:?}"))?;
+    let events_manager: ConsumerManager<EventConsumer> = ConsumerManager::new(
+        permit_pool.clone(),
+        event_stream,
+        EventWorkerCreator {
+            store: state_storage.clone(),
+            pool: connection_pool.clone(),
+        },
+    )
+    .await;
+    let commands_manager: ConsumerManager<CommandConsumer> = ConsumerManager::new(
+        permit_pool.clone(),
+        command_stream,
+        CommandWorkerCreator {
+            pool: connection_pool.clone(),
+        },
+    )
+    .await;
 
-    // Give the workers time to catch up before starting the reaper
-    tokio::time::sleep(Duration::from_secs(2)).await;
     // TODO(thomastaylor312): We might want to figure out how not to run this globally. Doing a
     // synthetic event sent to the stream could be nice, but all the wadm processes would still fire
     // off that tick, resulting in multiple people handling. We could maybe get it to work with the
     // right duplicate window, but we have no idea when each process could fire a tick. Worst case
     // scenario right now is that multiple fire simultaneously and a few of them just delete nothing
-    let _reaper = Reaper::new(
-        state_storage,
+    let reaper = Reaper::new(
+        state_storage.clone(),
         Duration::from_secs(args.cleanup_interval / 2),
-        ["default".to_owned()],
+        [],
     );
+
+    let observer = observer::Observer {
+        client_builder: connection_pool,
+        parser: LatticeIdParser::new("wasmbus", args.multitenant),
+        command_manager: commands_manager,
+        event_manager: events_manager,
+        reaper,
+        client: client.clone(),
+        store: state_storage,
+    };
 
     let server = Server::new(manifest_storage, client, Some(&args.api_prefix)).await?;
     tokio::select! {
         res = server.serve() => {
             res?
         }
+        res = observer.observe(event_stream_topics) => {
+            res?
+        }
         _ = tokio::signal::ctrl_c() => {}
     }
     Ok(())
+}
+
+struct CommandWorkerCreator {
+    pool: ControlClientConstructor,
+}
+
+#[async_trait::async_trait]
+impl WorkerCreator for CommandWorkerCreator {
+    type Output = CommandWorker;
+
+    async fn create(&self, lattice_id: &str) -> anyhow::Result<Self::Output> {
+        self.pool
+            .get_connection(lattice_id)
+            .await
+            .map(CommandWorker::new)
+    }
+}
+
+struct EventWorkerCreator<S> {
+    store: S,
+    pool: ControlClientConstructor,
+}
+
+#[async_trait::async_trait]
+impl<S> WorkerCreator for EventWorkerCreator<S>
+where
+    S: wadm::storage::Store + Send + Sync + Clone + 'static,
+{
+    type Output = EventWorker<S, wasmcloud_control_interface::Client>;
+
+    async fn create(&self, lattice_id: &str) -> anyhow::Result<Self::Output> {
+        self.pool
+            .get_connection(lattice_id)
+            .await
+            .map(|client| EventWorker::new(self.store.clone(), client))
+    }
 }
