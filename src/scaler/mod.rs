@@ -22,7 +22,8 @@ pub trait Scaler {
     type Config: Send + Sync;
 
     /// Provide a scaler with configuration to use internally when computing commands
-    fn update_config(&mut self, config: Self::Config) -> Result<bool>;
+    /// This should trigger a reconcile with the new configuration
+    async fn update_config(&mut self, config: Self::Config) -> Result<HashSet<Command>>;
 
     /// Compute commands that must be taken given an event that changes the lattice state
     async fn handle_event(&self, event: Event) -> Result<HashSet<Command>>;
