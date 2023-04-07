@@ -35,9 +35,10 @@ struct SimpleActorScaler<S: ReadStore + Send + Sync> {
 impl<S: ReadStore + Send + Sync> Scaler for SimpleActorScaler<S> {
     type Config = SimpleScalerConfig;
 
-    fn update_config(&mut self, config: Self::Config) -> Result<bool> {
+    async fn update_config(&mut self, config: Self::Config) -> Result<HashSet<Command>> {
         self.config = config;
-        Ok(true)
+
+        self.reconcile().await
     }
 
     async fn handle_event(&self, event: Event) -> Result<HashSet<Command>> {
