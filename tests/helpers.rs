@@ -9,10 +9,12 @@ use async_nats::{
     },
     Client,
 };
+use futures::TryStreamExt;
 use tokio::process::Child;
 use tokio::process::Command;
 
 use anyhow::Result;
+use wadm::consumers::{CommandConsumer, ScopedMessage};
 
 const DEFAULT_WASMCLOUD_PORT: u16 = 4000;
 const DEFAULT_NATS_PORT: u16 = 4222;
@@ -218,4 +220,75 @@ pub async fn create_test_store_with_client(client: Client, id: String) -> Store 
         })
         .await
         .expect("Unable to create KV bucket")
+}
+
+/// A wrapper around a command consumer
+pub struct StreamWrapper {
+    pub topic: String,
+    pub client: async_nats::Client,
+    pub stream: CommandConsumer,
+}
+
+impl StreamWrapper {
+    /// Sets up a new command consumer stream using the given id as the stream name
+    pub async fn new(id: String, port: Option<u16>) -> StreamWrapper {
+        let client = async_nats::connect(format!("127.0.0.1:{}", port.unwrap_or(4222)))
+            .await
+            .expect("Unable to setup nats command consumer client");
+        let context = async_nats::jetstream::new(client.clone());
+        let topic = format!("{id}.cmd.default");
+        // If the stream exists, purge it
+        let stream = if let Ok(stream) = context.get_stream(&id).await {
+            stream
+                .purge()
+                .await
+                .expect("Should be able to purge stream");
+            stream
+        } else {
+            context
+            .create_stream(async_nats::jetstream::stream::Config {
+                name: id.to_owned(),
+                description: Some(
+                    "A stream that stores all events coming in on the wasmbus.evt topics in a cluster"
+                        .to_string(),
+                ),
+                num_replicas: 1,
+                retention: async_nats::jetstream::stream::RetentionPolicy::WorkQueue,
+                subjects: vec![topic.clone()],
+                max_age: wadm::DEFAULT_EXPIRY_TIME,
+                storage: async_nats::jetstream::stream::StorageType::Memory,
+                allow_rollup: false,
+                ..Default::default()
+            })
+            .await
+            .expect("Should be able to create test stream")
+        };
+        let stream = CommandConsumer::new(stream, &topic)
+            .await
+            .expect("Unable to setup stream");
+        StreamWrapper {
+            topic,
+            client,
+            stream,
+        }
+    }
+
+    /// Publish the given command
+    pub async fn publish_command(&self, cmd: impl Into<wadm::commands::Command>) {
+        self.client
+            .publish(
+                self.topic.clone(),
+                serde_json::to_vec(&cmd.into()).unwrap().into(),
+            )
+            .await
+            .expect("Unable to send command");
+    }
+
+    pub async fn wait_for_command(&mut self) -> ScopedMessage<wadm::commands::Command> {
+        tokio::time::timeout(std::time::Duration::from_secs(2), self.stream.try_next())
+            .await
+            .expect("Should have received event before timeout")
+            .expect("Stream shouldn't have had an error")
+            .expect("Stream shouldn't have ended")
+    }
 }

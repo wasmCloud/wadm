@@ -105,6 +105,7 @@ impl<S: ReadStore + Send + Sync> SimpleActorScaler<S> {
                             reference: self.config.actor_reference.to_owned(),
                             count: count as usize, // It's a positive integer so we know this will succeed
                             host_id,
+                            model_name: "fake".into(),
                         })])
                     } else if count < 0 {
                         // This is written iteratively rather than functionally just because it reads better.
@@ -121,6 +122,7 @@ impl<S: ReadStore + Send + Sync> SimpleActorScaler<S> {
                                     actor_id: actor_id.to_owned(),
                                     host_id,
                                     count,
+                                    model_name: "fake".into(),
                                 }));
                                 remaining -= count;
                             } else {
@@ -128,6 +130,7 @@ impl<S: ReadStore + Send + Sync> SimpleActorScaler<S> {
                                     actor_id: actor_id.to_owned(),
                                     host_id,
                                     count: remaining,
+                                    model_name: "fake".into(),
                                 }));
                                 remaining = 0;
                             }
@@ -150,6 +153,7 @@ impl<S: ReadStore + Send + Sync> SimpleActorScaler<S> {
                             reference: self.config.actor_reference.to_owned(),
                             count: self.config.replicas,
                             host_id: host_id.to_owned(),
+                            model_name: "fake".into(),
                         })])
                     } else {
                         return Err(anyhow::anyhow!(
@@ -250,7 +254,8 @@ mod test {
             &Command::StartActor(StartActor {
                 reference: actor_reference,
                 host_id,
-                count: replicas
+                count: replicas,
+                model_name: "fake".into(),
             })
         )
     }

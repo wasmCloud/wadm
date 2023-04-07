@@ -43,6 +43,8 @@ pub struct StartActor {
     pub host_id: String,
     /// Number of actors to start
     pub count: usize,
+    /// The name of the model/manifest that generated this command
+    pub model_name: String,
 }
 
 from_impl!(StartActor);
@@ -69,6 +71,8 @@ pub struct StopActor {
     pub host_id: String,
     /// The number of actors to stop
     pub count: usize,
+    /// The name of the model/manifest that generated this command
+    pub model_name: String,
 }
 
 from_impl!(StopActor);
@@ -96,6 +100,8 @@ pub struct StartProvider {
     /// The link name for the provider
     #[serde(skip_serializing_if = "Option::is_none")]
     pub link_name: Option<String>,
+    /// The name of the model/manifest that generated this command
+    pub model_name: String,
     // TODO: Do we need to support config_json paths?
 }
 
@@ -128,6 +134,8 @@ pub struct StopProvider {
     pub link_name: Option<String>,
     /// The contract ID of the provider to stop
     pub contract_id: String,
+    /// The name of the model/manifest that generated this command
+    pub model_name: String,
 }
 
 from_impl!(StopProvider);
@@ -145,6 +153,8 @@ pub struct PutLinkdef {
     pub contract_id: String,
     /// Values to set for the link
     pub values: HashMap<String, String>,
+    /// The name of the model/manifest that generated this command
+    pub model_name: String,
 }
 
 from_impl!(PutLinkdef);
@@ -178,6 +188,8 @@ pub struct DeleteLinkdef {
     pub link_name: String,
     /// The provider ID of the provider to unlink
     pub provider_id: String,
+    /// The name of the model/manifest that generated this command
+    pub model_name: String,
 }
 
 from_impl!(DeleteLinkdef);

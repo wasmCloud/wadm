@@ -6,8 +6,6 @@ pub(crate) mod internal;
 
 /// The default weight for a spread
 pub const DEFAULT_SPREAD_WEIGHT: usize = 100;
-/// The default link name
-pub const DEFAULT_LINK_NAME: &str = "default";
 /// The expected OAM api version
 pub const OAM_VERSION: &str = "core.oam.dev/v1beta1";
 /// The currently supported kind for OAM manifests.
@@ -336,7 +334,7 @@ mod test {
             properties: Properties::Capability(CapabilityProperties {
                 image: "wasmcloud.azurecr.io/ledblinky:0.0.1".to_string(),
                 contract: "wasmcloud:blinkenlights".to_string(),
-                link_name: Some(DEFAULT_LINK_NAME.to_owned()),
+                link_name: Some(crate::DEFAULT_LINK_NAME.to_owned()),
             }),
             traits: Some(trait_vec),
         };
