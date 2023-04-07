@@ -6,6 +6,7 @@ use crate::{
         manager::{WorkError, WorkResult, Worker},
         ScopedMessage,
     },
+    APP_SPEC_ANNOTATION,
 };
 
 lazy_static::lazy_static! {
@@ -35,37 +36,45 @@ impl Worker for CommandWorker {
     async fn do_work(&self, mut message: ScopedMessage<Self::Message>) -> WorkResult<()> {
         let res = match message.as_ref() {
             Command::StartActor(actor) => {
+                let mut annotations = MANAGED_BY_ANNOTATIONS.clone();
+                annotations.insert(APP_SPEC_ANNOTATION.to_owned(), actor.model_name.clone());
                 self.client
                     .start_actor(
                         &actor.host_id,
                         &actor.reference,
                         actor.count as u16,
-                        Some(MANAGED_BY_ANNOTATIONS.clone()),
+                        Some(annotations),
                     )
                     .await
             }
             Command::StopActor(actor) => {
+                let mut annotations = MANAGED_BY_ANNOTATIONS.clone();
+                annotations.insert(APP_SPEC_ANNOTATION.to_owned(), actor.model_name.clone());
                 self.client
                     .stop_actor(
                         &actor.host_id,
                         &actor.actor_id,
                         actor.count as u16,
-                        Some(MANAGED_BY_ANNOTATIONS.clone()),
+                        Some(annotations),
                     )
                     .await
             }
             Command::StartProvider(prov) => {
+                let mut annotations = MANAGED_BY_ANNOTATIONS.clone();
+                annotations.insert(APP_SPEC_ANNOTATION.to_owned(), prov.model_name.clone());
                 self.client
                     .start_provider(
                         &prov.host_id,
                         &prov.reference,
                         prov.link_name.clone(),
-                        Some(MANAGED_BY_ANNOTATIONS.clone()),
+                        Some(annotations),
                         None,
                     )
                     .await
             }
             Command::StopProvider(prov) => {
+                let mut annotations = MANAGED_BY_ANNOTATIONS.clone();
+                annotations.insert(APP_SPEC_ANNOTATION.to_owned(), prov.model_name.clone());
                 self.client
                     .stop_provider(
                         &prov.host_id,
@@ -74,7 +83,7 @@ impl Worker for CommandWorker {
                             .as_deref()
                             .unwrap_or(crate::DEFAULT_LINK_NAME),
                         &prov.contract_id,
-                        Some(MANAGED_BY_ANNOTATIONS.clone()),
+                        Some(annotations),
                     )
                     .await
             }

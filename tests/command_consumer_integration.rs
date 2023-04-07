@@ -17,12 +17,14 @@ async fn test_consumer_stream() {
             reference: "foobar".to_string(),
             host_id: "fakehost".to_string(),
             count: 3,
+            model_name: "fake".into(),
         })
         .await;
     wrapper
         .publish_command(StartProvider {
             reference: "baz".to_string(),
             host_id: "fakehost".to_string(),
+            model_name: "fake".into(),
             ..Default::default()
         })
         .await;
@@ -31,6 +33,7 @@ async fn test_consumer_stream() {
             actor_id: "foobar".to_string(),
             provider_id: "fakehost".to_string(),
             contract_id: "wasmcloud:httpserver".to_string(),
+            model_name: "fake".into(),
             ..Default::default()
         })
         .await;
@@ -95,6 +98,7 @@ async fn test_consumer_stream() {
             actor_id: "foobar".to_string(),
             host_id: "fakehost".to_string(),
             count: 1,
+            model_name: "fake".into(),
         })
         .await;
 
@@ -122,6 +126,7 @@ async fn test_nack_and_rereceive() {
             reference: "foobar".to_string(),
             host_id: "fakehost".to_string(),
             count: 3,
+            model_name: "fake".into(),
         })
         .await;
 

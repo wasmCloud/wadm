@@ -46,6 +46,7 @@ async fn test_commands() {
             reference: "wasmcloud.azurecr.io/echo:0.3.4".to_string(),
             host_id: host_id.clone(),
             count: 2,
+            model_name: "fake".into(),
         })
         .await;
 
@@ -94,6 +95,16 @@ async fn test_commands() {
         wadm::MANAGED_BY_IDENTIFIER,
         "Should have the proper identifier"
     );
+    assert_eq!(
+        inventory[0].instances[0]
+            .annotations
+            .as_ref()
+            .unwrap()
+            .get(wadm::APP_SPEC_ANNOTATION)
+            .expect("Should have the managed by annotation"),
+        "fake",
+        "Should have the proper identifier"
+    );
 
     // Start a provider
     wrapper
@@ -101,6 +112,7 @@ async fn test_commands() {
             reference: "wasmcloud.azurecr.io/httpserver:0.17.0".to_string(),
             host_id: host_id.clone(),
             link_name: None,
+            model_name: "fake".into(),
         })
         .await;
 
@@ -137,6 +149,16 @@ async fn test_commands() {
         wadm::MANAGED_BY_IDENTIFIER,
         "Should have the proper identifier"
     );
+    assert_eq!(
+        inventory[0]
+            .annotations
+            .as_ref()
+            .unwrap()
+            .get(wadm::APP_SPEC_ANNOTATION)
+            .expect("Should have the managed by annotation"),
+        "fake",
+        "Should have the proper identifier"
+    );
 
     // Put a linkdef
     wrapper
@@ -146,6 +168,7 @@ async fn test_commands() {
             link_name: wadm::DEFAULT_LINK_NAME.to_owned(),
             contract_id: "wasmcloud:httpserver".to_string(),
             values: [("ADDRESS".to_string(), "0.0.0.0:9999".to_string())].into(),
+            model_name: "fake".into(),
         })
         .await;
 
@@ -176,6 +199,7 @@ async fn test_commands() {
             provider_id: HTTP_SERVER_PROVIDER_ID.to_owned(),
             link_name: wadm::DEFAULT_LINK_NAME.to_owned(),
             contract_id: "wasmcloud:httpserver".to_string(),
+            model_name: "fake".into(),
         })
         .await;
 
@@ -206,6 +230,7 @@ async fn test_commands() {
             contract_id: "wasmcloud:httpserver".to_owned(),
             link_name: None,
             host_id: host_id.clone(),
+            model_name: "fake".into(),
         })
         .await;
 
@@ -231,6 +256,7 @@ async fn test_commands() {
             actor_id: ECHO_ACTOR_ID.to_owned(),
             count: 2,
             host_id: host_id.clone(),
+            model_name: "fake".into(),
         })
         .await;
 
@@ -291,6 +317,7 @@ async fn test_annotation_stop() {
             reference: "wasmcloud.azurecr.io/echo:0.3.4".to_string(),
             host_id: host_id.clone(),
             count: 2,
+            model_name: "fake".into(),
         })
         .await;
 
@@ -342,6 +369,7 @@ async fn test_annotation_stop() {
             actor_id: ECHO_ACTOR_ID.to_owned(),
             count: 2,
             host_id: host_id.clone(),
+            model_name: "fake".into(),
         })
         .await;
 
