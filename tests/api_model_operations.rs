@@ -1,5 +1,7 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 
+use async_nats::Subscriber;
+use futures::StreamExt;
 use serde::de::DeserializeOwned;
 use wadm::{
     model::{Manifest, VERSION_ANNOTATION_KEY},
@@ -12,6 +14,7 @@ mod helpers;
 struct TestServer {
     prefix: String,
     client: async_nats::Client,
+    notify: Subscriber,
     handle: tokio::task::JoinHandle<anyhow::Result<()>>,
 }
 
@@ -53,6 +56,55 @@ impl TestServer {
             )
         })
     }
+
+    async fn wait_for_notify(&mut self, contains: &str) {
+        let mut timer = tokio::time::interval(Duration::from_secs(2));
+        // Consume the first tick
+        timer.tick().await;
+        loop {
+            tokio::select! {
+                res = self.notify.next() => {
+                    match res {
+                        Some(msg) => {
+                            if String::from_utf8_lossy(&msg.payload).contains(contains) {
+                                return
+                            }
+                        }
+                        None => panic!("Subscriber terminated")
+                    }
+                }
+                _ = timer.tick() => panic!("Timeout waiting for notify event containing {contains}")
+            }
+        }
+    }
+}
+
+pub struct TestNotifier {
+    client: async_nats::Client,
+    prefix: String,
+}
+
+#[async_trait::async_trait]
+impl ManifestNotifier for TestNotifier {
+    async fn deployed(&self, lattice_id: &str, _manifest: Manifest) -> anyhow::Result<()> {
+        self.client
+            .publish(
+                format!("{}.{lattice_id}", self.prefix),
+                "deployed_manifest".into(),
+            )
+            .await
+            .map_err(|e| anyhow::anyhow!("{e:?}"))
+    }
+
+    async fn undeployed(&self, lattice_id: &str, _name: &str) -> anyhow::Result<()> {
+        self.client
+            .publish(
+                format!("{}.{lattice_id}", self.prefix),
+                "undeployed_manifest".into(),
+            )
+            .await
+            .map_err(|e| anyhow::anyhow!("{e:?}"))
+    }
 }
 
 async fn setup_server(id: String) -> TestServer {
@@ -61,14 +113,29 @@ async fn setup_server(id: String) -> TestServer {
         .expect("Should be able to connect to NATS");
     let store = helpers::create_test_store_with_client(client.clone(), id.clone()).await;
 
-    let server = Server::new(NatsKvStore::new(store), client.clone(), Some(&id))
+    let prefix = format!("testing.{id}");
+    let server = Server::new(
+        NatsKvStore::new(store),
+        client.clone(),
+        Some(&id),
+        TestNotifier {
+            prefix: prefix.clone(),
+            client: client.clone(),
+        },
+    )
+    .await
+    .expect("Should be able to setup server");
+
+    let notify = client
+        .subscribe(format!("{prefix}.default"))
         .await
-        .expect("Should be able to setup server");
+        .expect("Unable to set up subscription");
 
     TestServer {
         prefix: id,
         handle: tokio::spawn(server.serve()),
         client,
+        notify,
     }
 }
 
@@ -521,7 +588,7 @@ async fn test_manifest_parsing() {
 
 #[tokio::test]
 async fn test_deploy() {
-    let test_server = setup_server("deploy_ops".to_owned()).await;
+    let mut test_server = setup_server("deploy_ops".to_owned()).await;
 
     // Create a manifest with 2 versions
     let raw = tokio::fs::read("./oam/petclinic.yaml")
@@ -569,8 +636,10 @@ async fn test_deploy() {
         .await;
     assert!(
         matches!(resp.result, DeployResult::Acknowledged),
-        "Should have gotten acknowledged response"
+        "Should have gotten acknowledged response: {resp:?}"
     );
+
+    test_server.wait_for_notify("deployed_manifest").await;
 
     let resp: VersionResponse = test_server
         .get_response("default.model.versions.petclinic", Vec::new(), None)
@@ -646,6 +715,8 @@ async fn test_deploy() {
         "Should have gotten acknowledged response"
     );
 
+    test_server.wait_for_notify("undeployed_manifest").await;
+
     let resp: VersionResponse = test_server
         .get_response("default.model.versions.petclinic", Vec::new(), None)
         .await;
@@ -653,6 +724,87 @@ async fn test_deploy() {
         resp.versions.into_iter().all(|info| !info.deployed),
         "No version should be deployed"
     );
+}
+
+#[tokio::test]
+async fn test_delete_deploy() {
+    let mut test_server = setup_server("deploy_delete".to_owned()).await;
+
+    // Create a manifest with 2 versions
+    let raw = tokio::fs::read("./oam/petclinic.yaml")
+        .await
+        .expect("Unable to load file");
+    let mut manifest: Manifest = serde_yaml::from_slice(&raw).unwrap();
+    let resp: PutModelResponse = test_server
+        .get_response("default.model.put.petclinic", raw, None)
+        .await;
+
+    assert_put_response(resp, PutResult::Created, "v0.0.1", 1);
+    manifest
+        .metadata
+        .annotations
+        .insert(VERSION_ANNOTATION_KEY.to_owned(), "v0.0.2".to_string());
+    let resp: PutModelResponse = test_server
+        .get_response(
+            "default.model.put.petclinic",
+            serde_yaml::to_string(&manifest).unwrap().into_bytes(),
+            None,
+        )
+        .await;
+    assert_put_response(resp, PutResult::NewVersion, "v0.0.2", 2);
+
+    let resp: DeployModelResponse = test_server
+        .get_response("default.model.deploy.petclinic", Vec::new(), None)
+        .await;
+    assert!(
+        matches!(resp.result, DeployResult::Acknowledged),
+        "Should have gotten acknowledged response"
+    );
+
+    let resp: DeleteModelResponse = test_server
+        .get_response(
+            "default.model.del.petclinic",
+            serde_json::to_vec(&DeleteModelRequest {
+                version: "v0.0.2".to_owned(),
+                delete_all: false,
+            })
+            .unwrap(),
+            None,
+        )
+        .await;
+    assert!(
+        matches!(resp.result, DeleteResult::Deleted),
+        "Should have gotten deleted response"
+    );
+
+    test_server.wait_for_notify("undeployed_manifest").await;
+
+    // Deploy again and then delete all
+    let resp: DeployModelResponse = test_server
+        .get_response("default.model.deploy.petclinic", Vec::new(), None)
+        .await;
+    assert!(
+        matches!(resp.result, DeployResult::Acknowledged),
+        "Should have gotten acknowledged response"
+    );
+
+    let resp: DeleteModelResponse = test_server
+        .get_response(
+            "default.model.del.petclinic",
+            serde_json::to_vec(&DeleteModelRequest {
+                version: String::new(),
+                delete_all: true,
+            })
+            .unwrap(),
+            None,
+        )
+        .await;
+    assert!(
+        matches!(resp.result, DeleteResult::Deleted),
+        "Should have gotten deleted response"
+    );
+
+    test_server.wait_for_notify("undeployed_manifest").await;
 }
 
 #[tokio::test]

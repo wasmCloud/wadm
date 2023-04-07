@@ -5,13 +5,14 @@ edition = "2021"
 
 [features]
 default = []
-cli = ["clap", "tracing-opentelemetry", "tracing-subscriber", "opentelemetry", "opentelemetry-otlp", "atty", "uuid"]
+cli = ["clap", "tracing-opentelemetry", "tracing-subscriber", "opentelemetry", "opentelemetry-otlp", "atty"]
 
 [dependencies]
 anyhow = "1"
 async-nats = "0.29"
 async-trait = "0.1"
 atty = { version = "0.2", optional = true }
+bytes = "1"
 chrono = "0.4"
 clap = { version = "4", features = ["derive", "cargo", "env"], optional = true }
 cloudevents-sdk = "0.7"
@@ -35,7 +36,7 @@ tracing = { version = "0.1", features = ["log"] }
 tracing-futures = "0.2"
 tracing-opentelemetry = { version = "0.17", optional = true }
 tracing-subscriber = { version = "0.3.7", features = ["env-filter", "json"], optional = true }
-uuid = { version = "1", optional = true }
+uuid = "1"
 # Temporary workaround until we can merge and release some fixes to wasmbus that require the use of
 # an older version of nats
 wasmcloud-control-interface = { version = "0.24", git = "https://github.com/thomastaylor312/control-interface-client.git", branch = "tmp/dep_workaround" }

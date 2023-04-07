@@ -7,10 +7,11 @@ use tracing::{debug, error, instrument, trace, warn};
 use wadm::{
     consumers::{manager::ConsumerManager, CommandConsumer, EventConsumer},
     events::{EventType, HostHeartbeat, HostStarted},
+    mirror::Mirror,
     nats_utils::LatticeIdParser,
     storage::{nats_kv::NatsKvStore, reaper::Reaper, Store},
     workers::{CommandWorker, EventWorker},
-    DEFAULT_COMMANDS_TOPIC,
+    DEFAULT_COMMANDS_TOPIC, DEFAULT_WADM_EVENTS_TOPIC,
 };
 
 use super::connections::ControlClientConstructor;
@@ -20,6 +21,7 @@ pub(crate) struct Observer<S> {
     pub(crate) parser: LatticeIdParser,
     pub(crate) command_manager: ConsumerManager<CommandConsumer>,
     pub(crate) event_manager: ConsumerManager<EventConsumer>,
+    pub(crate) mirror: Mirror,
     pub(crate) client: async_nats::Client,
     pub(crate) store: S,
     pub(crate) reaper: Reaper<NatsKvStore>,
@@ -51,6 +53,14 @@ impl<S: Store + Send + Sync + Clone + 'static> Observer<S> {
                     // already running
                     self.reaper.observe(lattice_id);
 
+                    // Make sure the mirror consumer is up and running. This operation returns early
+                    // if it is already running
+                    if let Err(e) = self.mirror.monitor_lattice(&msg.subject, lattice_id).await {
+                        // If we can't set up the mirror, we can't proceed, so exit early
+                        error!(error = %e, %lattice_id, "Couldn't add mirror consumer. Will retry on next heartbeat");
+                        continue;
+                    }
+
                     let needs_command = !self.command_manager.has_consumer(&msg.subject).await;
                     let needs_event = !self.event_manager.has_consumer(&msg.subject).await;
                     let client = if needs_command || needs_event {
@@ -72,7 +82,7 @@ impl<S: Store + Send + Sync + Clone + 'static> Observer<S> {
                     }
                     if needs_event {
                         debug!(%lattice_id, subject = %msg.subject, "Found unmonitored lattice, adding event consumer");
-                        self.event_manager.add_for_lattice(&msg.subject, lattice_id, EventWorker::new(self.store.clone(), client)).await.unwrap_or_else(|e| {
+                        self.event_manager.add_for_lattice(&DEFAULT_WADM_EVENTS_TOPIC.replace('*', lattice_id), lattice_id, EventWorker::new(self.store.clone(), client)).await.unwrap_or_else(|e| {
                             error!(error = %e, %lattice_id, "Couldn't add event consumer. Will retry on next heartbeat");
                         })
                     }

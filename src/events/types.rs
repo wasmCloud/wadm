@@ -8,6 +8,8 @@ use cloudevents::{AttributesReader, Data, Event as CloudEvent};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::model::Manifest;
+
 use super::data::*;
 
 // NOTE: this macro is a helper so we don't have to copy/paste these impls for each type. The first
@@ -95,6 +97,10 @@ pub enum Event {
     HostHeartbeat(HostHeartbeat),
     LinkdefSet(LinkdefSet),
     LinkdefDeleted(LinkdefDeleted),
+    // NOTE(thomastaylor312): We may change where and how these get published, but it makes sense
+    // for now to have them here even though they aren't technically lattice events
+    ManifestPublished(ManifestPublished),
+    ManifestUnpublished(ManifestUnpublished),
 }
 
 impl TryFrom<CloudEvent> for Event {
@@ -120,6 +126,12 @@ impl TryFrom<CloudEvent> for Event {
             HostHeartbeat::TYPE => HostHeartbeat::try_from(value).map(Event::HostHeartbeat),
             LinkdefSet::TYPE => LinkdefSet::try_from(value).map(Event::LinkdefSet),
             LinkdefDeleted::TYPE => LinkdefDeleted::try_from(value).map(Event::LinkdefDeleted),
+            ManifestPublished::TYPE => {
+                ManifestPublished::try_from(value).map(Event::ManifestPublished)
+            }
+            ManifestUnpublished::TYPE => {
+                ManifestUnpublished::try_from(value).map(Event::ManifestUnpublished)
+            }
             _ => Err(ConversionError::WrongEvent(value)),
         }
     }
@@ -144,6 +156,8 @@ impl Serialize for Event {
             Event::HostHeartbeat(evt) => evt.serialize(serializer),
             Event::LinkdefSet(evt) => evt.serialize(serializer),
             Event::LinkdefDeleted(evt) => evt.serialize(serializer),
+            Event::ManifestPublished(evt) => evt.serialize(serializer),
+            Event::ManifestUnpublished(evt) => evt.serialize(serializer),
         }
     }
 }
@@ -169,6 +183,8 @@ impl Event {
             Event::HostHeartbeat(_) => HostHeartbeat::TYPE,
             Event::LinkdefSet(_) => LinkdefSet::TYPE,
             Event::LinkdefDeleted(_) => LinkdefDeleted::TYPE,
+            Event::ManifestPublished(_) => ManifestPublished::TYPE,
+            Event::ManifestUnpublished(_) => ManifestUnpublished::TYPE,
         }
     }
 }
@@ -388,6 +404,21 @@ event_impl!(
     source,
     id
 );
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ManifestPublished {
+    #[serde(flatten)]
+    pub manifest: Manifest,
+}
+
+event_impl!(ManifestPublished, "com.wadm.manifest_published");
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ManifestUnpublished {
+    pub name: String,
+}
+
+event_impl!(ManifestUnpublished, "com.wadm.manifest_unpublished");
 
 #[cfg(test)]
 mod test {

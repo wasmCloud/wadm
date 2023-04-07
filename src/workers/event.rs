@@ -742,6 +742,14 @@ impl<S: Store + Send + Sync, C: ClaimsSource + InventorySource + Send + Sync> Wo
                 self.handle_provider_health_check(&message.lattice_id, host_id, data, true)
                     .await
             }
+            Event::ManifestPublished(_data) => {
+                // TODO: Will need to be handled for managing applications
+                Ok(())
+            }
+            Event::ManifestUnpublished(_data_manifest) => {
+                // TODO: Will need to be handled for managing applications
+                Ok(())
+            }
             // All other events we don't care about for state.
             _ => {
                 trace!("Got event we don't care about. Skipping");

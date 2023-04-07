@@ -5,10 +5,12 @@ use tracing::{info, instrument, warn};
 use crate::storage::Store;
 
 mod handlers;
+mod notifier;
 mod parser;
 mod types;
 
 use handlers::Handler;
+pub use notifier::{ManifestNotifier, StreamNotifier};
 pub use parser::CONTENT_TYPE_HEADER;
 pub use types::*;
 
@@ -18,13 +20,13 @@ pub const DEFAULT_WADM_TOPIC_PREFIX: &str = "wadm.api";
 const QUEUE_GROUP: &str = "wadm_server";
 
 /// A server for the wadm API
-pub struct Server<S> {
-    handler: Handler<S>,
+pub struct Server<S, N> {
+    handler: Handler<S, N>,
     subscriber: Subscriber,
     prefix: String,
 }
 
-impl<S: Store + Send + Sync> Server<S> {
+impl<S: Store + Send + Sync, N: ManifestNotifier> Server<S, N> {
     /// Returns a new server configured with the given store, NATS client, and optional topic
     /// prefix. Returns an error if it can't subscribe on the right topics
     ///
@@ -35,7 +37,8 @@ impl<S: Store + Send + Sync> Server<S> {
         store: S,
         client: Client,
         topic_prefix: Option<&str>,
-    ) -> anyhow::Result<Server<S>> {
+        notifier: N,
+    ) -> anyhow::Result<Server<S, N>> {
         // Trim off any spaces or trailing/preceding dots
         let prefix = topic_prefix
             .unwrap_or(DEFAULT_WADM_TOPIC_PREFIX)
@@ -59,7 +62,11 @@ impl<S: Store + Send + Sync> Server<S> {
             .map_err(|e| anyhow::anyhow!("{e:?}"))?;
 
         Ok(Server {
-            handler: Handler { store, client },
+            handler: Handler {
+                store,
+                client,
+                notifier,
+            },
             subscriber,
             prefix,
         })

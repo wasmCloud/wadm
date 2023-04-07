@@ -10,11 +10,13 @@ use wadm::{
         manager::{ConsumerManager, WorkerCreator},
         *,
     },
+    mirror::Mirror,
     nats_utils::LatticeIdParser,
-    server::{Server, DEFAULT_WADM_TOPIC_PREFIX},
+    server::{Server, StreamNotifier, DEFAULT_WADM_TOPIC_PREFIX},
     storage::{nats_kv::NatsKvStore, reaper::Reaper},
     workers::{CommandWorker, EventWorker},
     DEFAULT_COMMANDS_TOPIC, DEFAULT_EVENTS_TOPIC, DEFAULT_MULTITENANT_EVENTS_TOPIC,
+    DEFAULT_WADM_EVENTS_TOPIC,
 };
 
 mod connections;
@@ -23,6 +25,10 @@ mod nats;
 mod observer;
 
 use connections::{ControlClientConfig, ControlClientConstructor};
+
+const EVENT_STREAM_NAME: &str = "wadm_events";
+const COMMAND_STREAM_NAME: &str = "wadm_commands";
+const MIRROR_STREAM_NAME: &str = "wadm_mirror";
 
 #[derive(Parser, Debug)]
 #[command(name = clap::crate_name!(), version = clap::crate_version!(), about = "wasmCloud Application Deployment Manager", long_about = None)]
@@ -54,22 +60,6 @@ struct Args {
     /// to false. Defaults to http://localhost:55681/v1/traces if not set and tracing is enabled
     #[arg(short = 'e', long = "tracing-endpoint", env = "WADM_TRACING_ENDPOINT")]
     tracing_endpoint: Option<String>,
-
-    /// Name of the events stream to use
-    #[arg(
-        long = "event-stream",
-        default_value = "wadm_events",
-        env = "WADM_EVENT_STREAM"
-    )]
-    event_stream_name: String,
-
-    /// Name of the commands stream to use
-    #[arg(
-        long = "command-stream",
-        default_value = "wadm_commands",
-        env = "WADM_COMMAND_STREAM"
-    )]
-    command_stream_name: String,
 
     /// The NATS JetStream domain to connect to
     #[arg(short = 'd', env = "WADM_JETSTREAM_DOMAIN")]
@@ -198,19 +188,10 @@ async fn main() -> anyhow::Result<()> {
 
     let manifest_storage = NatsKvStore::new(store);
 
-    let event_stream_topics = if args.multitenant {
-        vec![
-            DEFAULT_EVENTS_TOPIC.to_owned(),
-            DEFAULT_MULTITENANT_EVENTS_TOPIC.to_owned(),
-        ]
-    } else {
-        vec![DEFAULT_EVENTS_TOPIC.to_owned()]
-    };
-
     let event_stream = nats::ensure_stream(
         &context,
-        args.event_stream_name,
-        event_stream_topics.clone(),
+        EVENT_STREAM_NAME.to_owned(),
+        vec![DEFAULT_WADM_EVENTS_TOPIC.to_owned()],
         Some(
             "A stream that stores all events coming in on the wasmbus.evt topics in a cluster"
                 .to_string(),
@@ -220,9 +201,23 @@ async fn main() -> anyhow::Result<()> {
 
     let command_stream = nats::ensure_stream(
         &context,
-        args.command_stream_name,
+        COMMAND_STREAM_NAME.to_owned(),
         vec![DEFAULT_COMMANDS_TOPIC.to_owned()],
         Some("A stream that stores all commands for wadm".to_string()),
+    )
+    .await?;
+
+    let event_stream_topics = if args.multitenant {
+        vec![DEFAULT_MULTITENANT_EVENTS_TOPIC.to_owned()]
+    } else {
+        vec![DEFAULT_EVENTS_TOPIC.to_owned()]
+    };
+
+    let mirror_stream = nats::ensure_stream(
+        &context,
+        MIRROR_STREAM_NAME.to_owned(),
+        event_stream_topics.clone(),
+        Some("A stream that publishes all events to the same stream".to_string()),
     )
     .await?;
 
@@ -256,17 +251,27 @@ async fn main() -> anyhow::Result<()> {
         [],
     );
 
+    let trimmer: &[_] = &['.', '>', '*'];
+    let wadm_event_prefix = DEFAULT_WADM_EVENTS_TOPIC.trim_matches(trimmer);
+
     let observer = observer::Observer {
         client_builder: connection_pool,
         parser: LatticeIdParser::new("wasmbus", args.multitenant),
         command_manager: commands_manager,
         event_manager: events_manager,
+        mirror: Mirror::new(mirror_stream, wadm_event_prefix),
         reaper,
         client: client.clone(),
         store: state_storage,
     };
 
-    let server = Server::new(manifest_storage, client, Some(&args.api_prefix)).await?;
+    let server = Server::new(
+        manifest_storage,
+        client,
+        Some(&args.api_prefix),
+        StreamNotifier::new(wadm_event_prefix, context),
+    )
+    .await?;
     tokio::select! {
         res = server.serve() => {
             res?
