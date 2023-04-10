@@ -164,13 +164,15 @@ impl<S: Store + Clone + Send + Sync + 'static> Undertaker<S> {
             actors
                 .into_iter()
                 .filter_map(|(id, mut actor)| {
-                    let current_num_hosts = actor.count.len();
+                    let current_num_hosts = actor.instances.len();
                     // Only keep the instances where the host exists
-                    actor.count.retain(|host_id, _| hosts.contains_key(host_id));
+                    actor
+                        .instances
+                        .retain(|host_id, _| hosts.contains_key(host_id));
                     // If we got rid of something, that means this needs to update
-                    (current_num_hosts != actor.count.len()).then_some((id, actor))
+                    (current_num_hosts != actor.instances.len()).then_some((id, actor))
                 })
-                .partition(|(_, actor)| actor.count.is_empty());
+                .partition(|(_, actor)| actor.instances.is_empty());
 
         debug!(to_remove = %actors_to_remove.len(), to_update = %actors_to_update.len(), "Filtered out list of actors to update and reap");
 
@@ -245,7 +247,7 @@ mod test {
     use std::{collections::HashSet, sync::Arc};
 
     use crate::{
-        storage::{ProviderStatus, ReadStore},
+        storage::{ProviderStatus, ReadStore, WadmActorInstance},
         test_util::TestStore,
     };
 
@@ -255,6 +257,8 @@ mod test {
 
         let lattice_id = "reaper";
         let actor_id = "testactor";
+        let actor_instance_id_one = "asdasdj-asdada-132123-ffff";
+        let actor_instance_id_two = "123abc-asdada-132123-ffff";
         let host1_id = "host1";
         let host2_id = "host2";
 
@@ -267,9 +271,19 @@ mod test {
                         actor_id.to_string(),
                         Actor {
                             id: actor_id.to_string(),
-                            count: HashMap::from([
-                                (host1_id.to_string(), 1),
-                                (host2_id.to_string(), 1),
+                            instances: HashMap::from([
+                                (
+                                    host1_id.to_string(),
+                                    HashSet::from_iter([WadmActorInstance::from_id(
+                                        actor_instance_id_one.to_string(),
+                                    )]),
+                                ),
+                                (
+                                    host2_id.to_string(),
+                                    HashSet::from_iter([WadmActorInstance::from_id(
+                                        actor_instance_id_two.to_string(),
+                                    )]),
+                                ),
                             ]),
                             ..Default::default()
                         },
@@ -278,7 +292,12 @@ mod test {
                         "idontexist".to_string(),
                         Actor {
                             id: "idontexist".to_string(),
-                            count: HashMap::from([(host1_id.to_string(), 1)]),
+                            instances: HashMap::from([(
+                                host1_id.to_string(),
+                                HashSet::from_iter([WadmActorInstance::from_id(
+                                    actor_instance_id_one.to_string(),
+                                )]),
+                            )]),
                             ..Default::default()
                         },
                     ),

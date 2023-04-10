@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use futures::TryStreamExt;
 use serial_test::serial;
 use tokio::time::{timeout, Duration};
@@ -18,6 +20,7 @@ async fn test_consumer_stream() {
             host_id: "fakehost".to_string(),
             count: 3,
             model_name: "fake".into(),
+            annotations: HashMap::new(),
         })
         .await;
     wrapper
@@ -99,6 +102,7 @@ async fn test_consumer_stream() {
             host_id: "fakehost".to_string(),
             count: 1,
             model_name: "fake".into(),
+            annotations: HashMap::new(),
         })
         .await;
 
@@ -127,6 +131,7 @@ async fn test_nack_and_rereceive() {
             host_id: "fakehost".to_string(),
             count: 3,
             model_name: "fake".into(),
+            annotations: HashMap::new(),
         })
         .await;
 

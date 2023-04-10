@@ -1,6 +1,6 @@
 use anyhow::Result;
 use async_trait::async_trait;
-use std::collections::HashSet;
+use std::collections::HashMap;
 
 use crate::{
     commands::{Command, StartActor, StopActor},
@@ -18,6 +18,8 @@ struct SimpleScalerConfig {
     lattice_id: String,
     // Required configuration in the `simplescaler` block
     replicas: usize,
+    // Name of the model this SimpleScaler is associated with
+    model_name: String,
 }
 
 /// The SimpleScaler ensures that a certain number of replicas are running
@@ -35,23 +37,23 @@ struct SimpleActorScaler<S: ReadStore + Send + Sync> {
 impl<S: ReadStore + Send + Sync> Scaler for SimpleActorScaler<S> {
     type Config = SimpleScalerConfig;
 
-    async fn update_config(&mut self, config: Self::Config) -> Result<HashSet<Command>> {
+    async fn update_config(&mut self, config: Self::Config) -> Result<Vec<Command>> {
         self.config = config;
 
         self.reconcile().await
     }
 
-    async fn handle_event(&self, event: Event) -> Result<HashSet<Command>> {
+    async fn handle_event(&self, event: &Event) -> Result<Vec<Command>> {
         match event {
             Event::ActorStarted(_) | Event::ActorStopped(_) | Event::HostStopped(_) => {
                 self.compute_actor_commands(&self.store).await
             }
             // No other event impacts the job of this scaler so we can ignore it
-            _ => Ok(HashSet::new()),
+            _ => Ok(Vec::new()),
         }
     }
 
-    async fn reconcile(&self) -> Result<HashSet<Command>> {
+    async fn reconcile(&self) -> Result<Vec<Command>> {
         self.compute_actor_commands(&self.store).await
     }
 }
@@ -59,13 +61,20 @@ impl<S: ReadStore + Send + Sync> Scaler for SimpleActorScaler<S> {
 impl<S: ReadStore + Send + Sync> SimpleActorScaler<S> {
     #[allow(unused)]
     /// Construct a new SimpleActorScaler with specified configuration values
-    fn new(store: S, actor_reference: String, lattice_id: String, replicas: usize) -> Self {
+    fn new(
+        store: S,
+        actor_reference: String,
+        lattice_id: String,
+        replicas: usize,
+        model_name: String,
+    ) -> Self {
         Self {
             store,
             config: SimpleScalerConfig {
                 actor_reference,
                 lattice_id,
                 replicas,
+                model_name,
             },
         }
     }
@@ -73,7 +82,7 @@ impl<S: ReadStore + Send + Sync> SimpleActorScaler<S> {
     /// Given a readable store containing the state of the lattice, compute the
     /// required commands to either stop extra actor instances or start new
     /// actor instances to reach the configured replica count
-    async fn compute_actor_commands(&self, store: &S) -> Result<HashSet<Command>> {
+    async fn compute_actor_commands(&self, store: &S) -> Result<Vec<Command>> {
         // NOTE(brooksmtownsend): This will fail to look up the actor ID if an actor is not running in the lattice currently.
         // This is acceptable for the simplescaler but might require a helper function in the future
         let actor_id = store
@@ -100,38 +109,41 @@ impl<S: ReadStore + Send + Sync> SimpleActorScaler<S> {
                     #[allow(clippy::comparison_chain)]
                     if count > 0 {
                         // Choosing to retrieve the first host that an actor is running on over querying the store for efficiency
-                        let host_id = actors.count.keys().next().cloned().unwrap_or_default();
+                        let host_id = actors.instances.keys().next().cloned().unwrap_or_default();
 
-                        HashSet::from_iter([Command::StartActor(StartActor {
+                        vec![Command::StartActor(StartActor {
                             reference: self.config.actor_reference.to_owned(),
                             count: count as usize, // It's a positive integer so we know this will succeed
                             host_id,
-                            model_name: "fake".into(),
-                        })])
+                            model_name: self.config.model_name.clone(),
+                            annotations: HashMap::new(),
+                        })]
                     } else if count < 0 {
                         // This is written iteratively rather than functionally just because it reads better.
                         let mut remaining = count.unsigned_abs() as usize;
-                        let mut commands = HashSet::new();
+                        let mut commands = Vec::new();
 
                         // For each host running this actor, request actor stops until
                         // the total number of stops equals the number of extra instances
-                        for (host_id, count) in actors.count {
+                        for (host_id, instances) in actors.instances {
                             if remaining == 0 {
                                 break;
-                            } else if remaining >= count {
-                                commands.insert(Command::StopActor(StopActor {
+                            } else if remaining >= instances.len() {
+                                commands.push(Command::StopActor(StopActor {
                                     actor_id: actor_id.to_owned(),
                                     host_id,
-                                    count,
+                                    count: instances.len(),
                                     model_name: "fake".into(),
+                                    annotations: HashMap::new(),
                                 }));
-                                remaining -= count;
+                                remaining -= instances.len();
                             } else {
-                                commands.insert(Command::StopActor(StopActor {
+                                commands.push(Command::StopActor(StopActor {
                                     actor_id: actor_id.to_owned(),
                                     host_id,
                                     count: remaining,
                                     model_name: "fake".into(),
+                                    annotations: HashMap::new(),
                                 }));
                                 remaining = 0;
                             }
@@ -139,7 +151,7 @@ impl<S: ReadStore + Send + Sync> SimpleActorScaler<S> {
 
                         commands
                     } else {
-                        HashSet::new()
+                        Vec::new()
                     }
                 }
                 None => {
@@ -150,12 +162,13 @@ impl<S: ReadStore + Send + Sync> SimpleActorScaler<S> {
                         .next()
                         .map(|(host_id, _host)| host_id)
                     {
-                        HashSet::from_iter([Command::StartActor(StartActor {
+                        vec![Command::StartActor(StartActor {
                             reference: self.config.actor_reference.to_owned(),
                             count: self.config.replicas,
                             host_id: host_id.to_owned(),
-                            model_name: "fake".into(),
-                        })])
+                            model_name: self.config.model_name.clone(),
+                            annotations: HashMap::new(),
+                        })]
                     } else {
                         return Err(anyhow::anyhow!(
                             "No hosts running, unable to return actor start commands"
@@ -171,18 +184,21 @@ impl<S: ReadStore + Send + Sync> SimpleActorScaler<S> {
 mod test {
     use std::{collections::HashMap, sync::Arc};
 
+    use tokio::sync::RwLock;
+
     use crate::{
         commands::{Command, StartActor},
         consumers::{manager::Worker, ScopedMessage},
         events::{ActorClaims, ActorStarted, Event, HostStarted},
         scaler::{simplescaler::SimpleActorScaler, Scaler},
-        test_util::TestStore,
+        test_util::{TestLatticeSource, TestStore},
         workers::EventWorker,
     };
 
     #[tokio::test]
     async fn can_return_error_with_no_hosts() {
         let lattice_id = "hoohah_no_host";
+        let model_name = "FAKEECHO";
         let actor_reference = "fakecloud.azurecr.io/echo:0.3.4".to_string();
         let replicas = 12;
 
@@ -192,6 +208,7 @@ mod test {
             actor_reference,
             lattice_id.to_string(),
             replicas,
+            model_name.to_string(),
         );
 
         let cmds = simple_scaler.reconcile().await;
@@ -204,6 +221,7 @@ mod test {
 
     #[tokio::test]
     async fn can_request_start_actor() {
+        let model_name = "FAKEECHO";
         let lattice_id = "hoohah_start_actor";
         let actor_reference = "fakecloud.azurecr.io/echo:0.3.4".to_string();
         let replicas = 12;
@@ -212,7 +230,11 @@ mod test {
         // Lattice State: One empty host
 
         let store = Arc::new(TestStore::default());
-        let worker = EventWorker::new(store.clone(), HashMap::default());
+        let lattice_source = TestLatticeSource {
+            claims: HashMap::default(),
+            inventory: Arc::new(RwLock::new(HashMap::default())),
+        };
+        let worker = EventWorker::new(store.clone(), lattice_source);
 
         let host_id = "NASDASDIAMAREALHOST".to_string();
         let host_name = "I am a real host".to_string();
@@ -239,6 +261,7 @@ mod test {
             actor_reference.to_string(),
             lattice_id.to_string(),
             replicas,
+            model_name.to_string(),
         );
 
         let cmds = simple_scaler
@@ -246,30 +269,33 @@ mod test {
             .await
             .expect("Should have computed a set of commands");
         assert_eq!(cmds.len(), 1);
-        let command = cmds
-            .iter()
-            .next()
-            .expect("Should have computed one command");
+        let command = cmds.first().expect("Should have computed one command");
         assert_eq!(
             command,
             &Command::StartActor(StartActor {
                 reference: actor_reference,
                 host_id,
                 count: replicas,
-                model_name: "fake".into(),
+                model_name: model_name.to_string(),
+                annotations: HashMap::new()
             })
         )
     }
 
     #[tokio::test]
     async fn can_request_multiple_stop_actor() {
+        let model_name = "MULTI_STOP";
         let lattice_id = "hoohah_multi_stop_actor";
         let actor_reference = "fakecloud.azurecr.io/echo:0.3.4".to_string();
         let actor_id = "MASDASDIAMAREALACTOR";
         let replicas = 2;
 
         let store = Arc::new(TestStore::default());
-        let worker = EventWorker::new(store.clone(), HashMap::default());
+        let lattice_source = TestLatticeSource {
+            claims: HashMap::default(),
+            inventory: Arc::new(RwLock::new(HashMap::default())),
+        };
+        let worker = EventWorker::new(store.clone(), lattice_source);
 
         // *** STATE SETUP BEGIN ***
         // Lattice State: One host with 4 instances of the actor, and one host with 3 instances
@@ -356,6 +382,7 @@ mod test {
             actor_reference.to_string(),
             lattice_id.to_string(),
             replicas,
+            model_name.to_string(),
         );
 
         let cmds = simple_scaler

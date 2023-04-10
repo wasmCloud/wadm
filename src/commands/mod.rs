@@ -18,7 +18,7 @@ macro_rules! from_impl {
 }
 
 /// All possible compensatory commands for a lattice
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 // In order to keep things clean, we are using untagged enum serialization. So it will just try to
 // match on data without tagging (see https://serde.rs/enum-representations.html for more info on
 // what the other options look like). These types are purely internal to wadm, but for greater
@@ -35,7 +35,7 @@ pub enum Command {
 }
 
 /// Struct for the StartActor command
-#[derive(Clone, Debug, Eq, Serialize, Deserialize, Default)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default, Eq)]
 pub struct StartActor {
     /// The OCI or bindle reference to start
     pub reference: String,
@@ -45,25 +45,24 @@ pub struct StartActor {
     pub count: usize,
     /// The name of the model/manifest that generated this command
     pub model_name: String,
+    /// Additional annotations to attach on this command
+    pub annotations: HashMap<String, String>,
 }
 
 from_impl!(StartActor);
 
 impl PartialEq for StartActor {
-    fn eq(&self, other: &StartActor) -> bool {
-        self.reference == other.reference && self.host_id == other.host_id
-    }
-}
-
-impl Hash for StartActor {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.reference.hash(state);
-        self.host_id.hash(state);
+    fn eq(&self, other: &Self) -> bool {
+        self.reference == other.reference
+            && self.host_id == other.host_id
+            && self.count == other.count
+            && self.model_name == other.model_name
+            && self.annotations == other.annotations
     }
 }
 
 /// Struct for the StopActor command
-#[derive(Clone, Debug, Eq, Serialize, Deserialize, Default)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default, Eq)]
 pub struct StopActor {
     /// The ID of the actor to stop
     pub actor_id: String,
@@ -73,20 +72,19 @@ pub struct StopActor {
     pub count: usize,
     /// The name of the model/manifest that generated this command
     pub model_name: String,
+    /// Additional annotations to attach on this command
+    pub annotations: HashMap<String, String>,
 }
 
 from_impl!(StopActor);
 
 impl PartialEq for StopActor {
-    fn eq(&self, other: &StopActor) -> bool {
-        self.actor_id == other.actor_id && self.host_id == other.host_id
-    }
-}
-
-impl Hash for StopActor {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.actor_id.hash(state);
-        self.host_id.hash(state);
+    fn eq(&self, other: &Self) -> bool {
+        self.actor_id == other.actor_id
+            && self.host_id == other.host_id
+            && self.count == other.count
+            && self.model_name == other.model_name
+            && self.annotations == other.annotations
     }
 }
 

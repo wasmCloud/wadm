@@ -6,4 +6,4 @@ mod command;
 mod event;
 
 pub use command::CommandWorker;
-pub use event::EventWorker;
+pub use event::{Claims, ClaimsSource, EventWorker, InventorySource};

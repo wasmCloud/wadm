@@ -1,13 +1,14 @@
 use std::collections::{hash_map::Entry, HashMap, HashSet};
 
 use tracing::{debug, instrument, trace, warn};
+use wasmcloud_control_interface::HostInventory;
 
 use crate::consumers::{
     manager::{WorkError, WorkResult, Worker},
     ScopedMessage,
 };
 use crate::events::*;
-use crate::storage::{Actor, Host, Provider, ProviderStatus, Store};
+use crate::storage::{Actor, Host, Provider, ProviderStatus, Store, WadmActorInstance};
 
 /// A subset of needed claims to help populate state
 #[derive(Debug, Clone)]
@@ -26,6 +27,14 @@ pub struct Claims {
 #[async_trait::async_trait]
 pub trait ClaimsSource {
     async fn get_claims(&self) -> anyhow::Result<HashMap<String, Claims>>;
+}
+
+/// NOTE(brooksmtownsend): This trait exists in order to query the hosts inventory
+/// upon receiving a heartbeat since the heartbeat doesn't contain enough
+/// information to properly update the stored data for actors
+#[async_trait::async_trait]
+pub trait InventorySource {
+    async fn get_inventory(&self, host_id: &str) -> anyhow::Result<HostInventory>;
 }
 
 #[async_trait::async_trait]
@@ -58,6 +67,16 @@ impl ClaimsSource for wasmcloud_control_interface::Client {
     }
 }
 
+#[async_trait::async_trait]
+impl InventorySource for wasmcloud_control_interface::Client {
+    async fn get_inventory(&self, host_id: &str) -> anyhow::Result<HostInventory> {
+        Ok(self
+            .get_host_inventory(host_id)
+            .await
+            .map_err(|e| anyhow::anyhow!("{e}"))?)
+    }
+}
+
 pub struct EventWorker<S, C> {
     store: S,
     ctl_client: C,
@@ -75,7 +94,7 @@ impl<S: Clone, C: Clone> Clone for EventWorker<S, C> {
 impl<S, C> EventWorker<S, C>
 where
     S: Store + Send + Sync,
-    C: ClaimsSource + Send + Sync,
+    C: ClaimsSource + InventorySource + Send + Sync,
 {
     /// Creates a new event worker configured to use the given store and control interface client for fetching state
     pub fn new(store: S, ctl_client: C) -> EventWorker<S, C> {
@@ -87,14 +106,6 @@ where
     // call the lattice controller, we no longer just have error types from the store. To handle the
     // multiple error cases, it was just easier to catch it into an anyhow Error and then convert at
     // the end
-
-    // TODO(thomastaylor312): Initially I thought we'd have to update the host state as well with
-    // the new provider/actor. However, do we actually need to update the host info or just let the
-    // heartbeat take care of it? I think we might be ok because the actor/provider data should have
-    // all the info needed to make a decision for scaling in conjunction with the basic host info
-    // (like labels). We might have to revisit this when a) we implement the `Scaler` trait or b) if
-    // we start serving up lattice state to consumers of wadm (in which case we'd want state changes
-    // reflected immediately)
 
     #[instrument(level = "debug", skip(self, actor), fields(actor_id = %actor.public_key, host_id = %actor.host_id))]
     async fn handle_actor_started(
@@ -114,15 +125,38 @@ where
         {
             trace!(actor = ?current, "Found existing actor data");
             // Merge in current counts
-            actor_data.count = current.count;
+            actor_data.instances = current.instances;
+        }
+        // Update actor count in the host
+        if let Some(mut host) = self.store.get::<Host>(lattice_id, &actor.host_id).await? {
+            trace!(host = ?host, "Found existing host data");
+
+            host.actors
+                .entry(actor.public_key.clone())
+                .and_modify(|count| *count += 1)
+                .or_insert(1);
+
+            self.store
+                .store(lattice_id, host.id.to_owned(), host)
+                .await?
         }
 
         // Update count of the data
         actor_data
-            .count
+            .instances
             .entry(actor.host_id.clone())
-            .and_modify(|val| *val += 1)
-            .or_insert(1);
+            .and_modify(|val| {
+                val.insert(WadmActorInstance {
+                    instance_id: actor.instance_id.to_owned(),
+                    annotations: actor.annotations.to_owned(),
+                });
+            })
+            .or_insert_with(|| {
+                HashSet::from_iter([WadmActorInstance {
+                    instance_id: actor.instance_id.to_owned(),
+                    annotations: actor.annotations.to_owned(),
+                }])
+            });
 
         self.store
             .store(lattice_id, actor.public_key.clone(), actor_data)
@@ -144,18 +178,24 @@ where
             .await?
         {
             trace!(actor = ?current, "Found existing actor data");
-            if let Some(current_count) = current.count.get(&actor.host_id) {
-                let new_count = current_count - 1;
-                if new_count == 0 {
-                    trace!(host_id = %actor.host_id, "Stopped last actor on host, removing host entry from actor");
-                    current.count.remove(&actor.host_id);
+
+            // Remove here to take ownership, then insert back into the map
+            if let Some(mut current_instances) = current.instances.remove(&actor.host_id) {
+                if current_instances
+                    .remove(&WadmActorInstance::from_id(actor.instance_id.to_owned()))
+                    && current_instances.is_empty()
+                {
+                    trace!(host_id = %actor.host_id, "Stopped last actor on host");
                 } else {
-                    trace!(count = %new_count, host_id = %actor.host_id, "Setting current actor");
-                    current.count.insert(actor.host_id.clone(), new_count);
+                    trace!(host_id = %actor.host_id, "Stopped actor instance on host");
+
+                    current
+                        .instances
+                        .insert(actor.host_id.clone(), current_instances);
                 }
             }
 
-            if current.count.is_empty() {
+            if current.instances.is_empty() {
                 trace!("Last actor instance was removed, removing actor from storage");
                 self.store
                     .delete::<Actor>(lattice_id, &actor.public_key)
@@ -166,6 +206,27 @@ where
                     .await
             }?;
         }
+
+        // Update actor count in the host
+        if let Some(mut host) = self.store.get::<Host>(lattice_id, &actor.host_id).await? {
+            trace!(host = ?host, "Found existing host data");
+            match host.actors.get(&actor.public_key) {
+                Some(existing_count) if *existing_count <= 1 => {
+                    host.actors.remove(&actor.public_key);
+                }
+                Some(existing_count) => {
+                    host.actors
+                        .insert(actor.public_key.to_owned(), *existing_count - 1);
+                }
+                // you cannot delete what doesn't exist
+                None => (),
+            }
+
+            self.store
+                .store(lattice_id, host.id.to_owned(), host)
+                .await?
+        }
+
         Ok(())
     }
 
@@ -237,13 +298,13 @@ where
             .into_iter()
             .filter_map(|(id, mut actor)| {
                 if current.actors.contains_key(&id) {
-                    actor.count.remove(&current.id);
+                    actor.instances.remove(&current.id);
                     Some((id, actor))
                 } else {
                     None
                 }
             })
-            .partition(|(_, actor)| !actor.count.is_empty());
+            .partition(|(_, actor)| !actor.instances.is_empty());
         trace!("Storing updated actors in store");
         self.store.store_many(lattice_id, actors_to_update).await?;
 
@@ -331,6 +392,26 @@ where
             prov.hosts = HashMap::from([(provider.host_id.clone(), ProviderStatus::default())]);
             prov
         };
+
+        // Insert provider into host map
+        if let Some(mut host) = self
+            .store
+            .get::<Host>(lattice_id, &provider.host_id)
+            .await?
+        {
+            trace!(host = ?host, "Found existing host data");
+
+            host.providers.insert(ProviderInfo {
+                contract_id: provider.contract_id.to_owned(),
+                link_name: provider.link_name.to_owned(),
+                public_key: provider.public_key.to_owned(),
+            });
+
+            self.store
+                .store(lattice_id, host.id.to_owned(), host)
+                .await?
+        }
+
         debug!("Storing updated provider in store");
         self.store
             .store(lattice_id, id, provider_data)
@@ -355,6 +436,26 @@ where
         debug!("Handling provider stopped event");
         let id = crate::storage::provider_id(&provider.public_key, &provider.link_name);
         trace!("Fetching current data from store");
+
+        // Remove provider from host map
+        if let Some(mut host) = self
+            .store
+            .get::<Host>(lattice_id, &provider.host_id)
+            .await?
+        {
+            trace!(host = ?host, "Found existing host data");
+
+            host.providers.remove(&ProviderInfo {
+                contract_id: provider.contract_id.to_owned(),
+                link_name: provider.link_name.to_owned(),
+                public_key: provider.public_key.to_owned(),
+            });
+
+            self.store
+                .store(lattice_id, host.id.to_owned(), host)
+                .await?
+        }
+
         if let Some(mut current) = self.store.get::<Provider>(lattice_id, &id).await? {
             if current.hosts.remove(&provider.host_id).is_none() {
                 trace!(host_id = %provider.host_id, "Did not find host entry in provider");
@@ -424,33 +525,54 @@ where
     // END HANDLER FUNCTIONS
     async fn populate_actor_info(
         &self,
-        mut actor_ids: HashSet<String>,
+        actors: &HashMap<String, Actor>,
         host_id: &str,
-        count_map: &HashMap<String, usize>,
+        instance_map: HashMap<String, HashSet<WadmActorInstance>>,
     ) -> anyhow::Result<Vec<(String, Actor)>> {
         let claims = self.ctl_client.get_claims().await?;
-        Ok(claims
+
+        Ok(instance_map
             .into_iter()
-            .filter_map(|(id, claim)| {
-                actor_ids.take(&id).map(|id| {
+            .map(|(actor_id, instances)| {
+                if let Some(actor) = actors.get(&actor_id) {
+                    // Construct modified Actor with new instances included
+                    let mut new_instances = actor.instances.clone();
+                    new_instances.insert(host_id.to_owned(), instances);
+                    let actor = Actor {
+                        instances: new_instances,
+                        ..actor.clone()
+                    };
+
+                    (actor_id, actor)
+                } else if let Some(claim) = claims.get(&actor_id) {
                     (
-                        id.clone(),
+                        actor_id.clone(),
                         Actor {
-                            id: id.clone(),
-                            name: claim.name,
-                            capabilities: claim.capabilities,
-                            issuer: claim.issuer,
-                            count: [(
-                                host_id.to_owned(),
-                                count_map.get(&id).copied().unwrap_or_default(),
-                            )]
-                            .into(),
+                            id: actor_id,
+                            name: claim.name.to_owned(),
+                            capabilities: claim.capabilities.to_owned(),
+                            issuer: claim.issuer.to_owned(),
+                            instances: HashMap::from_iter([(host_id.to_owned(), instances)]),
                             ..Default::default()
                         },
                     )
-                })
+                } else {
+                    warn!("Claims not found for actor on host, information is missing");
+
+                    (
+                        actor_id.clone(),
+                        Actor {
+                            id: actor_id,
+                            name: "".to_owned(),
+                            capabilities: Vec::new(),
+                            issuer: "".to_owned(),
+                            instances: HashMap::from_iter([(host_id.to_owned(), instances)]),
+                            ..Default::default()
+                        },
+                    )
+                }
             })
-            .collect())
+            .collect::<Vec<(String, Actor)>>())
     }
 
     #[instrument(level = "debug", skip(self, host), fields(host_id = %host.id))]
@@ -460,49 +582,64 @@ where
         host: &HostHeartbeat,
     ) -> anyhow::Result<()> {
         debug!("Fetching current actor state");
-        let mut actors = self.store.list::<Actor>(lattice_id).await?;
+        let actors = self.store.list::<Actor>(lattice_id).await?;
 
-        let missing_actors: HashSet<String> = host
+        // NOTE(brooksmtownsend): Because we update state on actor events and we keep track
+        // of instance IDs, it's not good to update the actor map based on the heartbeat.
+        // Essentially, if the heartbeat gives us new information about the list of actors,
+        // we have no way of knowing what instances changed and what instances are still running.
+        let host_instances = self
+            .ctl_client
+            .get_inventory(&host.id)
+            .await?
             .actors
             .iter()
-            .filter_map(|(id, _)| (!actors.contains_key(id)).then_some(id))
-            .cloned()
-            .collect();
-
-        let actors_to_update = host.actors.iter().filter_map(|(id, count)| {
-            match actors.remove(id) {
-                Some(mut current) => {
-                    // An actor count should never be 0, so defaulting is fine. If we didn't modify the count, skip
-                    if current
-                        .count
-                        .insert(host.id.clone(), *count)
-                        .unwrap_or_default()
-                        == *count
-                    {
-                        None
-                    } else {
-                        Some((id.to_owned(), current))
-                    }
-                }
-                None => None,
-            }
-        });
-
-        let actors_to_update: Vec<(String, Actor)> = if !missing_actors.is_empty() {
-            trace!(num_actors = %missing_actors.len(), "Fetching claims for missing actors");
-            actors_to_update
-                .chain(
-                    self.populate_actor_info(missing_actors, &host.id, &host.actors)
-                        .await?,
+            .map(|actor_description| {
+                (
+                    actor_description.id.to_owned(),
+                    actor_description
+                        .instances
+                        .iter()
+                        .map(|instance| WadmActorInstance {
+                            instance_id: instance.instance_id.to_owned(),
+                            annotations: instance.annotations.clone().unwrap_or_default(),
+                        })
+                        .collect::<HashSet<WadmActorInstance>>(),
                 )
-                .collect()
-        } else {
-            actors_to_update.collect()
-        };
+            })
+            .collect::<HashMap<String, HashSet<WadmActorInstance>>>();
+
+        // Compare stored Actors to the "true" list on this host, updating stored
+        // Actors when they differ from the authoratative heartbeat
+        let actors_to_update = host_instances
+            .into_iter()
+            .filter_map(|(actor_id, instances)| {
+                if actors
+                    .get(&actor_id)
+                    .map(|actor| {
+                        actor
+                            .instances
+                            .get(&host.id)
+                            .map(|store_instances| store_instances == &instances)
+                            .unwrap_or(false)
+                    })
+                    .unwrap_or(false)
+                {
+                    None
+                } else {
+                    Some((actor_id, instances))
+                }
+            })
+            // actor ID to all instances on this host
+            .collect::<HashMap<String, HashSet<WadmActorInstance>>>();
+
+        let actors_to_store = self
+            .populate_actor_info(&actors, &host.id, actors_to_update)
+            .await?;
 
         trace!("Updating actors with new status from host");
 
-        self.store.store_many(lattice_id, actors_to_update).await?;
+        self.store.store_many(lattice_id, actors_to_store).await?;
 
         Ok(())
     }
@@ -566,7 +703,9 @@ where
 }
 
 #[async_trait::async_trait]
-impl<S: Store + Send + Sync, C: ClaimsSource + Send + Sync> Worker for EventWorker<S, C> {
+impl<S: Store + Send + Sync, C: ClaimsSource + InventorySource + Send + Sync> Worker
+    for EventWorker<S, C>
+{
     type Message = Event;
 
     #[instrument(level = "debug", skip(self))]
@@ -624,16 +763,15 @@ impl<S: Store + Send + Sync, C: ClaimsSource + Send + Sync> Worker for EventWork
 mod test {
     use std::sync::Arc;
 
+    use tokio::sync::RwLock;
+    use wasmcloud_control_interface::{ActorDescription, ActorInstance};
+
     use super::*;
 
-    use crate::{storage::ReadStore, test_util::TestStore};
-
-    #[async_trait::async_trait]
-    impl ClaimsSource for HashMap<String, Claims> {
-        async fn get_claims(&self) -> anyhow::Result<HashMap<String, Claims>> {
-            Ok(self.clone())
-        }
-    }
+    use crate::{
+        storage::ReadStore,
+        test_util::{TestLatticeSource, TestStore},
+    };
 
     // NOTE: This test is rather long because we want to run through what an actual state generation
     // loop would look like. This mostly covers happy path, while the other tests cover more of the
@@ -641,7 +779,12 @@ mod test {
     #[tokio::test]
     async fn test_all_state() {
         let store = Arc::new(TestStore::default());
-        let worker = EventWorker::new(store.clone(), HashMap::default());
+        let inventory = Arc::new(RwLock::new(HashMap::default()));
+        let lattice_source = TestLatticeSource {
+            claims: HashMap::default(),
+            inventory: inventory.clone(),
+        };
+        let worker = EventWorker::new(store.clone(), lattice_source);
 
         let lattice_id = "all_state";
         let host1_id = "DS1".to_string();
@@ -729,7 +872,7 @@ mod test {
             host_id: host1_id.clone(),
             annotations: HashMap::default(),
             api_version: 0,
-            instance_id: String::new(),
+            instance_id: "haskdhjkas-123jkh123-asdads".to_string(),
         };
 
         let actor2 = ActorStarted {
@@ -746,7 +889,7 @@ mod test {
             host_id: host1_id.clone(),
             annotations: HashMap::default(),
             api_version: 0,
-            instance_id: String::new(),
+            instance_id: "2-haskdhjkas-123jkh123-asdads".to_string(),
         };
 
         // Start a single actor first just to make sure that works properly, then start all of them
@@ -760,14 +903,33 @@ mod test {
         assert_eq!(actors.len(), 1, "Should only be 1 actor in state");
         assert_actor(&actors, &actor1, &[(&host1_id, 1)]);
 
+        // The stored host should also now have this actor in its map
+        let host = store
+            .get::<Host>(lattice_id, &host1_id)
+            .await
+            .expect("Should be able to access store")
+            .expect("Should have the host in the store");
+        assert_eq!(*host.actors.get(&actor1.public_key).unwrap_or(&0), 1_usize);
+
         worker
-            .handle_actor_started(lattice_id, &actor1)
+            .handle_actor_started(
+                lattice_id,
+                &ActorStarted {
+                    instance_id: "unique-instance-id".to_string(),
+                    ..actor1.clone()
+                },
+            )
             .await
             .expect("Should be able to handle actor event");
 
-        for _ in 0..2 {
+        for n in 0..2 {
+            // Create unique instance ID based on loop iteration
+            let evt2 = ActorStarted {
+                instance_id: format!("{n}-{}", &actor2.instance_id),
+                ..actor2.clone()
+            };
             worker
-                .handle_actor_started(lattice_id, &actor2)
+                .handle_actor_started(lattice_id, &evt2)
                 .await
                 .expect("Should be able to handle actor event");
 
@@ -777,6 +939,7 @@ mod test {
                     lattice_id,
                     &ActorStarted {
                         host_id: host2_id.clone(),
+                        instance_id: format!("{n}-host2-{}", &actor1.instance_id),
                         ..actor1.clone()
                     },
                 )
@@ -788,6 +951,7 @@ mod test {
                     lattice_id,
                     &ActorStarted {
                         host_id: host2_id.clone(),
+                        instance_id: format!("{n}-host2-v2-{}", &actor2.instance_id),
                         ..actor2.clone()
                     },
                 )
@@ -870,12 +1034,134 @@ mod test {
         assert_eq!(providers.len(), 2, "Should only be 2 providers in state");
         assert_provider(&providers, &provider2, &[&host1_id, &host2_id]);
 
-        // TODO(thomastaylor312): This is just a reminder that if we add in host state updating on
-        // provider/actor events, we should test that here before we hit a host heartbeat
+        // Check that hosts got updated properly
+        let hosts = store.list::<Host>(lattice_id).await.unwrap();
+        assert_eq!(hosts.len(), 2, "Should only have 2 hosts");
+        let host = hosts.get(&host1_id).expect("Host should still exist");
+        assert_eq!(
+            host.actors.len(),
+            2,
+            "Should have two different actors running"
+        );
+        assert_eq!(
+            host.providers.len(),
+            2,
+            "Should have two different providers running"
+        );
+        let host = hosts.get(&host2_id).expect("Host should still exist");
+        assert_eq!(
+            host.actors.len(),
+            2,
+            "Should have two different actors running"
+        );
+        assert_eq!(
+            host.providers.len(),
+            1,
+            "Should have a single provider running"
+        );
 
         /***********************************************************/
         /******************* Host Heartbeat Test *******************/
         /***********************************************************/
+
+        // NOTE(brooksmtownsend): Painful manual manipulation of host inventory
+        // to satisfy the way we currently query the inventory when handling heartbeats.
+        *inventory.write().await = HashMap::from_iter([
+            (
+                host1_id.to_string(),
+                HostInventory {
+                    actors: vec![
+                        ActorDescription {
+                            id: actor1.public_key.to_string(),
+                            image_ref: None,
+                            /// The individual instances of this actor that are running
+                            instances: vec![
+                                ActorInstance {
+                                    annotations: None,
+                                    instance_id: "1".to_string(),
+                                    revision: 0,
+                                },
+                                ActorInstance {
+                                    annotations: None,
+                                    instance_id: "2".to_string(),
+                                    revision: 0,
+                                },
+                            ],
+                            name: None,
+                        },
+                        ActorDescription {
+                            id: actor2.public_key.to_string(),
+                            image_ref: None,
+                            /// The individual instances of this actor that are running
+                            instances: vec![
+                                ActorInstance {
+                                    annotations: None,
+                                    instance_id: "3".to_string(),
+                                    revision: 0,
+                                },
+                                ActorInstance {
+                                    annotations: None,
+                                    instance_id: "4".to_string(),
+                                    revision: 0,
+                                },
+                            ],
+                            name: None,
+                        },
+                    ],
+                    host_id: host1_id.to_string(),
+                    labels: HashMap::new(),
+                    // Leaving incomplete purposefully, we don't need this info
+                    providers: vec![],
+                },
+            ),
+            (
+                host2_id.to_string(),
+                HostInventory {
+                    actors: vec![
+                        ActorDescription {
+                            id: actor1.public_key.to_string(),
+                            image_ref: None,
+                            /// The individual instances of this actor that are running
+                            instances: vec![
+                                ActorInstance {
+                                    annotations: None,
+                                    instance_id: "5".to_string(),
+                                    revision: 0,
+                                },
+                                ActorInstance {
+                                    annotations: None,
+                                    instance_id: "6".to_string(),
+                                    revision: 0,
+                                },
+                            ],
+                            name: None,
+                        },
+                        ActorDescription {
+                            id: actor2.public_key.to_string(),
+                            image_ref: None,
+                            /// The individual instances of this actor that are running
+                            instances: vec![
+                                ActorInstance {
+                                    annotations: None,
+                                    instance_id: "7".to_string(),
+                                    revision: 0,
+                                },
+                                ActorInstance {
+                                    annotations: None,
+                                    instance_id: "8".to_string(),
+                                    revision: 0,
+                                },
+                            ],
+                            name: None,
+                        },
+                    ],
+                    host_id: host2_id.to_string(),
+                    labels: HashMap::new(),
+                    // Leaving incomplete purposefully, we don't need this info
+                    providers: vec![],
+                },
+            ),
+        ]);
 
         worker
             .handle_host_heartbeat(
@@ -934,32 +1220,6 @@ mod test {
             .await
             .expect("Should be able to handle host heartbeat");
 
-        // Check that hosts got updated properly
-        let hosts = store.list::<Host>(lattice_id).await.unwrap();
-        assert_eq!(hosts.len(), 2, "Should only have 2 hosts");
-        let host = hosts.get(&host1_id).expect("Host should still exist");
-        assert_eq!(
-            host.actors.len(),
-            2,
-            "Should have two different actors running"
-        );
-        assert_eq!(
-            host.providers.len(),
-            2,
-            "Should have two different providers running"
-        );
-        let host = hosts.get(&host2_id).expect("Host should still exist");
-        assert_eq!(
-            host.actors.len(),
-            2,
-            "Should have two different actors running"
-        );
-        assert_eq!(
-            host.providers.len(),
-            1,
-            "Should have a single provider running"
-        );
-
         // Check that our actor and provider data is still correct.
         let providers = store.list::<Provider>(lattice_id).await.unwrap();
         assert_eq!(providers.len(), 2, "Should still have 2 providers in state");
@@ -976,17 +1236,23 @@ mod test {
         /***********************************************************/
 
         // Stop them on one host first
-        let stopped = ActorStopped {
-            instance_id: actor1.instance_id.clone(),
+        let stopped_one = ActorStopped {
+            instance_id: "1".to_string(),
             public_key: actor1.public_key.clone(),
             host_id: host1_id.clone(),
         };
+        let stopped_two = ActorStopped {
+            instance_id: "2".to_string(),
+            public_key: actor1.public_key.clone(),
+            host_id: host1_id.clone(),
+        };
+
         worker
-            .handle_actor_stopped(lattice_id, &stopped)
+            .handle_actor_stopped(lattice_id, &stopped_one)
             .await
             .expect("Should be able to handle actor stop event");
         worker
-            .handle_actor_stopped(lattice_id, &stopped)
+            .handle_actor_stopped(lattice_id, &stopped_two)
             .await
             .expect("Should be able to handle actor stop event");
 
@@ -995,18 +1261,32 @@ mod test {
         assert_actor(&actors, &actor1, &[(&host2_id, 2)]);
         assert_actor(&actors, &actor2, &[(&host1_id, 2), (&host2_id, 2)]);
 
+        let host = store
+            .get::<Host>(lattice_id, &host2_id)
+            .await
+            .expect("Should be able to access store")
+            .expect("Should have the host in the store");
+        assert_eq!(*host.actors.get(&actor1.public_key).unwrap_or(&0), 2_usize);
+        assert_eq!(*host.actors.get(&actor2.public_key).unwrap_or(&0), 2_usize);
+
         // Now stop on the other
-        let stopped = ActorStopped {
+        let stopped_one_host_two = ActorStopped {
             host_id: host2_id.clone(),
-            ..stopped
+            instance_id: "5".to_string(),
+            ..stopped_one
+        };
+        let stopped_two_host_two = ActorStopped {
+            host_id: host2_id.clone(),
+            instance_id: "6".to_string(),
+            ..stopped_two
         };
 
         worker
-            .handle_actor_stopped(lattice_id, &stopped)
+            .handle_actor_stopped(lattice_id, &stopped_one_host_two)
             .await
             .expect("Should be able to handle actor stop event");
         worker
-            .handle_actor_stopped(lattice_id, &stopped)
+            .handle_actor_stopped(lattice_id, &stopped_two_host_two)
             .await
             .expect("Should be able to handle actor stop event");
 
@@ -1039,9 +1319,82 @@ mod test {
         assert_provider(&providers, &provider1, &[&host1_id]);
         assert_provider(&providers, &provider2, &[&host2_id]);
 
+        // Check that hosts got updated properly
+        let hosts = store.list::<Host>(lattice_id).await.unwrap();
+        assert_eq!(hosts.len(), 2, "Should only have 2 hosts");
+        let host = hosts.get(&host1_id).expect("Host should still exist");
+        assert_eq!(host.actors.len(), 1, "Should have 1 actor running");
+        assert_eq!(host.providers.len(), 1, "Should have 1 provider running");
+        let host = hosts.get(&host2_id).expect("Host should still exist");
+        assert_eq!(host.actors.len(), 1, "Should have 1 actor running");
+        assert_eq!(
+            host.providers.len(),
+            1,
+            "Should have a single provider running"
+        );
+
         /***********************************************************/
         /***************** Heartbeat Tests Part 2 ******************/
         /***********************************************************/
+
+        // NOTE(brooksmtownsend): Painful manual manipulation of host inventory
+        // to satisfy the way we currently query the inventory when handling heartbeats.
+        *inventory.write().await = HashMap::from_iter([
+            (
+                host1_id.to_string(),
+                HostInventory {
+                    actors: vec![ActorDescription {
+                        id: actor2.public_key.to_string(),
+                        image_ref: None,
+                        /// The individual instances of this actor that are running
+                        instances: vec![
+                            ActorInstance {
+                                annotations: None,
+                                instance_id: "3".to_string(),
+                                revision: 0,
+                            },
+                            ActorInstance {
+                                annotations: None,
+                                instance_id: "4".to_string(),
+                                revision: 0,
+                            },
+                        ],
+                        name: None,
+                    }],
+                    host_id: host1_id.to_string(),
+                    labels: HashMap::new(),
+                    // Leaving incomplete purposefully, we don't need this info
+                    providers: vec![],
+                },
+            ),
+            (
+                host2_id.to_string(),
+                HostInventory {
+                    actors: vec![ActorDescription {
+                        id: actor2.public_key.to_string(),
+                        image_ref: None,
+                        /// The individual instances of this actor that are running
+                        instances: vec![
+                            ActorInstance {
+                                annotations: None,
+                                instance_id: "7".to_string(),
+                                revision: 0,
+                            },
+                            ActorInstance {
+                                annotations: None,
+                                instance_id: "8".to_string(),
+                                revision: 0,
+                            },
+                        ],
+                        name: None,
+                    }],
+                    host_id: host2_id.to_string(),
+                    labels: HashMap::new(),
+                    // Leaving incomplete purposefully, we don't need this info
+                    providers: vec![],
+                },
+            ),
+        ]);
 
         // Heartbeat the first host and make sure nothing has changed
         worker
@@ -1088,7 +1441,7 @@ mod test {
             .await
             .expect("Should be able to handle host heartbeat");
 
-        // Check that hosts got updated properly
+        // Check that the heartbeat kept state consistent
         let hosts = store.list::<Host>(lattice_id).await.unwrap();
         assert_eq!(hosts.len(), 2, "Should only have 2 hosts");
         let host = hosts.get(&host1_id).expect("Host should still exist");
@@ -1171,11 +1524,59 @@ mod test {
             ),
         ]);
         let store = Arc::new(TestStore::default());
-        let worker = EventWorker::new(store.clone(), claims.clone());
+        let inventory = Arc::new(RwLock::new(HashMap::default()));
+        let lattice_source = TestLatticeSource {
+            claims: claims.clone(),
+            inventory: inventory.clone(),
+        };
+        let worker = EventWorker::new(store.clone(), lattice_source);
 
         let provider_id = "HYPERDRIVE".to_string();
         let link_name = "default".to_string();
         let host_id = "WHATAPIECEOFJUNK".to_string();
+        // NOTE(brooksmtownsend): Painful manual manipulation of host inventory
+        // to satisfy the way we currently query the inventory when handling heartbeats.
+        *inventory.write().await = HashMap::from_iter([(
+            host_id.to_string(),
+            HostInventory {
+                actors: vec![
+                    ActorDescription {
+                        id: actor1_id.to_string(),
+                        image_ref: None,
+                        /// The individual instances of this actor that are running
+                        instances: vec![
+                            ActorInstance {
+                                annotations: None,
+                                instance_id: "1".to_string(),
+                                revision: 0,
+                            },
+                            ActorInstance {
+                                annotations: None,
+                                instance_id: "2".to_string(),
+                                revision: 0,
+                            },
+                        ],
+                        name: None,
+                    },
+                    ActorDescription {
+                        id: actor2_id.to_string(),
+                        image_ref: None,
+                        /// The individual instances of this actor that are running
+                        instances: vec![ActorInstance {
+                            annotations: None,
+                            instance_id: "3".to_string(),
+                            revision: 0,
+                        }],
+                        name: None,
+                    },
+                ],
+                host_id: host_id.to_string(),
+                labels: HashMap::new(),
+                // Leaving incomplete purposefully, we don't need this info
+                providers: vec![],
+            },
+        )]);
+
         // Heartbeat with actors and providers that don't exist in the store yet
         worker
             .handle_host_heartbeat(
@@ -1212,10 +1613,11 @@ mod test {
         );
         assert_eq!(actor.issuer, expected.issuer, "Data should match");
         assert_eq!(
-            *actor
-                .count
+            actor
+                .instances
                 .get(&host_id)
-                .expect("Host should exist in count"),
+                .expect("Host should exist in count")
+                .len(),
             2,
             "Should have the right number of actors running"
         );
@@ -1229,10 +1631,11 @@ mod test {
         );
         assert_eq!(actor.issuer, expected.issuer, "Data should match");
         assert_eq!(
-            *actor
-                .count
+            actor
+                .instances
                 .get(&host_id)
-                .expect("Host should exist in count"),
+                .expect("Host should exist in count")
+                .len(),
             1,
             "Should have the right number of actors running"
         );
@@ -1253,7 +1656,11 @@ mod test {
     #[tokio::test]
     async fn test_provider_status_update() {
         let store = Arc::new(TestStore::default());
-        let worker = EventWorker::new(store.clone(), HashMap::default());
+        let lattice_source = TestLatticeSource {
+            claims: HashMap::default(),
+            inventory: Arc::new(RwLock::new(HashMap::default())),
+        };
+        let worker = EventWorker::new(store.clone(), lattice_source);
 
         let lattice_id = "provider_status";
         let host_id = "CLOUDCITY".to_string();
@@ -1346,13 +1753,28 @@ mod test {
     #[tokio::test]
     async fn test_provider_contract_id_from_heartbeat() {
         let store = Arc::new(TestStore::default());
-        let worker = EventWorker::new(store.clone(), HashMap::default());
+        let inventory = Arc::new(RwLock::new(HashMap::default()));
+        let lattice_source = TestLatticeSource {
+            claims: HashMap::default(),
+            inventory: inventory.clone(),
+        };
+        let worker = EventWorker::new(store.clone(), lattice_source);
 
         let lattice_id = "provider_contract_id";
         let host_id = "BEGGARSCANYON";
         let link_name = "default";
         let public_key = "SKYHOPPER";
         let contract_id = "blasting:womprats";
+
+        *inventory.write().await = HashMap::from_iter([(
+            host_id.to_string(),
+            HostInventory {
+                actors: vec![],
+                labels: HashMap::new(),
+                host_id: host_id.to_string(),
+                providers: vec![],
+            },
+        )]);
 
         // Health check a provider that we don't have in the store yet
         worker
@@ -1384,7 +1806,7 @@ mod test {
                     uptime_human: "60s".into(),
                     uptime_seconds: 60,
                     version: semver::Version::parse("0.61.0").unwrap(),
-                    id: "TATOOINE".to_string(),
+                    id: host_id.to_string(),
                     annotations: HashMap::default(),
                 },
             )
@@ -1406,8 +1828,14 @@ mod test {
     #[tokio::test]
     async fn test_heartbeat_updates_stale_data() {
         let store = Arc::new(TestStore::default());
-        let worker = EventWorker::new(store.clone(), HashMap::default());
+        let inventory = Arc::new(RwLock::new(HashMap::default()));
+        let lattice_source = TestLatticeSource {
+            claims: HashMap::default(),
+            inventory: inventory.clone(),
+        };
+        let worker = EventWorker::new(store.clone(), lattice_source);
 
+        let actor_instance = "asdhjkahsd-123123-fasda-feeee";
         let lattice_id = "update_data";
         let host_id = "jabbaspalace";
 
@@ -1418,12 +1846,43 @@ mod test {
                 "jabba".to_string(),
                 Actor {
                     id: "jabba".to_string(),
-                    count: HashMap::from([(host_id.to_string(), 1)]),
+                    instances: HashMap::from([(
+                        host_id.to_string(),
+                        HashSet::from_iter([WadmActorInstance::from_id(
+                            actor_instance.to_string(),
+                        )]),
+                    )]),
                     ..Default::default()
                 },
             )
             .await
             .unwrap();
+
+        *inventory.write().await = HashMap::from_iter([(
+            host_id.to_string(),
+            HostInventory {
+                actors: vec![ActorDescription {
+                    id: "jabba".to_string(),
+                    image_ref: None,
+                    name: None,
+                    instances: vec![
+                        ActorInstance {
+                            instance_id: "1".to_string(),
+                            annotations: None,
+                            revision: 0,
+                        },
+                        ActorInstance {
+                            instance_id: "2".to_string(),
+                            annotations: None,
+                            revision: 0,
+                        },
+                    ],
+                }],
+                labels: HashMap::new(),
+                host_id: host_id.to_string(),
+                providers: vec![],
+            },
+        )]);
 
         // Now heartbeat and make sure stuff that isn't running is removed
         worker
@@ -1468,16 +1927,17 @@ mod test {
         );
         assert_eq!(
             expected_counts.len(),
-            actor.count.len(),
+            actor.instances.len(),
             "Should have the proper number of hosts the actor is running on"
         );
         for (expected_host, expected_count) in expected_counts.iter() {
             assert_eq!(
                 actor
-                    .count
+                    .instances
                     .get(*expected_host)
                     .cloned()
-                    .expect("Actor should have a count for the host"),
+                    .expect("Actor should have a count for the host")
+                    .len(),
                 *expected_count,
                 "Actor count on host should be correct"
             );
