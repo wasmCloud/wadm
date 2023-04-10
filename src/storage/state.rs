@@ -1,4 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    hash::{Hash, Hasher},
+};
 
 use chrono::{DateTime, Utc};
 use semver::Version;
@@ -95,6 +98,42 @@ impl From<&ProviderStarted> for Provider {
     }
 }
 
+/// An individual ActorInstance, named to differentiate from [ActorInstance](wasmcloud_control_interface::ActorInstance)
+#[derive(Debug, Serialize, Deserialize, Clone, Default, Eq)]
+pub struct WadmActorInstance {
+    /// The GUID for this actor instance
+    pub instance_id: String,
+
+    /// Annotations attached to this acotr instance
+    pub annotations: HashMap<String, String>,
+}
+
+impl WadmActorInstance {
+    /// Convenience function to construct an instance from only the instance ID, mostly
+    /// used for hash lookup purposes
+    pub fn from_id(instance_id: String) -> WadmActorInstance {
+        Self {
+            instance_id,
+            annotations: HashMap::new(),
+        }
+    }
+}
+
+// Custom Hash impl's due to nested HashMaps and HashSets
+impl Hash for WadmActorInstance {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.instance_id.hash(state);
+    }
+}
+
+/// NOTE(brooksmtownsend): This is compared only by the instance ID
+/// as it's a GUID and lookups don't require annotations
+impl PartialEq for WadmActorInstance {
+    fn eq(&self, other: &Self) -> bool {
+        self.instance_id == other.instance_id
+    }
+}
+
 /// A wasmCloud Actor
 // NOTE: We probably aren't going to use this _right now_ so we've kept it pretty minimal. But it is
 // possible that we could query wadm for more general data about the lattice in the future, so we do
@@ -116,8 +155,9 @@ pub struct Actor {
     /// Call alias to use for the actor
     pub call_alias: Option<String>,
 
-    /// The count of actors running in the lattice, broken down by host_id
-    pub count: HashMap<String, usize>,
+    /// All instances of this actor running in the lattice, keyed by the host ID
+    /// and contains a list of all [ActorInstances](ActorInstance) on that host
+    pub instances: HashMap<String, HashSet<WadmActorInstance>>,
 
     /// The reference used to start the actor. Can be empty if it was started from a file
     pub reference: String,
@@ -127,7 +167,10 @@ impl Actor {
     /// A helper method that returns the total count of running copies of this actor, regardless of
     /// which host they are running on
     pub fn count(&self) -> usize {
-        self.count.values().sum()
+        self.instances
+            .values()
+            .map(|instances| instances.len())
+            .sum()
     }
 }
 

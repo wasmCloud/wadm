@@ -1,9 +1,12 @@
-use std::collections::HashMap;
 use std::convert::Infallible;
+use std::{collections::HashMap, sync::Arc};
 
 use serde::{de::DeserializeOwned, Serialize};
+use tokio::sync::RwLock;
+use wasmcloud_control_interface::HostInventory;
 
 use crate::storage::StateKind;
+use crate::workers::{Claims, ClaimsSource, InventorySource};
 
 fn generate_key<T: StateKind>(lattice_id: &str) -> String {
     format!("{}_{lattice_id}", T::KIND)
@@ -95,5 +98,26 @@ impl crate::storage::Store for TestStore {
             .await
             .insert(key, serde_json::to_vec(&all).unwrap());
         Ok(())
+    }
+}
+
+#[derive(Clone, Default, Debug)]
+/// A test "lattice source" for use with testing
+pub(crate) struct TestLatticeSource {
+    pub(crate) claims: HashMap<String, Claims>,
+    pub(crate) inventory: Arc<RwLock<HashMap<String, HostInventory>>>,
+}
+
+#[async_trait::async_trait]
+impl ClaimsSource for TestLatticeSource {
+    async fn get_claims(&self) -> anyhow::Result<HashMap<String, Claims>> {
+        Ok(self.claims.clone())
+    }
+}
+
+#[async_trait::async_trait]
+impl InventorySource for TestLatticeSource {
+    async fn get_inventory(&self, host_id: &str) -> anyhow::Result<HostInventory> {
+        Ok(self.inventory.read().await.get(host_id).cloned().unwrap())
     }
 }

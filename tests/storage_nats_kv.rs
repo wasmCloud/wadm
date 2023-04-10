@@ -6,6 +6,7 @@ use wadm::{
     events::ProviderInfo,
     storage::{
         nats_kv::NatsKvStore, Actor, Host, Provider, ProviderStatus, ReadStore, Store as WadmStore,
+        WadmActorInstance,
     },
 };
 
@@ -24,7 +25,13 @@ async fn test_round_trip() {
         name: "Test Actor".to_string(),
         capabilities: vec!["wasmcloud:httpserver".to_string()],
         issuer: "afakekey".to_string(),
-        count: HashMap::from([("testhost".to_string(), 1)]),
+        instances: HashMap::from([(
+            "testhost".to_string(),
+            HashSet::from_iter([WadmActorInstance {
+                instance_id: "1".to_string(),
+                annotations: HashMap::new(),
+            }]),
+        )]),
         reference: "fake.oci.repo/testactor:0.1.0".to_string(),
         ..Default::default()
     };
@@ -34,7 +41,13 @@ async fn test_round_trip() {
         name: "Another Actor".to_string(),
         capabilities: vec!["wasmcloud:httpserver".to_string()],
         issuer: "afakekey".to_string(),
-        count: HashMap::from([("testhost".to_string(), 1)]),
+        instances: HashMap::from([(
+            "testhost".to_string(),
+            HashSet::from_iter([WadmActorInstance {
+                instance_id: "2".to_string(),
+                annotations: HashMap::new(),
+            }]),
+        )]),
         reference: "fake.oci.repo/anotheractor:0.1.0".to_string(),
         ..Default::default()
     };
@@ -198,7 +211,13 @@ async fn test_multiple_lattice() {
         name: "Test Actor".to_string(),
         capabilities: vec!["wasmcloud:httpserver".to_string()],
         issuer: "afakekey".to_string(),
-        count: HashMap::from([("testhost".to_string(), 1)]),
+        instances: HashMap::from([(
+            "testhost".to_string(),
+            HashSet::from_iter([WadmActorInstance {
+                instance_id: "1".to_string(),
+                annotations: HashMap::new(),
+            }]),
+        )]),
         reference: "fake.oci.repo/testactor:0.1.0".to_string(),
         ..Default::default()
     };
@@ -208,7 +227,13 @@ async fn test_multiple_lattice() {
         name: "Another Actor".to_string(),
         capabilities: vec!["wasmcloud:httpserver".to_string()],
         issuer: "afakekey".to_string(),
-        count: HashMap::from([("testhost".to_string(), 1)]),
+        instances: HashMap::from([(
+            "testhost".to_string(),
+            HashSet::from_iter([WadmActorInstance {
+                instance_id: "2".to_string(),
+                annotations: HashMap::new(),
+            }]),
+        )]),
         reference: "fake.oci.repo/anotheractor:0.1.0".to_string(),
         ..Default::default()
     };
@@ -265,7 +290,13 @@ async fn test_store_and_delete_many() {
         name: "Test Actor".to_string(),
         capabilities: vec!["wasmcloud:httpserver".to_string()],
         issuer: "afakekey".to_string(),
-        count: HashMap::from([("testhost".to_string(), 1)]),
+        instances: HashMap::from([(
+            "testhost".to_string(),
+            HashSet::from_iter([WadmActorInstance {
+                instance_id: "1".to_string(),
+                annotations: HashMap::new(),
+            }]),
+        )]),
         reference: "fake.oci.repo/testactor:0.1.0".to_string(),
         ..Default::default()
     };
@@ -275,7 +306,13 @@ async fn test_store_and_delete_many() {
         name: "Another Actor".to_string(),
         capabilities: vec!["wasmcloud:httpserver".to_string()],
         issuer: "afakekey".to_string(),
-        count: HashMap::from([("testhost".to_string(), 1)]),
+        instances: HashMap::from([(
+            "testhost".to_string(),
+            HashSet::from_iter([WadmActorInstance {
+                instance_id: "2".to_string(),
+                annotations: HashMap::new(),
+            }]),
+        )]),
         reference: "fake.oci.repo/anotheractor:0.1.0".to_string(),
         ..Default::default()
     };

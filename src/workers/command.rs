@@ -36,7 +36,9 @@ impl Worker for CommandWorker {
     async fn do_work(&self, mut message: ScopedMessage<Self::Message>) -> WorkResult<()> {
         let res = match message.as_ref() {
             Command::StartActor(actor) => {
-                let mut annotations = MANAGED_BY_ANNOTATIONS.clone();
+                // Order here is intentional to prevent scalers from overwriting managed annotations
+                let mut annotations = actor.annotations.clone();
+                annotations.extend(MANAGED_BY_ANNOTATIONS.clone());
                 annotations.insert(APP_SPEC_ANNOTATION.to_owned(), actor.model_name.clone());
                 self.client
                     .start_actor(
@@ -48,7 +50,9 @@ impl Worker for CommandWorker {
                     .await
             }
             Command::StopActor(actor) => {
-                let mut annotations = MANAGED_BY_ANNOTATIONS.clone();
+                // Order here is intentional to prevent scalers from overwriting managed annotations
+                let mut annotations = actor.annotations.clone();
+                annotations.extend(MANAGED_BY_ANNOTATIONS.clone());
                 annotations.insert(APP_SPEC_ANNOTATION.to_owned(), actor.model_name.clone());
                 self.client
                     .stop_actor(

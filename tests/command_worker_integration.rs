@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use futures::StreamExt;
 use serial_test::serial;
 
@@ -47,6 +49,7 @@ async fn test_commands() {
             host_id: host_id.clone(),
             count: 2,
             model_name: "fake".into(),
+            annotations: HashMap::new(),
         })
         .await;
 
@@ -257,6 +260,7 @@ async fn test_commands() {
             count: 2,
             host_id: host_id.clone(),
             model_name: "fake".into(),
+            annotations: HashMap::new(),
         })
         .await;
 
@@ -318,6 +322,7 @@ async fn test_annotation_stop() {
             host_id: host_id.clone(),
             count: 2,
             model_name: "fake".into(),
+            annotations: HashMap::new(),
         })
         .await;
 
@@ -370,6 +375,7 @@ async fn test_annotation_stop() {
             count: 2,
             host_id: host_id.clone(),
             model_name: "fake".into(),
+            annotations: HashMap::new(),
         })
         .await;
 

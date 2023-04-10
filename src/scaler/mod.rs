@@ -1,6 +1,5 @@
 use anyhow::Result;
 use async_trait::async_trait;
-use std::collections::HashSet;
 
 use crate::{commands::Command, events::Event};
 
@@ -23,11 +22,11 @@ pub trait Scaler {
 
     /// Provide a scaler with configuration to use internally when computing commands
     /// This should trigger a reconcile with the new configuration
-    async fn update_config(&mut self, config: Self::Config) -> Result<HashSet<Command>>;
+    async fn update_config(&mut self, config: Self::Config) -> Result<Vec<Command>>;
 
     /// Compute commands that must be taken given an event that changes the lattice state
-    async fn handle_event(&self, event: Event) -> Result<HashSet<Command>>;
+    async fn handle_event(&self, event: &Event) -> Result<Vec<Command>>;
 
     /// Compute commands that must be taken to achieve desired state as specified in config
-    async fn reconcile(&self) -> Result<HashSet<Command>>;
+    async fn reconcile(&self) -> Result<Vec<Command>>;
 }
