@@ -1,15 +1,36 @@
+use core::hash::{Hash, Hasher};
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
 /// All unique data needed to identify a provider. For this reason, this type implements PartialEq
 /// and Hash since it can serve as a key
-#[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone, Eq)]
 pub struct ProviderInfo {
     pub contract_id: String,
     pub link_name: String,
     // TODO: Should we actually parse the nkey?
     pub public_key: String,
+    pub annotations: HashMap<String, String>,
+}
+
+impl PartialEq for ProviderInfo {
+    fn eq(&self, other: &Self) -> bool {
+        self.public_key == other.public_key
+            && self.contract_id == other.contract_id
+            && self.link_name == other.link_name
+            && self.annotations == other.annotations
+    }
+}
+
+// We don't hash on annotations here because this is only hashed for a hosts
+// inventory where these three pieces need to be unique regardless of annotations
+impl Hash for ProviderInfo {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.public_key.hash(state);
+        self.contract_id.hash(state);
+        self.link_name.hash(state);
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
