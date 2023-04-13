@@ -165,7 +165,7 @@ jobs:
         - name: Publish to GHCR
           uses: softprops/action-gh-release@v1
           with:
-            token: ${{ env.GITHUB_TOKEN }}
+            token: ${{ secrets.WADM_GITHUB_TOKEN }}
             prerelease: false
             draft: false
 
@@ -182,10 +182,7 @@ jobs:
           toolchain: stable
           default: true
       - name: Cargo login
-        env:
-          # VERIFY WHAT THIS SHOULD BE - CAN'T SEE REPO/ORG SECRETS
-          CRATES_TOKEN: ${{ secrets.CRATES_TOKEN }}
-        run: cargo login ${{ env.CRATES_TOKEN }}
+        run: cargo login ${{ secrets.CRATES_TOKEN }}
         shell: bash
 
       - name: Cargo publish
@@ -211,7 +208,7 @@ jobs:
           registry: ghcr.io
           ## CHECK WHAT USERNAME SHOULD BE
           username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ secrets.WADM_GITHUB_TOKEN }}
       
       - name: lowercase repository owner
         run: |
