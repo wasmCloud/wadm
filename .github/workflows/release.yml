@@ -1,4 +1,4 @@
-name: wadm release
+name: Wadm release
 on:
   push:
     branches:
@@ -9,6 +9,8 @@ jobs:
   build:
     name: build release assets
     runs-on: ubuntu-20.04
+    env:
+      WORKING_DIR: wadm
     strategy:
       matrix:
         target:
@@ -26,6 +28,7 @@ jobs:
         run: cargo install cross 
         shell: bash
       - name: Build Native Executable
+        working-directory: ${{ env.WORKING_DIR }}
         run: |
           cross build --release --target ${{ matrix.target }}
       - name: Upload Executable to GH Actions
@@ -34,8 +37,8 @@ jobs:
           name: ${{ matrix.target }}
           if-no-files-found: error
           path: |
-            ./target/${{ matrix.target }}/release/wadm
-            ./target/${{ matrix.target }}/release/wadm.exe
+            ${{ env.WORKING_DIR }}/target/${{ matrix.target }}/release/wadm
+            ${{ env.WORKING_DIR }}/target/${{ matrix.target }}/release/wadm.exe
   
   # publish to ghcr?
   publish:
