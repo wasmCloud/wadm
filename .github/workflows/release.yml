@@ -158,10 +158,10 @@ jobs:
         #########
         - name: download release assets
           uses: actions/download-artifact@v3
-        # ARE CHECKSUMS NEEDED
-        # - name: generate checksums
-        #   run: |
-        #     sha256sum * > checksums-${{ env.RELEASE_VERSION }}.txt
+        # If this command does not generate a checksum for all binaries, may need to import vars from previous step
+        - name: generate checksums
+          run: |
+            sha256sum * > checksums-${{ env.RELEASE_VERSION }}.txt
         - name: Publish to GHCR
           uses: softprops/action-gh-release@v1
           with:
@@ -184,7 +184,7 @@ jobs:
       - name: Cargo login
         env:
           # VERIFY WHAT THIS SHOULD BE - CAN'T SEE REPO/ORG SECRETS
-          CRATES_TOKEN: ${{ secrets.cratesToken }}
+          CRATES_TOKEN: ${{ secrets.CRATES_TOKEN }}
         run: cargo login ${{ env.CRATES_TOKEN }}
         shell: bash
 
@@ -235,3 +235,4 @@ jobs:
         with:
           push: true
           tags: ghcr.io/${{ env.OWNER }}/wadm:canary
+  
