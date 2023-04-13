@@ -139,7 +139,7 @@ jobs:
           name: wadm-${{ matrix.config.os }}-${{ matrix.config.arch }}
           if-no-files-found: error
           path: |
-            ${{ matrix.config.targetPath }}
+            ${{ matrix.config.targetPath }}wadm${{ matrix.config.extension }}
        
    publish:
     name: publish release assets
