@@ -10,16 +10,17 @@ use crate::{
 use super::{
     parser::parse_manifest, DeleteModelRequest, DeleteModelResponse, DeleteResult,
     DeployModelRequest, DeployModelResponse, DeployResult, GetModelRequest, GetModelResponse,
-    GetResult, ModelSummary, PutModelResponse, PutResult, Status, StatusInfo, StatusResponse,
-    StatusResult, StatusType, UndeployModelRequest, VersionInfo, VersionResponse,
+    GetResult, ManifestNotifier, ModelSummary, PutModelResponse, PutResult, Status, StatusInfo,
+    StatusResponse, StatusResult, StatusType, UndeployModelRequest, VersionInfo, VersionResponse,
 };
 
-pub(crate) struct Handler<S> {
+pub(crate) struct Handler<S, N> {
     pub(crate) store: S,
     pub(crate) client: Client,
+    pub(crate) notifier: N,
 }
 
-impl<S: Store + Send + Sync> Handler<S> {
+impl<S: Store + Send + Sync, N: ManifestNotifier> Handler<S, N> {
     #[instrument(level = "debug", skip(self, msg))]
     pub async fn put_model(&self, msg: Message, lattice_id: &str, name: &str) {
         trace!("Parsing incoming manifest");
@@ -304,10 +305,16 @@ impl<S: Store + Send + Sync> Handler<S> {
                     let deleted = current.delete_version(&req.version);
                     if deleted && !current.is_empty() {
                         // If the version we deleted was the deployed one, undeploy it
-                        let undeploy = if current.current_version() == req.version {
+                        let deployed_version = current.deployed_version();
+                        let undeploy = if deployed_version
+                            .map(|v| v == req.version)
+                            .unwrap_or(false)
+                        {
+                            trace!(?deployed_version, deleted_version = %req.version, "Deployed version matches deleted. Will undeploy");
                             current.undeploy();
                             true
                         } else {
+                            trace!(?deployed_version, deleted_version = %req.version, "Deployed version does not match deleted version. Will not undeploy");
                             false
                         };
                         self.store
@@ -368,6 +375,31 @@ impl<S: Store + Send + Sync> Handler<S> {
                 }
             }
         };
+
+        // On a noop, we should still send an undeploy in case of notification failure
+        // TODO(thomastaylor312): We might want to come back and revisit how we handle a failure
+        // like this in the delete case. If the data gets deleted, but we can't send it, we get into
+        // an odd state. So I'd rather err on the side of caution and send a notification that gets
+        // ignored
+        if reply_data.undeploy || matches!(reply_data.result, DeleteResult::Noop) {
+            trace!("Sending undeploy notification");
+            if let Err(e) = self.notifier.undeployed(lattice_id, name).await {
+                error!(error = ?e, "Error when attempting to send undeploy notification during delete");
+                self.send_reply(
+                    msg.reply,
+                    // NOTE: We are constructing all data here, so this shouldn't fail, but just in
+                    // case we unwrap to nothing
+                    serde_json::to_vec(&DeleteModelResponse {
+                        result: DeleteResult::Error,
+                        message: "Error notifying processors of newly undeployed manifest on delete. This is likely a transient error, so please retry the request. Please note that the response will say it is a noop, but will notify the processors".to_string(),
+                        undeploy: false,
+                    })
+                    .unwrap_or_default(),
+                )
+                .await;
+                return;
+            }
+        }
 
         // NOTE: We control all the data getting sent in here, but we unwrap to default just in case
         self.send_reply(
@@ -438,6 +470,12 @@ impl<S: Store + Send + Sync> Handler<S> {
             .await;
             return;
         }
+        // SAFETY: We can unwrap here because we know we _just_ successfully deployed the manifest so they should all exist
+        let manifest = manifests
+            .get_version(manifests.deployed_version().unwrap())
+            .unwrap()
+            .to_owned();
+
         let reply = self
             .store
             .store(lattice_id, name.to_owned(), manifests)
@@ -453,6 +491,22 @@ impl<S: Store + Send + Sync> Handler<S> {
                     message: "Internal storage error".to_string(),
                 }
             });
+        trace!("Manifest saved in store, sending notification");
+        if let Err(e) = self.notifier.deployed(lattice_id, manifest).await {
+            error!(error = ?e, "Error when attempting to send deployed notification");
+            self.send_reply(
+                msg.reply,
+                // NOTE: We are constructing all data here, so this shouldn't fail, but just in
+                // case we unwrap to nothing
+                serde_json::to_vec(&DeployModelResponse {
+                    result: DeployResult::Error,
+                    message: "Error notifying processors of newly deployed manifest. This is likely a transient error, so please retry the request".to_string(),
+                })
+                .unwrap_or_default(),
+            )
+            .await;
+            return;
+        }
         trace!(resp = ?reply, "Sending response");
         self.send_reply(
             msg.reply,
@@ -512,9 +566,6 @@ impl<S: Store + Send + Sync> Handler<S> {
             }
         };
 
-        // TODO: When we notify about the manifest change, send the non_destructive flag along with
-        // the event
-
         let reply = if manifests.undeploy() {
             trace!("Manifest undeployed. Storing updated manifest");
             self.store
@@ -538,6 +589,25 @@ impl<S: Store + Send + Sync> Handler<S> {
                 message: "Undeployed model".to_string(),
             }
         };
+        // We always want to resend in an undeploy in case things failed last time
+        if matches!(reply.result, DeployResult::Acknowledged) {
+            trace!("Sending undeploy notification");
+            if let Err(e) = self.notifier.undeployed(lattice_id, name).await {
+                error!(error = ?e, "Error when attempting to send undeploy notification");
+                self.send_reply(
+                    msg.reply,
+                    // NOTE: We are constructing all data here, so this shouldn't fail, but just in
+                    // case we unwrap to nothing
+                    serde_json::to_vec(&DeployModelResponse {
+                        result: DeployResult::Error,
+                        message: "Error notifying processors of undeployed manifest. This is likely a transient error, so please retry the request".to_string(),
+                    })
+                    .unwrap_or_default(),
+                )
+                .await;
+                return;
+            }
+        }
         trace!(resp = ?reply, "Sending response");
         self.send_reply(
             msg.reply,
