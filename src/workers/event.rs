@@ -351,6 +351,7 @@ where
                 contract_id: provider.contract_id.to_owned(),
                 link_name: provider.link_name.to_owned(),
                 public_key: provider.public_key.to_owned(),
+                annotations: provider.annotations.to_owned(),
             });
 
             self.store
@@ -395,6 +396,9 @@ where
                 contract_id: provider.contract_id.to_owned(),
                 link_name: provider.link_name.to_owned(),
                 public_key: provider.public_key.to_owned(),
+                // We don't have this information, nor do we need it since we don't hash based
+                // on annotations
+                annotations: HashMap::new(),
             });
 
             self.store
@@ -837,7 +841,9 @@ mod test {
     use std::sync::Arc;
 
     use tokio::sync::RwLock;
-    use wasmcloud_control_interface::{ActorDescription, ActorInstance, HostInventory};
+    use wasmcloud_control_interface::{
+        ActorDescription, ActorInstance, HostInventory, ProviderDescription,
+    };
 
     use super::*;
 
@@ -1066,7 +1072,7 @@ mod test {
             public_key: "CHOKE".into(),
             host_id: host1_id.clone(),
             annotations: HashMap::default(),
-            instance_id: String::new(),
+            instance_id: "1".to_string(),
             contract_id: "force_user:sith".into(),
             link_name: "default".into(),
         };
@@ -1082,7 +1088,7 @@ mod test {
             public_key: "BYEBYEALDERAAN".into(),
             host_id: host2_id.clone(),
             annotations: HashMap::default(),
-            instance_id: String::new(),
+            instance_id: "2".to_string(),
             contract_id: "empire:command".into(),
             link_name: "default".into(),
         };
@@ -1105,6 +1111,7 @@ mod test {
                 lattice_id,
                 &ProviderStarted {
                     host_id: host1_id.clone(),
+                    instance_id: "3".to_string(),
                     ..provider2.clone()
                 },
             )
@@ -1190,7 +1197,6 @@ mod test {
                     ],
                     host_id: host1_id.to_string(),
                     labels: HashMap::new(),
-                    // Leaving incomplete purposefully, we don't need this info
                     providers: vec![],
                 },
             ),
@@ -1237,8 +1243,15 @@ mod test {
                     ],
                     host_id: host2_id.to_string(),
                     labels: HashMap::new(),
-                    // Leaving incomplete purposefully, we don't need this info
-                    providers: vec![],
+                    providers: vec![ProviderDescription {
+                        contract_id: provider1.contract_id.clone(),
+                        link_name: provider1.link_name.clone(),
+                        id: provider1.public_key.clone(),
+                        annotations: Some(HashMap::new()),
+                        image_ref: Some(provider1.image_ref.clone()),
+                        name: Some("One".to_string()),
+                        revision: 0,
+                    }],
                 },
             ),
         ]);
@@ -1258,11 +1271,13 @@ mod test {
                             contract_id: provider1.contract_id.clone(),
                             link_name: provider1.link_name.clone(),
                             public_key: provider1.public_key.clone(),
+                            annotations: HashMap::new(),
                         },
                         ProviderInfo {
                             contract_id: provider2.contract_id.clone(),
                             link_name: provider2.link_name.clone(),
                             public_key: provider2.public_key.clone(),
+                            annotations: HashMap::new(),
                         },
                     ],
                     uptime_human: "30s".into(),
@@ -1289,6 +1304,7 @@ mod test {
                         contract_id: provider2.contract_id.clone(),
                         link_name: provider2.link_name.clone(),
                         public_key: provider2.public_key.clone(),
+                        annotations: HashMap::new(),
                     }],
                     uptime_human: "30s".into(),
                     uptime_seconds: 30,
@@ -1491,6 +1507,7 @@ mod test {
                         contract_id: provider1.contract_id.clone(),
                         link_name: provider1.link_name.clone(),
                         public_key: provider1.public_key.clone(),
+                        annotations: HashMap::new(),
                     }],
                     uptime_human: "60s".into(),
                     uptime_seconds: 60,
@@ -1513,6 +1530,7 @@ mod test {
                         contract_id: provider2.contract_id.clone(),
                         link_name: provider2.link_name.clone(),
                         public_key: provider2.public_key.clone(),
+                        annotations: HashMap::new(),
                     }],
                     uptime_human: "60s".into(),
                     uptime_seconds: 60,
@@ -1679,6 +1697,7 @@ mod test {
                         contract_id: "lightspeed".into(),
                         link_name: link_name.clone(),
                         public_key: provider_id.clone(),
+                        annotations: HashMap::new(),
                     }],
                     uptime_human: "60s".into(),
                     uptime_seconds: 60,
@@ -1907,6 +1926,7 @@ mod test {
                         contract_id: contract_id.to_string(),
                         link_name: link_name.to_string(),
                         public_key: public_key.to_string(),
+                        annotations: HashMap::new(),
                     }],
                     uptime_human: "60s".into(),
                     uptime_seconds: 60,
