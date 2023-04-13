@@ -174,6 +174,24 @@ pub enum TraitProperty {
     Custom(serde_json::Value),
 }
 
+impl From<LinkdefProperty> for TraitProperty {
+    fn from(value: LinkdefProperty) -> Self {
+        Self::Linkdef(value)
+    }
+}
+
+impl From<SpreadScalerProperty> for TraitProperty {
+    fn from(value: SpreadScalerProperty) -> Self {
+        Self::SpreadScaler(value)
+    }
+}
+
+impl From<serde_json::Value> for TraitProperty {
+    fn from(value: serde_json::Value) -> Self {
+        Self::Custom(value)
+    }
+}
+
 /// Properties for linkdefs
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct LinkdefProperty {

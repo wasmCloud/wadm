@@ -6,6 +6,7 @@ pub mod events;
 pub mod mirror;
 pub mod model;
 pub mod nats_utils;
+pub mod publisher;
 pub mod scaler;
 pub mod server;
 pub mod storage;

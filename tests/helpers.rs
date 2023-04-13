@@ -246,22 +246,19 @@ impl StreamWrapper {
             stream
         } else {
             context
-            .create_stream(async_nats::jetstream::stream::Config {
-                name: id.to_owned(),
-                description: Some(
-                    "A stream that stores all events coming in on the wasmbus.evt topics in a cluster"
-                        .to_string(),
-                ),
-                num_replicas: 1,
-                retention: async_nats::jetstream::stream::RetentionPolicy::WorkQueue,
-                subjects: vec![topic.clone()],
-                max_age: wadm::DEFAULT_EXPIRY_TIME,
-                storage: async_nats::jetstream::stream::StorageType::Memory,
-                allow_rollup: false,
-                ..Default::default()
-            })
-            .await
-            .expect("Should be able to create test stream")
+                .create_stream(async_nats::jetstream::stream::Config {
+                    name: id.to_owned(),
+                    description: Some("A stream that stores all events coming in on the wasmbus.evt topics in a cluster".to_string()),
+                    num_replicas: 1,
+                    retention: async_nats::jetstream::stream::RetentionPolicy::WorkQueue,
+                    subjects: vec![topic.clone()],
+                    max_age: wadm::DEFAULT_EXPIRY_TIME,
+                    storage: async_nats::jetstream::stream::StorageType::Memory,
+                    allow_rollup: false,
+                    ..Default::default()
+                })
+                .await
+                .expect("Should be able to create test stream")
         };
         let stream = CommandConsumer::new(stream, &topic, "default")
             .await

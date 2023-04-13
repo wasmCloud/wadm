@@ -1,104 +1,46 @@
 use std::collections::{hash_map::Entry, HashMap, HashSet};
 
 use tracing::{debug, instrument, trace, warn};
-use wasmcloud_control_interface::HostInventory;
 
+use crate::commands::Command;
 use crate::consumers::{
     manager::{WorkError, WorkResult, Worker},
     ScopedMessage,
 };
 use crate::events::*;
+use crate::publisher::Publisher;
+use crate::scaler::manager::ScalerManager;
 use crate::storage::{Actor, Host, Provider, ProviderStatus, Store, WadmActorInstance};
+use crate::APP_SPEC_ANNOTATION;
 
-/// A subset of needed claims to help populate state
-#[derive(Debug, Clone)]
-pub struct Claims {
-    pub name: String,
-    pub capabilities: Vec<String>,
-    pub issuer: String,
-}
+use super::event_helpers::*;
 
-/// A trait for anything that can fetch a set of claims information about actors.
-///
-/// NOTE: This trait right now exists as a convenience for two things: First, testing. Without
-/// something like this we require a network connection to unit test. Second, there is no concrete
-/// claims type returned from the control interface client. This allows us to abstract that away
-/// until such time that we do export one and we'll be able to do so without breaking our API
-#[async_trait::async_trait]
-pub trait ClaimsSource {
-    async fn get_claims(&self) -> anyhow::Result<HashMap<String, Claims>>;
-}
-
-/// NOTE(brooksmtownsend): This trait exists in order to query the hosts inventory
-/// upon receiving a heartbeat since the heartbeat doesn't contain enough
-/// information to properly update the stored data for actors
-#[async_trait::async_trait]
-pub trait InventorySource {
-    async fn get_inventory(&self, host_id: &str) -> anyhow::Result<HostInventory>;
-}
-
-#[async_trait::async_trait]
-impl ClaimsSource for wasmcloud_control_interface::Client {
-    async fn get_claims(&self) -> anyhow::Result<HashMap<String, Claims>> {
-        Ok(self
-            .get_claims()
-            .await
-            .map_err(|e| anyhow::anyhow!("{e}"))?
-            .claims
-            .into_iter()
-            .filter_map(|mut claim| {
-                // NOTE(thomastaylor312): I'm removing instead of getting since we own the data and I
-                // don't want to clone every time we do this
-
-                // If we don't find a subject, we can't actually get the actor ID, so skip this one
-                Some((
-                    claim.remove("sub")?,
-                    Claims {
-                        name: claim.remove("name").unwrap_or_default(),
-                        capabilities: claim
-                            .remove("caps")
-                            .map(|raw| raw.split(',').map(|s| s.to_owned()).collect())
-                            .unwrap_or_default(),
-                        issuer: claim.remove("iss").unwrap_or_default(),
-                    },
-                ))
-            })
-            .collect())
-    }
-}
-
-#[async_trait::async_trait]
-impl InventorySource for wasmcloud_control_interface::Client {
-    async fn get_inventory(&self, host_id: &str) -> anyhow::Result<HostInventory> {
-        Ok(self
-            .get_host_inventory(host_id)
-            .await
-            .map_err(|e| anyhow::anyhow!("{e}"))?)
-    }
-}
-
-pub struct EventWorker<S, C> {
-    store: S,
+pub struct EventWorker<StateStore, C, P: Clone> {
+    store: StateStore,
     ctl_client: C,
+    publisher: CommandPublisher<P>,
+    scalers: ScalerManager<StateStore, P>,
 }
 
-impl<S: Clone, C: Clone> Clone for EventWorker<S, C> {
-    fn clone(&self) -> Self {
-        EventWorker {
-            store: self.store.clone(),
-            ctl_client: self.ctl_client.clone(),
-        }
-    }
-}
-
-impl<S, C> EventWorker<S, C>
+impl<StateStore, C, P> EventWorker<StateStore, C, P>
 where
-    S: Store + Send + Sync,
+    StateStore: Store + Send + Sync + Clone + 'static,
     C: ClaimsSource + InventorySource + Send + Sync,
+    P: Publisher + Clone + Send + Sync + 'static,
 {
     /// Creates a new event worker configured to use the given store and control interface client for fetching state
-    pub fn new(store: S, ctl_client: C) -> EventWorker<S, C> {
-        EventWorker { store, ctl_client }
+    pub fn new(
+        store: StateStore,
+        ctl_client: C,
+        publisher: CommandPublisher<P>,
+        manager: ScalerManager<StateStore, P>,
+    ) -> EventWorker<StateStore, C, P> {
+        EventWorker {
+            store,
+            ctl_client,
+            publisher,
+            scalers: manager,
+        }
     }
 
     // BEGIN HANDLERS
@@ -317,21 +259,25 @@ where
         let all_providers = self.store.list::<Provider>(lattice_id).await?;
 
         #[allow(clippy::type_complexity)]
-        let (providers_to_update, providers_to_delete): (Vec<(String, Provider)>, Vec<(String, Provider)>) = current.providers.into_iter().filter_map(|info| {
-            let key = crate::storage::provider_id(&info.public_key, &info.link_name);
-            // NOTE: We can do this without cloning, but it led to some confusing code involving
-            // `remove` from the owned `all_providers` map. This is more readable at the expense of
-            // a clone for few providers
-            match all_providers.get(&key).cloned() {
-                // If we successfully remove the host, map it to the right type, otherwise we can
-                // continue onward
-                Some(mut prov) => prov.hosts.remove(&host.id).map(|_| (key, prov)),
-                None => {
-                    warn!(key = %key, "Didn't find provider in storage even though host said it existed");
-                    None
+        let (providers_to_update, providers_to_delete): (Vec<(String, Provider)>, Vec<(String, Provider)>) = current
+            .providers
+            .into_iter()
+            .filter_map(|info| {
+                let key = crate::storage::provider_id(&info.public_key, &info.link_name);
+                // NOTE: We can do this without cloning, but it led to some confusing code involving
+                // `remove` from the owned `all_providers` map. This is more readable at the expense of
+                // a clone for few providers
+                match all_providers.get(&key).cloned() {
+                    // If we successfully remove the host, map it to the right type, otherwise we can
+                    // continue onward
+                    Some(mut prov) => prov.hosts.remove(&host.id).map(|_| (key, prov)),
+                    None => {
+                        warn!(key = %key, "Didn't find provider in storage even though host said it existed");
+                        None
+                    }
                 }
-            }
-        }).partition(|(_, provider)| !provider.hosts.is_empty());
+            })
+            .partition(|(_, provider)| !provider.hosts.is_empty());
         trace!("Storing updated providers in store");
         self.store
             .store_many(lattice_id, providers_to_update)
@@ -700,69 +646,188 @@ where
 
         Ok(())
     }
+
+    #[instrument(level = "debug", skip(self, data), fields(name = %data.manifest.metadata.name))]
+    async fn handle_manifest_published(
+        &self,
+        lattice_id: &str,
+        data: &ManifestPublished,
+    ) -> anyhow::Result<()> {
+        debug!(name = %data.manifest.metadata.name, "Handling published manifest");
+
+        let scalers = self.scalers.add_scalers(&data.manifest).await?;
+
+        // Get the results of the first reconcilation pass before we store the scalers
+        let commands = futures::future::join_all(scalers.iter().map(|scaler| scaler.reconcile()))
+            .await
+            .into_iter()
+            .collect::<Result<Vec<Vec<Command>>, anyhow::Error>>()
+            .map(|all| all.into_iter().flatten().collect::<Vec<Command>>())?;
+
+        trace!(?commands, "Handling commands");
+
+        // Now handle the result from reconciliation
+        self.publisher.publish_commands(commands).await
+    }
+
+    #[instrument(level = "debug", skip(self))]
+    async fn run_scalers_with_hint(&self, event: &Event, name: &str) -> anyhow::Result<()> {
+        let scalers = match self.scalers.get_scalers(name).await {
+            Some(scalers) => scalers,
+            None => {
+                debug!("No scalers currently exist for model");
+                return Ok(());
+            }
+        };
+        let commands =
+            futures::future::join_all(scalers.iter().map(|scaler| scaler.handle_event(event)))
+                .await
+                .into_iter()
+                .collect::<Result<Vec<Vec<Command>>, anyhow::Error>>()
+                .map(|all| all.into_iter().flatten().collect::<Vec<Command>>())?;
+        if !commands.is_empty() {
+            // If we have commands to run, then make sure to set stuff to backup mode
+            scalers.backoff().await?;
+        }
+        self.publisher.publish_commands(commands).await
+    }
+
+    #[instrument(level = "debug", skip(self))]
+    async fn run_all_scalers(&self, event: &Event) -> anyhow::Result<()> {
+        let scalers = self.scalers.get_all_scalers().await;
+        let (affected_models, commands): (Vec<&str>, Vec<Vec<Command>>) =
+            futures::future::join_all(scalers.iter().map(|(name, scalers)| async move {
+                Ok::<_, anyhow::Error>((
+                    name,
+                    futures::future::join_all(
+                        scalers.iter().map(|scaler| scaler.handle_event(event)),
+                    )
+                    .await
+                    .into_iter()
+                    .collect::<anyhow::Result<Vec<Vec<Command>>>>()?
+                    .into_iter()
+                    .flatten()
+                    .collect::<Vec<Command>>(),
+                ))
+            }))
+            .await
+            .into_iter()
+            .collect::<anyhow::Result<Vec<_>>>()?
+            .into_iter()
+            .filter_map(|(name, commands)| {
+                if commands.is_empty() {
+                    return None;
+                }
+                Some((name.as_str(), commands))
+            })
+            .unzip();
+        let commands = commands.into_iter().flatten().collect::<Vec<Command>>();
+        scalers.backoff(affected_models).await?;
+        self.publisher.publish_commands(commands).await
+    }
 }
 
 #[async_trait::async_trait]
-impl<S: Store + Send + Sync, C: ClaimsSource + InventorySource + Send + Sync> Worker
-    for EventWorker<S, C>
+impl<StateStore, C, P> Worker for EventWorker<StateStore, C, P>
+where
+    StateStore: Store + Send + Sync + Clone + 'static,
+    C: ClaimsSource + InventorySource + Send + Sync,
+    P: Publisher + Clone + Send + Sync + 'static,
 {
     type Message = Event;
 
     #[instrument(level = "debug", skip(self))]
     async fn do_work(&self, mut message: ScopedMessage<Self::Message>) -> WorkResult<()> {
+        // Everything in this block returns a name hint for the success case and an error otherwise
         let res = match message.as_ref() {
-            Event::ActorStarted(actor) => {
-                self.handle_actor_started(&message.lattice_id, actor).await
-            }
-            Event::ActorStopped(actor) => {
-                self.handle_actor_stopped(&message.lattice_id, actor).await
-            }
-            Event::HostHeartbeat(host) => {
-                self.handle_host_heartbeat(&message.lattice_id, host).await
-            }
-            Event::HostStarted(host) => self.handle_host_started(&message.lattice_id, host).await,
-            Event::HostStopped(host) => self.handle_host_stopped(&message.lattice_id, host).await,
-            Event::LinkdefDeleted(_ld) => {
-                // TODO: This will need to be handled when we start managing applications
-                Ok(())
-            }
-            Event::ProviderStarted(provider) => {
-                self.handle_provider_started(&message.lattice_id, provider)
-                    .await
-            }
-            Event::ProviderStopped(provider) => {
-                self.handle_provider_stopped(&message.lattice_id, provider)
-                    .await
-            }
-            Event::ProviderHealthCheckPassed(ProviderHealthCheckPassed { data, host_id }) => {
-                self.handle_provider_health_check(&message.lattice_id, host_id, data, false)
-                    .await
-            }
-            Event::ProviderHealthCheckFailed(ProviderHealthCheckFailed { data, host_id }) => {
-                self.handle_provider_health_check(&message.lattice_id, host_id, data, true)
-                    .await
-            }
-            Event::ManifestPublished(_data) => {
-                // TODO: Will need to be handled for managing applications
-                Ok(())
-            }
-            Event::ManifestUnpublished(_data_manifest) => {
-                // TODO: Will need to be handled for managing applications
-                Ok(())
+            Event::ActorStarted(actor) => self
+                .handle_actor_started(&message.lattice_id, actor)
+                .await
+                .map(|_| {
+                    actor
+                        .annotations
+                        .get(APP_SPEC_ANNOTATION)
+                        .map(|s| s.as_str())
+                }),
+            Event::ActorStopped(actor) => self
+                .handle_actor_stopped(&message.lattice_id, actor)
+                .await
+                .map(|_| {
+                    actor
+                        .annotations
+                        .get(APP_SPEC_ANNOTATION)
+                        .map(|s| s.as_str())
+                }),
+            Event::HostHeartbeat(host) => self
+                .handle_host_heartbeat(&message.lattice_id, host)
+                .await
+                .map(|_| None),
+            Event::HostStarted(host) => self
+                .handle_host_started(&message.lattice_id, host)
+                .await
+                .map(|_| None),
+            Event::HostStopped(host) => self
+                .handle_host_stopped(&message.lattice_id, host)
+                .await
+                .map(|_| None),
+            Event::LinkdefDeleted(_ld) => Ok(None),
+            Event::ProviderStarted(provider) => self
+                .handle_provider_started(&message.lattice_id, provider)
+                .await
+                .map(|_| {
+                    provider
+                        .annotations
+                        .get(APP_SPEC_ANNOTATION)
+                        .map(|s| s.as_str())
+                }),
+            Event::ProviderStopped(provider) => self
+                .handle_provider_stopped(&message.lattice_id, provider)
+                .await
+                .map(|_| {
+                    provider
+                        .annotations
+                        .get(APP_SPEC_ANNOTATION)
+                        .map(|s| s.as_str())
+                }),
+            Event::ProviderHealthCheckPassed(ProviderHealthCheckPassed { data, host_id }) => self
+                .handle_provider_health_check(&message.lattice_id, host_id, data, false)
+                .await
+                .map(|_| None),
+            Event::ProviderHealthCheckFailed(ProviderHealthCheckFailed { data, host_id }) => self
+                .handle_provider_health_check(&message.lattice_id, host_id, data, true)
+                .await
+                .map(|_| None),
+            Event::ManifestPublished(data) => self
+                .handle_manifest_published(&message.lattice_id, data)
+                .await
+                .map(|_| None),
+            Event::ManifestUnpublished(data) => {
+                debug!("Handling unpublished manifest");
+                match self.scalers.remove_scalers(&data.name).await {
+                    Some(Ok(_)) => Ok(None),
+                    Some(Err(e)) => Err(e),
+                    None => Ok(None),
+                }
             }
             // All other events we don't care about for state.
             _ => {
                 trace!("Got event we don't care about. Skipping");
-                Ok(())
+                Ok(None)
             }
+        };
+
+        let res = match res {
+            Ok(Some(name)) => self.run_scalers_with_hint(&message, name).await,
+            Ok(None) => self.run_all_scalers(&message).await,
+            Err(e) => Err(e),
         }
         .map_err(Box::<dyn std::error::Error + Send + 'static>::from);
 
-        // NOTE: This is where the call to scaler types will go
         if let Err(e) = res {
             message.nack().await;
             return Err(WorkError::Other(e));
         }
+
         message.ack().await.map_err(WorkError::from)
     }
 }
@@ -772,13 +837,13 @@ mod test {
     use std::sync::Arc;
 
     use tokio::sync::RwLock;
-    use wasmcloud_control_interface::{ActorDescription, ActorInstance};
+    use wasmcloud_control_interface::{ActorDescription, ActorInstance, HostInventory};
 
     use super::*;
 
     use crate::{
         storage::ReadStore,
-        test_util::{TestLatticeSource, TestStore},
+        test_util::{NoopPublisher, TestLatticeSource, TestStore},
     };
 
     // NOTE: This test is rather long because we want to run through what an actual state generation
@@ -792,9 +857,18 @@ mod test {
             claims: HashMap::default(),
             inventory: inventory.clone(),
         };
-        let worker = EventWorker::new(store.clone(), lattice_source);
 
         let lattice_id = "all_state";
+
+        let command_publisher = CommandPublisher::new(NoopPublisher, "doesntmatter");
+        let worker = EventWorker::new(
+            store.clone(),
+            lattice_source,
+            command_publisher.clone(),
+            ScalerManager::test_new(NoopPublisher, lattice_id, store.clone(), command_publisher)
+                .await,
+        );
+
         let host1_id = "DS1".to_string();
         let host2_id = "starkiller".to_string();
 
@@ -879,7 +953,6 @@ mod test {
             public_key: "TARKIN".into(),
             host_id: host1_id.clone(),
             annotations: HashMap::default(),
-            api_version: 0,
             instance_id: "haskdhjkas-123jkh123-asdads".to_string(),
         };
 
@@ -896,7 +969,6 @@ mod test {
             public_key: "DARTHVADER".into(),
             host_id: host1_id.clone(),
             annotations: HashMap::default(),
-            api_version: 0,
             instance_id: "2-haskdhjkas-123jkh123-asdads".to_string(),
         };
 
@@ -1245,11 +1317,13 @@ mod test {
 
         // Stop them on one host first
         let stopped_one = ActorStopped {
+            annotations: HashMap::default(),
             instance_id: "1".to_string(),
             public_key: actor1.public_key.clone(),
             host_id: host1_id.clone(),
         };
         let stopped_two = ActorStopped {
+            annotations: HashMap::default(),
             instance_id: "2".to_string(),
             public_key: actor1.public_key.clone(),
             host_id: host1_id.clone(),
@@ -1311,6 +1385,7 @@ mod test {
             .handle_provider_stopped(
                 lattice_id,
                 &ProviderStopped {
+                    annotations: HashMap::default(),
                     contract_id: provider2.contract_id.clone(),
                     instance_id: provider2.instance_id.clone(),
                     link_name: provider2.link_name.clone(),
@@ -1537,7 +1612,14 @@ mod test {
             claims: claims.clone(),
             inventory: inventory.clone(),
         };
-        let worker = EventWorker::new(store.clone(), lattice_source);
+        let command_publisher = CommandPublisher::new(NoopPublisher, "doesntmatter");
+        let worker = EventWorker::new(
+            store.clone(),
+            lattice_source,
+            command_publisher.clone(),
+            ScalerManager::test_new(NoopPublisher, lattice_id, store.clone(), command_publisher)
+                .await,
+        );
 
         let provider_id = "HYPERDRIVE".to_string();
         let link_name = "default".to_string();
@@ -1668,9 +1750,16 @@ mod test {
             claims: HashMap::default(),
             inventory: Arc::new(RwLock::new(HashMap::default())),
         };
-        let worker = EventWorker::new(store.clone(), lattice_source);
-
         let lattice_id = "provider_status";
+        let command_publisher = CommandPublisher::new(NoopPublisher, "doesntmatter");
+        let worker = EventWorker::new(
+            store.clone(),
+            lattice_source,
+            command_publisher.clone(),
+            ScalerManager::test_new(NoopPublisher, lattice_id, store.clone(), command_publisher)
+                .await,
+        );
+
         let host_id = "CLOUDCITY".to_string();
 
         // Trigger a provider started and then a health check
@@ -1766,9 +1855,17 @@ mod test {
             claims: HashMap::default(),
             inventory: inventory.clone(),
         };
-        let worker = EventWorker::new(store.clone(), lattice_source);
-
         let lattice_id = "provider_contract_id";
+
+        let command_publisher = CommandPublisher::new(NoopPublisher, "doesntmatter");
+        let worker = EventWorker::new(
+            store.clone(),
+            lattice_source,
+            command_publisher.clone(),
+            ScalerManager::test_new(NoopPublisher, lattice_id, store.clone(), command_publisher)
+                .await,
+        );
+
         let host_id = "BEGGARSCANYON";
         let link_name = "default";
         let public_key = "SKYHOPPER";
@@ -1841,10 +1938,18 @@ mod test {
             claims: HashMap::default(),
             inventory: inventory.clone(),
         };
-        let worker = EventWorker::new(store.clone(), lattice_source);
+        let lattice_id = "update_data";
+
+        let command_publisher = CommandPublisher::new(NoopPublisher, "doesntmatter");
+        let worker = EventWorker::new(
+            store.clone(),
+            lattice_source,
+            command_publisher.clone(),
+            ScalerManager::test_new(NoopPublisher, lattice_id, store.clone(), command_publisher)
+                .await,
+        );
 
         let actor_instance = "asdhjkahsd-123123-fasda-feeee";
-        let lattice_id = "update_data";
         let host_id = "jabbaspalace";
 
         // Store some existing stuff

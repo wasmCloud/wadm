@@ -1,14 +1,18 @@
-use std::{cmp::Ordering, collections::HashMap};
+use std::{cmp::Ordering, collections::HashMap, sync::Arc, time::Duration};
 
 use anyhow::Result;
 use async_trait::async_trait;
-use tokio::sync::OnceCell;
-use tracing::log::warn;
+use rand::rngs::SmallRng;
+use rand::{Rng, SeedableRng};
+use tokio::sync::mpsc::Sender;
+use tokio::sync::{OnceCell, RwLock};
+use tokio::time::Instant;
+use tracing::{debug, error, instrument, trace, warn, Instrument};
 
 use crate::{
     commands::{Command, StartActor, StopActor},
     events::{Event, HostStarted, HostStopped},
-    model::{Spread, SpreadScalerProperty, DEFAULT_SPREAD_WEIGHT},
+    model::{Spread, SpreadScalerProperty, TraitProperty, DEFAULT_SPREAD_WEIGHT},
     scaler::Scaler,
     storage::{Actor, Host, ReadStore, WadmActorInstance},
 };
@@ -16,10 +20,12 @@ use crate::{
 // Annotation constants
 const SCALER_KEY: &str = "wasmcloud.dev/scaler";
 const SCALER_VALUE: &str = "spreadscaler";
-const SPREAD_KEY: &str = "wasmcloud/dev/spread_name";
+const SPREAD_KEY: &str = "wasmcloud.dev/spread_name";
+const BACKOFF_TIME: Duration = Duration::from_secs(30);
 
 /// Config for an ActorSpreadScaler
-pub struct ActorSpreadConfig {
+#[derive(Clone)]
+struct ActorSpreadConfig {
     /// OCI, Bindle, or File reference for an actor
     actor_reference: String,
     /// Lattice ID that this SpreadScaler monitors
@@ -28,8 +34,6 @@ pub struct ActorSpreadConfig {
     model_name: String,
     /// Configuration for this SpreadScaler
     spread_config: SpreadScalerProperty,
-    /// Actor ID, stored in a OnceCell to facilitate more efficient fetches
-    actor_id: OnceCell<String>,
 }
 
 /// The ActorSpreadScaler ensures that a certain number of replicas are running,
@@ -37,29 +41,39 @@ pub struct ActorSpreadConfig {
 ///
 /// If no [Spreads](crate::model::Spread) are specified, this Scaler simply maintains the number of replicas
 /// on an available host
-pub struct ActorSpreadScaler<S: ReadStore + Send + Sync> {
-    pub config: ActorSpreadConfig,
+pub struct ActorSpreadScaler<S> {
+    config: ActorSpreadConfig,
     spread_requirements: Vec<(Spread, usize)>,
+    actor_id: OnceCell<String>,
     store: S,
+    in_backoff: Arc<RwLock<bool>>,
 }
 
 #[async_trait]
-impl<S: ReadStore + Send + Sync> Scaler for ActorSpreadScaler<S> {
-    type Config = ActorSpreadConfig;
-
-    async fn update_config(&mut self, config: Self::Config) -> Result<Vec<Command>> {
-        self.spread_requirements = compute_spread(&config.spread_config);
-        self.config = config;
+impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
+    async fn update_config(&mut self, config: TraitProperty) -> Result<Vec<Command>> {
+        let spread_config = match config {
+            TraitProperty::SpreadScaler(prop) => prop,
+            _ => anyhow::bail!("Given config was not a spread scaler config object"),
+        };
+        self.config.spread_config = spread_config;
+        self.spread_requirements = compute_spread(&self.config.spread_config);
         self.reconcile().await
     }
 
+    #[instrument(level = "trace", skip(self))]
     async fn handle_event(&self, event: &Event) -> Result<Vec<Command>> {
+        if *self.in_backoff.read().await {
+            trace!("Scaler is currently in backoff, not performing reconciliation");
+            return Ok(Vec::with_capacity(0));
+        }
         // NOTE(brooksmtownsend): We could be more efficient here and instead of running
         // the entire reconcile, smart compute exactly what needs to change, but it just
         // requires more code branches and would be fine as a future improvement
         match event {
             Event::ActorStarted(actor_started) => {
                 if actor_started.image_ref == self.config.actor_reference {
+                    trace!(image_ref = %actor_started.image_ref, "Found image we care about");
                     self.reconcile().await
                 } else {
                     Ok(Vec::new())
@@ -68,6 +82,7 @@ impl<S: ReadStore + Send + Sync> Scaler for ActorSpreadScaler<S> {
             Event::ActorStopped(actor_stopped) => {
                 let actor_id = self.actor_id().await?;
                 if actor_stopped.public_key == actor_id {
+                    trace!(%actor_id, "Found actor we care about");
                     self.reconcile().await
                 } else {
                     Ok(Vec::new())
@@ -81,9 +96,10 @@ impl<S: ReadStore + Send + Sync> Scaler for ActorSpreadScaler<S> {
                         labels.get(key).map(|val| val == value).unwrap_or(false)
                     })
                 }) {
-                    Ok(Vec::new())
-                } else {
+                    trace!("Host event matches spread requirements. Will reconcile");
                     self.reconcile().await
+                } else {
+                    Ok(Vec::new())
                 }
             }
             // No other event impacts the job of this scaler so we can ignore it
@@ -91,13 +107,24 @@ impl<S: ReadStore + Send + Sync> Scaler for ActorSpreadScaler<S> {
         }
     }
 
+    #[instrument(level = "trace", skip_all, fields(name = %self.config.model_name))]
     async fn reconcile(&self) -> Result<Vec<Command>> {
+        if *self.in_backoff.read().await {
+            trace!("Scaler is currently in backoff, not performing reconciliation");
+            return Ok(Vec::with_capacity(0));
+        }
         let hosts = self.store.list::<Host>(&self.config.lattice_id).await?;
-        let actor_id = self.actor_id().await?;
-        let actor = self
-            .store
-            .get::<Actor>(&self.config.lattice_id, &actor_id)
-            .await?;
+
+        let actor = if let Ok(id) = self.actor_id().await {
+            self.store.get::<Actor>(&self.config.lattice_id, id).await?
+        } else {
+            // If this is the first time we have ever loaded the actor, there won't be a way to get
+            // the ID, so an error will occur. We can just return None and let the scaler try to
+            // start stuff
+            None
+        };
+
+        let actor_id = actor.as_ref().map(|actor| actor.id.as_str());
 
         // NOTE(brooksmtownsend) it's easier to assign one host per list of requirements than
         // balance within those requirements. Users should be specific with their requirements
@@ -151,7 +178,10 @@ impl<S: ReadStore + Send + Sync> Scaler for ActorSpreadScaler<S> {
                         })),
                         // Stop actors to reach desired replicas
                         Ordering::Greater => Some(Command::StopActor(StopActor {
-                            actor_id: actor_id.to_owned(),
+                            // We shouldn't ever get a stop actor command if this is the first actor
+                            // to be started. In the off chance we do, this command will result in
+                            // nothing due to the empty id
+                            actor_id: actor_id.unwrap_or_default().to_owned(),
                             host_id: first_host.id.to_owned(),
                             count: current_count - count,
                             model_name: self.config.model_name.to_owned(),
@@ -161,12 +191,71 @@ impl<S: ReadStore + Send + Sync> Scaler for ActorSpreadScaler<S> {
                 } else {
                     // No hosts were eligible, so we can't attempt to add or remove actors
                     // We will want to return an error to indicate an unsatisfied Scaler here, eventually
+                    trace!("Found no eligible hosts");
                     None
                 }
             })
             .collect::<Vec<Command>>();
 
         Ok(commands)
+    }
+
+    #[instrument(level = "trace", skip_all, fields(name = %self.config.model_name))]
+    async fn cleanup(&self) -> Result<Vec<Command>> {
+        let mut config_clone = self.config.clone();
+        config_clone.spread_config.replicas = 0;
+        let spread_requirements = compute_spread(&config_clone.spread_config);
+
+        let cleanerupper = ActorSpreadScaler {
+            config: config_clone,
+            store: self.store.clone(),
+            spread_requirements,
+            actor_id: self.actor_id.clone(),
+            // Doesn't matter if we're in backoff as we want to reconcile now
+            in_backoff: Arc::new(RwLock::new(false)),
+        };
+
+        cleanerupper.reconcile().await
+    }
+
+    #[instrument(level = "trace", skip_all, fields(name = %self.config.model_name))]
+    async fn backoff(&self, notifier: Sender<String>) {
+        // If we're already in backoff, don't do it again
+        if *self.in_backoff.read().await {
+            return;
+        }
+        // For actors we need to back off because each actor is a new event
+        *(self.in_backoff.write().await) = true;
+        debug!("Set scaler to backoff mode");
+        let in_backoff = self.in_backoff.clone();
+        let model_name = self.config.model_name.clone();
+        // Configure backoff time with a random "jitter" +/- the configured time. This makes it so
+        // that not every single scaler in a wadm cluster tries to reconcile simultaneously after
+        // backoff
+        let mut jitterer = SmallRng::from_entropy();
+        let jitter_time = Duration::from_millis(jitterer.gen_range(0..5000));
+        // Doing this here rather than with the range so that we can get around the fact that the
+        // standard duration is unsigned
+        let backoff_time = if jitterer.gen_bool(0.5) {
+            BACKOFF_TIME + jitter_time
+        } else {
+            BACKOFF_TIME - jitter_time
+        };
+        // Spawn a task to stop backoff after a certain amount of time
+        tokio::spawn(
+            async move {
+                let mut interval =
+                    tokio::time::interval_at(Instant::now() + backoff_time, backoff_time);
+                interval.tick().await;
+                *(in_backoff.write().await) = false;
+                debug!("Scaler backoff complete. Sending notification");
+                if let Err(e) = notifier.send(model_name).await {
+                    // This should only happen if the top level receiver is closed
+                    error!(error = %e, "Got error when trying to send reconcile commands after backoff period");
+                }
+            }
+            .instrument(tracing::debug_span!("backoff_expire", name = %self.config.model_name)),
+        );
     }
 }
 
@@ -182,35 +271,38 @@ impl<S: ReadStore + Send + Sync> ActorSpreadScaler<S> {
         Self {
             store,
             spread_requirements: compute_spread(&spread_config),
+            actor_id: OnceCell::new(),
             config: ActorSpreadConfig {
                 actor_reference,
-                actor_id: OnceCell::new(),
                 lattice_id,
                 spread_config,
                 model_name,
             },
+            in_backoff: Arc::new(RwLock::new(false)),
         }
     }
 
     /// Helper function to retrieve the actor ID for the configured actor
-    async fn actor_id(&self) -> Result<String> {
-        Ok(self
-            .config
-            .actor_id
-            .get_or_init(|| async {
+    async fn actor_id(&self) -> Result<&str> {
+        self.actor_id
+            .get_or_try_init(|| async {
                 self.store
                     .list::<Actor>(&self.config.lattice_id)
-                    .await
-                    .unwrap_or_default()
+                    .await?
                     .iter()
                     .find(|(_id, actor)| actor.reference == self.config.actor_reference)
                     .map(|(id, _actor)| id.to_owned())
                     // Default here means the below `get` will find zero running actors, which is fine because
                     // that accurately describes the current lattice having zero instances.
-                    .unwrap_or_default()
+                    .ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "Couldn't find an actor id for the actor reference {}",
+                            self.config.actor_reference
+                        )
+                    })
             })
             .await
-            .to_string())
+            .map(|id| id.as_str())
     }
 
     /// Helper function to create a predictable annotations map for a spread
@@ -306,10 +398,10 @@ mod test {
             ProviderStarted, ProviderStopped,
         },
         model::{Spread, SpreadScalerProperty},
-        scaler::{spreadscaler::ActorSpreadScaler, Scaler},
+        scaler::{manager::ScalerManager, spreadscaler::ActorSpreadScaler, Scaler},
         storage::{Actor, Host, Store, WadmActorInstance},
-        test_util::{TestLatticeSource, TestStore},
-        workers::EventWorker,
+        test_util::{NoopPublisher, TestLatticeSource, TestStore},
+        workers::{CommandPublisher, EventWorker},
     };
 
     const MODEL_NAME: &str = "spreadscaler_test";
@@ -960,7 +1052,14 @@ mod test {
             claims: HashMap::default(),
             inventory: Arc::new(RwLock::new(HashMap::default())),
         };
-        let worker = EventWorker::new(store.clone(), lattice_source);
+        let command_publisher = CommandPublisher::new(NoopPublisher, "doesntmatter");
+        let worker = EventWorker::new(
+            store.clone(),
+            lattice_source,
+            command_publisher.clone(),
+            ScalerManager::test_new(NoopPublisher, lattice_id, store.clone(), command_publisher)
+                .await,
+        );
         let blobby_spread_property = SpreadScalerProperty {
             replicas: 9,
             spread: vec![
@@ -1117,6 +1216,7 @@ mod test {
             .is_empty());
         assert!(blobby_spreadscaler
             .handle_event(&Event::ProviderStopped(ProviderStopped {
+                annotations: HashMap::default(),
                 contract_id: "".to_string(),
                 instance_id: "".to_string(),
                 link_name: "".to_string(),
@@ -1160,6 +1260,7 @@ mod test {
 
         // Stop an instance of an actor, and expect a modified list of commands
         let modifying_event = ActorStopped {
+            annotations: HashMap::default(),
             instance_id: "12".to_string(),
             public_key: blobby_id.to_string(),
             host_id: host_id_two.to_string(),

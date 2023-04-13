@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
+use async_nats::jetstream::{stream::Stream, Context};
 use clap::Parser;
 use tokio::sync::Semaphore;
 
@@ -12,9 +13,10 @@ use wadm::{
     },
     mirror::Mirror,
     nats_utils::LatticeIdParser,
-    server::{Server, StreamNotifier, DEFAULT_WADM_TOPIC_PREFIX},
+    scaler::manager::{ScalerManager, WADM_NOTIFY_PREFIX},
+    server::{ManifestNotifier, Server, DEFAULT_WADM_TOPIC_PREFIX},
     storage::{nats_kv::NatsKvStore, reaper::Reaper},
-    workers::{CommandWorker, EventWorker},
+    workers::{CommandPublisher, CommandWorker, EventWorker},
     DEFAULT_COMMANDS_TOPIC, DEFAULT_EVENTS_TOPIC, DEFAULT_MULTITENANT_EVENTS_TOPIC,
     DEFAULT_WADM_EVENTS_TOPIC,
 };
@@ -29,6 +31,7 @@ use connections::{ControlClientConfig, ControlClientConstructor};
 const EVENT_STREAM_NAME: &str = "wadm_events";
 const COMMAND_STREAM_NAME: &str = "wadm_commands";
 const MIRROR_STREAM_NAME: &str = "wadm_mirror";
+const NOTIFY_STREAM_NAME: &str = "wadm_notify";
 
 #[derive(Parser, Debug)]
 #[command(name = clap::crate_name!(), version = clap::crate_version!(), about = "wasmCloud Application Deployment Manager", long_about = None)]
@@ -180,6 +183,8 @@ async fn main() -> anyhow::Result<()> {
         },
     );
 
+    let trimmer: &[_] = &['.', '>', '*'];
+
     let store = nats::ensure_kv_bucket(&context, args.state_bucket, 1).await?;
 
     let state_storage = NatsKvStore::new(store);
@@ -221,22 +226,36 @@ async fn main() -> anyhow::Result<()> {
     )
     .await?;
 
+    let notify_stream = nats::ensure_notify_stream(
+        &context,
+        NOTIFY_STREAM_NAME.to_owned(),
+        vec![format!("{WADM_NOTIFY_PREFIX}.*")],
+    )
+    .await?;
+
     let permit_pool = Arc::new(Semaphore::new(args.max_jobs));
+    let event_worker_creator = EventWorkerCreator {
+        state_store: state_storage.clone(),
+        manifest_store: manifest_storage.clone(),
+        pool: connection_pool.clone(),
+        command_topic_prefix: DEFAULT_COMMANDS_TOPIC.trim_matches(trimmer).to_owned(),
+        publisher: context.clone(),
+        notify_stream,
+    };
     let events_manager: ConsumerManager<EventConsumer> = ConsumerManager::new(
         permit_pool.clone(),
         event_stream,
-        EventWorkerCreator {
-            store: state_storage.clone(),
-            pool: connection_pool.clone(),
-        },
+        event_worker_creator.clone(),
     )
     .await;
+
+    let command_worker_creator = CommandWorkerCreator {
+        pool: connection_pool,
+    };
     let commands_manager: ConsumerManager<CommandConsumer> = ConsumerManager::new(
         permit_pool.clone(),
         command_stream,
-        CommandWorkerCreator {
-            pool: connection_pool.clone(),
-        },
+        command_worker_creator.clone(),
     )
     .await;
 
@@ -251,25 +270,24 @@ async fn main() -> anyhow::Result<()> {
         [],
     );
 
-    let trimmer: &[_] = &['.', '>', '*'];
     let wadm_event_prefix = DEFAULT_WADM_EVENTS_TOPIC.trim_matches(trimmer);
 
     let observer = observer::Observer {
-        client_builder: connection_pool,
         parser: LatticeIdParser::new("wasmbus", args.multitenant),
         command_manager: commands_manager,
         event_manager: events_manager,
         mirror: Mirror::new(mirror_stream, wadm_event_prefix),
         reaper,
         client: client.clone(),
-        store: state_storage,
+        command_worker_creator,
+        event_worker_creator,
     };
 
     let server = Server::new(
         manifest_storage,
         client,
         Some(&args.api_prefix),
-        StreamNotifier::new(wadm_event_prefix, context),
+        ManifestNotifier::new(wadm_event_prefix, context),
     )
     .await?;
     tokio::select! {
@@ -284,6 +302,7 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[derive(Clone)]
 struct CommandWorkerCreator {
     pool: ControlClientConstructor,
 }
@@ -300,22 +319,48 @@ impl WorkerCreator for CommandWorkerCreator {
     }
 }
 
-struct EventWorkerCreator<S> {
-    store: S,
+#[derive(Clone)]
+struct EventWorkerCreator<StateStore, ManifestStore> {
+    state_store: StateStore,
+    manifest_store: ManifestStore,
     pool: ControlClientConstructor,
+    command_topic_prefix: String,
+    publisher: Context,
+    notify_stream: Stream,
 }
 
 #[async_trait::async_trait]
-impl<S> WorkerCreator for EventWorkerCreator<S>
+impl<StateStore, ManifestStore> WorkerCreator for EventWorkerCreator<StateStore, ManifestStore>
 where
-    S: wadm::storage::Store + Send + Sync + Clone + 'static,
+    StateStore: wadm::storage::Store + Send + Sync + Clone + 'static,
+    ManifestStore: wadm::storage::ReadStore + Send + Sync + Clone + 'static,
 {
-    type Output = EventWorker<S, wasmcloud_control_interface::Client>;
+    type Output = EventWorker<StateStore, wasmcloud_control_interface::Client, Context>;
 
     async fn create(&self, lattice_id: &str) -> anyhow::Result<Self::Output> {
-        self.pool
-            .get_connection(lattice_id)
-            .await
-            .map(|client| EventWorker::new(self.store.clone(), client))
+        match self.pool.get_connection(lattice_id).await {
+            Ok(client) => {
+                let publisher = CommandPublisher::new(
+                    self.publisher.clone(),
+                    &format!("{}.{lattice_id}", self.command_topic_prefix),
+                );
+                let manager = ScalerManager::new(
+                    self.publisher.clone(),
+                    self.notify_stream.clone(),
+                    lattice_id,
+                    self.state_store.clone(),
+                    self.manifest_store.clone(),
+                    publisher.clone(),
+                )
+                .await?;
+                Ok(EventWorker::new(
+                    self.state_store.clone(),
+                    client,
+                    publisher,
+                    manager,
+                ))
+            }
+            Err(e) => Err(e),
+        }
     }
 }

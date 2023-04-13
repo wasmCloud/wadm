@@ -1,46 +1,28 @@
-use async_nats::jetstream::Context;
 use cloudevents::{EventBuilder, EventBuilderV10};
 use tracing::{instrument, trace};
 
 use crate::{
     events::{EventType, ManifestPublished, ManifestUnpublished},
     model::Manifest,
+    publisher::Publisher,
 };
 
 const WADM_SOURCE: &str = "wadm";
 
-/// A trait that indicates something can be used to notify via message or other forms of hooks about
-/// manifest changes
-#[async_trait::async_trait]
-pub trait ManifestNotifier {
-    /// Notifies about a recently deployed manifest. Returns an error if it was unable to send the
-    /// notification.
-    ///
-    /// It isn't required to confirm that the notification is received, but is recommended
-    async fn deployed(&self, lattice_id: &str, manifest: Manifest) -> anyhow::Result<()>;
-
-    /// Notifies about a manifest with the given name that has been undeployed. This is all that is
-    /// needed for undeploys because the name must be unique and it is possible that the manifest no
-    /// longer exists in the store. Returns an error if it was unable to send the notification.
-    ///
-    /// It isn't required to confirm that the notification is received, but is recommended
-    async fn undeployed(&self, lattice_id: &str, name: &str) -> anyhow::Result<()>;
-}
-
-/// A [`ManifestNotifier`] that publishes a NATS message using a jetstream context
-pub struct StreamNotifier {
+/// A notifier that publishes changes about manifests with the given publisher
+pub struct ManifestNotifier<P> {
     prefix: String,
-    context: Context,
+    publisher: P,
 }
 
-impl StreamNotifier {
-    /// Creates a new stream notifier with the given prefix. This prefix should be something like
+impl<P: Publisher> ManifestNotifier<P> {
+    /// Creates a new notifier with the given prefix and publisher. This prefix should be something like
     /// `wadm.evt` that is used to form the full topic to send to
-    pub fn new(prefix: &str, context: Context) -> StreamNotifier {
+    pub fn new(prefix: &str, publisher: P) -> ManifestNotifier<P> {
         let trimmer: &[_] = &['.', '>', '*'];
-        StreamNotifier {
+        ManifestNotifier {
             prefix: prefix.trim().trim_matches(trimmer).to_owned(),
-            context,
+            publisher,
         }
     }
 
@@ -60,24 +42,15 @@ impl StreamNotifier {
             .build()?;
         // NOTE(thomastaylor312): A future improvement could be retries here
         trace!("Sending notification event");
-        let acker = self
-            .context
+        self.publisher
             .publish(
-                format!("{}.{lattice_id}", self.prefix),
-                serde_json::to_vec(&event)?.into(),
+                serde_json::to_vec(&event)?,
+                Some(&format!("{}.{lattice_id}", self.prefix)),
             )
             .await
-            .map_err(|e| anyhow::anyhow!("Unable to send notification: {e:?}"))?;
-        acker
-            .await
-            .map(|_| ())
-            .map_err(|e| anyhow::anyhow!("Error waiting for message acknowledgement {e:?}"))
     }
-}
 
-#[async_trait::async_trait]
-impl ManifestNotifier for StreamNotifier {
-    async fn deployed(&self, lattice_id: &str, manifest: Manifest) -> anyhow::Result<()> {
+    pub async fn deployed(&self, lattice_id: &str, manifest: Manifest) -> anyhow::Result<()> {
         self.send_event(
             lattice_id,
             ManifestPublished::TYPE,
@@ -86,7 +59,7 @@ impl ManifestNotifier for StreamNotifier {
         .await
     }
 
-    async fn undeployed(&self, lattice_id: &str, name: &str) -> anyhow::Result<()> {
+    pub async fn undeployed(&self, lattice_id: &str, name: &str) -> anyhow::Result<()> {
         self.send_event(
             lattice_id,
             ManifestUnpublished::TYPE,

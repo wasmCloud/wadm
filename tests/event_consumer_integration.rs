@@ -40,17 +40,20 @@ async fn get_event_consumer(nats_url: String) -> EventConsumer {
         stream
     } else {
         // Create it if it doesn't exist
-        context.create_stream(async_nats::jetstream::stream::Config {
-            name: STREAM_NAME.to_owned(),
-            description: Some("A stream that stores all events coming in on the wasmbus.evt topics in a cluster".to_string()),
-            num_replicas: 1,
-            retention: async_nats::jetstream::stream::RetentionPolicy::WorkQueue,
-            subjects: vec![WASMBUS_EVENT_TOPIC.to_owned()],
-            max_age: wadm::DEFAULT_EXPIRY_TIME,
-            storage: async_nats::jetstream::stream::StorageType::Memory,
-            allow_rollup: false,
-            ..Default::default()
-        }).await.expect("Should be able to create test stream")
+        context
+            .create_stream(async_nats::jetstream::stream::Config {
+                name: STREAM_NAME.to_owned(),
+                description: Some("A stream that stores all events coming in on the wasmbus.evt topics in a cluster".to_string()),
+                num_replicas: 1,
+                retention: async_nats::jetstream::stream::RetentionPolicy::WorkQueue,
+                subjects: vec![WASMBUS_EVENT_TOPIC.to_owned()],
+                max_age: wadm::DEFAULT_EXPIRY_TIME,
+                storage: async_nats::jetstream::stream::StorageType::Memory,
+                allow_rollup: false,
+                ..Default::default()
+            })
+            .await
+            .expect("Should be able to create test stream")
     };
     EventConsumer::new(stream, WASMBUS_EVENT_TOPIC, "default")
         .await

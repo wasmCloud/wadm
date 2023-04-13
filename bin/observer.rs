@@ -5,29 +5,35 @@ use futures::{stream::SelectAll, StreamExt, TryFutureExt};
 use tracing::{debug, error, instrument, trace, warn};
 
 use wadm::{
-    consumers::{manager::ConsumerManager, CommandConsumer, EventConsumer},
+    consumers::{
+        manager::{ConsumerManager, WorkerCreator},
+        CommandConsumer, EventConsumer,
+    },
     events::{EventType, HostHeartbeat, HostStarted},
     mirror::Mirror,
     nats_utils::LatticeIdParser,
-    storage::{nats_kv::NatsKvStore, reaper::Reaper, Store},
-    workers::{CommandWorker, EventWorker},
+    storage::{nats_kv::NatsKvStore, reaper::Reaper, ReadStore, Store},
     DEFAULT_COMMANDS_TOPIC, DEFAULT_WADM_EVENTS_TOPIC,
 };
 
-use super::connections::ControlClientConstructor;
+use super::{CommandWorkerCreator, EventWorkerCreator};
 
-pub(crate) struct Observer<S> {
-    pub(crate) client_builder: ControlClientConstructor,
+pub(crate) struct Observer<StateStore, ManifestStore> {
     pub(crate) parser: LatticeIdParser,
     pub(crate) command_manager: ConsumerManager<CommandConsumer>,
     pub(crate) event_manager: ConsumerManager<EventConsumer>,
     pub(crate) mirror: Mirror,
     pub(crate) client: async_nats::Client,
-    pub(crate) store: S,
     pub(crate) reaper: Reaper<NatsKvStore>,
+    pub(crate) event_worker_creator: EventWorkerCreator<StateStore, ManifestStore>,
+    pub(crate) command_worker_creator: CommandWorkerCreator,
 }
 
-impl<S: Store + Send + Sync + Clone + 'static> Observer<S> {
+impl<StateStore, ManifestStore> Observer<StateStore, ManifestStore>
+where
+    StateStore: Store + Send + Sync + Clone + 'static,
+    ManifestStore: ReadStore + Send + Sync + Clone + 'static,
+{
     /// Watches the given topic (with wildcards) for wasmbus events. If it finds a lattice that it
     /// isn't managing, it will start managing it immediately
     ///
@@ -61,30 +67,41 @@ impl<S: Store + Send + Sync + Clone + 'static> Observer<S> {
                         continue;
                     }
 
-                    let needs_command = !self.command_manager.has_consumer(&msg.subject).await;
-                    let needs_event = !self.event_manager.has_consumer(&msg.subject).await;
-                    let client = if needs_command || needs_event {
-                        match self.client_builder.get_connection(lattice_id).await {
-                            Ok(c) => c,
+                    let command_topic = DEFAULT_COMMANDS_TOPIC.replace('*', lattice_id);
+                    let events_topic = DEFAULT_WADM_EVENTS_TOPIC.replace('*', lattice_id);
+                    let needs_command = !self.command_manager.has_consumer(&command_topic).await;
+                    let needs_event = !self.event_manager.has_consumer(&events_topic).await;
+                    if needs_command {
+                        debug!(%lattice_id, subject = %msg.subject, mapped_subject = %command_topic, "Found unmonitored lattice, adding command consumer");
+                        let worker = match self.command_worker_creator.create(lattice_id).await {
+                            Ok(w) => w,
                             Err(e) => {
-                                error!(error = %e, %lattice_id, "Couldn't construct control client for consumer. Will retry on next heartbeat");
+                                error!(error = %e, %lattice_id, "Couldn't construct worker for command consumer. Will retry on next heartbeat");
                                 continue;
                             }
-                        }
-                    } else {
-                        continue;
-                    };
-                    if needs_command {
-                        debug!(%lattice_id, subject = %msg.subject, "Found unmonitored lattice, adding command consumer");
-                        self.command_manager.add_for_lattice(&DEFAULT_COMMANDS_TOPIC.replace('*', lattice_id), lattice_id, CommandWorker::new(client.clone())).await.unwrap_or_else(|e| {
-                            error!(error = %e, %lattice_id, "Couldn't add command consumer. Will retry on next heartbeat");
-                        })
+                        };
+                        self.command_manager
+                            .add_for_lattice(&command_topic, lattice_id, worker)
+                            .await
+                            .unwrap_or_else(|e| {
+                                error!(error = %e, %lattice_id, "Couldn't add command consumer. Will retry on next heartbeat");
+                            })
                     }
                     if needs_event {
-                        debug!(%lattice_id, subject = %msg.subject, "Found unmonitored lattice, adding event consumer");
-                        self.event_manager.add_for_lattice(&DEFAULT_WADM_EVENTS_TOPIC.replace('*', lattice_id), lattice_id, EventWorker::new(self.store.clone(), client)).await.unwrap_or_else(|e| {
-                            error!(error = %e, %lattice_id, "Couldn't add event consumer. Will retry on next heartbeat");
-                        })
+                        debug!(%lattice_id, subject = %msg.subject, mapped_subject = %events_topic,  "Found unmonitored lattice, adding event consumer");
+                        let worker = match self.event_worker_creator.create(lattice_id).await {
+                            Ok(w) => w,
+                            Err(e) => {
+                                error!(error = %e, %lattice_id, "Couldn't construct worker for event consumer. Will retry on next heartbeat");
+                                continue;
+                            }
+                        };
+                        self.event_manager
+                            .add_for_lattice(&events_topic, lattice_id, worker)
+                            .await
+                            .unwrap_or_else(|e| {
+                                error!(error = %e, %lattice_id, "Couldn't add event consumer. Will retry on next heartbeat");
+                            })
                     }
                 }
                 None => {

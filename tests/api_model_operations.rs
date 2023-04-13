@@ -79,34 +79,6 @@ impl TestServer {
     }
 }
 
-pub struct TestNotifier {
-    client: async_nats::Client,
-    prefix: String,
-}
-
-#[async_trait::async_trait]
-impl ManifestNotifier for TestNotifier {
-    async fn deployed(&self, lattice_id: &str, _manifest: Manifest) -> anyhow::Result<()> {
-        self.client
-            .publish(
-                format!("{}.{lattice_id}", self.prefix),
-                "deployed_manifest".into(),
-            )
-            .await
-            .map_err(|e| anyhow::anyhow!("{e:?}"))
-    }
-
-    async fn undeployed(&self, lattice_id: &str, _name: &str) -> anyhow::Result<()> {
-        self.client
-            .publish(
-                format!("{}.{lattice_id}", self.prefix),
-                "undeployed_manifest".into(),
-            )
-            .await
-            .map_err(|e| anyhow::anyhow!("{e:?}"))
-    }
-}
-
 async fn setup_server(id: String) -> TestServer {
     let client = async_nats::connect("127.0.0.1:4222")
         .await
@@ -118,10 +90,7 @@ async fn setup_server(id: String) -> TestServer {
         NatsKvStore::new(store),
         client.clone(),
         Some(&id),
-        TestNotifier {
-            prefix: prefix.clone(),
-            client: client.clone(),
-        },
+        ManifestNotifier::new(&prefix, client.clone()),
     )
     .await
     .expect("Should be able to setup server");
@@ -639,7 +608,9 @@ async fn test_deploy() {
         "Should have gotten acknowledged response: {resp:?}"
     );
 
-    test_server.wait_for_notify("deployed_manifest").await;
+    test_server
+        .wait_for_notify("com.wadm.manifest_published")
+        .await;
 
     let resp: VersionResponse = test_server
         .get_response("default.model.versions.petclinic", Vec::new(), None)
@@ -715,7 +686,9 @@ async fn test_deploy() {
         "Should have gotten acknowledged response"
     );
 
-    test_server.wait_for_notify("undeployed_manifest").await;
+    test_server
+        .wait_for_notify("com.wadm.manifest_unpublished")
+        .await;
 
     let resp: VersionResponse = test_server
         .get_response("default.model.versions.petclinic", Vec::new(), None)
@@ -777,7 +750,9 @@ async fn test_delete_deploy() {
         "Should have gotten deleted response"
     );
 
-    test_server.wait_for_notify("undeployed_manifest").await;
+    test_server
+        .wait_for_notify("com.wadm.manifest_unpublished")
+        .await;
 
     // Deploy again and then delete all
     let resp: DeployModelResponse = test_server
@@ -804,7 +779,9 @@ async fn test_delete_deploy() {
         "Should have gotten deleted response"
     );
 
-    test_server.wait_for_notify("undeployed_manifest").await;
+    test_server
+        .wait_for_notify("com.wadm.manifest_unpublished")
+        .await;
 }
 
 #[tokio::test]

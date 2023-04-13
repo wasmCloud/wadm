@@ -50,7 +50,7 @@
     {
         "data": {
             "annotations": {},
-            "api_version": 1,
+            "api_version": "n/a",
             "claims": {
                 "call_alias": null,
                 "caps": [

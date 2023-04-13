@@ -212,7 +212,8 @@ pub enum ConversionError {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ActorStarted {
     pub annotations: HashMap<String, String>,
-    pub api_version: usize,
+    // Commented out for now because the host broken it and we actually don't use this right now
+    // pub api_version: usize,
     pub claims: ActorClaims,
     pub image_ref: String,
     // TODO: Parse as UUID?
@@ -232,6 +233,8 @@ event_impl!(
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ActorStopped {
+    #[serde(default)]
+    pub annotations: HashMap<String, String>,
     pub instance_id: String,
     // TODO: Parse as nkey?
     pub public_key: String,
@@ -286,6 +289,8 @@ event_impl!(
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ProviderStopped {
+    #[serde(default)]
+    pub annotations: HashMap<String, String>,
     pub contract_id: String,
     // TODO: parse as UUID?
     pub instance_id: String,

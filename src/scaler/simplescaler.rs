@@ -1,16 +1,20 @@
+use std::collections::HashMap;
+
 use anyhow::Result;
 use async_trait::async_trait;
-use std::collections::HashMap;
+use tokio::sync::mpsc::Sender;
 
 use crate::{
     commands::{Command, StartActor, StopActor},
     events::Event,
+    model::TraitProperty,
     scaler::Scaler,
     storage::{Actor, Host, ReadStore},
 };
 
 /// Config for a SimpleActorScaler, which ensures that an actor as referenced by
 /// `actor_reference` in lattice `lattice_id` runs with `replicas` replicas
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
 struct SimpleScalerConfig {
     // Sourced from the component `image` property
     actor_reference: String,
@@ -28,17 +32,19 @@ struct SimpleScalerConfig {
 /// This is primarily to demonstrate the functionality and ergonomics of the
 /// [Scaler](crate::scaler::Scaler) trait and doesn't make any guarantees
 /// about spreading replicas evenly
-struct SimpleActorScaler<S: ReadStore + Send + Sync> {
+struct SimpleActorScaler<S> {
     pub config: SimpleScalerConfig,
     store: S,
 }
 
 #[async_trait]
-impl<S: ReadStore + Send + Sync> Scaler for SimpleActorScaler<S> {
-    type Config = SimpleScalerConfig;
-
-    async fn update_config(&mut self, config: Self::Config) -> Result<Vec<Command>> {
-        self.config = config;
+impl<S: ReadStore + Send + Sync + Clone> Scaler for SimpleActorScaler<S> {
+    async fn update_config(&mut self, config: TraitProperty) -> Result<Vec<Command>> {
+        self.config = match config {
+            TraitProperty::Custom(val) => serde_json::from_value(val)
+                .map_err(|e| anyhow::anyhow!("Expected a simple scaler config: {e:?}"))?,
+            _ => anyhow::bail!("Expected the correct config object"),
+        };
 
         self.reconcile().await
     }
@@ -55,6 +61,24 @@ impl<S: ReadStore + Send + Sync> Scaler for SimpleActorScaler<S> {
 
     async fn reconcile(&self) -> Result<Vec<Command>> {
         self.compute_actor_commands(&self.store).await
+    }
+
+    async fn cleanup(&self) -> Result<Vec<Command>> {
+        // Use existing functionality to our advantage to scale down to 0
+        let config = SimpleScalerConfig {
+            replicas: 0,
+            ..self.config.clone()
+        };
+        let cleanerupper = SimpleActorScaler {
+            config,
+            store: self.store.clone(),
+        };
+
+        cleanerupper.compute_actor_commands(&self.store).await
+    }
+
+    async fn backoff(&self, notifier: Sender<String>) {
+        let _ = notifier.send(String::with_capacity(0)).await;
     }
 }
 
@@ -190,9 +214,9 @@ mod test {
         commands::{Command, StartActor},
         consumers::{manager::Worker, ScopedMessage},
         events::{ActorClaims, ActorStarted, Event, HostStarted},
-        scaler::{simplescaler::SimpleActorScaler, Scaler},
-        test_util::{TestLatticeSource, TestStore},
-        workers::EventWorker,
+        scaler::{manager::ScalerManager, simplescaler::SimpleActorScaler, Scaler},
+        test_util::{NoopPublisher, TestLatticeSource, TestStore},
+        workers::{CommandPublisher, EventWorker},
     };
 
     #[tokio::test]
@@ -234,7 +258,14 @@ mod test {
             claims: HashMap::default(),
             inventory: Arc::new(RwLock::new(HashMap::default())),
         };
-        let worker = EventWorker::new(store.clone(), lattice_source);
+        let command_publisher = CommandPublisher::new(NoopPublisher, "doesntmatter");
+        let worker = EventWorker::new(
+            store.clone(),
+            lattice_source,
+            command_publisher.clone(),
+            ScalerManager::test_new(NoopPublisher, lattice_id, store.clone(), command_publisher)
+                .await,
+        );
 
         let host_id = "NASDASDIAMAREALHOST".to_string();
         let host_name = "I am a real host".to_string();
@@ -295,7 +326,14 @@ mod test {
             claims: HashMap::default(),
             inventory: Arc::new(RwLock::new(HashMap::default())),
         };
-        let worker = EventWorker::new(store.clone(), lattice_source);
+        let command_publisher = CommandPublisher::new(NoopPublisher, "doesntmatter");
+        let worker = EventWorker::new(
+            store.clone(),
+            lattice_source,
+            command_publisher.clone(),
+            ScalerManager::test_new(NoopPublisher, lattice_id, store.clone(), command_publisher)
+                .await,
+        );
 
         // *** STATE SETUP BEGIN ***
         // Lattice State: One host with 4 instances of the actor, and one host with 3 instances
@@ -340,7 +378,6 @@ mod test {
                     lattice_id: lattice_id.to_string(),
                     inner: Event::ActorStarted(ActorStarted {
                         annotations: HashMap::new(),
-                        api_version: 1, // ??
                         claims: dummy_actor_claims(),
                         image_ref: actor_reference.to_string(),
                         instance_id: format!("{actor_id}_{host_id_1}_{n}"),
@@ -360,7 +397,6 @@ mod test {
                     lattice_id: lattice_id.to_string(),
                     inner: Event::ActorStarted(ActorStarted {
                         annotations: HashMap::new(),
-                        api_version: 1, // ??
                         claims: dummy_actor_claims(),
                         image_ref: actor_reference.to_string(),
                         instance_id: format!("{actor_id}_{host_id_2}_{n}"),
