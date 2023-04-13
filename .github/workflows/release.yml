@@ -136,7 +136,7 @@ jobs:
 
       - uses: actions/upload-artifact@v3
         with:
-          name: wadm-${{ matrix.config.os }}-${{ matrix.config.arch }}
+          name: wadm-${{ env.RELEASE_VERSION }}-${{ env.RUNNER_OS }}-${{ matrix.config.arch }}
           if-no-files-found: error
           path: |
             ${{ matrix.config.targetPath }}wadm${{ matrix.config.extension }}
