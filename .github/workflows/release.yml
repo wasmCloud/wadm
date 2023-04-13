@@ -147,6 +147,7 @@ jobs:
     needs: build
     steps:
       steps:
+        ### WHY ARE THESE STEPS HERE?
         - name: set the release version (tag)
           if: startsWith(github.ref, 'refs/tags/v')
           shell: bash
@@ -157,6 +158,7 @@ jobs:
           run: echo "RELEASE_VERSION=canary" >> $GITHUB_ENV
         - name: download release assets
           uses: actions/download-artifact@v3
+        ### 
         # ARE CHECKSUMS NEEDED
         # - name: generate checksums
         #   run: |
