@@ -5,6 +5,7 @@ use serde::{de::DeserializeOwned, Serialize};
 use tokio::sync::RwLock;
 use wasmcloud_control_interface::HostInventory;
 
+use crate::publisher::Publisher;
 use crate::storage::StateKind;
 use crate::workers::{Claims, ClaimsSource, InventorySource};
 
@@ -119,5 +120,30 @@ impl ClaimsSource for TestLatticeSource {
 impl InventorySource for TestLatticeSource {
     async fn get_inventory(&self, host_id: &str) -> anyhow::Result<HostInventory> {
         Ok(self.inventory.read().await.get(host_id).cloned().unwrap())
+    }
+}
+
+/// A publisher that does nothing
+#[derive(Clone, Default)]
+pub struct NoopPublisher;
+
+#[async_trait::async_trait]
+impl Publisher for NoopPublisher {
+    async fn publish(&self, _: Vec<u8>, _: Option<&str>) -> anyhow::Result<()> {
+        Ok(())
+    }
+}
+
+/// A publisher that records all data sent to it (as the given type deserialized from JSON)
+pub struct RecorderPublisher<T> {
+    pub received: Arc<RwLock<Vec<T>>>,
+}
+
+#[async_trait::async_trait]
+impl<T: DeserializeOwned + Send + Sync> Publisher for RecorderPublisher<T> {
+    async fn publish(&self, data: Vec<u8>, _: Option<&str>) -> anyhow::Result<()> {
+        let data: T = serde_json::from_slice(&data)?;
+        self.received.write().await.push(data);
+        Ok(())
     }
 }

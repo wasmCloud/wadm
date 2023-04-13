@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 use chrono::{Duration, Utc};
 use tokio::{task::JoinHandle, time};
-use tracing::{debug, error, info, instrument, trace};
+use tracing::{debug, error, info, instrument, trace, warn};
 
 use super::{Actor, Host, Provider, Store};
 
@@ -181,7 +181,7 @@ impl<S: Store + Clone + Send + Sync + 'static> Undertaker<S> {
             .store_many(&self.lattice_id, actors_to_update)
             .await
         {
-            error!(error = %e, "Error when storing updated actors. Will retry on next tick");
+            warn!(error = %e, "Error when storing updated actors. Will retry on next tick");
             return;
         }
 
@@ -190,7 +190,7 @@ impl<S: Store + Clone + Send + Sync + 'static> Undertaker<S> {
             .delete_many::<Actor, _, _>(&self.lattice_id, actors_to_remove.keys())
             .await
         {
-            error!(error = %e, "Error when deleting actors from store. Will retry on next tick")
+            warn!(error = %e, "Error when deleting actors from store. Will retry on next tick")
         }
     }
 
@@ -227,7 +227,7 @@ impl<S: Store + Clone + Send + Sync + 'static> Undertaker<S> {
             .store_many(&self.lattice_id, providers_to_update)
             .await
         {
-            error!(error = %e, "Error when storing updated providers. Will retry on next tick");
+            warn!(error = %e, "Error when storing updated providers. Will retry on next tick");
             return;
         }
 
@@ -236,7 +236,7 @@ impl<S: Store + Clone + Send + Sync + 'static> Undertaker<S> {
             .delete_many::<Provider, _, _>(&self.lattice_id, providers_to_remove.keys())
             .await
         {
-            error!(error = %e, "Error when deleting providers from store. Will retry on next tick")
+            warn!(error = %e, "Error when deleting providers from store. Will retry on next tick")
         }
     }
 }

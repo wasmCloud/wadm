@@ -7,7 +7,7 @@ use tokio::{
     sync::{RwLock, Semaphore},
     task::JoinHandle,
 };
-use tracing::{error, trace, Instrument};
+use tracing::{error, instrument, trace, warn, Instrument};
 
 use super::{CreateConsumer, ScopedMessage};
 
@@ -124,44 +124,47 @@ impl<C> ConsumerManager<C> {
             phantom: PhantomData,
         };
 
-        let handles: HashMap<String, JoinHandle<WorkResult<()>>> = manager.stream.consumers().filter_map(|res| async {
-            let info = match res {
-                Ok(info) => info,
-                Err(e) => {
-                    error!(error = %e, "Error when trying to read current consumers");
-                    return None
-                }
-            };
-            // TODO: This is somewhat brittle as we could change naming schemes, but it is
-            // good enough for now. We are just taking the name (which should be of the
-            // format `<consumer_prefix>_<lattice_id>`), but this makes sure we are always
-            // getting the last thing in case of other underscores
-            let lattice_id = match info.name.split('_').last() {
-                Some(id) => id,
-                None => return None,
-            };
-            // NOTE(thomastaylor312): It might be nicer for logs if we add an extra param for a
-            // friendly consumer manager name
-            trace!(%lattice_id, "Adding consumer for lattice");
+        let handles: HashMap<String, JoinHandle<WorkResult<()>>> = manager
+            .stream
+            .consumers()
+            .filter_map(|res| async {
+                let info = match res {
+                    Ok(info) => info,
+                    Err(e) => {
+                        error!(error = %e, "Error when trying to read current consumers");
+                        return None;
+                    }
+                };
+                // TODO: This is somewhat brittle as we could change naming schemes, but it is
+                // good enough for now. We are just taking the name (which should be of the
+                // format `<consumer_prefix>_<lattice_id>`), but this makes sure we are always
+                // getting the last thing in case of other underscores
+                let lattice_id = match info.name.split('_').last() {
+                    Some(id) => id,
+                    None => return None,
+                };
+                // NOTE(thomastaylor312): It might be nicer for logs if we add an extra param for a
+                // friendly consumer manager name
+                trace!(%lattice_id, subject = %info.config.filter_subject, "Adding consumer for lattice");
 
-            let worker = match worker_generator.create(lattice_id).await {
-                Ok(w) => w,
-                Err(e) => {
-                    error!(error = %e, %lattice_id, "Unable to add consumer for lattice. Error when generating worker");
-                    return None;
-                }
-            };
+                let worker = match worker_generator.create(lattice_id).await {
+                    Ok(w) => w,
+                    Err(e) => {
+                        error!(error = %e, %lattice_id, "Unable to add consumer for lattice. Error when generating worker");
+                        return None;
+                    }
+                };
 
-            match manager
-                .spawn_handler(&info.config.filter_subject, lattice_id, worker)
-                .await {
-                    Ok(handle) => Some((lattice_id.to_owned(), handle)),
+                match manager.spawn_handler(&info.config.filter_subject, lattice_id, worker).await {
+                    Ok(handle) => Some((info.config.filter_subject.to_owned(), handle)),
                     Err(e) => {
                         error!(error = %e, %lattice_id, "Unable to add consumer for lattice");
                         None
                     }
                 }
-        }).collect().await;
+            })
+            .collect()
+            .await;
 
         manager.handles = Arc::new(RwLock::new(handles));
         manager
@@ -171,6 +174,7 @@ impl<C> ConsumerManager<C> {
     /// setting up the consumer.
     ///
     /// The given work function should attempt to handle the event
+    #[instrument(level = "trace", skip(self, worker))]
     pub async fn add_for_lattice<W>(
         &self,
         topic: &str,
@@ -186,6 +190,7 @@ impl<C> ConsumerManager<C> {
             + 'static,
     {
         if !self.has_consumer(topic).await {
+            trace!("Adding new consumer");
             let handle = self.spawn_handler(topic, lattice_id, worker).await?;
             let mut handles = self.handles.write().await;
             handles.insert(topic.to_owned(), handle);
@@ -221,7 +226,13 @@ impl<C> ConsumerManager<C> {
             .read()
             .await
             .get(topic)
-            .map(|handle| !handle.is_finished())
+            .map(|handle| {
+                let is_finished = handle.is_finished();
+                if is_finished {
+                    warn!(%topic, "Work function stopped executing for topic")
+                }
+                !is_finished
+            })
             .unwrap_or(false)
     }
 

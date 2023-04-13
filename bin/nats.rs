@@ -100,6 +100,27 @@ pub async fn ensure_stream(
         .map_err(|e| anyhow::anyhow!("{e:?}"))
 }
 
+/// A helper that ensures that the notify stream exists
+pub async fn ensure_notify_stream(
+    context: &Context,
+    name: String,
+    subjects: Vec<String>,
+) -> Result<Stream> {
+    context
+        .get_or_create_stream(StreamConfig {
+            name,
+            description: Some("A stream for capturing all notification events for wadm".into()),
+            num_replicas: 1,
+            retention: async_nats::jetstream::stream::RetentionPolicy::Interest,
+            subjects,
+            max_age: DEFAULT_EXPIRY_TIME,
+            storage: async_nats::jetstream::stream::StorageType::File,
+            ..Default::default()
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("{e:?}"))
+}
+
 /// A helper that ensures that the given KV bucket exists, using defaults to create if it does
 /// not. Returns the handle to the stream
 pub async fn ensure_kv_bucket(

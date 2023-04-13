@@ -2,7 +2,7 @@ use async_nats::{Client, Subscriber};
 use futures::StreamExt;
 use tracing::{info, instrument, warn};
 
-use crate::storage::Store;
+use crate::{publisher::Publisher, storage::Store};
 
 mod handlers;
 mod notifier;
@@ -10,7 +10,7 @@ mod parser;
 mod types;
 
 use handlers::Handler;
-pub use notifier::{ManifestNotifier, StreamNotifier};
+pub use notifier::ManifestNotifier;
 pub use parser::CONTENT_TYPE_HEADER;
 pub use types::*;
 
@@ -20,13 +20,13 @@ pub const DEFAULT_WADM_TOPIC_PREFIX: &str = "wadm.api";
 const QUEUE_GROUP: &str = "wadm_server";
 
 /// A server for the wadm API
-pub struct Server<S, N> {
-    handler: Handler<S, N>,
+pub struct Server<S, P> {
+    handler: Handler<S, P>,
     subscriber: Subscriber,
     prefix: String,
 }
 
-impl<S: Store + Send + Sync, N: ManifestNotifier> Server<S, N> {
+impl<S: Store + Send + Sync, P: Publisher> Server<S, P> {
     /// Returns a new server configured with the given store, NATS client, and optional topic
     /// prefix. Returns an error if it can't subscribe on the right topics
     ///
@@ -37,8 +37,8 @@ impl<S: Store + Send + Sync, N: ManifestNotifier> Server<S, N> {
         store: S,
         client: Client,
         topic_prefix: Option<&str>,
-        notifier: N,
-    ) -> anyhow::Result<Server<S, N>> {
+        notifier: ManifestNotifier<P>,
+    ) -> anyhow::Result<Server<S, P>> {
         // Trim off any spaces or trailing/preceding dots
         let prefix = topic_prefix
             .unwrap_or(DEFAULT_WADM_TOPIC_PREFIX)

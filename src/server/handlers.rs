@@ -4,6 +4,7 @@ use tracing::{debug, error, instrument, trace};
 
 use crate::{
     model::{internal::StoredManifest, LATEST_VERSION},
+    publisher::Publisher,
     storage::Store,
 };
 
@@ -14,13 +15,13 @@ use super::{
     StatusResponse, StatusResult, StatusType, UndeployModelRequest, VersionInfo, VersionResponse,
 };
 
-pub(crate) struct Handler<S, N> {
+pub(crate) struct Handler<S, P> {
     pub(crate) store: S,
     pub(crate) client: Client,
-    pub(crate) notifier: N,
+    pub(crate) notifier: ManifestNotifier<P>,
 }
 
-impl<S: Store + Send + Sync, N: ManifestNotifier> Handler<S, N> {
+impl<S: Store + Send + Sync, P: Publisher> Handler<S, P> {
     #[instrument(level = "debug", skip(self, msg))]
     pub async fn put_model(&self, msg: Message, lattice_id: &str, name: &str) {
         trace!("Parsing incoming manifest");

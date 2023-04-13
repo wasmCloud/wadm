@@ -19,12 +19,6 @@ macro_rules! from_impl {
 
 /// All possible compensatory commands for a lattice
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-// In order to keep things clean, we are using untagged enum serialization. So it will just try to
-// match on data without tagging (see https://serde.rs/enum-representations.html for more info on
-// what the other options look like). These types are purely internal to wadm, but for greater
-// flexibility in the future, we may want to write custom serialize and deserialize for people who
-// may write other schedulers
-#[serde(untagged)]
 pub enum Command {
     StartActor(StartActor),
     StopActor(StopActor),

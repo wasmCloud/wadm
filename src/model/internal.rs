@@ -117,6 +117,13 @@ impl StoredManifest {
         self.manifests.get(version)
     }
 
+    /// Returns the deployed version of the manifest (if it is deployed)
+    pub fn get_deployed(&self) -> Option<&Manifest> {
+        self.deployed_version
+            .as_ref()
+            .and_then(|v| self.manifests.get(v))
+    }
+
     /// Returns whether or not this is a new (empty) manifest
     pub fn is_empty(&self) -> bool {
         self.manifests.is_empty()
