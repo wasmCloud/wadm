@@ -463,6 +463,7 @@ mod test {
         let all_events: Vec<cloudevents::Event> = serde_json::from_slice(&raw).unwrap();
 
         for evt in all_events.into_iter() {
+            println!("EVT {:?}", evt);
             Event::new(evt).expect("Should be able to parse event");
         }
     }

@@ -11,6 +11,7 @@ pub struct ProviderInfo {
     pub link_name: String,
     // TODO: Should we actually parse the nkey?
     pub public_key: String,
+    #[serde(default)]
     pub annotations: HashMap<String, String>,
 }
 

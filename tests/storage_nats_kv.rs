@@ -59,6 +59,7 @@ async fn test_round_trip() {
             public_key: "testprovider".to_string(),
             contract_id: "wasmcloud:httpserver".to_owned(),
             link_name: "default".to_owned(),
+            annotations: HashMap::new(),
         }]),
         friendly_name: "test-host".to_string(),
         uptime_seconds: 30,

@@ -1,6 +1,7 @@
 use std::collections::{hash_map::Entry, HashMap, HashSet};
 
 use tracing::{debug, instrument, trace, warn};
+use wasmcloud_control_interface::{ActorDescription, HostInventory, ProviderDescription};
 
 use crate::commands::Command;
 use crate::consumers::{
@@ -185,13 +186,20 @@ where
             .store(lattice_id, host.id.clone(), host_data)
             .await?;
 
-        // NOTE: We can return an error here and then nack because we'll just reupdate the host data
-        // with the exact same host heartbeat entry. There is no possibility of a duplicate
-        self.heartbeat_provider_update(lattice_id, host).await?;
+        // NOTE(brooksmtownsend): Currently, the heartbeat does not tell us the instance IDs or annotations
+        // of actors, or the annotations of providers. We need to make an inventory request to get this
+        // information so we can properly update state.
+        let host_inventory = self.ctl_client.get_inventory(&host.id).await?;
 
         // NOTE: We can return an error here and then nack because we'll just reupdate the host data
         // with the exact same host heartbeat entry. There is no possibility of a duplicate
-        self.heartbeat_actor_update(lattice_id, host).await?;
+        self.heartbeat_provider_update(lattice_id, host, host_inventory.providers)
+            .await?;
+
+        // NOTE: We can return an error here and then nack because we'll just reupdate the host data
+        // with the exact same host heartbeat entry. There is no possibility of a duplicate
+        self.heartbeat_actor_update(lattice_id, host, host_inventory.actors)
+            .await?;
 
         Ok(())
     }
@@ -530,19 +538,12 @@ where
         &self,
         lattice_id: &str,
         host: &HostHeartbeat,
+        inventory_actors: Vec<ActorDescription>,
     ) -> anyhow::Result<()> {
         debug!("Fetching current actor state");
         let actors = self.store.list::<Actor>(lattice_id).await?;
 
-        // NOTE(brooksmtownsend): Because we update state on actor events and we keep track
-        // of instance IDs, it's not good to update the actor map based on the heartbeat.
-        // Essentially, if the heartbeat gives us new information about the list of actors,
-        // we have no way of knowing what instances changed and what instances are still running.
-        let host_instances = self
-            .ctl_client
-            .get_inventory(&host.id)
-            .await?
-            .actors
+        let host_instances = inventory_actors
             .iter()
             .map(|actor_description| {
                 (
@@ -599,11 +600,12 @@ where
         &self,
         lattice_id: &str,
         host: &HostHeartbeat,
+        inventory_providers: Vec<ProviderDescription>,
     ) -> anyhow::Result<()> {
         debug!("Fetching current provider state");
         let providers = self.store.list::<Provider>(lattice_id).await?;
-        let providers_to_update = host.providers.iter().filter_map(|info| {
-            let provider_id = crate::storage::provider_id(&info.public_key, &info.link_name);
+        let providers_to_update = inventory_providers.iter().filter_map(|info| {
+            let provider_id = crate::storage::provider_id(&info.id, &info.link_name);
             // NOTE: We can do this without cloning, but it led to some confusing code involving
             // `remove` from the owned `providers` map. This is more readable at the expense of
             // a clone for few providers
@@ -632,7 +634,7 @@ where
                     Some((
                         provider_id,
                         Provider {
-                            id: info.public_key.clone(),
+                            id: info.id.clone(),
                             contract_id: info.contract_id.clone(),
                             link_name: info.link_name.clone(),
                             hosts: [(host.id.clone(), ProviderStatus::default())].into(),
@@ -1197,7 +1199,26 @@ mod test {
                     ],
                     host_id: host1_id.to_string(),
                     labels: HashMap::new(),
-                    providers: vec![],
+                    providers: vec![
+                        ProviderDescription {
+                            contract_id: provider1.contract_id.clone(),
+                            link_name: provider1.link_name.clone(),
+                            id: provider1.public_key.clone(),
+                            annotations: Some(HashMap::new()),
+                            image_ref: Some(provider1.image_ref.clone()),
+                            name: Some("One".to_string()),
+                            revision: 0,
+                        },
+                        ProviderDescription {
+                            contract_id: provider2.contract_id.clone(),
+                            link_name: provider2.link_name.clone(),
+                            id: provider2.public_key.clone(),
+                            annotations: Some(HashMap::new()),
+                            image_ref: Some(provider2.image_ref.clone()),
+                            name: Some("Two".to_string()),
+                            revision: 0,
+                        },
+                    ],
                 },
             ),
             (
@@ -1244,12 +1265,12 @@ mod test {
                     host_id: host2_id.to_string(),
                     labels: HashMap::new(),
                     providers: vec![ProviderDescription {
-                        contract_id: provider1.contract_id.clone(),
-                        link_name: provider1.link_name.clone(),
-                        id: provider1.public_key.clone(),
+                        contract_id: provider2.contract_id.clone(),
+                        link_name: provider2.link_name.clone(),
+                        id: provider2.public_key.clone(),
                         annotations: Some(HashMap::new()),
-                        image_ref: Some(provider1.image_ref.clone()),
-                        name: Some("One".to_string()),
+                        image_ref: Some(provider2.image_ref.clone()),
+                        name: Some("Two".to_string()),
                         revision: 0,
                     }],
                 },
@@ -1680,8 +1701,15 @@ mod test {
                 ],
                 host_id: host_id.to_string(),
                 labels: HashMap::new(),
-                // Leaving incomplete purposefully, we don't need this info
-                providers: vec![],
+                providers: vec![ProviderDescription {
+                    contract_id: "lightspeed".into(),
+                    link_name: link_name.clone(),
+                    id: provider_id.clone(),
+                    annotations: Some(HashMap::new()),
+                    image_ref: Some("".to_string()),
+                    name: Some("".to_string()),
+                    revision: 0,
+                }],
             },
         )]);
 
@@ -1896,7 +1924,15 @@ mod test {
                 actors: vec![],
                 labels: HashMap::new(),
                 host_id: host_id.to_string(),
-                providers: vec![],
+                providers: vec![ProviderDescription {
+                    contract_id: contract_id.to_string(),
+                    link_name: link_name.to_string(),
+                    id: public_key.to_string(),
+                    annotations: Some(HashMap::new()),
+                    image_ref: Some("".to_string()),
+                    name: Some("".to_string()),
+                    revision: 0,
+                }],
             },
         )]);
 
