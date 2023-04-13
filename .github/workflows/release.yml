@@ -1,157 +1,221 @@
 name: Wadm Release
-
 on:
   push:
-    tags: ["v*"] # Push events to matching v*, i.e. v1.0, v20.15.10
+    tags: 
+      - "v*" # Push events to matching v*, i.e. v1.0, v20.15.10
   workflow_dispatch: # Allow manual creation of artifacts without a release
   pull_request:
-    branches: [main]
+    branches: 
+      - main
 
 jobs:
-  create-mix-release:
-    # Run on tag push or on manual dispatch. Release will not be created for manual dispatch
-    if: ${{ startswith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' }}
-    name: Build application release tarball
+  build:
+    name: build release assets
+    runs-on: ${{ matrix.config.os }}
+    outputs:
+      version_output: ${{ steps.version_output.outputs.version }}
     strategy:
-      fail-fast: false
       matrix:
-        os: [ubuntu-20.04, windows-2022, macos-11]
-        include:
-          - os: ubuntu-20.04
-            rust-target: x86_64-unknown-linux-gnu
-            release-tarball-filename: x86_64-linux.tar.gz
-          - os: windows-2022
-            rust-target: x86_64-pc-windows-gnu
-            release-tarball-filename: x86_64-windows.tar.gz
-          - os: macos-11
-            rust-target: x86_64-apple-darwin
-            release-tarball-filename: x86_64-macos.tar.gz
-    runs-on: ${{ matrix.os }}
-    env:
-      working-directory: wadm
-      MIX_ENV: prod
-      ERLANG_VERSION: 24
-      ELIXIR_VERSION: 1.13.3
+        config:
+          # NOTE: We are building on an older version of ubuntu because of libc compatibility
+          # issues. Namely, if we build on a new version of libc, it isn't backwards compatible with
+          # old versions. But if we build on the old version, it is compatible with the newer
+          # versions running in ubuntu 22 and its ilk
+          - {
+              os: "ubuntu-20.04",
+              arch: "amd64",
+              extension: "",
+              targetPath: "target/release/",
+            }
+          - {
+              os: "ubuntu-20.04",
+              arch: "aarch64",
+              extension: "",
+              targetPath: "target/aarch64-unknown-linux-gnu/release/",
+            }
+          - {
+              os: "macos-latest",
+              arch: "amd64",
+              extension: "",
+              targetPath: "target/release/",
+            }
+          - {
+              os: "windows-latest",
+              arch: "amd64",
+              extension: ".exe",
+              targetPath: "target/release/",
+            }
+          - {
+              os: "macos-latest",
+              arch: "aarch64",
+              extension: "",
+              targetPath: "target/aarch64-apple-darwin/release/",
+            }
     steps:
-      - uses: actions/checkout@v2
-      - name: Set up Visual Studio C++ toolchain for Windows
-        uses: ilammy/msvc-dev-cmd@v1
-        if: ${{ startswith(matrix.os, 'windows') }}
-      # Install erlang/OTP and elixir
-      - name: Install erlang and elixir
-        if: ${{ startswith(matrix.os, 'ubuntu') || startswith(matrix.os, 'windows') }}
-        uses: erlef/setup-beam@v1
-        with:
-          otp-version: "=${{ env.ERLANG_VERSION }}"
-          elixir-version: ${{ env.ELIXIR_VERSION }}
-          install-hex: true
-          install-rebar: true
-      - name: Install erlang and elixir
-        if: ${{ startswith(matrix.os, 'macos') }}
-        run: |
-          brew install erlang
-          brew install elixir
-          mix local.rebar --force
-          mix local.hex --force
+      - uses: actions/checkout@v3
 
-      - name: Retrieve Mix Dependencies Cache
-        if: ${{ !startswith(matrix.os, 'windows') }}
-        uses: actions/cache@v2
-        id: mix-cache #id to use in retrieve action
+      - name: set the release version (tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: echo "RELEASE_VERSION=${GITHUB_REF/refs\/tags\//}" >> $GITHUB_ENV
+
+      - name: set the release version (main)
+        if: github.ref == 'refs/heads/main'
+        shell: bash
+        run: echo "RELEASE_VERSION=canary" >> $GITHUB_ENV
+  
+      - name: Output Version
+        id: version_output
+        run: echo "version=$RELEASE_VERSION" >> $GITHUB_OUTPUT
+
+      - name: lowercase the runner OS name
+        shell: bash
+        run: |
+          OS=$(echo "${{ runner.os }}" | tr '[:upper:]' '[:lower:]')
+          echo "RUNNER_OS=$OS" >> $GITHUB_ENV
+
+      - name: Install latest Rust stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+        if: matrix.config.arch != 'aarch64'
         with:
+          toolchain: stable
+          components: clippy, rustfmt
+
+      - name: setup for cross-compile builds
+        if: matrix.config.arch == 'aarch64' && matrix.config.os == 'ubuntu-20.04'
+        run: |
+          sudo apt-get update
+          sudo apt install gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+          rustup toolchain install stable-aarch64-unknown-linux-gnu
+          rustup target add --toolchain stable-aarch64-unknown-linux-gnu aarch64-unknown-linux-gnu
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+          echo "CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+          echo "CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++" >> $GITHUB_ENV
+
+      - name: Install latest Rust stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+        if: matrix.config.arch == 'aarch64' && matrix.config.os == 'macos-latest'
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
+          target: aarch64-apple-darwin
+
+      - name: Install latest Rust stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+        if: matrix.config.arch == 'aarch64' && matrix.config.os == 'ubuntu-20.04'
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
+          target: aarch64-unknown-linux-gnu
+
+      - name: build release
+        if: matrix.config.arch != 'aarch64'
+        run: "cargo build --release --bin wadm --features cli"
+
+      - name: build release
+        if: matrix.config.arch == 'aarch64' && matrix.config.os == 'macos-latest'
+        run: "cargo build --release --bin wadm --features cli --target aarch64-apple-darwin"
+
+      - name: build release
+        if: matrix.config.arch == 'aarch64' && matrix.config.os == 'ubuntu-20.04'
+        run: "cargo build --release --bin wadm --features cli --target aarch64-unknown-linux-gnu"
+
+      - uses: actions/upload-artifact@v3
+        with:
+          name: wadm-${{ env.RELEASE_VERSION }}-${{ env.RUNNER_OS }}-${{ matrix.config.arch }}
+          if-no-files-found: error
           path: |
-            wadm/deps
-            wadm/_build
-          key: ${{ runner.os }}-${{ matrix.otp }}-${{ matrix.elixir }}-mix-${{ hashFiles('wadm/mix.exs', 'wadm/mix.lock') }}
-
-      - name: Install Mix Dependencies
-        working-directory: ${{env.working-directory}}
-        if: steps.mix-cache.outputs.cache-hit != 'true'
-        run: |
-          mix do deps.get, compile
-
-      - name: Create Mix Release
-        working-directory: ${{env.working-directory}}
-        shell: bash
-        run: mix release wadm
-
-      - name: TarGEEZY Mix Release
-        working-directory: ${{env.working-directory}}/_build/prod/rel/wadm
-        shell: bash
-        run: |
-          tar -czvf ${{ matrix.release-tarball-filename }} bin erts-* lib releases
-          cp ${{ matrix.release-tarball-filename }} ../../../../
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v2
-        with:
-          name: ${{ matrix.release-tarball-filename }}
-          path: ${{env.working-directory}}/${{ matrix.release-tarball-filename }}
-
-  release-docker:
-    if: startswith(github.ref, 'refs/tags/') # Only run on tag push
-    name: Release Linux Docker Image
-    runs-on: ubuntu-latest
+            ${{ matrix.config.targetPath }}wadm${{ matrix.config.extension }}
+      
+  publish:
+    name: publish release assets
+    runs-on: ubuntu-20.04
+    needs: build
     env:
-      MIX_ENV: prod
-      working-directory: wadm
-
+      RELEASE_VERSION: ${{ needs.build.outputs.version_output }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v2
+        - name: download release assets
+          uses: actions/download-artifact@v3
+        - name: Generate Checksums
+          run: |
+            for dir in */; do
+              cd "$dir" || continue 
+              sum=$(sha256sum * | awk '{ print $1 }')
+              echo "$dir:$sum" >> checksums-${{ env.RELEASE_VERSION }}.txt
+              cd ..
+            done
+        - name: Package Binaries
+          run:
+            for dir in */; do tar -czvf "${dir%/}.tar.gz" "$dir"; done
+        - name: Publish to GHCR
+          uses: softprops/action-gh-release@v1
+          with:
+            token: ${{ secrets.WADM_GITHUB_TOKEN }}
+            prerelease: false
+            draft: false
+            files: |
+              checksums-${{ env.RELEASE_VERSION }}.txt
+              wadm-${{ env.RELEASE_VERSION }}-linux-aarch64.tar.gz
+              wadm-${{ env.RELEASE_VERSION }}-linux-amd64.tar.gz
+              wadm-${{ env.RELEASE_VERSION }}-macos-aarch64.tar.gz
+              wadm-${{ env.RELEASE_VERSION }}-macos-amd64.tar.gz
+              wadm-${{ env.RELEASE_VERSION }}-windows-amd64.tar.gz
 
-      - name: Login to AzureCR
-        uses: azure/docker-login@v1
+  crate:
+    name: Publish crate
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install latest Rust stable toolchain
+        uses: dtolnay/rust-toolchain@stable
         with:
-          login-server: ${{ secrets.AZURECR_PUSH_URL }}
-          username: ${{ secrets.AZURECR_PUSH_USER }}
-          password: ${{ secrets.AZURECR_PUSH_PASSWORD }}
+          toolchain: stable
+      - name: Cargo login
+        run: cargo login ${{ secrets.CRATES_TOKEN }}
+        shell: bash
 
-      - name: Login to DockerHub
-        uses: docker/login-action@v1
-        with:
-          username: ${{ secrets.DOCKERHUB_PUSH_USER }}
-          password: ${{ secrets.DOCKERHUB_PUSH_PASSWORD }}
+      - name: Cargo publish
+        run: cargo publish
+        shell: bash
+
+  docker-image:
+    name: Build and push docker images
+    runs-on: ubuntu-latest
+    needs: build
+    env:
+      RELEASE_VERSION: ${{ needs.build.outputs.version_output }}
+    steps:
+      - uses: actions/checkout@v3
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v1
+        uses: docker/setup-qemu-action@v2
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v1
-        id: buildx-builder
+        uses: docker/setup-buildx-action@v2
 
-      - name: Determine version
-        shell: bash
-        run: echo "wadm_version=$(grep 'version' ${{env.working-directory}}/mix.exs | cut -d '"' -f2)" >> $GITHUB_ENV
-
-      - name: Build and release docker image
-        uses: docker/build-push-action@v2
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
         with:
-          context: wadm/.
-          builder: ${{ steps.buildx-builder.outputs.name }}
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.WADM_GITHUB_TOKEN }}
+      
+      - name: lowercase repository owner
+        run: |
+          echo "OWNER=${GITHUB_REPOSITORY_OWNER,,}" >>$GITHUB_ENV
+
+      - name: Build and push (tag)
+        uses: docker/build-push-action@v3
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
           push: true
-          file: ${{env.working-directory}}/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          tags: |
-            wasmcloud.azurecr.io/wadm:${{ env.wadm_version }}
-            wasmcloud.azurecr.io/wadm:latest
-            wasmcloud/wadm:${{ env.wadm_version }}
-            wasmcloud/wadm:latest
+          tags: ghcr.io/${{ env.OWNER }}/wadm:latest,ghcr.io/${{ env.OWNER }}/wadm:${{ env.RELEASE_VERSION }}
 
-  github-release:
-    if: startswith(github.ref, 'refs/tags/') # Only run on tag push
-    needs: [create-mix-release]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download Release Tarballs
-        uses: actions/download-artifact@v2
+      - name: Build and push (main)
+        uses: docker/build-push-action@v3
+        if: github.ref == 'refs/heads/main'
         with:
-          path: release
-
-      - name: Release
-        uses: softprops/action-gh-release@v1
-        with:
-          files: release/**/*.tar.gz
-          token: ${{ secrets.GITHUB_TOKEN }}
-          prerelease: false
-          draft: false
+          push: true
+          tags: ghcr.io/${{ env.OWNER }}/wadm:canary
