@@ -1,47 +1,147 @@
-name: Wadm release
+name: Wadm Release
 on:
   push:
-    branches:
-      - main
-    tags:
-      - "v*"
+    tags: ["v*"] # Push events to matching v*, i.e. v1.0, v20.15.10
+  workflow_dispatch: # Allow manual creation of artifacts without a release
+  pull_request:
+    branches: [main]
+
 jobs:
-  build:
+   build:
     name: build release assets
-    runs-on: ubuntu-20.04
-    env:
-      WORKING_DIR: wadm
+    runs-on: ${{ matrix.config.os }}
+    env: ${{ matrix.config.env }}
     strategy:
       matrix:
-        target:
-          - x86_64-unknown-linux-gnu
-          - aarch64-unknown-linux-gnu
-          - x86_64-apple-darwin
-          - aarch64-apple-darwin
-          - x86_64-pc-windows-gnu
+        config:
+          # NOTE: We are building on an older version of ubuntu because of libc compatibility
+          # issues. Namely, if we build on a new version of libc, it isn't backwards compatible with
+          # old versions. But if we build on the old version, it is compatible with the newer
+          # versions running in ubuntu 22 and its ilk
+          - {
+              os: "ubuntu-20.04",
+              arch: "amd64",
+              extension: "",
+              env: {},
+              targetPath: "target/release/",
+            }
+          - {
+              os: "ubuntu-20.04",
+              arch: "aarch64",
+              extension: "",
+              env: { OPENSSL_DIR: "/usr/local/openssl-aarch64" },
+              targetPath: "target/aarch64-unknown-linux-gnu/release/",
+            }
+          - {
+              os: "macos-latest",
+              arch: "amd64",
+              extension: "",
+              env: {},
+              targetPath: "target/release/",
+            }
+          - {
+              os: "windows-latest",
+              arch: "amd64",
+              extension: ".exe",
+              env: {},
+              targetPath: "target/release/",
+            }
+          - {
+              os: "macos-latest",
+              arch: "aarch64",
+              extension: "",
+              env: {},
+              targetPath: "target/aarch64-apple-darwin/release/",
+            }
     steps:
-      - name: Checkout
-        uses: actions/checkout@v3
-        with:
-          ref: ${{ github.ref }}
-      - name: Install cross
-        run: cargo install cross 
+      - uses: actions/checkout@v3
+
+      - name: set the release version (tag)
+        if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
-      - name: Build Native Executable
-        working-directory: ${{ env.WORKING_DIR }}
+        run: echo "RELEASE_VERSION=${GITHUB_REF/refs\/tags\//}" >> $GITHUB_ENV
+
+      - name: set the release version (main)
+        if: github.ref == 'refs/heads/main'
+        shell: bash
+        run: echo "RELEASE_VERSION=canary" >> $GITHUB_ENV
+
+      - name: lowercase the runner OS name
+        shell: bash
         run: |
-          cross build --release --target ${{ matrix.target }}
-      - name: Upload Executable to GH Actions
-        uses: actions/upload-artifact@v3
+          OS=$(echo "${{ runner.os }}" | tr '[:upper:]' '[:lower:]')
+          echo "RUNNER_OS=$OS" >> $GITHUB_ENV
+
+      - name: Install latest Rust stable toolchain
+        uses: actions-rs/toolchain@v1
+        if: matrix.config.arch != 'aarch64'
         with:
-          name: ${{ matrix.target }}
+          toolchain: stable
+          default: true
+          components: clippy, rustfmt
+
+      - name: setup for cross-compile builds
+        if: matrix.config.arch == 'aarch64' && matrix.config.os == 'ubuntu-20.04'
+        run: |
+          sudo apt-get update
+          sudo apt install gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+          cd /tmp
+          git clone https://github.com/openssl/openssl
+          cd openssl
+          git checkout OpenSSL_1_1_1l
+          sudo mkdir -p $OPENSSL_DIR
+          ./Configure linux-aarch64 --prefix=$OPENSSL_DIR --openssldir=$OPENSSL_DIR shared
+          make CC=aarch64-linux-gnu-gcc
+          sudo make install
+          rustup target add aarch64-unknown-linux-gnu
+
+      - name: Install latest Rust stable toolchain
+        uses: actions-rs/toolchain@v1
+        if: matrix.config.arch == 'aarch64' && matrix.config.os == 'macos-latest'
+        with:
+          toolchain: stable
+          default: true
+          components: clippy, rustfmt
+          target: aarch64-apple-darwin
+
+      - name: Install latest Rust stable toolchain
+        uses: actions-rs/toolchain@v1
+        if: matrix.config.arch == 'aarch64' && matrix.config.os == 'ubuntu-20.04'
+        with:
+          toolchain: stable
+          default: true
+          components: clippy, rustfmt
+          target: aarch64-unknown-linux-gnu
+
+      - name: build release
+        uses: actions-rs/cargo@v1
+        if: matrix.config.arch != 'aarch64'
+        with:
+          command: build
+          args: "--release --no-default-features --features rustls-tls,cli,server,client,caching"
+
+      - name: build release
+        uses: actions-rs/cargo@v1
+        if: matrix.config.arch == 'aarch64' && matrix.config.os == 'macos-latest'
+        with:
+          command: build
+          args: "--release --no-default-features --features rustls-tls,cli,server,client,caching --target aarch64-apple-darwin"
+
+      - name: build release
+        uses: actions-rs/cargo@v1
+        if: matrix.config.arch == 'aarch64' && matrix.config.os == 'ubuntu-20.04'
+        with:
+          command: build
+          args: "--release --no-default-features --features rustls-tls,cli,server,client,caching --target aarch64-unknown-linux-gnu"
+
+      - uses: actions/upload-artifact@v3
+        with:
+          name: wadm-${{ matrix.config.os }}-${{ matrix.config.arch }}
           if-no-files-found: error
           path: |
-            ${{ env.WORKING_DIR }}/target/${{ matrix.target }}/release/wadm
-            ${{ env.WORKING_DIR }}/target/${{ matrix.target }}/release/wadm.exe
-  
-  # publish to ghcr?
-  publish:
+            ${{ matrix.config.targetPath }}
+       
+   publish:
     name: publish release assets
     runs-on: ubuntu-20.04
     needs: build
