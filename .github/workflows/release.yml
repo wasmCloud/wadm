@@ -118,21 +118,21 @@ jobs:
         if: matrix.config.arch != 'aarch64'
         with:
           command: build
-          args: "--release"
+          args: "--release --bin wadm --features cli"
 
       - name: build release
         uses: actions-rs/cargo@v1
         if: matrix.config.arch == 'aarch64' && matrix.config.os == 'macos-latest'
         with:
           command: build
-          args: "--release --target aarch64-apple-darwin"
+          args: "--release --bin wadm --features cli --target aarch64-apple-darwin"
 
       - name: build release
         uses: actions-rs/cargo@v1
         if: matrix.config.arch == 'aarch64' && matrix.config.os == 'ubuntu-20.04'
         with:
           command: build
-          args: "--release --target aarch64-unknown-linux-gnu"
+          args: "--release --bin wadm --features cli --target aarch64-unknown-linux-gnu"
 
       - uses: actions/upload-artifact@v3
         with:
