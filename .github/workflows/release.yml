@@ -1,10 +1,13 @@
 name: Wadm Release
 on:
   push:
-    tags: ["v*"] # Push events to matching v*, i.e. v1.0, v20.15.10
+    tags: 
+      - "v*" # Push events to matching v*, i.e. v1.0, v20.15.10
+      - "canary"
   workflow_dispatch: # Allow manual creation of artifacts without a release
   pull_request:
-    branches: [main]
+    branches: 
+      - main
 
 jobs:
   build:
@@ -63,6 +66,12 @@ jobs:
 
       - name: set the release version (main)
         if: github.ref == 'refs/heads/main'
+        shell: bash
+        run: echo "RELEASE_VERSION=canary" >> $GITHUB_ENV
+
+      # To manually test workflow
+      - name: set the release version (manually trigger test with canary tag push)
+        if: startsWith(github.ref, 'refs/tags/canary')
         shell: bash
         run: echo "RELEASE_VERSION=canary" >> $GITHUB_ENV
 
