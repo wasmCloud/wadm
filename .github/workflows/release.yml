@@ -111,7 +111,7 @@ jobs:
 
       - name: build release
         if: matrix.config.arch == 'aarch64' && matrix.config.os == 'macos-latest'
-        run: "cargo build--release --bin wadm --features cli --target aarch64-apple-darwin"
+        run: "cargo build --release --bin wadm --features cli --target aarch64-apple-darwin"
 
       - name: build release
         if: matrix.config.arch == 'aarch64' && matrix.config.os == 'ubuntu-20.04'
