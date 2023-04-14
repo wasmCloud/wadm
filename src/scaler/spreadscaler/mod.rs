@@ -17,6 +17,8 @@ use crate::{
     storage::{Actor, Host, ReadStore, WadmActorInstance},
 };
 
+pub mod provider;
+
 // Annotation constants
 const SCALER_KEY: &str = "wasmcloud.dev/scaler";
 const SCALER_VALUE: &str = "spreadscaler";
