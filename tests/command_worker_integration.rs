@@ -116,6 +116,7 @@ async fn test_commands() {
             host_id: host_id.clone(),
             link_name: None,
             model_name: "fake".into(),
+            annotations: HashMap::new(),
         })
         .await;
 
@@ -234,6 +235,7 @@ async fn test_commands() {
             link_name: None,
             host_id: host_id.clone(),
             model_name: "fake".into(),
+            annotations: HashMap::new(),
         })
         .await;
 

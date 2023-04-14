@@ -95,6 +95,8 @@ pub struct StartProvider {
     /// The name of the model/manifest that generated this command
     pub model_name: String,
     // TODO: Do we need to support config_json paths?
+    /// Additional annotations to attach on this command
+    pub annotations: HashMap<String, String>,
 }
 
 from_impl!(StartProvider);
@@ -104,6 +106,7 @@ impl PartialEq for StartProvider {
         self.reference == other.reference
             && self.host_id == other.host_id
             && self.link_name == other.link_name
+            && self.model_name == other.model_name
     }
 }
 
@@ -116,7 +119,7 @@ impl Hash for StartProvider {
 }
 
 /// Struct for the StopProvider command
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, Default)]
+#[derive(Clone, Debug, Eq, Serialize, Deserialize, Default)]
 pub struct StopProvider {
     /// The ID of the provider to stop
     pub provider_id: String,
@@ -128,9 +131,28 @@ pub struct StopProvider {
     pub contract_id: String,
     /// The name of the model/manifest that generated this command
     pub model_name: String,
+    /// Additional annotations to attach on this command
+    pub annotations: HashMap<String, String>,
 }
 
 from_impl!(StopProvider);
+
+impl PartialEq for StopProvider {
+    fn eq(&self, other: &StopProvider) -> bool {
+        self.provider_id == other.provider_id
+            && self.host_id == other.host_id
+            && self.link_name == other.link_name
+            && self.model_name == other.model_name
+    }
+}
+
+impl Hash for StopProvider {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.provider_id.hash(state);
+        self.host_id.hash(state);
+        self.link_name.hash(state);
+    }
+}
 
 /// Struct for the PutLinkdef command
 #[derive(Clone, Debug, Eq, Serialize, Deserialize, Default)]
