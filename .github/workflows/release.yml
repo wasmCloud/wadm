@@ -13,7 +13,6 @@ jobs:
   build:
     name: build release assets
     runs-on: ${{ matrix.config.os }}
-    env: ${{ matrix.config.env }}
     strategy:
       matrix:
         config:
@@ -25,35 +24,30 @@ jobs:
               os: "ubuntu-20.04",
               arch: "amd64",
               extension: "",
-              env: {},
               targetPath: "target/release/",
             }
           - {
               os: "ubuntu-20.04",
               arch: "aarch64",
               extension: "",
-              env: { OPENSSL_DIR: "/usr/local/openssl-aarch64" },
               targetPath: "target/aarch64-unknown-linux-gnu/release/",
             }
           - {
               os: "macos-latest",
               arch: "amd64",
               extension: "",
-              env: {},
               targetPath: "target/release/",
             }
           - {
               os: "windows-latest",
               arch: "amd64",
               extension: ".exe",
-              env: {},
               targetPath: "target/release/",
             }
           - {
               os: "macos-latest",
               arch: "aarch64",
               extension: "",
-              env: {},
               targetPath: "target/aarch64-apple-darwin/release/",
             }
     steps:
