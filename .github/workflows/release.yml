@@ -169,7 +169,7 @@ jobs:
               wadm-${{ env.RELEASE_VERSION }}-linux-amd64/wadm
               wadm-${{ env.RELEASE_VERSION }}-macos-aarch64/wadm
               wadm-${{ env.RELEASE_VERSION }}-macos-amd64/wadm
-              wadm-${{ env.RELEASE_VERSION }}-windows-amd64/wadm
+              wadm-${{ env.RELEASE_VERSION }}-windows-amd64/wadm.exe
 
   crate:
     name: Publish crate
@@ -220,7 +220,7 @@ jobs:
 
       - name: Build and push (tag)
         uses: docker/build-push-action@v3
-        if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/canary')
+        if: startsWith(github.ref, 'refs/tags/v')
         with:
           push: true
           tags: ghcr.io/${{ env.OWNER }}/wadm:latest,ghcr.io/${{ env.OWNER }}/wadm:${{ env.RELEASE_VERSION }}
@@ -231,3 +231,11 @@ jobs:
         with:
           push: true
           tags: ghcr.io/${{ env.OWNER }}/wadm:canary
+
+      - name: Build and push (tag)
+        uses: docker/build-push-action@v3
+        if: startsWith(github.ref, 'refs/tags/canary')
+        with:
+          push: true
+          tags: ghcr.io/${{ env.OWNER }}/wadm:${{ env.RELEASE_VERSION }}
+  
