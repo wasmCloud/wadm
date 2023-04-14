@@ -171,6 +171,13 @@ jobs:
             token: ${{ secrets.WADM_GITHUB_TOKEN }}
             prerelease: false
             draft: false
+            files: |
+              checksums-${{ env.RELEASE_VERSION }}.txt
+              wadm-${{ env.RELEASE_VERSION }}-linux-aarch64/wadm
+              wadm-${{ env.RELEASE_VERSION }}-linux-amd64/wadm
+              wadm-${{ env.RELEASE_VERSION }}-macos-aarch64/wadm
+              wadm-${{ env.RELEASE_VERSION }}-macos-amd64/wadm
+              wadm-${{ env.RELEASE_VERSION }}-windows-amd64/wadm
 
   crate:
     name: Publish crate
