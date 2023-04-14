@@ -151,6 +151,11 @@ jobs:
         #########
         - name: download release assets
           uses: actions/download-artifact@v3
+        # Debug Step
+        - name: List Directory Contents
+          run: |
+            echo "Recursively List Root Directory"
+            ls -R
         # If this command does not generate a checksum for all binaries, may need to import vars from previous step
         - name: generate checksums
           run: |
