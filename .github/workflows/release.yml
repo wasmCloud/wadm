@@ -154,23 +154,25 @@ jobs:
             for dir in */; do
               cd "$dir" || continue 
               sum=$(sha256sum * | awk '{ print $1 }')
-              echo "$dir:$sum" >> ../checksums-${{ env.RELEASE_VERSION }}.txt
+              echo "$dir:$sum" >> checksums-${{ env.RELEASE_VERSION }}.txt
               cd ..
             done
+        - name: Package Binaries
+          run:
+            for dir in */; do tar -czvf "${dir%/}.tar.gz" "$dir"; done
         - name: Publish to GHCR
-          env:
-            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-            MESSAGE: "WADM binaries, library, and image release"
-            NAME: "WADM"
-            FILES: |
+          uses: softprops/action-gh-release@v1
+          with:
+            token: ${{ secrets.WADM_GITHUB_TOKEN }}
+            prerelease: false
+            draft: false
+            files: |
               checksums-${{ env.RELEASE_VERSION }}.txt
-              ./wadm-${{ env.RELEASE_VERSION }}-linux-aarch64/wadm
-              ./wadm-${{ env.RELEASE_VERSION }}-linux-amd64/wadm
-              ./wadm-${{ env.RELEASE_VERSION }}-macos-aarch64/wadm
-              ./wadm-${{ env.RELEASE_VERSION }}-macos-amd64/wadm
-              ./wadm-${{ env.RELEASE_VERSION }}-windows-amd64/wadm.exe
-          run: |
-            gh release create ${{ env.RELEASE_VERSION }} -n "${{ env.MESSAGE }}" -t "${{ env.NAME }}" ${{ env.FILES }}
+              wadm-${{ env.RELEASE_VERSION }}-linux-aarch64.tar.gz
+              wadm-${{ env.RELEASE_VERSION }}-linux-amd64.tar.gz
+              wadm-${{ env.RELEASE_VERSION }}-macos-aarch64.tar.gz
+              wadm-${{ env.RELEASE_VERSION }}-macos-amd64.tar.gz
+              wadm-${{ env.RELEASE_VERSION }}-windows-amd64.tar.gz
 
   crate:
     name: Publish crate
