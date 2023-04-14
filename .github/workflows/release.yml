@@ -162,7 +162,7 @@ jobs:
             for dir in */; do
               cd "$dir" || continue 
               sum=$(sha256sum "wadm" | awk '{ print $1 }')
-              echo "$dir:$md5" >> ../checksums-${{ env.RELEASE_VERSION }}.txt
+              echo "$dir:$sum" >> ../checksums-${{ env.RELEASE_VERSION }}.txt
               cd ..
             done
         - name: Publish to GHCR
