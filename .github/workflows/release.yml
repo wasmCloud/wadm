@@ -153,7 +153,7 @@ jobs:
           run: |
             for dir in */; do
               cd "$dir" || continue 
-              sum=$(sha256sum "wadm" | awk '{ print $1 }')
+              sum=$(sha256sum * | awk '{ print $1 }')
               echo "$dir:$sum" >> ../checksums-${{ env.RELEASE_VERSION }}.txt
               cd ..
             done
