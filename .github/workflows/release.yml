@@ -143,11 +143,6 @@ jobs:
     steps:
         - name: download release assets
           uses: actions/download-artifact@v3
-        # Debug Step
-        - name: List Directory Contents
-          run: |
-            echo "Recursively List Root Directory"
-            ls -R
         - name: Generate Checksums
           run: |
             for dir in */; do
