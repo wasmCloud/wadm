@@ -13,6 +13,8 @@ jobs:
   build:
     name: build release assets
     runs-on: ${{ matrix.config.os }}
+    outputs:
+      version_output: ${{ steps.version_output.outputs.version }}
     strategy:
       matrix:
         config:
@@ -68,6 +70,10 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/canary')
         shell: bash
         run: echo "RELEASE_VERSION=canary" >> $GITHUB_ENV
+      
+      - name: Output Version Output
+        id: version_output
+        run: echo "version=$RELEASE_VERSION" >> $GITHUB_OUTPUT
 
       - name: lowercase the runner OS name
         shell: bash
@@ -132,17 +138,9 @@ jobs:
     name: publish release assets
     runs-on: ubuntu-20.04
     needs: build
+    env:
+      RELEASE_VERSION: ${{ needs.build.outputs.version_output }}
     steps:
-        ######## WHY ARE THESE STEPS HERE?
-        - name: set the release version (tag)
-          if: startsWith(github.ref, 'refs/tags/v')
-          shell: bash
-          run: echo "RELEASE_VERSION=${GITHUB_REF/refs\/tags\//}" >> $GITHUB_ENV
-        - name: set the release version (main)
-          if: github.ref == 'refs/heads/main'
-          shell: bash
-          run: echo "RELEASE_VERSION=canary" >> $GITHUB_ENV
-        #########
         - name: download release assets
           uses: actions/download-artifact@v3
         # Debug Step
