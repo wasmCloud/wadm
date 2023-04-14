@@ -157,9 +157,14 @@ jobs:
             echo "Recursively List Root Directory"
             ls -R
         # If this command does not generate a checksum for all binaries, may need to import vars from previous step
-        - name: generate checksums
+        - name: Generate Checksums
           run: |
-            sha256sum * > checksums-${{ env.RELEASE_VERSION }}.txt
+            for dir in */; do
+              cd "$dir" || continue 
+              sum=$(sha256sum "wadm" | awk '{ print $1 }')
+              echo "$dir:$md5" >> ../checksums-${{ env.RELEASE_VERSION }}.txt
+              cd ..
+            done
         - name: Publish to GHCR
           uses: softprops/action-gh-release@v1
           with:
