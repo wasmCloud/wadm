@@ -220,7 +220,7 @@ jobs:
 
       - name: Build and push (tag)
         uses: docker/build-push-action@v3
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(${{ env.RELEASE_VERSION }}, 'v')
         with:
           push: true
           tags: ghcr.io/${{ env.OWNER }}/wadm:latest,ghcr.io/${{ env.OWNER }}/wadm:${{ env.RELEASE_VERSION }}
@@ -234,7 +234,7 @@ jobs:
 
       - name: Build and push (tag)
         uses: docker/build-push-action@v3
-        if: startsWith(github.ref, 'refs/tags/canary')
+        if: startsWith(${{ env.RELEASE_VERSION }}, 'canary')
         with:
           push: true
           tags: ghcr.io/${{ env.OWNER }}/wadm:${{ env.RELEASE_VERSION }}
