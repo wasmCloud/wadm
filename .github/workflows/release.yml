@@ -92,6 +92,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt install gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+          rustup toolchain install stable-aarch64-unknown-linux-gnu
+          rustup component add clippy
+          rustup component add rustfmt
           rustup target add --toolchain stable-aarch64-unknown-linux-gnu aarch64-unknown-linux-gnu
           echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
           echo "CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
