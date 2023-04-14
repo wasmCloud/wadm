@@ -85,10 +85,11 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt install gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
-          make CC=aarch64-linux-gnu-gcc
-          sudo make install
-          rustup target add aarch64-unknown-linux-gnu
-
+          rustup target add --toolchain stable-aarch64-unknown-linux-gnu aarch64-unknown-linux-gnu
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+          echo "CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc"
+          echo "CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++" >> $GITHUB_ENV
+          
       - name: Install latest Rust stable toolchain
         uses: actions-rs/toolchain@v1
         if: matrix.config.arch == 'aarch64' && matrix.config.os == 'macos-latest'
