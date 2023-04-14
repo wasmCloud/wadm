@@ -71,7 +71,7 @@ jobs:
         shell: bash
         run: echo "RELEASE_VERSION=canary" >> $GITHUB_ENV
       
-      - name: Output Version Output
+      - name: Output Version
         id: version_output
         run: echo "version=$RELEASE_VERSION" >> $GITHUB_OUTPUT
 
@@ -148,7 +148,6 @@ jobs:
           run: |
             echo "Recursively List Root Directory"
             ls -R
-        # If this command does not generate a checksum for all binaries, may need to import vars from previous step
         - name: Generate Checksums
           run: |
             for dir in */; do
@@ -213,7 +212,6 @@ jobs:
         uses: docker/login-action@v2
         with:
           registry: ghcr.io
-          ## CHECK WHAT USERNAME SHOULD BE
           username: ${{ github.repository_owner }}
           password: ${{ secrets.WADM_GITHUB_TOKEN }}
       
