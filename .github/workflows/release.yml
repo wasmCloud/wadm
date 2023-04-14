@@ -158,18 +158,19 @@ jobs:
               cd ..
             done
         - name: Publish to GHCR
-          uses: softprops/action-gh-release@v1
-          with:
-            token: ${{ secrets.WADM_GITHUB_TOKEN }}
-            prerelease: false
-            draft: false
-            files: |
+          env:
+            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            MESSAGE: "WADM binaries, library, and image release"
+            NAME: "WADM"
+            FILES: |
               checksums-${{ env.RELEASE_VERSION }}.txt
               ./wadm-${{ env.RELEASE_VERSION }}-linux-aarch64/wadm
               ./wadm-${{ env.RELEASE_VERSION }}-linux-amd64/wadm
               ./wadm-${{ env.RELEASE_VERSION }}-macos-aarch64/wadm
               ./wadm-${{ env.RELEASE_VERSION }}-macos-amd64/wadm
               ./wadm-${{ env.RELEASE_VERSION }}-windows-amd64/wadm.exe
+          run: |
+            gh release create ${{ env.RELEASE_VERSION }} -n "${{ env.MESSAGE }}" -t "${{ env.NAME }}" ${{ env.FILES }}
 
   crate:
     name: Publish crate
@@ -220,7 +221,7 @@ jobs:
 
       - name: Build and push (tag)
         uses: docker/build-push-action@v3
-        if: startsWith(${{ env.RELEASE_VERSION }}, 'v')
+        if: startsWith(github.ref, 'refs/tags/v')
         with:
           push: true
           tags: ghcr.io/${{ env.OWNER }}/wadm:latest,ghcr.io/${{ env.OWNER }}/wadm:${{ env.RELEASE_VERSION }}
@@ -234,8 +235,7 @@ jobs:
 
       - name: Build and push (canary tag)
         uses: docker/build-push-action@v3
-        if: startsWith(${{ env.RELEASE_VERSION }}, 'canary')
+        if: startsWith(github.ref, 'refs/tags/canary')
         with:
           push: true
           tags: ghcr.io/${{ env.OWNER }}/wadm:${{ env.RELEASE_VERSION }}
-  
