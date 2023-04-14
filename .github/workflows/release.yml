@@ -165,11 +165,11 @@ jobs:
             draft: false
             files: |
               checksums-${{ env.RELEASE_VERSION }}.txt
-              wadm-${{ env.RELEASE_VERSION }}-linux-aarch64/wadm
-              wadm-${{ env.RELEASE_VERSION }}-linux-amd64/wadm
-              wadm-${{ env.RELEASE_VERSION }}-macos-aarch64/wadm
-              wadm-${{ env.RELEASE_VERSION }}-macos-amd64/wadm
-              wadm-${{ env.RELEASE_VERSION }}-windows-amd64/wadm.exe
+              ./wadm-${{ env.RELEASE_VERSION }}-linux-aarch64/wadm
+              ./wadm-${{ env.RELEASE_VERSION }}-linux-amd64/wadm
+              ./wadm-${{ env.RELEASE_VERSION }}-macos-aarch64/wadm
+              ./wadm-${{ env.RELEASE_VERSION }}-macos-amd64/wadm
+              ./wadm-${{ env.RELEASE_VERSION }}-windows-amd64/wadm.exe
 
   crate:
     name: Publish crate
@@ -232,7 +232,7 @@ jobs:
           push: true
           tags: ghcr.io/${{ env.OWNER }}/wadm:canary
 
-      - name: Build and push (tag)
+      - name: Build and push (canary tag)
         uses: docker/build-push-action@v3
         if: startsWith(${{ env.RELEASE_VERSION }}, 'canary')
         with:
