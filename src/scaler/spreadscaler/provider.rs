@@ -3,21 +3,18 @@ use std::{cmp::Ordering, collections::HashMap};
 use anyhow::Result;
 use async_trait::async_trait;
 use tokio::sync::OnceCell;
-use tracing::log::warn;
 
 use crate::{
     commands::{Command, StartProvider, StopProvider},
     events::{Event, HostStarted, HostStopped, ProviderInfo},
-    model::{Spread, SpreadScalerProperty, DEFAULT_SPREAD_WEIGHT},
-    scaler::Scaler,
+    model::{Spread, SpreadScalerProperty},
+    scaler::{
+        spreadscaler::{compute_spread, eligible_hosts, spreadscaler_annotations},
+        Scaler,
+    },
     storage::{Host, Provider, ReadStore},
     DEFAULT_LINK_NAME,
 };
-
-// Annotation constants
-const SCALER_KEY: &str = "wasmcloud.dev/scaler";
-const SCALER_VALUE: &str = "spreadscaler";
-const SPREAD_KEY: &str = "wasmcloud.dev/spread_name";
 
 /// Config for a ProviderSpreadConfig
 pub struct ProviderSpreadConfig {
@@ -33,8 +30,6 @@ pub struct ProviderSpreadConfig {
     model_name: String,
     /// Configuration for this SpreadScaler
     spread_config: SpreadScalerProperty,
-    /// Provider ID, stored in a OnceCell to facilitate more efficient fetches
-    provider_id: OnceCell<String>,
 }
 
 /// The ProviderSpreadScaler ensures that a certain number of provider replicas are running,
@@ -44,9 +39,11 @@ pub struct ProviderSpreadConfig {
 /// on an available host. It's important to note that only one instance of a provider id + link + contract
 /// can run on each host, so it's possible to specify too many replicas to be satisfied by the spread configs.
 pub struct ProviderSpreadScaler<S: ReadStore + Send + Sync> {
+    store: S,
     pub config: ProviderSpreadConfig,
     spread_requirements: Vec<(Spread, usize)>,
-    store: S,
+    /// Provider ID, stored in a OnceCell to facilitate more efficient fetches
+    provider_id: OnceCell<String>,
 }
 
 #[async_trait]
@@ -78,7 +75,7 @@ impl<S: ReadStore + Send + Sync> Scaler for ProviderSpreadScaler<S> {
                 if provider_stopped.contract_id == self.config.provider_contract_id
                     && provider_stopped.link_name == self.config.provider_link_name
                     // If this is None, provider hasn't been started in the lattice yet, so we don't need to reconcile
-                    && self.provider_id().await.map(|id| id == provider_stopped.public_key).unwrap_or(false)
+                    && self.provider_id().await.map(|id| id == &provider_stopped.public_key).unwrap_or(false)
                 {
                     self.reconcile().await
                 } else {
@@ -107,7 +104,7 @@ impl<S: ReadStore + Send + Sync> Scaler for ProviderSpreadScaler<S> {
         let hosts = self.store.list::<Host>(&self.config.lattice_id).await?;
         // Defaulting to empty String is ok here, since it's only going to happen if this provider has never
         // been started in the lattice
-        let provider_id = self.provider_id().await.unwrap_or_default();
+        let provider_id = self.provider_id().await.cloned().unwrap_or_default();
         let contract_id = &self.config.provider_contract_id;
         let link_name = &self.config.provider_link_name;
         let provider_ref = &self.config.provider_reference;
@@ -126,10 +123,10 @@ impl<S: ReadStore + Send + Sync> Scaler for ProviderSpreadScaler<S> {
                                 contract_id: contract_id.to_string(),
                                 link_name: link_name.to_string(),
                                 public_key: provider_id.to_string(),
-                                annotations: self.annotations(&spread.name),
+                                annotations: spreadscaler_annotations(&spread.name),
                             })
                             .map(|provider| {
-                                self.annotations(&spread.name).iter().all(|(k, v)| {
+                                spreadscaler_annotations(&spread.name).iter().all(|(k, v)| {
                                     provider
                                         .annotations
                                         .get(k)
@@ -145,7 +142,7 @@ impl<S: ReadStore + Send + Sync> Scaler for ProviderSpreadScaler<S> {
                     Ordering::Greater => {
                         let num_to_stop = running_for_spread.len() - count;
                         // Take `num_to_stop` commands from this iterator
-                        let commands = running_for_spread
+                        running_for_spread
                             .iter()
                             .map(|host| {
                                 Command::StopProvider(StopProvider {
@@ -154,12 +151,11 @@ impl<S: ReadStore + Send + Sync> Scaler for ProviderSpreadScaler<S> {
                                     link_name: Some(self.config.provider_link_name.to_owned()),
                                     contract_id: self.config.provider_contract_id.to_owned(),
                                     model_name: self.config.model_name.to_owned(),
-                                    annotations: self.annotations(&spread.name),
+                                    annotations: spreadscaler_annotations(&spread.name),
                                 })
                             })
                             .take(num_to_stop)
-                            .collect::<Vec<Command>>();
-                        commands
+                            .collect::<Vec<Command>>()
                     }
                     Ordering::Less => {
                         let num_to_start = count - running_for_spread.len();
@@ -169,7 +165,7 @@ impl<S: ReadStore + Send + Sync> Scaler for ProviderSpreadScaler<S> {
                         // status accordingly once we have a way to.
 
                         // Take `num_to_start` commands from this iterator
-                        let commands = other
+                        other
                             .iter()
                             .filter(|host| {
                                 !host.providers.contains(&ProviderInfo {
@@ -185,13 +181,11 @@ impl<S: ReadStore + Send + Sync> Scaler for ProviderSpreadScaler<S> {
                                     host_id: host.id.to_string(),
                                     link_name: Some(link_name.to_owned()),
                                     model_name: self.config.model_name.to_owned(),
-                                    annotations: self.annotations(&spread.name),
+                                    annotations: spreadscaler_annotations(&spread.name),
                                 })
                             })
                             .take(num_to_start)
-                            .collect::<Vec<Command>>();
-
-                        commands
+                            .collect::<Vec<Command>>()
                     }
                 }
             })
@@ -213,12 +207,12 @@ impl<S: ReadStore + Send + Sync> ProviderSpreadScaler<S> {
         Self {
             store,
             spread_requirements: compute_spread(&spread_config),
+            provider_id: OnceCell::new(),
             config: ProviderSpreadConfig {
                 provider_reference,
                 provider_contract_id,
                 provider_link_name: provider_link_name
                     .unwrap_or_else(|| DEFAULT_LINK_NAME.to_string()),
-                provider_id: OnceCell::new(),
                 lattice_id,
                 spread_config,
                 model_name,
@@ -227,100 +221,20 @@ impl<S: ReadStore + Send + Sync> ProviderSpreadScaler<S> {
     }
 
     /// Helper function to retrieve the provider ID for the configured provider
-    async fn provider_id(&self) -> Option<String> {
-        //TODO: get or try init
-        if let Some(id) = self.config.provider_id.get() {
-            Some(id.to_string())
-        } else if let Some(id) = self
-            .store
-            .list::<Provider>(&self.config.lattice_id)
+    async fn provider_id(&self) -> Option<&String> {
+        self.provider_id
+            .get_or_try_init(|| async {
+                self.store
+                    .list::<Provider>(&self.config.lattice_id)
+                    .await
+                    .unwrap_or_default()
+                    .iter()
+                    .find(|(_id, provider)| provider.reference == self.config.provider_reference)
+                    .map(|(id, _provider)| id.to_owned())
+                    .ok_or_else(|| anyhow::anyhow!("Could not fetch provider ID"))
+            })
             .await
-            .unwrap_or_default()
-            .iter()
-            .find(|(_id, provider)| provider.reference == self.config.provider_reference)
-            .map(|(id, _provider)| id.to_owned())
-        {
-            // We know it's not initialized, so we can ignore the error
-            let _ = self.config.provider_id.set(id.to_owned());
-            Some(id)
-        } else {
-            // Could not fetch provider ID, don't initialize OnceCell and return empty string
-            None
-        }
-    }
-
-    /// Helper function to create a predictable annotations map for a spread
-    fn annotations(&self, spread_name: &str) -> HashMap<String, String> {
-        HashMap::from_iter([
-            (SCALER_KEY.to_string(), SCALER_VALUE.to_string()),
-            (SPREAD_KEY.to_string(), spread_name.to_string()),
-        ])
-    }
-}
-
-/// Helper function that computes a list of eligible hosts to match with a spread
-fn eligible_hosts<'a>(all_hosts: &'a HashMap<String, Host>, spread: &Spread) -> Vec<&'a Host> {
-    all_hosts
-        .iter()
-        .filter(|(_id, host)| {
-            spread
-                .requirements
-                .iter()
-                .all(|(key, value)| host.labels.get(key).map(|v| v.eq(value)).unwrap_or(false))
-        })
-        .map(|(_id, host)| host)
-        .collect::<Vec<&Host>>()
-}
-
-/// Given a spread config, return a vector of tuples that represents the spread
-/// and the actual number of actors to start for a specific spread requirement
-fn compute_spread(spread_config: &SpreadScalerProperty) -> Vec<(Spread, usize)> {
-    let replicas = spread_config.replicas;
-    let total_weight = spread_config
-        .spread
-        .iter()
-        .map(|s| s.weight.unwrap_or(DEFAULT_SPREAD_WEIGHT))
-        .sum::<usize>();
-
-    let spreads: Vec<(Spread, usize)> = spread_config
-        .spread
-        .iter()
-        .map(|s| {
-            (
-                s.to_owned(),
-                // Order is important here since usizes chop off remaining decimals
-                (replicas * s.weight.unwrap_or(DEFAULT_SPREAD_WEIGHT)) / total_weight,
-            )
-        })
-        .collect();
-
-    // Because of math, we may end up rounding a few instances away. Evenly distribute them
-    // among the remaining hosts
-    let total_replicas = spreads.iter().map(|(_s, count)| count).sum::<usize>();
-    match total_replicas.cmp(&replicas) {
-        Ordering::Less => {
-            // Take the remainder of replicas and evenly distribute among remaining spreads
-            let mut diff = replicas - total_replicas;
-            spreads
-                .into_iter()
-                .map(|(spread, count)| {
-                    let additional = if diff > 0 {
-                        diff -= 1;
-                        1
-                    } else {
-                        0
-                    };
-                    (spread, count + additional)
-                })
-                .collect()
-        }
-        // This isn't possible (usizes round down) but I added an arm _just in case_
-        // there was a case that I didn't imagine
-        Ordering::Greater => {
-            warn!("Requesting more provider instances than were specified");
-            spreads
-        }
-        Ordering::Equal => spreads,
+            .ok()
     }
 }
 
@@ -338,7 +252,10 @@ mod test {
         commands::{Command, StartProvider, StopProvider},
         events::ProviderInfo,
         model::{Spread, SpreadScalerProperty},
-        scaler::{spreadscaler::provider::ProviderSpreadScaler, Scaler},
+        scaler::{
+            spreadscaler::{provider::ProviderSpreadScaler, spreadscaler_annotations},
+            Scaler,
+        },
         storage::{Host, Provider, ProviderStatus, Store},
         test_util::TestStore,
         DEFAULT_LINK_NAME,
@@ -462,12 +379,12 @@ mod test {
                         host_id: host_id_one.to_string(),
                         link_name: Some(DEFAULT_LINK_NAME.to_string()),
                         model_name: MODEL_NAME.to_string(),
-                        annotations: spreadscaler.annotations("SimpleOne"),
+                        annotations: spreadscaler_annotations("SimpleOne"),
                     }
                 );
                 // This manual assertion is because we don't hash on annotations and I want to be extra sure we have the
                 // correct ones
-                assert_eq!(start.annotations, spreadscaler.annotations("SimpleOne"))
+                assert_eq!(start.annotations, spreadscaler_annotations("SimpleOne"))
             }
             Some(_other) => panic!("command should have been a start provider"),
         }
@@ -483,12 +400,12 @@ mod test {
                         host_id: host_id_two.to_string(),
                         link_name: Some(DEFAULT_LINK_NAME.to_string()),
                         model_name: MODEL_NAME.to_string(),
-                        annotations: spreadscaler.annotations("SimpleTwo"),
+                        annotations: spreadscaler_annotations("SimpleTwo"),
                     }
                 );
                 // This manual assertion is because we don't hash on annotations and I want to be extra sure we have the
                 // correct ones
-                assert_eq!(start.annotations, spreadscaler.annotations("SimpleTwo"))
+                assert_eq!(start.annotations, spreadscaler_annotations("SimpleTwo"))
             }
             Some(_other) => panic!("command should have been a start provider"),
         }
@@ -564,7 +481,7 @@ mod test {
                         contract_id: "prov:ider".to_string(),
                         link_name: DEFAULT_LINK_NAME.to_string(),
                         public_key: provider_id.to_string(),
-                        annotations: spreadscaler.annotations("ComplexOne"),
+                        annotations: spreadscaler_annotations("ComplexOne"),
                     }]),
                     uptime_seconds: 123,
                     version: None,
@@ -630,7 +547,7 @@ mod test {
                         contract_id: "prov:ider".to_string(),
                         link_name: DEFAULT_LINK_NAME.to_string(),
                         public_key: provider_id.to_string(),
-                        annotations: spreadscaler.annotations("ComplexOne"),
+                        annotations: spreadscaler_annotations("ComplexOne"),
                     }]),
                     uptime_seconds: 123,
                     version: None,
@@ -689,7 +606,7 @@ mod test {
                         link_name: Some(DEFAULT_LINK_NAME.to_string()),
                         contract_id: "prov:ider".to_string(),
                         model_name: MODEL_NAME.to_string(),
-                        annotations: spreadscaler.annotations("ComplexOne")
+                        annotations: spreadscaler_annotations("ComplexOne")
                     }
                 );
             }
@@ -702,12 +619,12 @@ mod test {
                         link_name: Some(DEFAULT_LINK_NAME.to_string()),
                         contract_id: "prov:ider".to_string(),
                         model_name: MODEL_NAME.to_string(),
-                        annotations: spreadscaler.annotations("ComplexOne")
+                        annotations: spreadscaler_annotations("ComplexOne")
                     }
                 );
                 // This manual assertion is because we don't hash on annotations and I want to be extra sure we have the
                 // correct ones
-                assert_eq!(stop.annotations, spreadscaler.annotations("ComplexOne"))
+                assert_eq!(stop.annotations, spreadscaler_annotations("ComplexOne"))
             }
             (_, _) => panic!("command should have been a stop provider"),
         }
@@ -722,12 +639,12 @@ mod test {
                         host_id: host_id_two.to_string(),
                         link_name: Some(DEFAULT_LINK_NAME.to_string()),
                         model_name: MODEL_NAME.to_string(),
-                        annotations: spreadscaler.annotations("ComplexTwo")
+                        annotations: spreadscaler_annotations("ComplexTwo")
                     }
                 );
                 // This manual assertion is because we don't hash on annotations and I want to be extra sure we have the
                 // correct ones
-                assert_eq!(start.annotations, spreadscaler.annotations("ComplexTwo"))
+                assert_eq!(start.annotations, spreadscaler_annotations("ComplexTwo"))
             }
             Some(_other) => panic!("command should have been a start provider"),
         }
@@ -742,12 +659,12 @@ mod test {
                         host_id: host_id_three.to_string(),
                         link_name: Some(DEFAULT_LINK_NAME.to_string()),
                         model_name: MODEL_NAME.to_string(),
-                        annotations: spreadscaler.annotations("ComplexTwo")
+                        annotations: spreadscaler_annotations("ComplexTwo")
                     }
                 );
                 // This manual assertion is because we don't hash on annotations and I want to be extra sure we have the
                 // correct ones
-                assert_eq!(start.annotations, spreadscaler.annotations("ComplexTwo"))
+                assert_eq!(start.annotations, spreadscaler_annotations("ComplexTwo"))
             }
             Some(_other) => panic!("command should have been a start provider"),
         }
