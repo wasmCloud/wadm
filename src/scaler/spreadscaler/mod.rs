@@ -151,7 +151,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
                                     instances
                                         .iter()
                                         .filter(|instance| {
-                                            self.annotations(&spread.name).iter().all(
+                                            spreadscaler_annotations(&spread.name).iter().all(
                                                 |(key, value)| {
                                                     instance
                                                         .annotations
@@ -176,7 +176,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
                             host_id: first_host.id.to_owned(),
                             count: count - current_count,
                             model_name: self.config.model_name.to_owned(),
-                            annotations: self.annotations(&spread.name),
+                            annotations: spreadscaler_annotations(&spread.name),
                         })),
                         // Stop actors to reach desired replicas
                         Ordering::Greater => Some(Command::StopActor(StopActor {
@@ -187,7 +187,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
                             host_id: first_host.id.to_owned(),
                             count: current_count - count,
                             model_name: self.config.model_name.to_owned(),
-                            annotations: self.annotations(&spread.name),
+                            annotations: spreadscaler_annotations(&spread.name),
                         })),
                     }
                 } else {
@@ -306,14 +306,14 @@ impl<S: ReadStore + Send + Sync> ActorSpreadScaler<S> {
             .await
             .map(|id| id.as_str())
     }
+}
 
-    /// Helper function to create a predictable annotations map for a spread
-    fn annotations(&self, spread_name: &str) -> HashMap<String, String> {
-        HashMap::from_iter([
-            (SCALER_KEY.to_string(), SCALER_VALUE.to_string()),
-            (SPREAD_KEY.to_string(), spread_name.to_string()),
-        ])
-    }
+/// Helper function to create a predictable annotations map for a spread
+fn spreadscaler_annotations(spread_name: &str) -> HashMap<String, String> {
+    HashMap::from_iter([
+        (SCALER_KEY.to_string(), SCALER_VALUE.to_string()),
+        (SPREAD_KEY.to_string(), spread_name.to_string()),
+    ])
 }
 
 /// Helper function that computes a list of eligible hosts to match with a spread
@@ -400,7 +400,11 @@ mod test {
             ProviderStarted, ProviderStopped,
         },
         model::{Spread, SpreadScalerProperty},
-        scaler::{manager::ScalerManager, spreadscaler::ActorSpreadScaler, Scaler},
+        scaler::{
+            manager::ScalerManager,
+            spreadscaler::{spreadscaler_annotations, ActorSpreadScaler},
+            Scaler,
+        },
         storage::{Actor, Host, Store, WadmActorInstance},
         test_util::{NoopPublisher, TestLatticeSource, TestStore},
         workers::{CommandPublisher, EventWorker},
@@ -633,28 +637,28 @@ mod test {
             host_id: host_id.to_string(),
             count: 10,
             model_name: MODEL_NAME.to_string(),
-            annotations: spreadscaler.annotations("ComplexOne")
+            annotations: spreadscaler_annotations("ComplexOne")
         })));
         assert!(cmds.contains(&Command::StartActor(StartActor {
             reference: actor_reference.to_string(),
             host_id: host_id.to_string(),
             count: 1,
             model_name: MODEL_NAME.to_string(),
-            annotations: spreadscaler.annotations("ComplexTwo")
+            annotations: spreadscaler_annotations("ComplexTwo")
         })));
         assert!(cmds.contains(&Command::StartActor(StartActor {
             reference: actor_reference.to_string(),
             host_id: host_id.to_string(),
             count: 8,
             model_name: MODEL_NAME.to_string(),
-            annotations: spreadscaler.annotations("ComplexThree")
+            annotations: spreadscaler_annotations("ComplexThree")
         })));
         assert!(cmds.contains(&Command::StartActor(StartActor {
             reference: actor_reference.to_string(),
             host_id: host_id.to_string(),
             count: 84,
             model_name: MODEL_NAME.to_string(),
-            annotations: spreadscaler.annotations("ComplexFour")
+            annotations: spreadscaler_annotations("ComplexFour")
         })));
 
         Ok(())
@@ -762,7 +766,7 @@ mod test {
                             // One instance on this host
                             HashSet::from_iter([WadmActorInstance {
                                 instance_id: "1".to_string(),
-                                annotations: echo_spreadscaler.annotations("RunInFakeCloud"),
+                                annotations: spreadscaler_annotations("RunInFakeCloud"),
                             }]),
                         ),
                         (
@@ -770,7 +774,7 @@ mod test {
                             // 103 instances on this host
                             HashSet::from_iter((2..105).map(|n| WadmActorInstance {
                                 instance_id: format!("{n}"),
-                                annotations: echo_spreadscaler.annotations("RunInRealCloud"),
+                                annotations: spreadscaler_annotations("RunInRealCloud"),
                             })),
                         ),
                         (
@@ -778,7 +782,7 @@ mod test {
                             // 400 instances on this host
                             HashSet::from_iter((105..505).map(|n| WadmActorInstance {
                                 instance_id: format!("{n}"),
-                                annotations: echo_spreadscaler.annotations("RunInPurgatoryCloud"),
+                                annotations: spreadscaler_annotations("RunInPurgatoryCloud"),
                             })),
                         ),
                     ]),
@@ -803,7 +807,7 @@ mod test {
                             // 3 instances on this host
                             HashSet::from_iter((0..3).map(|n| WadmActorInstance {
                                 instance_id: format!("{n}"),
-                                annotations: echo_spreadscaler.annotations("CrossRegionCustom"),
+                                annotations: spreadscaler_annotations("CrossRegionCustom"),
                             })),
                         ),
                         (
@@ -811,7 +815,7 @@ mod test {
                             // 19 instances on this host
                             HashSet::from_iter((3..22).map(|n| WadmActorInstance {
                                 instance_id: format!("{n}"),
-                                annotations: echo_spreadscaler.annotations("CrossRegionReal"),
+                                annotations: spreadscaler_annotations("CrossRegionReal"),
                             })),
                         ),
                     ]),
@@ -1008,7 +1012,7 @@ mod test {
                         // 10 instances on this host under the first spread
                         HashSet::from_iter((0..10).map(|n| WadmActorInstance {
                             instance_id: format!("{n}"),
-                            annotations: spreadscaler.annotations("SimpleOne"),
+                            annotations: spreadscaler_annotations("SimpleOne"),
                         })),
                     )]),
                     reference: actor_reference.to_string(),
@@ -1025,14 +1029,14 @@ mod test {
             host_id: host_id.to_string(),
             count: 5,
             model_name: MODEL_NAME.to_string(),
-            annotations: spreadscaler.annotations("SimpleOne")
+            annotations: spreadscaler_annotations("SimpleOne")
         })));
         assert!(cmds.contains(&Command::StartActor(StartActor {
             reference: actor_reference.to_string(),
             host_id: host_id.to_string(),
             count: 5,
             model_name: MODEL_NAME.to_string(),
-            annotations: spreadscaler.annotations("SimpleTwo")
+            annotations: spreadscaler_annotations("SimpleTwo")
         })));
 
         Ok(())
@@ -1117,7 +1121,7 @@ mod test {
                             // 3 instances on this host
                             HashSet::from_iter((0..3).map(|n| WadmActorInstance {
                                 instance_id: format!("{n}"),
-                                annotations: blobby_spreadscaler.annotations("CrossRegionCustom"),
+                                annotations: spreadscaler_annotations("CrossRegionCustom"),
                             })),
                         ),
                         (
@@ -1125,7 +1129,7 @@ mod test {
                             // 19 instances on this host
                             HashSet::from_iter((3..22).map(|n| WadmActorInstance {
                                 instance_id: format!("{n}"),
-                                annotations: blobby_spreadscaler.annotations("CrossRegionReal"),
+                                annotations: spreadscaler_annotations("CrossRegionReal"),
                             })),
                         ),
                     ]),
