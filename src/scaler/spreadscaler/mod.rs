@@ -17,6 +17,7 @@ use crate::{
     storage::{Actor, Host, ReadStore, WadmActorInstance},
 };
 
+pub mod link;
 pub mod provider;
 
 // Annotation constants
