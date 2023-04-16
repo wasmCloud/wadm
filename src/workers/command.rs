@@ -64,7 +64,9 @@ impl Worker for CommandWorker {
                     .await
             }
             Command::StartProvider(prov) => {
-                let mut annotations = MANAGED_BY_ANNOTATIONS.clone();
+                // Order here is intentional to prevent scalers from overwriting managed annotations
+                let mut annotations = prov.annotations.clone();
+                annotations.extend(MANAGED_BY_ANNOTATIONS.clone());
                 annotations.insert(APP_SPEC_ANNOTATION.to_owned(), prov.model_name.clone());
                 self.client
                     .start_provider(
@@ -77,7 +79,9 @@ impl Worker for CommandWorker {
                     .await
             }
             Command::StopProvider(prov) => {
-                let mut annotations = MANAGED_BY_ANNOTATIONS.clone();
+                // Order here is intentional to prevent scalers from overwriting managed annotations
+                let mut annotations = prov.annotations.clone();
+                annotations.extend(MANAGED_BY_ANNOTATIONS.clone());
                 annotations.insert(APP_SPEC_ANNOTATION.to_owned(), prov.model_name.clone());
                 self.client
                     .stop_provider(

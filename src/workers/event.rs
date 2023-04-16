@@ -1,7 +1,7 @@
 use std::collections::{hash_map::Entry, HashMap, HashSet};
 
 use tracing::{debug, instrument, trace, warn};
-use wasmcloud_control_interface::{ActorDescription, HostInventory, ProviderDescription};
+use wasmcloud_control_interface::{ActorDescription, ProviderDescription};
 
 use crate::commands::Command;
 use crate::consumers::{
