@@ -1,6 +1,6 @@
 [package]
 name = "wadm"
-version = "0.4.0"
+version = "0.4.0-alpha.1"
 edition = "2021"
 
 [features]
@@ -38,9 +38,7 @@ tracing-futures = "0.2"
 tracing-opentelemetry = { version = "0.17", optional = true }
 tracing-subscriber = { version = "0.3.7", features = ["env-filter", "json"], optional = true }
 uuid = "1"
-# Temporary workaround until we can merge and release some fixes to wasmbus that require the use of
-# an older version of nats
-wasmcloud-control-interface = { version = "0.24", git = "https://github.com/thomastaylor312/control-interface-client.git", branch = "tmp/dep_workaround" }
+wasmcloud-control-interface = "0.25"
 semver = { version = "1.0.16", features = [ "serde" ] }
 
 [dev-dependencies]
