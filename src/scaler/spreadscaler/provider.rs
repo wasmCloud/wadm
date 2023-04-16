@@ -1,21 +1,16 @@
-use std::{cmp::Ordering, collections::HashMap, sync::Arc, time::Duration};
+use std::{cmp::Ordering, collections::HashMap};
 
 use anyhow::Result;
 use async_trait::async_trait;
-use rand::{rngs::SmallRng, Rng, SeedableRng};
-use tokio::{
-    sync::{mpsc::Sender, OnceCell, RwLock},
-    time::Instant,
-};
-use tracing::{debug, error, instrument};
-use tracing_futures::Instrument;
+use tokio::sync::{mpsc::Sender, OnceCell};
+use tracing::instrument;
 
 use crate::{
     commands::{Command, StartProvider, StopProvider},
     events::{Event, HostStarted, HostStopped, ProviderInfo},
     model::{Spread, SpreadScalerProperty, TraitProperty},
     scaler::{
-        spreadscaler::{compute_spread, eligible_hosts, spreadscaler_annotations, BACKOFF_TIME},
+        spreadscaler::{compute_spread, eligible_hosts, spreadscaler_annotations},
         Scaler,
     },
     storage::{Host, Provider, ReadStore},
@@ -51,7 +46,6 @@ pub struct ProviderSpreadScaler<S: ReadStore + Send + Sync> {
     spread_requirements: Vec<(Spread, usize)>,
     /// Provider ID, stored in a OnceCell to facilitate more efficient fetches
     provider_id: OnceCell<String>,
-    in_backoff: Arc<RwLock<bool>>,
 }
 
 #[async_trait]
@@ -73,39 +67,31 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
         // the entire reconcile, smart compute exactly what needs to change, but it just
         // requires more code branches and would be fine as a future improvement
         match event {
-            Event::ProviderStarted(provider_started) => {
+            Event::ProviderStarted(provider_started)
                 if provider_started.contract_id == self.config.provider_contract_id
                     && provider_started.image_ref == self.config.provider_reference
-                    && provider_started.link_name == self.config.provider_link_name
-                {
-                    self.reconcile().await
-                } else {
-                    Ok(Vec::new())
-                }
+                    && provider_started.link_name == self.config.provider_link_name =>
+            {
+                self.reconcile().await
             }
-            Event::ProviderStopped(provider_stopped) => {
+            Event::ProviderStopped(provider_stopped)
                 if provider_stopped.contract_id == self.config.provider_contract_id
                     && provider_stopped.link_name == self.config.provider_link_name
                     // If this is None, provider hasn't been started in the lattice yet, so we don't need to reconcile
-                    && self.provider_id().await.map(|id| id == &provider_stopped.public_key).unwrap_or(false)
-                {
-                    self.reconcile().await
-                } else {
-                    Ok(Vec::new())
-                }
+                    && self.provider_id().await.map(|id| id == provider_stopped.public_key).unwrap_or(false) =>
+            {
+                self.reconcile().await
             }
+            // If the host labels match any spread requirement, perform reconcile
             Event::HostStopped(HostStopped { labels, .. })
-            | Event::HostStarted(HostStarted { labels, .. }) => {
-                // If the host labels match any spread requirement, perform reconcile
+            | Event::HostStarted(HostStarted { labels, .. })
                 if self.spread_requirements.iter().any(|(spread, _count)| {
                     spread.requirements.iter().all(|(key, value)| {
                         labels.get(key).map(|val| val == value).unwrap_or(false)
                     })
-                }) {
-                    Ok(Vec::new())
-                } else {
-                    self.reconcile().await
-                }
+                }) =>
+            {
+                self.reconcile().await
             }
             // No other event impacts the job of this scaler so we can ignore it
             _ => Ok(Vec::new()),
@@ -117,7 +103,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
         let hosts = self.store.list::<Host>(&self.config.lattice_id).await?;
         // Defaulting to empty String is ok here, since it's only going to happen if this provider has never
         // been started in the lattice
-        let provider_id = self.provider_id().await.cloned().unwrap_or_default();
+        let provider_id = self.provider_id().await.unwrap_or_default();
         let contract_id = &self.config.provider_contract_id;
         let link_name = &self.config.provider_link_name;
         let provider_ref = &self.config.provider_reference;
@@ -216,7 +202,6 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
             config: config_clone,
             spread_requirements,
             provider_id: self.provider_id.clone(),
-            in_backoff: Arc::new(RwLock::new(false)),
         };
 
         cleanerupper.reconcile().await
@@ -224,42 +209,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
 
     #[instrument(level = "trace", skip_all, fields(name = %self.config.model_name))]
     async fn backoff(&self, notifier: Sender<std::string::String>) {
-        // If we're already in backoff, don't do it again
-        if *self.in_backoff.read().await {
-            return;
-        }
-        // For actors we need to back off because each actor is a new event
-        *(self.in_backoff.write().await) = true;
-        debug!("Set scaler to backoff mode");
-        let in_backoff = self.in_backoff.clone();
-        let model_name = self.config.model_name.clone();
-        // Configure backoff time with a random "jitter" +/- the configured time. This makes it so
-        // that not every single scaler in a wadm cluster tries to reconcile simultaneously after
-        // backoff
-        let mut jitterer = SmallRng::from_entropy();
-        let jitter_time = Duration::from_millis(jitterer.gen_range(0..5000));
-        // Doing this here rather than with the range so that we can get around the fact that the
-        // standard duration is unsigned
-        let backoff_time = if jitterer.gen_bool(0.5) {
-            BACKOFF_TIME + jitter_time
-        } else {
-            BACKOFF_TIME - jitter_time
-        };
-        // Spawn a task to stop backoff after a certain amount of time
-        tokio::spawn(
-            async move {
-                let mut interval =
-                    tokio::time::interval_at(Instant::now() + backoff_time, backoff_time);
-                interval.tick().await;
-                *(in_backoff.write().await) = false;
-                debug!("Scaler backoff complete. Sending notification");
-                if let Err(e) = notifier.send(model_name).await {
-                    // This should only happen if the top level receiver is closed
-                    error!(error = %e, "Got error when trying to send reconcile commands after backoff period");
-                }
-            }
-            .instrument(tracing::debug_span!("backoff_expire", name = %self.config.model_name)),
-        );
+        let _ = notifier.send(String::with_capacity(0)).await;
     }
 }
 
@@ -287,12 +237,11 @@ impl<S: ReadStore + Send + Sync> ProviderSpreadScaler<S> {
                 spread_config,
                 model_name,
             },
-            in_backoff: Arc::new(RwLock::new(false)),
         }
     }
 
     /// Helper function to retrieve the provider ID for the configured provider
-    async fn provider_id(&self) -> Option<&String> {
+    async fn provider_id(&self) -> Result<&str> {
         self.provider_id
             .get_or_try_init(|| async {
                 self.store
@@ -302,10 +251,15 @@ impl<S: ReadStore + Send + Sync> ProviderSpreadScaler<S> {
                     .iter()
                     .find(|(_id, provider)| provider.reference == self.config.provider_reference)
                     .map(|(id, _provider)| id.to_owned())
-                    .ok_or_else(|| anyhow::anyhow!("Could not fetch provider ID"))
+                    .ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "Couldn't find a provider id for the provider reference {}",
+                            self.config.provider_reference
+                        )
+                    })
             })
             .await
-            .ok()
+            .map(|id| id.as_str())
     }
 }
 

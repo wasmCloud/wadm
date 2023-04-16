@@ -30,7 +30,7 @@ use crate::{
     workers::CommandPublisher,
 };
 
-use super::spreadscaler::link::LinkSpreadScaler;
+use super::spreadscaler::{link::LinkScaler, provider::ProviderSpreadScaler};
 
 pub type BoxedScaler = Box<dyn Scaler + Send + Sync + 'static>;
 pub type ScalerList = Vec<BoxedScaler>;
@@ -518,13 +518,14 @@ pub(crate) fn components_to_scalers<S: ReadStore + Send + Sync + Clone + 'static
                                 .iter()
                                 .find_map(|component| match &component.properties {
                                     Properties::Capability(cappy) if component.name == p.target => {
-                                        Some(Box::new(LinkSpreadScaler::new(
+                                        Some(Box::new(LinkScaler::new(
                                             store.clone(),
                                             props.image.to_owned(),
                                             cappy.image.to_owned(),
                                             cappy.contract.to_owned(),
                                             cappy.link_name.to_owned(),
                                             lattice_id.to_owned(),
+                                            name.to_owned(),
                                             p.values.to_owned(),
                                         ))
                                             as BoxedScaler)
@@ -536,11 +537,32 @@ pub(crate) fn components_to_scalers<S: ReadStore + Send + Sync + Clone + 'static
                     }
                 }))
             }
+            (ComponentType::Capability, Properties::Capability(props)) => {
+                scalers.extend(traits.unwrap_or(&EMPTY_TRAIT_VEC).iter().filter_map(|trt| {
+                    match (trt.trait_type.as_str(), &trt.properties) {
+                        (SPREADSCALER_TRAIT, TraitProperty::SpreadScaler(p)) => {
+                            Some(Box::new(ProviderSpreadScaler::new(
+                                store.clone(),
+                                props.image.to_owned(),
+                                props.contract.to_owned(),
+                                props.link_name.to_owned(),
+                                lattice_id.to_owned(),
+                                name.to_owned(),
+                                p.to_owned(),
+                            )) as BoxedScaler)
+                        }
+                        _ => None,
+                    }
+                }))
+            }
+            (ComponentType::Capability, _) => {
+                info!(%name, "Manifest has capablity type and was parsed with a different property type");
+                continue;
+            }
             (ComponentType::Actor, _) => {
                 info!(%name, "Manifest has actor type and was parsed with a different property type");
                 continue;
             }
-            _ => continue,
         }
     }
     scalers
