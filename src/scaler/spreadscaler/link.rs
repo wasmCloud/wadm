@@ -2,11 +2,12 @@ use std::collections::HashMap;
 
 use anyhow::Result;
 use async_trait::async_trait;
-use tokio::sync::OnceCell;
+use tokio::sync::{mpsc::Sender, OnceCell};
 
 use crate::{
     commands::{Command, PutLinkdef},
     events::{Event, LinkdefDeleted},
+    model::TraitProperty,
     scaler::Scaler,
     storage::ReadStore,
     DEFAULT_LINK_NAME,
@@ -24,7 +25,7 @@ pub struct LinkSpreadConfig {
     provider_link_name: String,
     /// The name of the wadm model this SpreadScaler is under
     model_name: String,
-    /// Link configuration values
+    /// Values to attach to this linkdef
     values: HashMap<String, String>,
 }
 
@@ -40,10 +41,9 @@ pub struct LinkSpreadScaler<S: ReadStore + Send + Sync> {
 
 #[async_trait]
 impl<S: ReadStore + Send + Sync> Scaler for LinkSpreadScaler<S> {
-    type Config = LinkSpreadConfig;
-
-    async fn update_config(&mut self, config: Self::Config) -> Result<Vec<Command>> {
-        self.config = config;
+    async fn update_config(&mut self, _config: TraitProperty) -> Result<Vec<Command>> {
+        // NOTE(brooksmtownsend): Updating a link scaler essentially means you're creating
+        // a totally new scaler, so just do that instead.
         self.reconcile().await
     }
 
@@ -93,6 +93,12 @@ impl<S: ReadStore + Send + Sync> Scaler for LinkSpreadScaler<S> {
             Ok(Vec::new())
         }
     }
+
+    async fn cleanup(&self) -> Result<Vec<Command>> {
+        Ok(vec![])
+    }
+
+    async fn backoff(&self, _notifier: Sender<String>) {}
 }
 
 impl<S: ReadStore + Send + Sync> LinkSpreadScaler<S> {
@@ -103,8 +109,8 @@ impl<S: ReadStore + Send + Sync> LinkSpreadScaler<S> {
         provider_reference: String,
         provider_contract_id: String,
         provider_link_name: Option<String>,
-        values: HashMap<String, String>,
         model_name: String,
+        values: HashMap<String, String>,
     ) -> Self {
         Self {
             store,

@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use serde::{Deserialize, Serialize};
 
@@ -198,8 +198,8 @@ pub struct LinkdefProperty {
     /// The target this linkdef applies to. This should be the name of an actor component
     pub target: String,
     /// Values to use for this linkdef
-    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
-    pub values: BTreeMap<String, String>,
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    pub values: HashMap<String, String>,
 }
 
 /// Properties for spread scalers
@@ -306,7 +306,7 @@ mod test {
         trait_vec.push(trait_item);
         let linkdefprop = LinkdefProperty {
             target: "webcap".to_string(),
-            values: BTreeMap::from([("port".to_string(), "4000".to_string())]),
+            values: HashMap::from([("port".to_string(), "4000".to_string())]),
         };
         let trait_item = Trait::new_linkdef(linkdefprop);
         trait_vec.push(trait_item);
