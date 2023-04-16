@@ -24,4 +24,4 @@ COPY --from=builder --chown=$USERNAME /usr/src/wadm/target/x86_64-unknown-linux-
 
 USER $USERNAME
 # Run the application
-CMD ["/usr/local/bin/wadm"]
+ENTRYPOINT ["/usr/local/bin/wadm"]

@@ -3,7 +3,6 @@ on:
   push:
     tags: 
       - "v*" # Push events to matching v*, i.e. v1.0, v20.15.10
-      - "canary"
   workflow_dispatch: # Allow manual creation of artifacts without a release
   pull_request:
     branches: 
@@ -64,13 +63,7 @@ jobs:
         if: github.ref == 'refs/heads/main'
         shell: bash
         run: echo "RELEASE_VERSION=canary" >> $GITHUB_ENV
-
-      # To manually test workflow
-      - name: set the release version (manually trigger test with canary tag push)
-        if: startsWith(github.ref, 'refs/tags/canary')
-        shell: bash
-        run: echo "RELEASE_VERSION=canary" >> $GITHUB_ENV
-      
+  
       - name: Output Version
         id: version_output
         run: echo "version=$RELEASE_VERSION" >> $GITHUB_OUTPUT
@@ -176,10 +169,9 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - name: Install latest Rust stable toolchain
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
-          default: true
       - name: Cargo login
         run: cargo login ${{ secrets.CRATES_TOKEN }}
         shell: bash
@@ -227,10 +219,3 @@ jobs:
         with:
           push: true
           tags: ghcr.io/${{ env.OWNER }}/wadm:canary
-
-      - name: Build and push (canary tag)
-        uses: docker/build-push-action@v3
-        if: startsWith(github.ref, 'refs/tags/canary')
-        with:
-          push: true
-          tags: ghcr.io/${{ env.OWNER }}/wadm:${{ env.RELEASE_VERSION }}
