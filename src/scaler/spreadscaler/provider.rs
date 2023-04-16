@@ -1,15 +1,21 @@
-use std::{cmp::Ordering, collections::HashMap};
+use std::{cmp::Ordering, collections::HashMap, sync::Arc, time::Duration};
 
 use anyhow::Result;
 use async_trait::async_trait;
-use tokio::sync::OnceCell;
+use rand::{rngs::SmallRng, Rng, SeedableRng};
+use tokio::{
+    sync::{mpsc::Sender, OnceCell, RwLock},
+    time::Instant,
+};
+use tracing::{debug, error, instrument};
+use tracing_futures::Instrument;
 
 use crate::{
     commands::{Command, StartProvider, StopProvider},
     events::{Event, HostStarted, HostStopped, ProviderInfo},
-    model::{Spread, SpreadScalerProperty},
+    model::{Spread, SpreadScalerProperty, TraitProperty},
     scaler::{
-        spreadscaler::{compute_spread, eligible_hosts, spreadscaler_annotations},
+        spreadscaler::{compute_spread, eligible_hosts, spreadscaler_annotations, BACKOFF_TIME},
         Scaler,
     },
     storage::{Host, Provider, ReadStore},
@@ -17,6 +23,7 @@ use crate::{
 };
 
 /// Config for a ProviderSpreadConfig
+#[derive(Clone)]
 pub struct ProviderSpreadConfig {
     /// Lattice ID that this SpreadScaler monitors
     lattice_id: String,
@@ -44,18 +51,23 @@ pub struct ProviderSpreadScaler<S: ReadStore + Send + Sync> {
     spread_requirements: Vec<(Spread, usize)>,
     /// Provider ID, stored in a OnceCell to facilitate more efficient fetches
     provider_id: OnceCell<String>,
+    in_backoff: Arc<RwLock<bool>>,
 }
 
 #[async_trait]
-impl<S: ReadStore + Send + Sync> Scaler for ProviderSpreadScaler<S> {
-    type Config = ProviderSpreadConfig;
-
-    async fn update_config(&mut self, config: Self::Config) -> Result<Vec<Command>> {
-        self.spread_requirements = compute_spread(&config.spread_config);
-        self.config = config;
+impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
+    #[instrument(level = "debug", skip_all)]
+    async fn update_config(&mut self, config: TraitProperty) -> Result<Vec<Command>> {
+        let spread_config = match config {
+            TraitProperty::SpreadScaler(prop) => prop,
+            _ => anyhow::bail!("Given config was not a spread scaler config object"),
+        };
+        self.spread_requirements = compute_spread(&spread_config);
+        self.config.spread_config = spread_config;
         self.reconcile().await
     }
 
+    #[instrument(level = "debug", skip_all)]
     async fn handle_event(&self, event: &Event) -> Result<Vec<Command>> {
         // NOTE(brooksmtownsend): We could be more efficient here and instead of running
         // the entire reconcile, smart compute exactly what needs to change, but it just
@@ -100,6 +112,7 @@ impl<S: ReadStore + Send + Sync> Scaler for ProviderSpreadScaler<S> {
         }
     }
 
+    #[instrument(level = "debug", skip_all)]
     async fn reconcile(&self) -> Result<Vec<Command>> {
         let hosts = self.store.list::<Host>(&self.config.lattice_id).await?;
         // Defaulting to empty String is ok here, since it's only going to happen if this provider has never
@@ -191,6 +204,63 @@ impl<S: ReadStore + Send + Sync> Scaler for ProviderSpreadScaler<S> {
             })
             .collect::<Vec<Command>>())
     }
+
+    #[instrument(level = "trace", skip_all, fields(name = %self.config.model_name))]
+    async fn cleanup(&self) -> Result<Vec<Command>> {
+        let mut config_clone = self.config.clone();
+        config_clone.spread_config.replicas = 0;
+        let spread_requirements = compute_spread(&config_clone.spread_config);
+
+        let cleanerupper = ProviderSpreadScaler {
+            store: self.store.clone(),
+            config: config_clone,
+            spread_requirements,
+            provider_id: self.provider_id.clone(),
+            in_backoff: Arc::new(RwLock::new(false)),
+        };
+
+        cleanerupper.reconcile().await
+    }
+
+    #[instrument(level = "trace", skip_all, fields(name = %self.config.model_name))]
+    async fn backoff(&self, notifier: Sender<std::string::String>) {
+        // If we're already in backoff, don't do it again
+        if *self.in_backoff.read().await {
+            return;
+        }
+        // For actors we need to back off because each actor is a new event
+        *(self.in_backoff.write().await) = true;
+        debug!("Set scaler to backoff mode");
+        let in_backoff = self.in_backoff.clone();
+        let model_name = self.config.model_name.clone();
+        // Configure backoff time with a random "jitter" +/- the configured time. This makes it so
+        // that not every single scaler in a wadm cluster tries to reconcile simultaneously after
+        // backoff
+        let mut jitterer = SmallRng::from_entropy();
+        let jitter_time = Duration::from_millis(jitterer.gen_range(0..5000));
+        // Doing this here rather than with the range so that we can get around the fact that the
+        // standard duration is unsigned
+        let backoff_time = if jitterer.gen_bool(0.5) {
+            BACKOFF_TIME + jitter_time
+        } else {
+            BACKOFF_TIME - jitter_time
+        };
+        // Spawn a task to stop backoff after a certain amount of time
+        tokio::spawn(
+            async move {
+                let mut interval =
+                    tokio::time::interval_at(Instant::now() + backoff_time, backoff_time);
+                interval.tick().await;
+                *(in_backoff.write().await) = false;
+                debug!("Scaler backoff complete. Sending notification");
+                if let Err(e) = notifier.send(model_name).await {
+                    // This should only happen if the top level receiver is closed
+                    error!(error = %e, "Got error when trying to send reconcile commands after backoff period");
+                }
+            }
+            .instrument(tracing::debug_span!("backoff_expire", name = %self.config.model_name)),
+        );
+    }
 }
 
 impl<S: ReadStore + Send + Sync> ProviderSpreadScaler<S> {
@@ -217,6 +287,7 @@ impl<S: ReadStore + Send + Sync> ProviderSpreadScaler<S> {
                 spread_config,
                 model_name,
             },
+            in_backoff: Arc::new(RwLock::new(false)),
         }
     }
 
