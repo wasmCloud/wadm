@@ -1,8 +1,9 @@
-name: Test Wadm (v0.4)
+name: Test Wadm
 
 on:
   pull_request:
-    branches: [wadm_0.4]
+    branches:
+      - main
 
 jobs:
   test:
