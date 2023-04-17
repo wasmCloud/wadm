@@ -9,6 +9,7 @@ use tokio::sync::{OnceCell, RwLock};
 use tokio::time::Instant;
 use tracing::{debug, error, instrument, trace, warn, Instrument};
 
+use crate::events::HostHeartbeat;
 use crate::{
     commands::{Command, StartActor, StopActor},
     events::{Event, HostStarted, HostStopped},
@@ -92,7 +93,8 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
                 }
             }
             Event::HostStopped(HostStopped { labels, .. })
-            | Event::HostStarted(HostStarted { labels, .. }) => {
+            | Event::HostStarted(HostStarted { labels, .. })
+            | Event::HostHeartbeat(HostHeartbeat { labels, .. }) => {
                 // If the host labels match any spread requirement, perform reconcile
                 if self.spread_requirements.iter().any(|(spread, _count)| {
                     spread.requirements.iter().all(|(key, value)| {
@@ -353,6 +355,11 @@ fn compute_spread(spread_config: &SpreadScalerProperty) -> Vec<(Spread, usize)> 
         })
         .collect();
 
+    let spreads = if spreads.is_empty() {
+        vec![(Spread::default(), replicas)]
+    } else {
+        spreads
+    };
     // Because of math, we may end up rounding a few instances away. Evenly distribute them
     // among the remaining hosts
     let total_replicas = spreads.iter().map(|(_s, count)| count).sum::<usize>();
@@ -521,9 +528,8 @@ mod test {
         };
 
         let simple_replica_only = compute_spread(&simple_spread_replica_only);
-        // NOTE(brooksmtownsend): The defaut behavior is to return no spreads, consumers
-        // of this function should be responsible for knowing that there are no requirements
-        assert_eq!(simple_replica_only.len(), 0);
+        assert_eq!(simple_replica_only.len(), 1);
+        assert_eq!(simple_replica_only[0].1, 12);
         // Ensure we handle an all around complex case
 
         // Ensure we compute if a weights aren't specified

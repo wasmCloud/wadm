@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::model::{ComponentType, Manifest};
+use crate::model::Manifest;
 
 /// The request body for getting a manifest
 #[derive(Debug, Serialize, Deserialize)]
@@ -170,7 +170,7 @@ pub struct Status {
 pub struct ComponentStatus {
     pub name: String,
     #[serde(rename = "type")]
-    pub component_type: ComponentType,
+    pub component_type: String,
     #[serde(rename = "status")]
     pub info: StatusInfo,
     pub traits: Vec<TraitStatus>,

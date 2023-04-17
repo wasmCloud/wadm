@@ -180,8 +180,23 @@ where
         host: &HostHeartbeat,
     ) -> anyhow::Result<()> {
         debug!("Updating store with current host heartbeat information");
-        // Host updates just overwrite current information, so no need to fetch
-        let host_data = Host::from(host);
+        // TODO(thomastaylor312) We update some annotation data (namely providers) in the Host data
+        // for now. This is not ideal, but for actual consumption, we should probably rewrite the
+        // `Provider` info to handle annotations better
+        let mut host_data = Host::from(host);
+        if let Some(mut current_host_data) = self.store.get::<Host>(lattice_id, &host.id).await? {
+            host_data.providers = host_data
+                .providers
+                .into_iter()
+                .map(|mut info| {
+                    // Taking to avoid clone
+                    if let Some(current_info) = current_host_data.providers.take(&info) {
+                        info.annotations = current_info.annotations;
+                    }
+                    info
+                })
+                .collect();
+        }
         self.store
             .store(lattice_id, host.id.clone(), host_data)
             .await?;
@@ -355,7 +370,7 @@ where
         {
             trace!(host = ?host, "Found existing host data");
 
-            host.providers.insert(ProviderInfo {
+            host.providers.replace(ProviderInfo {
                 contract_id: provider.contract_id.to_owned(),
                 link_name: provider.link_name.to_owned(),
                 public_key: provider.public_key.to_owned(),
@@ -1837,6 +1852,7 @@ mod test {
                 &ProviderHealthCheckInfo {
                     link_name: provider.link_name.clone(),
                     public_key: provider.public_key.clone(),
+                    contract_id: provider.contract_id.clone(),
                 },
                 false,
             )
@@ -1869,6 +1885,7 @@ mod test {
                 &ProviderHealthCheckInfo {
                     link_name: provider.link_name.clone(),
                     public_key: provider.public_key.clone(),
+                    contract_id: provider.contract_id.clone(),
                 },
                 true,
             )
@@ -1944,6 +1961,7 @@ mod test {
                 &ProviderHealthCheckInfo {
                     link_name: link_name.to_string(),
                     public_key: public_key.to_string(),
+                    contract_id: contract_id.to_string(),
                 },
                 false,
             )
