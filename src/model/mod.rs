@@ -82,41 +82,24 @@ pub struct Component {
     /// The name of this component
     pub name: String,
     /// The type of component
-    #[serde(rename = "type")]
-    pub component_type: ComponentType,
     /// The properties for this component
     // NOTE(thomastaylor312): It would probably be better for us to implement a custom deserialze
     // and serialize that combines this and the component type. This is good enough for first draft
+    #[serde(flatten)]
     pub properties: Properties,
     /// A list of various traits assigned to this component
     #[serde(skip_serializing_if = "Option::is_none")]
     pub traits: Option<Vec<Trait>>,
 }
 
-/// All possible component types we support
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub enum ComponentType {
-    /// An Actor component
-    #[serde(rename = "actor")]
-    Actor,
-    /// A Capability component
-    #[serde(rename = "capability")]
-    Capability,
-}
-
-// This impl is here more for convenience
-impl Default for ComponentType {
-    fn default() -> Self {
-        Self::Actor
-    }
-}
-
 /// Properties that can be defined for a component
 #[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(untagged)]
+#[serde(tag = "type")]
 pub enum Properties {
-    Actor(ActorProperties),
-    Capability(CapabilityProperties),
+    #[serde(rename = "actor")]
+    Actor { properties: ActorProperties },
+    #[serde(rename = "capability")]
+    Capability { properties: CapabilityProperties },
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -208,6 +191,7 @@ pub struct SpreadScalerProperty {
     /// Number of replicas to scale
     pub replicas: usize,
     /// Requirements for spreading throse replicas
+    #[serde(default)]
     pub spread: Vec<Spread>,
 }
 
@@ -267,7 +251,6 @@ mod test {
     #[test]
     fn test_custom_traits() {
         let manifest = deserialize_yaml("./oam/custom.yaml").expect("Should be able to parse");
-        println!("{manifest:?}");
         assert!(
             manifest
                 .spec
@@ -278,7 +261,54 @@ mod test {
                     .unwrap_or_default()
                     .into_iter()
                     .any(|t| matches!(t.properties, TraitProperty::Custom(_)))),
-            "Should have found custom properties"
+            "Should have found custom property trait"
+        );
+    }
+
+    #[test]
+    fn test_component_matching() {
+        let manifest = deserialize_yaml("./oam/simple2.yaml").expect("Should be able to parse");
+        assert_eq!(
+            manifest
+                .spec
+                .components
+                .iter()
+                .filter(|component| matches!(component.properties, Properties::Actor { .. }))
+                .count(),
+            1,
+            "Should have found 1 actor property"
+        );
+        assert_eq!(
+            manifest
+                .spec
+                .components
+                .iter()
+                .filter(|component| matches!(component.properties, Properties::Capability { .. }))
+                .count(),
+            2,
+            "Should have found 2 capability properties"
+        );
+    }
+
+    #[test]
+    fn test_trait_matching() {
+        let manifest = deserialize_yaml("./oam/simple2.yaml").expect("Should be able to parse");
+        let traits = manifest
+            .spec
+            .components
+            .into_iter()
+            .find(|component| matches!(component.properties, Properties::Actor { .. }))
+            .expect("Should find actor component")
+            .traits
+            .expect("Should have traits object");
+        assert_eq!(traits.len(), 2, "Should have 2 traits");
+        assert!(
+            matches!(traits[0].properties, TraitProperty::SpreadScaler(_)),
+            "Should have spreadscaler properties"
+        );
+        assert!(
+            matches!(traits[1].properties, TraitProperty::Linkdef(_)),
+            "Should have linkdef properties"
         );
     }
 
@@ -313,21 +343,23 @@ mod test {
         let mut component_vec: Vec<Component> = Vec::new();
         let component_item = Component {
             name: "userinfo".to_string(),
-            component_type: ComponentType::Actor,
-            properties: Properties::Actor(ActorProperties {
-                image: "wasmcloud.azurecr.io/fake:1".to_string(),
-            }),
+            properties: Properties::Actor {
+                properties: ActorProperties {
+                    image: "wasmcloud.azurecr.io/fake:1".to_string(),
+                },
+            },
             traits: Some(trait_vec),
         };
         component_vec.push(component_item);
         let component_item = Component {
             name: "webcap".to_string(),
-            component_type: ComponentType::Capability,
-            properties: Properties::Capability(CapabilityProperties {
-                image: "wasmcloud.azurecr.io/httpserver:0.13.1".to_string(),
-                contract: "wasmcloud:httpserver".to_string(),
-                link_name: Some("default".to_string()),
-            }),
+            properties: Properties::Capability {
+                properties: CapabilityProperties {
+                    image: "wasmcloud.azurecr.io/httpserver:0.13.1".to_string(),
+                    contract: "wasmcloud:httpserver".to_string(),
+                    link_name: Some("default".to_string()),
+                },
+            },
             traits: None,
         };
         component_vec.push(component_item);
@@ -348,12 +380,13 @@ mod test {
         trait_vec.push(trait_item);
         let component_item = Component {
             name: "ledblinky".to_string(),
-            component_type: ComponentType::Capability,
-            properties: Properties::Capability(CapabilityProperties {
-                image: "wasmcloud.azurecr.io/ledblinky:0.0.1".to_string(),
-                contract: "wasmcloud:blinkenlights".to_string(),
-                link_name: Some(crate::DEFAULT_LINK_NAME.to_owned()),
-            }),
+            properties: Properties::Capability {
+                properties: CapabilityProperties {
+                    image: "wasmcloud.azurecr.io/ledblinky:0.0.1".to_string(),
+                    contract: "wasmcloud:blinkenlights".to_string(),
+                    link_name: Some(crate::DEFAULT_LINK_NAME.to_owned()),
+                },
+            },
             traits: Some(trait_vec),
         };
         component_vec.push(component_item);

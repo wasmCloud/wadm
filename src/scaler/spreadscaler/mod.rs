@@ -9,6 +9,7 @@ use tokio::sync::{OnceCell, RwLock};
 use tokio::time::Instant;
 use tracing::{debug, error, instrument, trace, warn, Instrument};
 
+use crate::events::HostHeartbeat;
 use crate::{
     commands::{Command, StartActor, StopActor},
     events::{Event, HostStarted, HostStopped},
@@ -92,7 +93,8 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
                 }
             }
             Event::HostStopped(HostStopped { labels, .. })
-            | Event::HostStarted(HostStarted { labels, .. }) => {
+            | Event::HostStarted(HostStarted { labels, .. })
+            | Event::HostHeartbeat(HostHeartbeat { labels, .. }) => {
                 // If the host labels match any spread requirement, perform reconcile
                 if self.spread_requirements.iter().any(|(spread, _count)| {
                     spread.requirements.iter().all(|(key, value)| {

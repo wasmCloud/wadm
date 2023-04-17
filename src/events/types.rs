@@ -92,6 +92,7 @@ pub enum Event {
     ProviderStartFailed(ProviderStartFailed),
     ProviderHealthCheckPassed(ProviderHealthCheckPassed),
     ProviderHealthCheckFailed(ProviderHealthCheckFailed),
+    ProviderHealthCheckStatus(ProviderHealthCheckStatus),
     HostStarted(HostStarted),
     HostStopped(HostStopped),
     HostHeartbeat(HostHeartbeat),
@@ -120,6 +121,9 @@ impl TryFrom<CloudEvent> for Event {
             }
             ProviderHealthCheckFailed::TYPE => {
                 ProviderHealthCheckFailed::try_from(value).map(Event::ProviderHealthCheckFailed)
+            }
+            ProviderHealthCheckStatus::TYPE => {
+                ProviderHealthCheckStatus::try_from(value).map(Event::ProviderHealthCheckStatus)
             }
             HostStarted::TYPE => HostStarted::try_from(value).map(Event::HostStarted),
             HostStopped::TYPE => HostStopped::try_from(value).map(Event::HostStopped),
@@ -151,6 +155,7 @@ impl Serialize for Event {
             Event::ProviderStartFailed(evt) => evt.serialize(serializer),
             Event::ProviderHealthCheckPassed(evt) => evt.serialize(serializer),
             Event::ProviderHealthCheckFailed(evt) => evt.serialize(serializer),
+            Event::ProviderHealthCheckStatus(evt) => evt.serialize(serializer),
             Event::HostStarted(evt) => evt.serialize(serializer),
             Event::HostStopped(evt) => evt.serialize(serializer),
             Event::HostHeartbeat(evt) => evt.serialize(serializer),
@@ -178,6 +183,7 @@ impl Event {
             Event::ProviderStartFailed(_) => ProviderStopped::TYPE,
             Event::ProviderHealthCheckPassed(_) => ProviderHealthCheckPassed::TYPE,
             Event::ProviderHealthCheckFailed(_) => ProviderHealthCheckFailed::TYPE,
+            Event::ProviderHealthCheckStatus(_) => ProviderHealthCheckStatus::TYPE,
             Event::HostStarted(_) => HostStarted::TYPE,
             Event::HostStopped(_) => HostStopped::TYPE,
             Event::HostHeartbeat(_) => HostHeartbeat::TYPE,
@@ -290,6 +296,9 @@ event_impl!(
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ProviderStopped {
     #[serde(default)]
+    // TODO(thomastaylor312): Yep, there was a spelling bug in the host is 0.62.1. Revert this once
+    // 0.62.2 is out
+    #[serde(rename = "annotaions")]
     pub annotations: HashMap<String, String>,
     pub contract_id: String,
     // TODO: parse as UUID?
@@ -336,6 +345,21 @@ pub struct ProviderHealthCheckFailed {
 event_impl!(
     ProviderHealthCheckFailed,
     "com.wasmcloud.lattice.health_check_failed",
+    source,
+    host_id
+);
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ProviderHealthCheckStatus {
+    #[serde(flatten)]
+    pub data: ProviderHealthCheckInfo,
+    #[serde(default)]
+    pub host_id: String,
+}
+
+event_impl!(
+    ProviderHealthCheckStatus,
+    "com.wasmcloud.lattice.health_check_status",
     source,
     host_id
 );

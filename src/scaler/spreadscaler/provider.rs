@@ -3,11 +3,11 @@ use std::{cmp::Ordering, collections::HashMap};
 use anyhow::Result;
 use async_trait::async_trait;
 use tokio::sync::{mpsc::Sender, OnceCell};
-use tracing::instrument;
+use tracing::{instrument, trace};
 
 use crate::{
     commands::{Command, StartProvider, StopProvider},
-    events::{Event, HostStarted, HostStopped, ProviderInfo},
+    events::{Event, HostHeartbeat, HostStarted, HostStopped, ProviderInfo},
     model::{Spread, SpreadScalerProperty, TraitProperty},
     scaler::{
         spreadscaler::{compute_spread, eligible_hosts, spreadscaler_annotations},
@@ -85,6 +85,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
             // If the host labels match any spread requirement, perform reconcile
             Event::HostStopped(HostStopped { labels, .. })
             | Event::HostStarted(HostStarted { labels, .. })
+            | Event::HostHeartbeat(HostHeartbeat { labels, .. })
                 if self.spread_requirements.iter().any(|(spread, _count)| {
                     spread.requirements.iter().all(|(key, value)| {
                         labels.get(key).map(|val| val == value).unwrap_or(false)
@@ -98,7 +99,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
         }
     }
 
-    #[instrument(level = "debug", skip_all)]
+    #[instrument(level = "debug", skip_all, fields(provider_ref = %self.config.provider_reference, link_name = %self.config.provider_link_name))]
     async fn reconcile(&self) -> Result<Vec<Command>> {
         let hosts = self.store.list::<Host>(&self.config.lattice_id).await?;
         // Defaulting to empty String is ok here, since it's only going to happen if this provider has never
@@ -122,20 +123,27 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
                                 contract_id: contract_id.to_string(),
                                 link_name: link_name.to_string(),
                                 public_key: provider_id.to_string(),
-                                annotations: spreadscaler_annotations(&spread.name),
+                                annotations: HashMap::default(),
                             })
                             .map(|provider| {
                                 spreadscaler_annotations(&spread.name).iter().all(|(k, v)| {
-                                    provider
+                                    let has_annotation = provider
                                         .annotations
                                         .get(k)
                                         .map(|val| val == v)
-                                        .unwrap_or(false)
+                                        .unwrap_or(false);
+                                    if !has_annotation {
+                                        trace!(key = %k, value = %v, "Provider is missing annotation. Expected correct key and value");
+                                    }
+                                    has_annotation
                                 })
                             })
-                            .unwrap_or(false)
+                            .unwrap_or_else(|| {
+                                trace!(%provider_id, "Couldn't find matching provider in host provider list");
+                                false}
+                            )
                     });
-
+                trace!(current = %running_for_spread.len(), expected = %count, "Calculated running providers, reconciling with expected count");
                 match running_for_spread.len().cmp(count) {
                     Ordering::Equal => Vec::new(),
                     Ordering::Greater => {
@@ -250,7 +258,7 @@ impl<S: ReadStore + Send + Sync> ProviderSpreadScaler<S> {
                     .unwrap_or_default()
                     .iter()
                     .find(|(_id, provider)| provider.reference == self.config.provider_reference)
-                    .map(|(id, _provider)| id.to_owned())
+                    .map(|(_id, provider)| provider.id.to_owned())
                     .ok_or_else(|| {
                         anyhow::anyhow!(
                             "Couldn't find a provider id for the provider reference {}",

@@ -3,10 +3,11 @@ use std::collections::HashMap;
 use anyhow::Result;
 use async_trait::async_trait;
 use tokio::sync::{mpsc::Sender, OnceCell};
+use tracing::{instrument, trace};
 
 use crate::{
     commands::{Command, DeleteLinkdef, PutLinkdef},
-    events::{Event, LinkdefDeleted},
+    events::{Event, LinkdefDeleted, ProviderHealthCheckPassed, ProviderHealthCheckStatus},
     model::TraitProperty,
     scaler::Scaler,
     storage::{Actor, Provider, ReadStore},
@@ -59,12 +60,20 @@ impl<S: ReadStore + Send + Sync> Scaler for LinkScaler<S> {
             {
                 self.reconcile().await
             }
-            Event::ProviderStarted(provider_started)
-                if !self.provider_id.initialized()
-                    && provider_started.contract_id == self.config.provider_contract_id
-                    && provider_started.image_ref == self.config.provider_reference
-                    && provider_started.link_name == self.config.provider_link_name =>
+            // TODO(thomastaylor312): Come up with a better way to reconcile on startup rather than
+            // putting a linkdef on every provider status event. Probably need to put a ctl client
+            // in here to do the check, but that was nasty to do right now
+            Event::ProviderHealthCheckPassed(ProviderHealthCheckPassed { data, .. })
+            | Event::ProviderHealthCheckStatus(ProviderHealthCheckStatus { data, .. })
+                if self
+                    .provider_id()
+                    .await
+                    .map(|id| id == data.public_key)
+                    .unwrap_or(false)
+                    && data.contract_id == self.config.provider_contract_id
+                    && data.link_name == self.config.provider_link_name =>
             {
+                // Wait until we know the provider is healthy before we link. This also avoids the race condition
                 self.reconcile().await
             }
             Event::LinkdefDeleted(LinkdefDeleted { linkdef })
@@ -79,9 +88,10 @@ impl<S: ReadStore + Send + Sync> Scaler for LinkScaler<S> {
         }
     }
 
+    #[instrument(level = "trace", skip_all, fields(actor_ref = %self.config.actor_reference, provider_ref = %self.config.provider_reference, link_name = %self.config.provider_link_name))]
     async fn reconcile(&self) -> Result<Vec<Command>> {
-        if let (Some(actor_id), Some(provider_id)) = (self.actor_id.get(), self.provider_id.get()) {
-            //TODO: check to see if linkdef exists. Might need to be deleted first if values differ
+        if let (Ok(actor_id), Ok(provider_id)) = (self.actor_id().await, self.provider_id().await) {
+            // TODO: check to see if linkdef exists. Might need to be deleted first if values differ
             Ok(vec![Command::PutLinkdef(PutLinkdef {
                 actor_id: actor_id.to_owned(),
                 provider_id: provider_id.to_owned(),
@@ -91,6 +101,7 @@ impl<S: ReadStore + Send + Sync> Scaler for LinkScaler<S> {
                 model_name: self.config.model_name.to_owned(),
             })])
         } else {
+            trace!("Actor ID and provider ID are not initialized, skipping linkdef creation");
             Ok(Vec::new())
         }
     }
@@ -155,7 +166,7 @@ impl<S: ReadStore + Send + Sync> LinkScaler<S> {
                     .await?
                     .iter()
                     .find(|(_id, actor)| actor.reference == self.config.actor_reference)
-                    .map(|(id, _actor)| id.to_owned())
+                    .map(|(_id, actor)| actor.id.to_owned())
                     // Default here means the below `get` will find zero running actors, which is fine because
                     // that accurately describes the current lattice having zero instances.
                     .ok_or_else(|| {
@@ -179,7 +190,7 @@ impl<S: ReadStore + Send + Sync> LinkScaler<S> {
                     .unwrap_or_default()
                     .iter()
                     .find(|(_id, provider)| provider.reference == self.config.provider_reference)
-                    .map(|(id, _provider)| id.to_owned())
+                    .map(|(_id, provider)| provider.id.to_owned())
                     .ok_or_else(|| {
                         anyhow::anyhow!(
                             "Couldn't find a provider id for the provider reference {}",

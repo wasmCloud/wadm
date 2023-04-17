@@ -20,7 +20,6 @@ impl PartialEq for ProviderInfo {
         self.public_key == other.public_key
             && self.contract_id == other.contract_id
             && self.link_name == other.link_name
-            && self.annotations == other.annotations
     }
 }
 
@@ -54,6 +53,7 @@ pub struct ProviderHealthCheckInfo {
     pub link_name: String,
     // TODO: Should we make this a parsed nkey?
     pub public_key: String,
+    pub contract_id: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]

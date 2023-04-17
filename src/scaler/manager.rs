@@ -17,12 +17,12 @@ use tokio::{
     },
     task::JoinHandle,
 };
-use tracing::{debug, error, info, instrument, trace, warn};
+use tracing::{debug, error, instrument, trace, warn};
 
 use crate::{
     model::{
-        internal::StoredManifest, Component, ComponentType, Manifest, Properties, Trait,
-        TraitProperty, LINKDEF_TRAIT, SPREADSCALER_TRAIT,
+        internal::StoredManifest, Component, Manifest, Properties, Trait, TraitProperty,
+        LINKDEF_TRAIT, SPREADSCALER_TRAIT,
     },
     publisher::Publisher,
     scaler::{spreadscaler::ActorSpreadScaler, Command, Scaler},
@@ -500,8 +500,8 @@ pub(crate) fn components_to_scalers<S: ReadStore + Send + Sync + Clone + 'static
     let mut scalers: ScalerList = Vec::new();
     for component in components.iter() {
         let traits = component.traits.as_ref();
-        match (&component.component_type, &component.properties) {
-            (ComponentType::Actor, Properties::Actor(props)) => {
+        match &component.properties {
+            Properties::Actor { properties: props } => {
                 scalers.extend(traits.unwrap_or(&EMPTY_TRAIT_VEC).iter().filter_map(|trt| {
                     match (trt.trait_type.as_str(), &trt.properties) {
                         (SPREADSCALER_TRAIT, TraitProperty::SpreadScaler(p)) => {
@@ -517,7 +517,9 @@ pub(crate) fn components_to_scalers<S: ReadStore + Send + Sync + Clone + 'static
                             components
                                 .iter()
                                 .find_map(|component| match &component.properties {
-                                    Properties::Capability(cappy) if component.name == p.target => {
+                                    Properties::Capability { properties: cappy }
+                                        if component.name == p.target =>
+                                    {
                                         Some(Box::new(LinkScaler::new(
                                             store.clone(),
                                             props.image.to_owned(),
@@ -537,7 +539,7 @@ pub(crate) fn components_to_scalers<S: ReadStore + Send + Sync + Clone + 'static
                     }
                 }))
             }
-            (ComponentType::Capability, Properties::Capability(props)) => {
+            Properties::Capability { properties: props } => {
                 scalers.extend(traits.unwrap_or(&EMPTY_TRAIT_VEC).iter().filter_map(|trt| {
                     match (trt.trait_type.as_str(), &trt.properties) {
                         (SPREADSCALER_TRAIT, TraitProperty::SpreadScaler(p)) => {
@@ -554,14 +556,6 @@ pub(crate) fn components_to_scalers<S: ReadStore + Send + Sync + Clone + 'static
                         _ => None,
                     }
                 }))
-            }
-            (ComponentType::Capability, _) => {
-                info!(%name, "Manifest has capablity type and was parsed with a different property type");
-                continue;
-            }
-            (ComponentType::Actor, _) => {
-                info!(%name, "Manifest has actor type and was parsed with a different property type");
-                continue;
             }
         }
     }
