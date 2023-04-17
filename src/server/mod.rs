@@ -116,8 +116,8 @@ impl<S: Store + Send + Sync, P: Publisher> Server<S, P> {
                     lattice_id,
                     category: "model",
                     operation: "put",
-                    object_name: Some(name),
-                } => self.handler.put_model(msg, lattice_id, name).await,
+                    object_name: None,
+                } => self.handler.put_model(msg, lattice_id).await,
                 ParsedSubject {
                     lattice_id,
                     category: "model",

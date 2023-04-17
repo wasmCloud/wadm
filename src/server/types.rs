@@ -38,6 +38,8 @@ pub struct PutModelResponse {
     pub current_version: String,
     #[serde(default)]
     pub message: String,
+    #[serde(default)]
+    pub name: String,
 }
 
 /// Possible outcomes of a put request

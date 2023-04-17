@@ -117,7 +117,7 @@ async fn test_crud_operations() {
         .await
         .expect("Unable to load file");
     let resp: PutModelResponse = test_server
-        .get_response("default.model.put.petclinic", raw, None)
+        .get_response("default.model.put", raw, None)
         .await;
 
     assert_put_response(resp, PutResult::Created, "v0.0.1", 1);
@@ -130,7 +130,7 @@ async fn test_crud_operations() {
         serde_yaml::from_slice(&raw).expect("Should be able to parse as manifest");
 
     let resp: PutModelResponse = test_server
-        .get_response("default.model.put.my-example-app", raw, None)
+        .get_response("default.model.put", raw, None)
         .await;
     assert_put_response(resp, PutResult::Created, "v0.0.1", 1);
 
@@ -169,7 +169,7 @@ async fn test_crud_operations() {
         .insert(VERSION_ANNOTATION_KEY.to_owned(), "v0.0.2".to_owned());
     let resp: PutModelResponse = test_server
         .get_response(
-            "default.model.put.my-example-app",
+            "default.model.put",
             serde_yaml::to_string(&manifest).unwrap().into_bytes(),
             None,
         )
@@ -182,7 +182,7 @@ async fn test_crud_operations() {
         .insert(VERSION_ANNOTATION_KEY.to_owned(), "v0.0.3".to_owned());
     let resp: PutModelResponse = test_server
         .get_response(
-            "default.model.put.my-example-app",
+            "default.model.put",
             serde_yaml::to_string(&manifest).unwrap().into_bytes(),
             None,
         )
@@ -342,7 +342,7 @@ async fn test_bad_requests() {
         .await
         .expect("Unable to load file");
     let resp: PutModelResponse = test_server
-        .get_response("default.model.put.petclinic", raw, None)
+        .get_response("default.model.put", raw, None)
         .await;
 
     assert_put_response(resp, PutResult::Created, "v0.0.1", 1);
@@ -352,7 +352,7 @@ async fn test_bad_requests() {
         .await
         .expect("Unable to load file");
     let resp: PutModelResponse = test_server
-        .get_response("default.model.put.petclinic", raw, None)
+        .get_response("default.model.put", raw, None)
         .await;
 
     assert!(
@@ -371,7 +371,7 @@ async fn test_bad_requests() {
         .annotations
         .insert(VERSION_ANNOTATION_KEY.to_owned(), "latest".to_owned());
     let resp: PutModelResponse = test_server
-        .get_response("default.model.put.petclinic", raw, None)
+        .get_response("default.model.put", raw, None)
         .await;
 
     assert!(
@@ -385,7 +385,7 @@ async fn test_bad_requests() {
         .await
         .expect("Unable to load file");
     let resp: PutModelResponse = test_server
-        .get_response("default.model.put.foobar", raw, None)
+        .get_response("default.model.put", raw, None)
         .await;
 
     assert!(
@@ -422,7 +422,7 @@ async fn test_delete_noop() {
         .await
         .expect("Unable to load file");
     let resp: PutModelResponse = test_server
-        .get_response("default.model.put.petclinic", raw, None)
+        .get_response("default.model.put", raw, None)
         .await;
 
     assert_put_response(resp, PutResult::Created, "v0.0.1", 1);
@@ -455,7 +455,7 @@ async fn test_invalid_topics() {
         .await
         .expect("Unable to load file");
     let resp: PutModelResponse = test_server
-        .get_response("default.model.put.petclinic", raw, None)
+        .get_response("default.model.put", raw, None)
         .await;
 
     assert_put_response(resp, PutResult::Created, "v0.0.1", 1);
@@ -519,7 +519,7 @@ async fn test_manifest_parsing() {
         .expect("Unable to load file");
     let mut manifest: Manifest = serde_json::from_slice(&raw).unwrap();
     let resp: PutModelResponse = test_server
-        .get_response("default.model.put.my-example-app", raw, None)
+        .get_response("default.model.put", raw, None)
         .await;
 
     assert_put_response(resp, PutResult::Created, "v0.0.1", 1);
@@ -530,7 +530,7 @@ async fn test_manifest_parsing() {
         .expect("Unable to load file");
     let resp: PutModelResponse = test_server
         .get_response(
-            "default.model.put.petclinic",
+            "default.model.put",
             raw,
             Some(("Content-Type", "application/yaml")),
         )
@@ -546,7 +546,7 @@ async fn test_manifest_parsing() {
     let raw = serde_json::to_vec(&manifest).unwrap();
     let resp: PutModelResponse = test_server
         .get_response(
-            "default.model.put.my-example-app",
+            "default.model.put",
             raw,
             Some(("Content-Type", "application/json")),
         )
@@ -565,7 +565,7 @@ async fn test_deploy() {
         .expect("Unable to load file");
     let mut manifest: Manifest = serde_yaml::from_slice(&raw).unwrap();
     let resp: PutModelResponse = test_server
-        .get_response("default.model.put.petclinic", raw, None)
+        .get_response("default.model.put", raw, None)
         .await;
 
     assert_put_response(resp, PutResult::Created, "v0.0.1", 1);
@@ -575,7 +575,7 @@ async fn test_deploy() {
         .insert(VERSION_ANNOTATION_KEY.to_owned(), "v0.0.2".to_string());
     let resp: PutModelResponse = test_server
         .get_response(
-            "default.model.put.petclinic",
+            "default.model.put",
             serde_yaml::to_string(&manifest).unwrap().into_bytes(),
             None,
         )
@@ -709,7 +709,7 @@ async fn test_delete_deploy() {
         .expect("Unable to load file");
     let mut manifest: Manifest = serde_yaml::from_slice(&raw).unwrap();
     let resp: PutModelResponse = test_server
-        .get_response("default.model.put.petclinic", raw, None)
+        .get_response("default.model.put", raw, None)
         .await;
 
     assert_put_response(resp, PutResult::Created, "v0.0.1", 1);
@@ -719,7 +719,7 @@ async fn test_delete_deploy() {
         .insert(VERSION_ANNOTATION_KEY.to_owned(), "v0.0.2".to_string());
     let resp: PutModelResponse = test_server
         .get_response(
-            "default.model.put.petclinic",
+            "default.model.put",
             serde_yaml::to_string(&manifest).unwrap().into_bytes(),
             None,
         )
@@ -793,7 +793,7 @@ async fn test_status() {
         .await
         .expect("Unable to load file");
     let resp: PutModelResponse = test_server
-        .get_response("default.model.put.petclinic", raw, None)
+        .get_response("default.model.put", raw, None)
         .await;
     assert_put_response(resp, PutResult::Created, "v0.0.1", 1);
 
