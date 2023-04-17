@@ -23,7 +23,7 @@ pub(crate) struct Handler<S, P> {
 
 impl<S: Store + Send + Sync, P: Publisher> Handler<S, P> {
     #[instrument(level = "debug", skip(self, msg))]
-    pub async fn put_model(&self, msg: Message, lattice_id: &str, name: &str) {
+    pub async fn put_model(&self, msg: Message, lattice_id: &str) {
         trace!("Parsing incoming manifest");
         let manifest = match parse_manifest(msg.payload.into(), msg.headers.as_ref()) {
             Ok(m) => m,
@@ -33,14 +33,6 @@ impl<S: Store + Send + Sync, P: Publisher> Handler<S, P> {
                 return;
             }
         };
-        if manifest.metadata.name != name {
-            self.send_error(
-                msg.reply,
-                "Manifest name doesn't match name from topic".to_string(),
-            )
-            .await;
-            return;
-        }
 
         trace!(
             ?manifest,
@@ -56,15 +48,18 @@ impl<S: Store + Send + Sync, P: Publisher> Handler<S, P> {
             return;
         }
 
-        let mut current_manifests: StoredManifest = match self.store.get(lattice_id, name).await {
-            Ok(d) => d.unwrap_or_default(),
-            Err(e) => {
-                error!(error = %e, "Unable to fetch data from store");
-                self.send_error(msg.reply, "Internal storage error".to_string())
-                    .await;
-                return;
-            }
-        };
+        let manifest_name = manifest.metadata.name.clone();
+
+        let mut current_manifests: StoredManifest =
+            match self.store.get(lattice_id, &manifest_name).await {
+                Ok(d) => d.unwrap_or_default(),
+                Err(e) => {
+                    error!(error = %e, "Unable to fetch data from store");
+                    self.send_error(msg.reply, "Internal storage error".to_string())
+                        .await;
+                    return;
+                }
+            };
 
         let mut resp = PutModelResponse {
             // If we successfully insert, the given manifest version will be the new current version
@@ -74,6 +69,7 @@ impl<S: Store + Send + Sync, P: Publisher> Handler<S, P> {
             } else {
                 PutResult::NewVersion
             },
+            name: manifest_name.clone(),
             total_versions: 0,
             message: "Successfully put manifest".to_owned(),
         };
@@ -91,7 +87,7 @@ impl<S: Store + Send + Sync, P: Publisher> Handler<S, P> {
         trace!(total_manifests = %resp.total_versions, "Storing manifests");
         if let Err(e) = self
             .store
-            .store(lattice_id, name.to_owned(), current_manifests)
+            .store(lattice_id, manifest_name, current_manifests)
             .await
         {
             error!(error = %e, "Unable to store updated data");
