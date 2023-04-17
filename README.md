@@ -24,6 +24,8 @@ issues/missing features to be aware of:
 
 ## Using wadm
 
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://github.com/codespaces/new?hide_repo_select=true&ref=main&repo=401352358&machine=standardLinux32gb&location=EastUs)
+
 ### Install
 
 Ensure you have a proper [rust](https://www.rust-lang.org/tools/install) toolchain installed.

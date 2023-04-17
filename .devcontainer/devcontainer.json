@@ -1,0 +1,12 @@
+{
+	"name": "wadm",
+	"image": "mcr.microsoft.com/devcontainers/base:bullseye",
+	"features": {
+		"ghcr.io/devcontainers/features/rust:1": {
+			"version": "latest"
+		}
+	},
+	"postCreateCommand": "bash ./.devcontainer/install.sh",
+	"workspaceMount": "source=${localWorkspaceFolder},target=/wadm,type=bind,consistency=cached",
+	"workspaceFolder": "/wadm"
+}
