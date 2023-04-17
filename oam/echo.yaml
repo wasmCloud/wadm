@@ -1,0 +1,28 @@
+apiVersion: core.oam.dev/v1beta1
+kind: Application
+metadata:
+  name: echo
+  annotations:
+    version: v0.0.1
+    description: "wasmCloud echo Example"
+spec:
+  components:
+    - name: echo
+      type: actor
+      properties:
+        image: wasmcloud.azurecr.io/echo:0.3.5
+      traits:
+        - type: spreadscaler
+          properties:
+            replicas: 1
+        - type: linkdef
+          properties:
+            target: httpserver
+            values:
+              ADDRESS: 127.0.0.1:8080
+
+    - name: httpserver
+      type: capability
+      properties:
+        image: wasmcloud.azurecr.io/httpserver:0.17.0
+        contract: wasmcloud:httpserver
