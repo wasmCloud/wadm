@@ -64,7 +64,6 @@ Then, use **wadm** to put the manifest and deploy it.
 ```
 wash app put ./echo.yaml
 wash app deploy echo
-
 ```
 
 🎉 You've just launched your first application with **wadm**! Try `curl localhost:8080/wadm` and see the response from the [echo](https://github.com/wasmCloud/examples/tree/main/actor/echo) WebAssembly module.
@@ -80,6 +79,7 @@ wash app undeploy echo
 **wadm** supports upgrading applications by `put`ting new versions of manifests and then `deploy`ing them. Try changing the manifest you created above by updating the number of echo replicas.
 
 ```yaml
+<<ELIDED>>
   name: echo
   annotations:
     version: v0.0.2 # Note the changed version
@@ -94,6 +94,7 @@ spec:
         - type: spreadscaler
           properties:
             replicas: 10 # Let's run 10!
+<<ELIDED>>
 ```
 
 Then, simply deploy the new version:
@@ -113,11 +114,7 @@ _Documentation for configuring the spreadscaler to spread actors and providers a
 
 - **Manage Application Specifications** - Manage models consisting of _desired state_. This includes the creation and deletion and _rollback_ of models to previous versions. Application specifications are defined using the [Open Application Model](https://oam.dev/). For more information on wadm's specific OAM features, see our [OAM README](./oam/README.md).
 - **Observe State** - Monitor wasmCloud [CloudEvents](https://cloudevents.io/) from all hosts in a lattice to build the current state.
-- **Take Compensating Actions** - When indicated, issue commands to the lattice control interface to bring about the changes necessary to make the desired and observed state match.
-
-## API
-
-Interacting with **wadm** is done over NATS on the root topic `wadm.api.{prefix}` where `prefix` is the lattice namespace prefix. For more information on this API, please consult the [wadm Reference](https://wasmcloud.dev/reference/wadm).
+- **Take Compensating Actions** - When indicated, issue commands to the [lattice control interface](https://github.com/wasmCloud/interfaces/tree/main/lattice-control) to bring about the changes necessary to make the desired and observed state match.
 
 ## 🚧 Advanced
 
@@ -127,6 +124,10 @@ In advanced use cases, **wadm** is also capable of:
 - Running multiple replicas to distribute load among multiple processes, or for a high-availability architecture.
 
 🚧 The above functionality is somewhat tested, but not as rigorously as a single instance monitoring a single lattice. Proceed with caution while we do further testing.
+
+### API
+
+Interacting with **wadm** is done over NATS on the root topic `wadm.api.{prefix}` where `prefix` is the lattice namespace prefix. For more information on this API, please consult the [wadm Reference](https://wasmcloud.dev/reference/wadm).
 
 ## References
 
