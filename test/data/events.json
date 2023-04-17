@@ -1,0 +1,336 @@
+[
+    {
+        "data": {
+            "annotations": {},
+            "claims": {
+                "expires_human": "never",
+                "issuer": "ACOJJN6WUP4ODD75XEBKKTCCUJJCY5ZKQ56XVKYK4BEJWGVAOOQHZMCW",
+                "name": "HTTP Server",
+                "not_before_human": "immediately",
+                "tags": null,
+                "version": "0.16.0"
+            },
+            "contract_id": "wasmcloud:httpserver",
+            "image_ref": "wasmcloud.azurecr.io/httpserver:0.16.0",
+            "instance_id": "a518251a-01f6-4ba6-b7f0-5d8458bc875e",
+            "link_name": "default",
+            "public_key": "VAG3QITQQ2ODAOWB5TTQSDJ53XK3SHBEIFNK4AYJ5RKAX2UNSCAPHA5M"
+        },
+        "datacontenttype": "application/json",
+        "id": "5613ee03-8645-4ad8-a3aa-3428a33b7e96",
+        "source": "NB6PMW4RGLBP3NAVUVO2IH34VFJFSX7LF7TJOQCDU4GGUGF3P57SZLPX",
+        "specversion": "1.0",
+        "time": "2023-02-14T19:21:09.011785Z",
+        "type": "com.wasmcloud.lattice.provider_started"
+    },
+    {
+        "data": {
+            "link_name": "default",
+            "public_key": "VAG3QITQQ2ODAOWB5TTQSDJ53XK3SHBEIFNK4AYJ5RKAX2UNSCAPHA5M",
+            "contract_id": "wasmcloud:httpserver"
+        },
+        "datacontenttype": "application/json",
+        "id": "04369697-9397-46e3-99d7-277d867f9acc",
+        "source": "NB6PMW4RGLBP3NAVUVO2IH34VFJFSX7LF7TJOQCDU4GGUGF3P57SZLPX",
+        "specversion": "1.0",
+        "time": "2023-02-14T19:21:14.113113Z",
+        "type": "com.wasmcloud.lattice.health_check_passed"
+    },
+    {
+        "data": {
+            "link_name": "default",
+            "public_key": "VAG3QITQQ2ODAOWB5TTQSDJ53XK3SHBEIFNK4AYJ5RKAX2UNSCAPHA5M",
+            "contract_id": "wasmcloud:httpserver"
+        },
+        "datacontenttype": "application/json",
+        "id": "04369697-9397-46e3-99d7-277d867f9acc",
+        "source": "NB6PMW4RGLBP3NAVUVO2IH34VFJFSX7LF7TJOQCDU4GGUGF3P57SZLPX",
+        "specversion": "1.0",
+        "time": "2023-02-14T19:21:14.113113Z",
+        "type": "com.wasmcloud.lattice.health_check_failed"
+    },
+    {
+        "data": {
+            "link_name": "default",
+            "public_key": "VAG3QITQQ2ODAOWB5TTQSDJ53XK3SHBEIFNK4AYJ5RKAX2UNSCAPHA5M",
+            "contract_id": "wasmcloud:httpserver"
+        },
+        "datacontenttype": "application/json",
+        "id": "04369697-9397-46e3-99d7-277d867f9acc",
+        "source": "NB6PMW4RGLBP3NAVUVO2IH34VFJFSX7LF7TJOQCDU4GGUGF3P57SZLPX",
+        "specversion": "1.0",
+        "time": "2023-02-14T19:21:14.113113Z",
+        "type": "com.wasmcloud.lattice.health_check_status"
+    },
+    {
+        "data": {
+            "annotations": {},
+            "api_version": "n/a",
+            "claims": {
+                "call_alias": null,
+                "caps": [
+                    "wasmcloud:httpserver"
+                ],
+                "expires_human": "never",
+                "issuer": "ACOJJN6WUP4ODD75XEBKKTCCUJJCY5ZKQ56XVKYK4BEJWGVAOOQHZMCW",
+                "name": "Echo",
+                "not_before_human": "immediately",
+                "revision": 4,
+                "tags": [],
+                "version": "0.3.4"
+            },
+            "image_ref": "wasmcloud.azurecr.io/echo:0.3.4",
+            "instance_id": "5ebc4920-cec4-44a6-a718-df4d43d94b09",
+            "public_key": "MBCFOPM6JW2APJLXJD3Z5O4CN7CPYJ2B4FTKLJUR5YR5MITIU7HD3WD5"
+        },
+        "datacontenttype": "application/json",
+        "id": "84ee3ab6-f951-4423-99b6-73ddf58bcd1d",
+        "source": "NB6PMW4RGLBP3NAVUVO2IH34VFJFSX7LF7TJOQCDU4GGUGF3P57SZLPX",
+        "specversion": "1.0",
+        "time": "2023-02-14T19:21:38.222286Z",
+        "type": "com.wasmcloud.lattice.actor_started"
+    },
+    {
+        "data": {
+            "actors": {
+                "MBCFOPM6JW2APJLXJD3Z5O4CN7CPYJ2B4FTKLJUR5YR5MITIU7HD3WD5": 1
+            },
+            "friendly_name": "fragrant-flower-3913",
+            "labels": {
+                "hostcore.arch": "aarch64",
+                "hostcore.os": "macos",
+                "hostcore.osfamily": "unix"
+            },
+            "providers": [
+                {
+                    "contract_id": "wasmcloud:httpserver",
+                    "link_name": "default",
+                    "public_key": "VAG3QITQQ2ODAOWB5TTQSDJ53XK3SHBEIFNK4AYJ5RKAX2UNSCAPHA5M"
+                }
+            ],
+            "uptime_human": "3 minutes, 2 seconds",
+            "uptime_seconds": 182,
+            "version": "0.60.0"
+        },
+        "datacontenttype": "application/json",
+        "id": "ebd7b0d3-36a0-4011-b32a-ebccb9f270e3",
+        "source": "NB6PMW4RGLBP3NAVUVO2IH34VFJFSX7LF7TJOQCDU4GGUGF3P57SZLPX",
+        "specversion": "1.0",
+        "time": "2023-02-14T19:21:48.838573Z",
+        "type": "com.wasmcloud.lattice.host_heartbeat"
+    },
+    {
+        "data": {
+            "actor_id": "MBCFOPM6JW2APJLXJD3Z5O4CN7CPYJ2B4FTKLJUR5YR5MITIU7HD3WD5",
+            "contract_id": "wasmcloud:httpserver",
+            "id": "EC986307FC72C45DBA4699F5AD52702B09800138ACA24BC53339B929423947B6",
+            "link_name": "default",
+            "provider_id": "VAG3QITQQ2ODAOWB5TTQSDJ53XK3SHBEIFNK4AYJ5RKAX2UNSCAPHA5M",
+            "values": {
+                "address": "0.0.0.0:8080"
+            }
+        },
+        "datacontenttype": "application/json",
+        "id": "1d2ea745-5ae6-42f7-887b-f1a25bd7c19d",
+        "source": "n/a",
+        "specversion": "1.0",
+        "time": "2023-02-14T19:22:25.662024Z",
+        "type": "com.wasmcloud.lattice.linkdef_set"
+    },
+    {
+        "data": {
+            "actor_id": "MBCFOPM6JW2APJLXJD3Z5O4CN7CPYJ2B4FTKLJUR5YR5MITIU7HD3WD5",
+            "contract_id": "wasmcloud:httpserver",
+            "id": "EC986307FC72C45DBA4699F5AD52702B09800138ACA24BC53339B929423947B6",
+            "link_name": "default",
+            "provider_id": "VAG3QITQQ2ODAOWB5TTQSDJ53XK3SHBEIFNK4AYJ5RKAX2UNSCAPHA5M",
+            "values": {
+                "address": "0.0.0.0:8080"
+            }
+        },
+        "datacontenttype": "application/json",
+        "id": "e3169b21-1e16-48f8-baf4-337eafcf35ca",
+        "source": "n/a",
+        "specversion": "1.0",
+        "time": "2023-02-14T19:22:57.131368Z",
+        "type": "com.wasmcloud.lattice.linkdef_deleted"
+    },
+    {
+        "data": {
+            "instance_id": "5ebc4920-cec4-44a6-a718-df4d43d94b09",
+            "public_key": "MBCFOPM6JW2APJLXJD3Z5O4CN7CPYJ2B4FTKLJUR5YR5MITIU7HD3WD5"
+        },
+        "datacontenttype": "application/json",
+        "id": "fc22b1cb-5245-404c-9c36-a61ea8d3bac3",
+        "source": "NB6PMW4RGLBP3NAVUVO2IH34VFJFSX7LF7TJOQCDU4GGUGF3P57SZLPX",
+        "specversion": "1.0",
+        "time": "2023-02-14T19:23:01.877353Z",
+        "type": "com.wasmcloud.lattice.actor_stopped"
+    },
+    {
+        "data": {
+            "contract_id": "wasmcloud:httpserver",
+            "instance_id": "a518251a-01f6-4ba6-b7f0-5d8458bc875e",
+            "link_name": "default",
+            "public_key": "VAG3QITQQ2ODAOWB5TTQSDJ53XK3SHBEIFNK4AYJ5RKAX2UNSCAPHA5M",
+            "reason": "normal"
+        },
+        "datacontenttype": "application/json",
+        "id": "ff992d44-d873-45cf-bf34-b07f9db530f3",
+        "source": "NB6PMW4RGLBP3NAVUVO2IH34VFJFSX7LF7TJOQCDU4GGUGF3P57SZLPX",
+        "specversion": "1.0",
+        "time": "2023-02-14T19:23:04.461220Z",
+        "type": "com.wasmcloud.lattice.provider_stopped"
+    },
+    {
+        "data": {
+            "labels": {
+                "hostcore.arch": "aarch64",
+                "hostcore.os": "macos",
+                "hostcore.osfamily": "unix"
+            }
+        },
+        "datacontenttype": "application/json",
+        "id": "ae0b3e97-02f8-4792-a94b-6b00ce8e9cae",
+        "source": "NB6PMW4RGLBP3NAVUVO2IH34VFJFSX7LF7TJOQCDU4GGUGF3P57SZLPX",
+        "specversion": "1.0",
+        "time": "2023-02-14T19:24:43.967009Z",
+        "type": "com.wasmcloud.lattice.host_stopped"
+    },
+    {
+        "data": {
+            "friendly_name": "holy-wildflower-2227",
+            "labels": {
+                "hostcore.arch": "aarch64",
+                "hostcore.os": "macos",
+                "hostcore.osfamily": "unix"
+            }
+        },
+        "datacontenttype": "application/json",
+        "id": "9e3ef37c-cf2c-4f9e-853d-ba3af0fc319c",
+        "source": "NCOGQNZLCJJS2V52A5434BX65RQFNWX5RMP6IIJJATKD3HVAPZJ2ZUXZ",
+        "specversion": "1.0",
+        "time": "2023-02-14T19:26:05.119347Z",
+        "type": "com.wasmcloud.lattice.host_started"
+    },
+    {
+        "data": {
+            "error": "\"Failed to fetch OCI bytes: Registry error: url https://wasmcloud.azurecr.io/v2/httpserver/manifests/latest, envelope: OCI API errors: [OCI API error: manifest tagged by \\\"latest\\\" is not found]\"",
+            "link_name": "default",
+            "provider_ref": "wasmcloud.azurecr.io/httpserver"
+        },
+        "datacontenttype": "application/json",
+        "id": "5a55cf82-713a-4043-be51-ab532d1c8a4d",
+        "source": "NBPNYTVN27FQIEUI6M5L7I4MAJONGNB3E3JUZHQCMYI4JOHQKNKPN5SG",
+        "specversion": "1.0",
+        "time": "2023-03-05T00:14:53.990820Z",
+        "type": "com.wasmcloud.lattice.provider_start_failed"
+    },
+    {
+        "data": {
+            "apiVersion": "core.oam.dev/v1beta1",
+            "kind": "Application",
+            "metadata": {
+                "name": "my-example-app",
+                "annotations": {
+                    "version": "v0.0.1",
+                    "description": "This is my app"
+                }
+            },
+            "spec": {
+                "components": [
+                    {
+                        "name": "userinfo",
+                        "type": "actor",
+                        "properties": {
+                            "image": "wasmcloud.azurecr.io/fake:1"
+                        },
+                        "traits": [
+                            {
+                                "type": "spreadscaler",
+                                "properties": {
+                                    "replicas": 4,
+                                    "spread": [
+                                        {
+                                            "name": "eastcoast",
+                                            "requirements": {
+                                                "zone": "us-east-1"
+                                            },
+                                            "weight": 80
+                                        },
+                                        {
+                                            "name": "westcoast",
+                                            "requirements": {
+                                                "zone": "us-west-1"
+                                            },
+                                            "weight": 20
+                                        }
+                                    ]
+                                }
+                            },
+                            {
+                                "type": "linkdef",
+                                "properties": {
+                                    "target": "webcap",
+                                    "values": {
+                                        "port": "8080"
+                                    }
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "name": "webcap",
+                        "type": "capability",
+                        "properties": {
+                            "contract": "wasmcloud:httpserver",
+                            "image": "wasmcloud.azurecr.io/httpserver:0.13.1",
+                            "link_name": "default"
+                        }
+                    },
+                    {
+                        "name": "ledblinky",
+                        "type": "capability",
+                        "properties": {
+                            "image": "wasmcloud.azurecr.io/ledblinky:0.0.1",
+                            "contract": "wasmcloud:blinkenlights"
+                        },
+                        "traits": [
+                            {
+                                "type": "spreadscaler",
+                                "properties": {
+                                    "replicas": 1,
+                                    "spread": [
+                                        {
+                                            "name": "haslights",
+                                            "requirements": {
+                                                "ledenabled": "true"
+                                            }
+                                        }
+                                    ]
+                                }
+                            }
+                        ]
+                    }
+                ]
+            }
+        },
+        "datacontenttype": "application/json",
+        "id": "5a55cf82-713a-4043-be51-ab532d1c8a4d",
+        "source": "wadm",
+        "specversion": "1.0",
+        "time": "2023-03-05T00:14:53.990820Z",
+        "type": "com.wadm.manifest_published"
+    },
+    {
+        "data": {
+            "name": "foobar"
+        },
+        "datacontenttype": "application/json",
+        "id": "5a55cf82-713a-4043-be51-ab532d1c8a4d",
+        "source": "wadm",
+        "specversion": "1.0",
+        "time": "2023-03-05T00:14:53.990820Z",
+        "type": "com.wadm.manifest_unpublished"
+    }
+]

@@ -45,7 +45,7 @@ spec:
           properties:
             target: webcap
             values:
-              port: 8080
+              port: "8080"
 
     - name: webcap
       type: capability
@@ -67,6 +67,6 @@ spec:
             spread:
               - name: haslights
                 requirements:
-                  ledenabled: true
+                  ledenabled: "true"
                 # default weight is 100
 ```

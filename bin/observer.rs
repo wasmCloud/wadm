@@ -1,0 +1,140 @@
+//! Types for observing a nats cluster for new lattices
+
+use async_nats::Subscriber;
+use futures::{stream::SelectAll, StreamExt, TryFutureExt};
+use tracing::{debug, error, instrument, trace, warn};
+
+use wadm::{
+    consumers::{
+        manager::{ConsumerManager, WorkerCreator},
+        CommandConsumer, EventConsumer,
+    },
+    events::{EventType, HostHeartbeat, HostStarted},
+    mirror::Mirror,
+    nats_utils::LatticeIdParser,
+    storage::{nats_kv::NatsKvStore, reaper::Reaper, ReadStore, Store},
+    DEFAULT_COMMANDS_TOPIC, DEFAULT_WADM_EVENTS_TOPIC,
+};
+
+use super::{CommandWorkerCreator, EventWorkerCreator};
+
+pub(crate) struct Observer<StateStore, ManifestStore> {
+    pub(crate) parser: LatticeIdParser,
+    pub(crate) command_manager: ConsumerManager<CommandConsumer>,
+    pub(crate) event_manager: ConsumerManager<EventConsumer>,
+    pub(crate) mirror: Mirror,
+    pub(crate) client: async_nats::Client,
+    pub(crate) reaper: Reaper<NatsKvStore>,
+    pub(crate) event_worker_creator: EventWorkerCreator<StateStore, ManifestStore>,
+    pub(crate) command_worker_creator: CommandWorkerCreator,
+}
+
+impl<StateStore, ManifestStore> Observer<StateStore, ManifestStore>
+where
+    StateStore: Store + Send + Sync + Clone + 'static,
+    ManifestStore: ReadStore + Send + Sync + Clone + 'static,
+{
+    /// Watches the given topic (with wildcards) for wasmbus events. If it finds a lattice that it
+    /// isn't managing, it will start managing it immediately
+    ///
+    /// If this errors, it should be considered fatal
+    #[instrument(level = "info", skip(self))]
+    pub(crate) async fn observe(mut self, subscribe_topics: Vec<String>) -> anyhow::Result<()> {
+        let mut sub = get_subscriber(&self.client, subscribe_topics.clone()).await?;
+        loop {
+            match sub.next().await {
+                Some(msg) => {
+                    if !is_event_we_care_about(&msg.payload) {
+                        continue;
+                    }
+                    let lattice_id = match self.parser.parse(&msg.subject) {
+                        Some(id) => id,
+                        None => {
+                            trace!(subject = %msg.subject, "Found non-matching lattice subject");
+                            continue;
+                        }
+                    };
+
+                    // Create the reaper for this lattice. This operation returns early if it is
+                    // already running
+                    self.reaper.observe(lattice_id);
+
+                    // Make sure the mirror consumer is up and running. This operation returns early
+                    // if it is already running
+                    if let Err(e) = self.mirror.monitor_lattice(&msg.subject, lattice_id).await {
+                        // If we can't set up the mirror, we can't proceed, so exit early
+                        error!(error = %e, %lattice_id, "Couldn't add mirror consumer. Will retry on next heartbeat");
+                        continue;
+                    }
+
+                    let command_topic = DEFAULT_COMMANDS_TOPIC.replace('*', lattice_id);
+                    let events_topic = DEFAULT_WADM_EVENTS_TOPIC.replace('*', lattice_id);
+                    let needs_command = !self.command_manager.has_consumer(&command_topic).await;
+                    let needs_event = !self.event_manager.has_consumer(&events_topic).await;
+                    if needs_command {
+                        debug!(%lattice_id, subject = %msg.subject, mapped_subject = %command_topic, "Found unmonitored lattice, adding command consumer");
+                        let worker = match self.command_worker_creator.create(lattice_id).await {
+                            Ok(w) => w,
+                            Err(e) => {
+                                error!(error = %e, %lattice_id, "Couldn't construct worker for command consumer. Will retry on next heartbeat");
+                                continue;
+                            }
+                        };
+                        self.command_manager
+                            .add_for_lattice(&command_topic, lattice_id, worker)
+                            .await
+                            .unwrap_or_else(|e| {
+                                error!(error = %e, %lattice_id, "Couldn't add command consumer. Will retry on next heartbeat");
+                            })
+                    }
+                    if needs_event {
+                        debug!(%lattice_id, subject = %msg.subject, mapped_subject = %events_topic,  "Found unmonitored lattice, adding event consumer");
+                        let worker = match self.event_worker_creator.create(lattice_id).await {
+                            Ok(w) => w,
+                            Err(e) => {
+                                error!(error = %e, %lattice_id, "Couldn't construct worker for event consumer. Will retry on next heartbeat");
+                                continue;
+                            }
+                        };
+                        self.event_manager
+                            .add_for_lattice(&events_topic, lattice_id, worker)
+                            .await
+                            .unwrap_or_else(|e| {
+                                error!(error = %e, %lattice_id, "Couldn't add event consumer. Will retry on next heartbeat");
+                            })
+                    }
+                }
+                None => {
+                    warn!("Observer subscriber hang up. Attempting to restart");
+                    sub = get_subscriber(&self.client, subscribe_topics.clone()).await?;
+                }
+            }
+        }
+    }
+}
+
+// This is a stupid hacky function to check that this is a host started or host heartbeat event
+// without actually parsing
+fn is_event_we_care_about(data: &[u8]) -> bool {
+    let string_data = match std::str::from_utf8(data) {
+        Ok(s) => s,
+        Err(_) => return false,
+    };
+
+    string_data.contains(HostStarted::TYPE) || string_data.contains(HostHeartbeat::TYPE)
+}
+
+async fn get_subscriber(
+    client: &async_nats::Client,
+    subscribe_topics: Vec<String>,
+) -> anyhow::Result<SelectAll<Subscriber>> {
+    let futs = subscribe_topics
+        .clone()
+        .into_iter()
+        .map(|t| client.subscribe(t).map_err(|e| anyhow::anyhow!("{e:?}")));
+    let subs: Vec<Subscriber> = futures::future::join_all(futs)
+        .await
+        .into_iter()
+        .collect::<Result<_, anyhow::Error>>()?;
+    Ok(futures::stream::select_all(subs))
+}
