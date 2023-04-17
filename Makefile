@@ -13,6 +13,7 @@ CARGO ?= cargo
 CARGO_WATCH ?= cargo-watch
 CARGO_CLIPPY ?= cargo-clippy
 DOCKER ?= docker
+NATS ?= nats
 
 all: build test
 
@@ -85,4 +86,16 @@ test-int-watch: ## Run integration tests (continuously)
 test-int-all:: ## Run all integration tests
 	$(MAKE) test-int CARGO_TEST_TARGET='*'
 
-.PHONY: check-cargo-watch check-cargo-clippy lint build build-watch test test-watch test-int test-int-all test-int-watch
+###########
+# Cleanup #
+###########
+
+stream-cleanup: ## Purges all streams that wadm creates
+	$(NATS) stream purge wadm_commands --force
+	$(NATS) stream purge wadm_events --force
+	$(NATS) stream purge wadm_notify --force
+	$(NATS) stream purge wadm_mirror --force
+	$(NATS) stream purge KV_wadm_state --force
+	$(NATS) stream purge KV_wadm_manifests --force
+
+.PHONY: check-cargo-watch check-cargo-clippy lint build build-watch test test-watch test-int test-int-all test-int-watch stream-cleanup
