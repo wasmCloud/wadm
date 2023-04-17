@@ -2,7 +2,7 @@
 
 # wasmCloud Application Deployment Manager (wadm)
 
-The wasmCloud Application Deployment Manager (**wadm**) enables declarative wasmCloud applications. It's responsible for managing a set of application deployment specifications, monitoring the current state of an entire [lattice](https://wasmcloud.com/docs/reference/lattice/), and issuing the appropriate lattice control commands required to close the gap between observed and desired state. It is currently in an `alpha` release state and undergoing further rigor and testing approaching a production-ready version.
+The wasmCloud Application Deployment Manager (**wadm**) enables declarative wasmCloud applications. It's responsible for managing a set of application deployment specifications, monitoring the current state of an entire [lattice](https://wasmcloud.com/docs/reference/lattice/), and issuing the appropriate lattice control commands required to close the gap between observed and desired state. It is currently in an `alpha` release state and undergoing further rigor and testing approaching a production-ready `0.4` version.
 
 ## Using wadm
 
@@ -12,7 +12,7 @@ Ensure you have a proper [rust](https://www.rust-lang.org/tools/install) toolcha
 
 ```
 cargo install wash-cli --git https://github.com/wasmcloud/wash --branch feat/wadm_0.4_support --force
-cargo install wadm --git https://github.com/wasmcloud/wadm --version v0.4.0-alpha.1 --force
+cargo install wadm --bin wadm --features cli --git https://github.com/wasmcloud/wadm --version v0.4.0-alpha.1 --force
 ```
 
 You can deploy **wadm** by downloading the binary for your host operating system and architecture, and then running it alongside your wasmCloud host. We recommend using **wash** to run wasmCloud and NATS, and then running **wadm** afterwards connected to the same NATS connection.
@@ -35,13 +35,13 @@ metadata:
   name: echo
   annotations:
     version: v0.0.1
-    description: "wasmCloud echo Example"
+    description: "This is my app"
 spec:
   components:
     - name: echo
       type: actor
       properties:
-        image: wasmcloud.azurecr.io/echo:0.3.5
+        image: wasmcloud.azurecr.io/echo:0.3.7
       traits:
         - type: spreadscaler
           properties:
@@ -50,13 +50,17 @@ spec:
           properties:
             target: httpserver
             values:
-              ADDRESS: 127.0.0.1:8080
+              address: 0.0.0.0:8080
 
     - name: httpserver
       type: capability
       properties:
-        image: wasmcloud.azurecr.io/httpserver:0.17.0
         contract: wasmcloud:httpserver
+        image: wasmcloud.azurecr.io/httpserver:0.17.0
+      traits:
+        - type: spreadscaler
+          properties:
+            replicas: 1
 ```
 
 Then, use **wadm** to put the manifest and deploy it.
