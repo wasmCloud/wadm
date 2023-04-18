@@ -130,6 +130,7 @@ jobs:
     name: publish release assets
     runs-on: ubuntu-20.04
     needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
     env:
       RELEASE_VERSION: ${{ needs.build.outputs.version_output }}
     steps:
