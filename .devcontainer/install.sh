@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# INSTALL WASH
+cargo install wash-cli --git https://github.com/wasmcloud/wash --branch feat/wadm_0.4_support --force 
+
 # INSTALL WADM
 ARCH=$(arch)
 VERSION=v0.4.0-alpha.1
@@ -12,8 +15,6 @@ TARBALL=wadm-$VERSION-linux-$ARCH
 
 curl -fLO https://github.com/wasmCloud/wadm/releases/download/$VERSION/$TARBALL.tar.gz
 tar -xvf $TARBALL.tar.gz
-mv $TARBALL/wadm /usr/local/bin/wadm
+chmod +x $TARBALL/wadm
+mv $TARBALL/wadm /usr/local/cargo/bin/wadm
 rm -rf $TARBALL $TARBALL.tar.gz
-
-# INSTALL WASH
-cargo install wash-cli --git https://github.com/wasmcloud/wash --branch feat/wadm_0.4_support --force 
