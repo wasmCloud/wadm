@@ -6,6 +6,9 @@
 			"version": "latest"
 		}
 	},
+  "containerEnv": {
+		"RUST_LOG": "INFO"
+	},
 	"postCreateCommand": "bash ./.devcontainer/install.sh",
 	"workspaceMount": "source=${localWorkspaceFolder},target=/wadm,type=bind,consistency=cached",
 	"workspaceFolder": "/wadm"

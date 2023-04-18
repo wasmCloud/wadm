@@ -13,11 +13,12 @@ if [[ $ARCH == "x86_64" ]]; then
     ARCH="amd64"
 fi
 
-TARBALL=wadm-$VERSION-linux-$ARCH.tar.gz
+TARBALL=wadm-$VERSION-linux-$ARCH
 
-curl -fLO https://github.com/wasmCloud/wadm/releases/download/$VERSION/$TARBALL
+curl -fLO https://github.com/wasmCloud/wadm/releases/download/$VERSION/$TARBALL.tar.gz
 tar -xvf $TARBALL
 mv $TARBALL/wadm /usr/local/bin/wadm
+rm -rf $TARBALL $TARBALL.tar.gz
 
 # INSTALL WASH
 cargo install wash-cli --git https://github.com/wasmcloud/wash --branch feat/wadm_0.4_support --force 
