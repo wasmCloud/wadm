@@ -2,7 +2,7 @@
 
 A simple devcontainer that has `rust` installed. Try it out with `devcontainer open` at the root of this repository!
 
-As a `postCreateCommand`, we run `cargo install` steps for you to install the proper versions of wash & wadm for experimenting. In the future these will be simplified and much quicker once we release actual artifacts for both projects with support for wadm 0.4.
+As a `postCreateCommand`, we run an install script that grabs an alpha released version of `wadm` for you and installs a compatible (currently unreleased) version of `wash` for you to get started with.
 
 ## Prerequisites
 
