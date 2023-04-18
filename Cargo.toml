@@ -1,7 +1,13 @@
 [package]
 name = "wadm"
+description = "wasmCloud Application Deployment Manager: A tool for running Wasm applications in wasmCloud"
 version = "0.4.0-alpha.1"
 edition = "2021"
+maintainers = ["wasmCloud Team"]
+keywords = ["webassembly", "wasmcloud", "wadm"]
+license = "Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/wasmcloud/wadm"
 
 [features]
 default = []
