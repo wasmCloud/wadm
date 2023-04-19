@@ -117,7 +117,6 @@ async fn start_wash_instance(cfg: &TestWashConfig) -> Result<CleanupGuard> {
     // Build the cleanup guard that will be returned
     let guard = CleanupGuard {
         child: None,
-        // should this be set to true?
         already_running: false,
     };
 
