@@ -117,6 +117,7 @@ async fn start_wash_instance(cfg: &TestWashConfig) -> Result<CleanupGuard> {
     // Build the cleanup guard that will be returned
     let guard = CleanupGuard {
         child: None,
+        // should this be set to true?
         already_running: false,
     };
 
@@ -133,8 +134,11 @@ async fn start_wash_instance(cfg: &TestWashConfig) -> Result<CleanupGuard> {
 }
 
 async fn stop_wash_instance() -> Result<CleanupGuard> {
-    let mut command = tokio::process::Command::new("wash");
-    command.arg("down");
+    let mut cmd = tokio::process::Command::new("wash");
+    cmd.arg("down");
+
+    let output = cmd.status().await.expect("Unable to stop detached wash up");
+    assert!(output.success(), "Error trying to stop host",);
 
     // Give the host time to totally end
     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
