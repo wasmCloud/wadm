@@ -18,6 +18,7 @@ const HTTP_SERVER_PROVIDER_ID: &str = "VAG3QITQQ2ODAOWB5TTQSDJ53XK3SHBEIFNK4AYJ5
 async fn test_commands() {
     let config = TestWashConfig::random().await.unwrap();
     let _guard = setup_test_wash(&config).await;
+    println!("PORT:{:?}", config.nats_port);
 
     let mut wrapper = StreamWrapper::new("commands_integration".into(), config.nats_port).await;
 

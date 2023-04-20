@@ -101,7 +101,17 @@ async fn start_wash_instance(cfg: &TestWashConfig) -> Result<CleanupGuard> {
         .to_string();
 
     // Build args
-    let mut args: Vec<&str> = Vec::from(["up", "-d", "--nats-port", &nats_port]);
+    let mut args: Vec<&str> = Vec::from([
+        "up",
+        "-d",
+        "--nats-port",
+        &nats_port,
+        "--lattice-prefix",
+        "test",
+        "--enable-structured-logging",
+        "--structured-log-level",
+        "debug",
+    ]);
     if cfg.nats_connect_only {
         args.push("--nats-connect-only");
     }
@@ -111,6 +121,10 @@ async fn start_wash_instance(cfg: &TestWashConfig) -> Result<CleanupGuard> {
     cmd.args(&args)
         .env("WASMCLOUD_PORT", &wasmcloud_port)
         .env("WASMCLOUD_DASHBOARD_PORT", &wasmcloud_port)
+        .env(
+            "WASMCLOUD_CLUSTER_SEED",
+            "SCALHM6H4PFVZ5UDN2BJKGLGDCOIYMJZOMTS4ET5YFW5ZWSI3FH4AWAZ6U",
+        )
         .stderr(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped());
 
@@ -130,10 +144,10 @@ async fn start_wash_instance(cfg: &TestWashConfig) -> Result<CleanupGuard> {
     let output = child
         .wait_with_output()
         .await
-        .expect("wash command failed to run");
+        .expect("Error trying to start host");
     // let output = cmd.status().await.expect("Unable to run detached wash up");
     println!("{:?}", output);
-    // assert!(output.success(), "Error trying to start host",);
+    assert!(output.status.success(), "Error trying to start host");
 
     // Make sure we can connect to washboard
     wait_for_server(&cfg.washboard_url()).await;
