@@ -112,23 +112,24 @@ async fn start_wash_instance(cfg: &TestWashConfig) -> Result<CleanupGuard> {
         .env("WASMCLOUD_PORT", &wasmcloud_port)
         .env("WASMCLOUD_DASHBOARD_PORT", &wasmcloud_port)
         .stderr(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .spawn()
-        .expect("wash command failed to start")
-        .wait_with_output()
-        .await
-        .expect("wash command failed to run");
+        .stdout(std::process::Stdio::null());
 
+    let child = cmd.spawn().expect("wash command failed to start");
     println!("{:?}", cmd);
 
+    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
     // Build the cleanup guard that will be returned
     let guard = CleanupGuard {
         child: None,
         already_running: false,
     };
 
+    let output = child
+        .wait_with_output()
+        .await
+        .expect("wash command failed to run");
     // let output = cmd.status().await.expect("Unable to run detached wash up");
-    // println!("{:?}", output);
+    println!("{:?}", output);
     // assert!(output.success(), "Error trying to start host",);
 
     // Make sure we can connect to washboard
