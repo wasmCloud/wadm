@@ -21,8 +21,8 @@ use tracing::{debug, error, instrument, trace, warn};
 
 use crate::{
     model::{
-        internal::StoredManifest, Component, Manifest, Properties, Trait, TraitProperty,
-        LINKDEF_TRAIT, SPREADSCALER_TRAIT,
+        internal::StoredManifest, Component, Manifest, Properties, SpreadScalerProperty, Trait,
+        TraitProperty, LINKDEF_TRAIT, SPREADSCALER_TRAIT,
     },
     publisher::Publisher,
     scaler::{spreadscaler::ActorSpreadScaler, Command, Scaler},
@@ -540,22 +540,38 @@ pub(crate) fn components_to_scalers<S: ReadStore + Send + Sync + Clone + 'static
                 }))
             }
             Properties::Capability { properties: props } => {
-                scalers.extend(traits.unwrap_or(&EMPTY_TRAIT_VEC).iter().filter_map(|trt| {
-                    match (trt.trait_type.as_str(), &trt.properties) {
-                        (SPREADSCALER_TRAIT, TraitProperty::SpreadScaler(p)) => {
-                            Some(Box::new(ProviderSpreadScaler::new(
-                                store.clone(),
-                                props.image.to_owned(),
-                                props.contract.to_owned(),
-                                props.link_name.to_owned(),
-                                lattice_id.to_owned(),
-                                name.to_owned(),
-                                p.to_owned(),
-                            )) as BoxedScaler)
+                if let Some(traits) = traits {
+                    scalers.extend(traits.iter().filter_map(|trt| {
+                        match (trt.trait_type.as_str(), &trt.properties) {
+                            (SPREADSCALER_TRAIT, TraitProperty::SpreadScaler(p)) => {
+                                Some(Box::new(ProviderSpreadScaler::new(
+                                    store.clone(),
+                                    props.image.to_owned(),
+                                    props.contract.to_owned(),
+                                    props.link_name.to_owned(),
+                                    lattice_id.to_owned(),
+                                    name.to_owned(),
+                                    p.to_owned(),
+                                )) as BoxedScaler)
+                            }
+                            _ => None,
                         }
-                        _ => None,
-                    }
-                }))
+                    }))
+                } else {
+                    // Allow providers to omit the scaler entirely for simplicity
+                    scalers.push(Box::new(ProviderSpreadScaler::new(
+                        store.clone(),
+                        props.image.to_owned(),
+                        props.contract.to_owned(),
+                        props.link_name.to_owned(),
+                        lattice_id.to_owned(),
+                        name.to_owned(),
+                        SpreadScalerProperty {
+                            replicas: 1,
+                            spread: vec![],
+                        },
+                    )) as BoxedScaler)
+                }
             }
         }
     }
