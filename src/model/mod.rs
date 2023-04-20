@@ -183,8 +183,8 @@ pub struct LinkdefProperty {
     /// The target this linkdef applies to. This should be the name of an actor component
     pub target: String,
     /// Values to use for this linkdef
-    #[serde(skip_serializing_if = "HashMap::is_empty")]
-    pub values: HashMap<String, String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub values: Option<HashMap<String, String>>,
 }
 
 /// Properties for spread scalers
@@ -324,6 +324,12 @@ mod test {
             matches!(traits[1].properties, TraitProperty::Linkdef(_)),
             "Should have linkdef properties"
         );
+        if let TraitProperty::Linkdef(ld) = &traits[1].properties {
+            assert_eq!(ld.values, None);
+            assert_eq!(ld.target, "webcap".to_string());
+        } else {
+            panic!("trait property was not a link definition");
+        }
     }
 
     #[test]
@@ -350,7 +356,7 @@ mod test {
         trait_vec.push(trait_item);
         let linkdefprop = LinkdefProperty {
             target: "webcap".to_string(),
-            values: HashMap::from([("port".to_string(), "4000".to_string())]),
+            values: Some(HashMap::from([("port".to_string(), "4000".to_string())])),
         };
         let trait_item = Trait::new_linkdef(linkdefprop);
         trait_vec.push(trait_item);

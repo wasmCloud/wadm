@@ -27,8 +27,6 @@ spec:
         - type: linkdef
           properties:
             target: webcap
-            values:
-              port: "8080"
 
     - name: webcap
       type: capability

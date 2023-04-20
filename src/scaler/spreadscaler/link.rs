@@ -138,7 +138,7 @@ impl<S: ReadStore + Send + Sync> LinkScaler<S> {
         provider_link_name: Option<String>,
         lattice_id: String,
         model_name: String,
-        values: HashMap<String, String>,
+        values: Option<HashMap<String, String>>,
     ) -> Self {
         Self {
             store,
@@ -152,7 +152,7 @@ impl<S: ReadStore + Send + Sync> LinkScaler<S> {
                     .unwrap_or_else(|| DEFAULT_LINK_NAME.to_string()),
                 lattice_id,
                 model_name,
-                values,
+                values: values.unwrap_or_default(),
             },
         }
     }
