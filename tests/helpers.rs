@@ -111,13 +111,16 @@ async fn start_wash_instance(cfg: &TestWashConfig) -> Result<CleanupGuard> {
     cmd.args(&args)
         .env("WASMCLOUD_PORT", &wasmcloud_port)
         .env("WASMCLOUD_DASHBOARD_PORT", &wasmcloud_port)
-        .stderr(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null());
+        .stderr(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped());
 
-    let child = cmd.spawn().expect("wash command failed to start");
     println!("{:?}", cmd);
 
+    let child = cmd.spawn().expect("wash command failed to start");
+    println!("{:?}", child);
+
     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+
     // Build the cleanup guard that will be returned
     let guard = CleanupGuard {
         child: None,
