@@ -96,14 +96,14 @@ struct Args {
     )]
     nats_seed: Option<String>,
 
-    /// Use the specified jwt file for authentication. Must be used in conjunction with --nats-nkey
+    /// Use the specified jwt file or literal for authentication. Must be used in conjunction with --nats-nkey
     #[arg(
         long = "nats-jwt",
         env = "WADM_NATS_JWT",
         conflicts_with = "nats_creds",
         requires = "nats_seed"
     )]
-    nats_jwt: Option<PathBuf>,
+    nats_jwt: Option<String>,
 
     /// (Optional) NATS credential file to use when authenticating
     #[arg(
