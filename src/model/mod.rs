@@ -115,6 +115,7 @@ pub struct CapabilityProperties {
     /// The contract ID of this capability
     pub contract: String,
     /// An opaque config string which can be passed to a stating provider. See wasmcloud_interface_lattice_control/struct.StartProviderCommand for more details
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub config: Option<String>,
     /// An optional link name to use for this capability
     #[serde(skip_serializing_if = "Option::is_none")]
