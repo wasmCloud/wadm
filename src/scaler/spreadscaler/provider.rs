@@ -188,6 +188,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
                                     host_id: host.id.to_string(),
                                     link_name: Some(link_name.to_owned()),
                                     model_name: self.config.model_name.to_owned(),
+                                    // config?
                                     annotations: spreadscaler_annotations(&spread.name),
                                 })
                             })
