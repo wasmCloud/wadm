@@ -116,7 +116,7 @@ pub struct CapabilityProperties {
     pub contract: String,
     /// Optional provider config
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub config: Option<HashMap<String, String>>,
+    pub config: Option<serde_json::Value>,
     /// An optional link name to use for this capability
     #[serde(skip_serializing_if = "Option::is_none")]
     pub link_name: Option<String>,
