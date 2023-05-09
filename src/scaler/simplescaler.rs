@@ -76,10 +76,6 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for SimpleActorScaler<S> {
 
         cleanerupper.compute_actor_commands(&self.store).await
     }
-
-    async fn backoff(&self, notifier: Sender<String>) {
-        let _ = notifier.send(String::with_capacity(0)).await;
-    }
 }
 
 impl<S: ReadStore + Send + Sync> SimpleActorScaler<S> {

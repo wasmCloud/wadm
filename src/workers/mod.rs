@@ -6,6 +6,6 @@ mod command;
 mod event;
 mod event_helpers;
 
-pub use command::CommandWorker;
+pub use command::{insert_managed_annotations, CommandWorker};
 pub use event::EventWorker;
 pub use event_helpers::*;

@@ -121,10 +121,6 @@ impl<S: ReadStore + Send + Sync> Scaler for LinkScaler<S> {
             Ok(Vec::new())
         }
     }
-
-    async fn backoff(&self, notifier: Sender<String>) {
-        let _ = notifier.send(String::with_capacity(0)).await;
-    }
 }
 
 impl<S: ReadStore + Send + Sync> LinkScaler<S> {

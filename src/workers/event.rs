@@ -10,7 +10,7 @@ use crate::consumers::{
 };
 use crate::events::*;
 use crate::publisher::Publisher;
-use crate::scaler::manager::ScalerManager;
+use crate::scaler::manager::{ScalerManager, ScalerWithEvents};
 use crate::storage::{Actor, Host, Provider, ProviderStatus, Store, WadmActorInstance};
 use crate::APP_SPEC_ANNOTATION;
 
@@ -701,51 +701,88 @@ where
             }
         };
         let commands =
-            futures::future::join_all(scalers.iter().map(|scaler| scaler.handle_event(event)))
+            futures::future::join_all(scalers.iter().map(|scaler| scaler_handle_event(scaler, event, name)))
                 .await
                 .into_iter()
                 .collect::<Result<Vec<Vec<Command>>, anyhow::Error>>()
                 .map(|all| all.into_iter().flatten().collect::<Vec<Command>>())?;
-        if !commands.is_empty() {
-            // If we have commands to run, then make sure to set stuff to backup mode
-            scalers.backoff().await?;
-        }
         self.publisher.publish_commands(commands).await
     }
 
     #[instrument(level = "debug", skip(self))]
     async fn run_all_scalers(&self, event: &Event) -> anyhow::Result<()> {
         let scalers = self.scalers.get_all_scalers().await;
-        let (affected_models, commands): (Vec<&str>, Vec<Vec<Command>>) =
-            futures::future::join_all(scalers.iter().map(|(name, scalers)| async move {
-                Ok::<_, anyhow::Error>((
-                    name,
-                    futures::future::join_all(
-                        scalers.iter().map(|scaler| scaler.handle_event(event)),
-                    )
-                    .await
-                    .into_iter()
-                    .collect::<anyhow::Result<Vec<Vec<Command>>>>()?
-                    .into_iter()
-                    .flatten()
-                    .collect::<Vec<Command>>(),
-                ))
-            }))
-            .await
-            .into_iter()
-            .collect::<anyhow::Result<Vec<_>>>()?
-            .into_iter()
-            .filter_map(|(name, commands)| {
-                if commands.is_empty() {
-                    return None;
-                }
-                Some((name.as_str(), commands))
-            })
-            .unzip();
+
+        let (affected_models, commands): (Vec<&str>, Vec<Vec<Command>>)  = futures::future::join_all(scalers.iter().map(|(name, scalers)| async move {
+            // Get commands
+            let commands = 
+                // Check event
+                futures::future::join_all(scalers.iter().map(|scaler| async move {
+                    //TODO: handle error
+                    scaler_handle_event(scaler, event, name).await.unwrap_or_default()
+                })).await;
+
+            (name, commands)
+        }))
+        .await
+        .into_iter()
+        .filter_map(|(name, commands)| {
+            let commands = commands.into_iter().flatten().collect::<Vec<_>>();
+            if commands.is_empty() {
+                return None;
+            }
+            Some((name.as_str(), commands))
+        }).unzip();
+
         let commands = commands.into_iter().flatten().collect::<Vec<Command>>();
-        scalers.backoff(affected_models).await?;
         self.publisher.publish_commands(commands).await
     }
+}
+
+/// Handles an incoming event for the given scaler.
+///
+/// This function processes the event and returns a vector of commands to be executed.
+/// It also manages the expected events list, removing successfully handled events
+/// and adding new expected events based on the executed commands.
+///
+/// # Arguments
+///
+/// * `scaler`: A reference to the `ScalerWithEvents` struct which represents the scaler with events.
+/// * `event`: A reference to the `Event` struct which represents the incoming event to be handled.
+///
+/// # Returns
+///
+/// * `Result<Vec<Command>>`: A `Result` containing a vector of `Command` structs if successful,
+///   or an error of type `anyhow::Error` if any error occurs while processing the event.
+async fn scaler_handle_event(scaler: &ScalerWithEvents, event: &Event, model_name: &str) -> anyhow::Result<Vec<Command>> {
+    // println!("Handling event {:?}", event);
+
+    // If a scaler is expecting events still, don't have it handle events
+    //TODO: we may need to expire this after a time period.
+    if scaler.backoff_events.read().await.len() > 0 {
+        println!("properly didn't handle some event or whatever");
+        return Ok(vec![])
+    }
+
+    let mut evt_write_lock = scaler.backoff_events.write().await;
+
+    Ok(if let Some(index) = evt_write_lock.iter().position(|(success, failure)| {
+        evt_matches_expected(event, success)
+            || failure
+                .as_ref()
+                .map(|f| evt_matches_expected(event, f))
+                .unwrap_or(false)
+    }) {
+        // If the scaler was expecting this event, remove it from the list
+        evt_write_lock.remove(index);
+        vec![]
+    } else {
+        let commands = scaler.handle_event(event).await?;
+        // Based on the commands, compute the events that we expect to see for this scaler.
+        let expected_events = commands.iter().map(|cmd| cmd.corresponding_event(model_name));
+        evt_write_lock.extend(expected_events);
+        commands
+    })
 }
 
 #[async_trait::async_trait]
@@ -850,6 +887,42 @@ where
         }
 
         message.ack().await.map_err(WorkError::from)
+    }
+}
+
+/// A specialized function that compares an incoming lattice event to an "expected" event
+/// stored alongside a [Scaler](Scaler).
+///
+/// This is not a PartialEq or Eq implementation because there are strict assumptions that do not always hold.
+/// For example, an incoming and expected event are equal even if their claims are not equal, because we cannot
+/// compute that information from a [Command](Command). However, this is not a valid comparison in a general sense.
+fn evt_matches_expected(incoming: &Event, expected: &Event) -> bool {
+    match (incoming, expected) {
+        (
+            Event::ActorsStarted(ActorsStarted {
+                annotations: a1,
+                image_ref: i1,
+                count: c1,
+                public_key: p1,
+                host_id: h1,
+                ..
+            }),
+            Event::ActorsStarted(ActorsStarted {
+                annotations: a2,
+                image_ref: i2,
+                count: c2,
+                public_key: p2,
+                host_id: h2,
+                ..
+            }),
+        ) => a1 == a2 && i1 == i2 && c1 == c2 && p1 == p2 && h1 == h2,
+        (
+            Event::ProviderStarted(ProviderStarted { annotations: a1, image_ref: i1, link_name: l1, host_id: h1, ..}),
+            Event::ProviderStarted(ProviderStarted { annotations: a2, image_ref: i2, link_name: l2, host_id: h2, ..})
+        ) => {
+            a1 == a2 && i1 == i2 && l1 == l2 && h1 == h2
+        },
+        _ => false,
     }
 }
 

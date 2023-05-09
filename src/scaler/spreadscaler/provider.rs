@@ -214,11 +214,6 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
 
         cleanerupper.reconcile().await
     }
-
-    #[instrument(level = "trace", skip_all, fields(name = %self.config.model_name))]
-    async fn backoff(&self, notifier: Sender<std::string::String>) {
-        let _ = notifier.send(String::with_capacity(0)).await;
-    }
 }
 
 impl<S: ReadStore + Send + Sync> ProviderSpreadScaler<S> {
