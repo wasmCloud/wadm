@@ -86,7 +86,10 @@ pub trait EventType {
 #[derive(Debug)]
 pub enum Event {
     ActorStarted(ActorStarted),
+    ActorsStarted(ActorsStarted),
+    ActorsStartFailed(ActorsStartFailed),
     ActorStopped(ActorStopped),
+    ActorsStopped(ActorsStopped),
     ProviderStarted(ProviderStarted),
     ProviderStopped(ProviderStopped),
     ProviderStartFailed(ProviderStartFailed),
@@ -149,7 +152,10 @@ impl Serialize for Event {
     {
         match self {
             Event::ActorStarted(evt) => evt.serialize(serializer),
+            Event::ActorsStarted(evt) => evt.serialize(serializer),
+            Event::ActorsStartFailed(evt) => evt.serialize(serializer),
             Event::ActorStopped(evt) => evt.serialize(serializer),
+            Event::ActorsStopped(evt) => evt.serialize(serializer),
             Event::ProviderStarted(evt) => evt.serialize(serializer),
             Event::ProviderStopped(evt) => evt.serialize(serializer),
             Event::ProviderStartFailed(evt) => evt.serialize(serializer),
@@ -177,7 +183,10 @@ impl Event {
     pub fn raw_type(&self) -> &str {
         match self {
             Event::ActorStarted(_) => ActorStarted::TYPE,
+            Event::ActorsStarted(_) => ActorsStarted::TYPE,
+            Event::ActorsStartFailed(_) => ActorsStartFailed::TYPE,
             Event::ActorStopped(_) => ActorStopped::TYPE,
+            Event::ActorsStopped(_) => ActorsStopped::TYPE,
             Event::ProviderStarted(_) => ProviderStarted::TYPE,
             Event::ProviderStopped(_) => ProviderStopped::TYPE,
             Event::ProviderStartFailed(_) => ProviderStopped::TYPE,
@@ -238,6 +247,45 @@ event_impl!(
 );
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ActorsStarted {
+    pub annotations: HashMap<String, String>,
+    // Commented out for now because the host broken it and we actually don't use this right now
+    // pub api_version: usize,
+    pub claims: ActorClaims,
+    pub image_ref: String,
+    pub count: usize,
+    // TODO: Parse as nkey?
+    pub public_key: String,
+    #[serde(default)]
+    pub host_id: String,
+}
+
+event_impl!(
+    ActorsStarted,
+    "com.wasmcloud.lattice.actors_started",
+    source,
+    host_id
+);
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ActorsStartFailed {
+    pub annotations: HashMap<String, String>,
+    pub image_ref: String,
+    // TODO: Parse as nkey?
+    pub public_key: String,
+    #[serde(default)]
+    pub host_id: String,
+    pub error: String,
+}
+
+event_impl!(
+    ActorsStartFailed,
+    "com.wasmcloud.lattice.actors_start_failed",
+    source,
+    host_id
+);
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ActorStopped {
     #[serde(default)]
     pub annotations: HashMap<String, String>,
@@ -251,6 +299,27 @@ pub struct ActorStopped {
 event_impl!(
     ActorStopped,
     "com.wasmcloud.lattice.actor_stopped",
+    source,
+    host_id
+);
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ActorsStopped {
+    #[serde(default)]
+    pub annotations: HashMap<String, String>,
+    // TODO: Parse as nkey?
+    pub public_key: String,
+    #[serde(default)]
+    pub host_id: String,
+    /// Number of actors stopped from this command
+    pub count: usize,
+    /// Remaining number of this actor running on the host
+    pub remaining: usize,
+}
+
+event_impl!(
+    ActorsStopped,
+    "com.wasmcloud.lattice.actors_stopped",
     source,
     host_id
 );

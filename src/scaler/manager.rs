@@ -21,6 +21,7 @@ use tokio::{
 use tracing::{debug, error, instrument, trace, warn};
 
 use crate::{
+    events::Event,
     model::{
         Component, Manifest, Properties, SpreadScalerProperty, Trait, TraitProperty, LINKDEF_TRAIT,
         SPREADSCALER_TRAIT,
@@ -38,7 +39,29 @@ use super::spreadscaler::{
 };
 
 pub type BoxedScaler = Box<dyn Scaler + Send + Sync + 'static>;
-pub type ScalerList = Vec<BoxedScaler>;
+pub type ScalerList = Vec<ScalerWithEvents>;
+
+pub struct ScalerWithEvents {
+    scaler: BoxedScaler,
+    pub(crate) backoff_events: Arc<RwLock<Vec<(Event, Option<Event>)>>>,
+}
+
+impl Deref for ScalerWithEvents {
+    type Target = BoxedScaler;
+
+    fn deref(&self) -> &Self::Target {
+        &self.scaler
+    }
+}
+
+impl From<BoxedScaler> for ScalerWithEvents {
+    fn from(scaler: BoxedScaler) -> Self {
+        Self {
+            scaler,
+            backoff_events: Arc::new(RwLock::new(vec![])),
+        }
+    }
+}
 
 pub const WADM_NOTIFY_PREFIX: &str = "wadm.notify";
 // The backoff channel buffer size. This is an arbitrary number, but we want to make sure we cap it
@@ -50,7 +73,6 @@ const CHANNEL_BUFFER_SIZE: usize = 250;
 pub enum Notifications {
     CreateScalers(Manifest),
     DeleteScalers(String),
-    BackoffScaler(String),
 }
 
 /// A wrapper type returned when getting a list of scalers. Implements a backoff operation that can
@@ -72,27 +94,6 @@ impl<'a, P> Deref for Scalers<'a, P> {
     }
 }
 
-impl<'a, P> Scalers<'a, P>
-where
-    P: Publisher,
-{
-    /// Publishes a backoff notification and sets all current scalers to backoff. Returns an error
-    /// if unable to publish the backoff notification (and will not set current scalers to backoff)
-    pub async fn backoff(&self) -> Result<()> {
-        // Publish the message first because otherwise we could get scalers that don't go to backoff
-        // mode
-        let data = serde_json::to_vec(&Notifications::BackoffScaler(self.name.to_owned()))?;
-        self.publisher.publish(data, Some(self.subject)).await?;
-        futures::future::join_all(
-            self.scalers
-                .iter()
-                .map(|scaler| scaler.backoff(self.sender.clone())),
-        )
-        .await;
-        Ok(())
-    }
-}
-
 /// A wrapper type returned when getting all scalers. Implements a backoff operation that can be
 /// called to tell all returned scalers to back off and notifiying with a message so other consumers
 /// can backoff as well
@@ -108,32 +109,6 @@ impl<'a, P> Deref for AllScalers<'a, P> {
 
     fn deref(&self) -> &Self::Target {
         self.scalers.deref()
-    }
-}
-
-impl<'a, P> AllScalers<'a, P>
-where
-    P: Publisher,
-{
-    /// Publishes a backoff notification and sets all listed scalers to backoff. Returns an error
-    /// if unable to publish the backoff notification (and will not set current scalers to backoff)
-    pub async fn backoff(&self, scalers_to_backoff: Vec<&str>) -> Result<()> {
-        for name in scalers_to_backoff.into_iter() {
-            let scalers = if let Some(scalers) = self.scalers.get(name) {
-                scalers
-            } else {
-                continue;
-            };
-            let data = serde_json::to_vec(&Notifications::BackoffScaler(name.to_owned()))?;
-            self.publisher.publish(data, Some(self.subject)).await?;
-            futures::future::join_all(
-                scalers
-                    .iter()
-                    .map(|scaler| scaler.backoff(self.sender.clone())),
-            )
-            .await;
-        }
-        Ok(())
     }
 }
 
@@ -442,17 +417,6 @@ where
                                     // doesn't tear down everything or leaves something hanging. If that is
                                     // the case, a new part of the reaper logic should handle it
                                 }
-                                Notifications::BackoffScaler(name) => {
-                                    if let Some(scalers) = self.get_scalers(&name).await {
-                                        trace!(%name, "Handling backoff scaler event");
-                                        futures::future::join_all(
-                                            scalers
-                                                .iter()
-                                                .map(|scaler| scaler.backoff(self.backoff_sender.clone())),
-                                        )
-                                        .await;
-                                    }
-                                }
                             }
                             // Always ack if we get here
                             if let Err(e) = msg.double_ack().await {
@@ -469,33 +433,6 @@ where
                             error!("Notifier for manifests has exited");
                             anyhow::bail!("Notifier has exited")
                         }
-                    }
-                }
-                model_name = backoff_receiver.recv() => {
-                    // This is a fatal error and results in a panic since this should never happen
-                    // except in really odd scenarios where we probably should be panicking anyway.
-                    // Essentially it means the Manager's sender data member has dropped
-                    let name = model_name.expect("All backoff senders have closed! Aborting");
-                    let scalers = match self.get_scalers(&name).await {
-                        Some(s) => s,
-                        None => {
-                            continue
-                        }
-                    };
-                    let commands = futures::future::join_all(scalers.iter().map(|scaler| scaler.reconcile())).await
-                    .into_iter()
-                    .collect::<Result<Vec<Vec<Command>>, anyhow::Error>>()
-                    .map(|all| all.into_iter().flatten().collect::<Vec<Command>>())?;
-                    if !commands.is_empty() {
-                        trace!(%name, ?commands, "Additional reconciliation needed after backoff");
-                        if let Err(e) = scalers.backoff().await {
-                            error!(error = %e, "Unable to reenter backoff mode before publishing commands");
-                        }
-                        if let Err(e) = self.publisher.publish_commands(commands).await {
-                            error!(error = %e, "Unable to send reconcile commands after backoff");
-                        }
-                    } else {
-                        trace!(%name, "No reconciliation needed after backoff");
                     }
                 }
             }
@@ -516,19 +453,21 @@ pub(crate) fn components_to_scalers<S: ReadStore + Send + Sync + Clone + 'static
         let traits = component.traits.as_ref();
         match &component.properties {
             Properties::Actor { properties: props } => {
-                scalers.extend(traits.unwrap_or(&EMPTY_TRAIT_VEC).iter().filter_map(|trt| {
-                    match (trt.trait_type.as_str(), &trt.properties) {
-                        (SPREADSCALER_TRAIT, TraitProperty::SpreadScaler(p)) => {
-                            Some(Box::new(ActorSpreadScaler::new(
-                                store.clone(),
-                                props.image.to_owned(),
-                                lattice_id.to_owned(),
-                                name.to_owned(),
-                                p.to_owned(),
-                            )) as BoxedScaler)
-                        }
-                        (LINKDEF_TRAIT, TraitProperty::Linkdef(p)) => {
-                            components
+                scalers.extend(
+                    traits
+                        .unwrap_or(&EMPTY_TRAIT_VEC)
+                        .iter()
+                        .filter_map(|trt| match (trt.trait_type.as_str(), &trt.properties) {
+                            (SPREADSCALER_TRAIT, TraitProperty::SpreadScaler(p)) => {
+                                Some(Box::new(ActorSpreadScaler::new(
+                                    store.clone(),
+                                    props.image.to_owned(),
+                                    lattice_id.to_owned(),
+                                    name.to_owned(),
+                                    p.to_owned(),
+                                )) as BoxedScaler)
+                            }
+                            (LINKDEF_TRAIT, TraitProperty::Linkdef(p)) => components
                                 .iter()
                                 .find_map(|component| match &component.properties {
                                     Properties::Capability { properties: cappy }
@@ -547,11 +486,11 @@ pub(crate) fn components_to_scalers<S: ReadStore + Send + Sync + Clone + 'static
                                             as BoxedScaler)
                                     }
                                     _ => None,
-                                })
-                        }
-                        _ => None,
-                    }
-                }))
+                                }),
+                            _ => None,
+                        })
+                        .map(|boxed| boxed.into()),
+                )
             }
             Properties::Capability { properties: props } => {
                 if let Some(traits) = traits {
@@ -574,31 +513,35 @@ pub(crate) fn components_to_scalers<S: ReadStore + Send + Sync + Clone + 'static
                                         provider_config: props.config.to_owned(),
                                     },
                                 )) as BoxedScaler)
+                                .map(|boxed| boxed.into())
                             }
                             _ => None,
                         }
                     }))
                 } else {
                     // Allow providers to omit the scaler entirely for simplicity
-                    scalers.push(Box::new(ProviderSpreadScaler::new(
-                        store.clone(),
-                        ProviderSpreadConfig {
-                            lattice_id: lattice_id.to_owned(),
-                            provider_reference: props.image.to_owned(),
-                            spread_config: SpreadScalerProperty {
-                                replicas: 1,
-                                spread: vec![],
+                    scalers.push(
+                        (Box::new(ProviderSpreadScaler::new(
+                            store.clone(),
+                            ProviderSpreadConfig {
+                                lattice_id: lattice_id.to_owned(),
+                                provider_reference: props.image.to_owned(),
+                                spread_config: SpreadScalerProperty {
+                                    replicas: 1,
+                                    spread: vec![],
+                                },
+                                provider_contract_id: props.contract.to_owned(),
+                                provider_link_name: props
+                                    .link_name
+                                    .as_deref()
+                                    .unwrap_or(DEFAULT_LINK_NAME)
+                                    .to_owned(),
+                                model_name: name.to_owned(),
+                                provider_config: props.config.to_owned(),
                             },
-                            provider_contract_id: props.contract.to_owned(),
-                            provider_link_name: props
-                                .link_name
-                                .as_deref()
-                                .unwrap_or(DEFAULT_LINK_NAME)
-                                .to_owned(),
-                            model_name: name.to_owned(),
-                            provider_config: props.config.to_owned(),
-                        },
-                    )) as BoxedScaler)
+                        )) as BoxedScaler)
+                            .into(),
+                    )
                 }
             }
         }

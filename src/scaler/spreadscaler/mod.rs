@@ -50,7 +50,6 @@ pub struct ActorSpreadScaler<S> {
     spread_requirements: Vec<(Spread, usize)>,
     actor_id: OnceCell<String>,
     store: S,
-    in_backoff: Arc<RwLock<bool>>,
 }
 
 #[async_trait]
@@ -62,15 +61,14 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
         };
         self.config.spread_config = spread_config;
         self.spread_requirements = compute_spread(&self.config.spread_config);
+        //TODO: do we need to remove the backoff?
         self.reconcile().await
     }
 
     #[instrument(level = "trace", skip(self))]
     async fn handle_event(&self, event: &Event) -> Result<Vec<Command>> {
-        if *self.in_backoff.read().await {
-            trace!("Scaler is currently in backoff, not performing reconciliation");
-            return Ok(Vec::with_capacity(0));
-        }
+        //TODO: race condition, first actorstarted can come in before the rwlock updated?
+        println!("spreadscaler handling {:?}", event);
         // NOTE(brooksmtownsend): We could be more efficient here and instead of running
         // the entire reconcile, smart compute exactly what needs to change, but it just
         // requires more code branches and would be fine as a future improvement
@@ -114,10 +112,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
 
     #[instrument(level = "trace", skip_all, fields(name = %self.config.model_name))]
     async fn reconcile(&self) -> Result<Vec<Command>> {
-        if *self.in_backoff.read().await {
-            trace!("Scaler is currently in backoff, not performing reconciliation");
-            return Ok(Vec::with_capacity(0));
-        }
+        println!("spreadscaler reconciling");
         let hosts = self.store.list::<Host>(&self.config.lattice_id).await?;
 
         let actor = if let Ok(id) = self.actor_id().await {
@@ -216,51 +211,9 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
             store: self.store.clone(),
             spread_requirements,
             actor_id: self.actor_id.clone(),
-            // Doesn't matter if we're in backoff as we want to reconcile now
-            in_backoff: Arc::new(RwLock::new(false)),
         };
 
         cleanerupper.reconcile().await
-    }
-
-    #[instrument(level = "trace", skip_all, fields(name = %self.config.model_name))]
-    async fn backoff(&self, notifier: Sender<String>) {
-        // If we're already in backoff, don't do it again
-        if *self.in_backoff.read().await {
-            return;
-        }
-        // For actors we need to back off because each actor is a new event
-        *(self.in_backoff.write().await) = true;
-        debug!("Set scaler to backoff mode");
-        let in_backoff = self.in_backoff.clone();
-        let model_name = self.config.model_name.clone();
-        // Configure backoff time with a random "jitter" +/- the configured time. This makes it so
-        // that not every single scaler in a wadm cluster tries to reconcile simultaneously after
-        // backoff
-        let mut jitterer = SmallRng::from_entropy();
-        let jitter_time = Duration::from_millis(jitterer.gen_range(0..5000));
-        // Doing this here rather than with the range so that we can get around the fact that the
-        // standard duration is unsigned
-        let backoff_time = if jitterer.gen_bool(0.5) {
-            BACKOFF_TIME + jitter_time
-        } else {
-            BACKOFF_TIME - jitter_time
-        };
-        // Spawn a task to stop backoff after a certain amount of time
-        tokio::spawn(
-            async move {
-                let mut interval =
-                    tokio::time::interval_at(Instant::now() + backoff_time, backoff_time);
-                interval.tick().await;
-                *(in_backoff.write().await) = false;
-                debug!("Scaler backoff complete. Sending notification");
-                if let Err(e) = notifier.send(model_name).await {
-                    // This should only happen if the top level receiver is closed
-                    error!(error = %e, "Got error when trying to send reconcile commands after backoff period");
-                }
-            }
-            .instrument(tracing::debug_span!("backoff_expire", name = %self.config.model_name)),
-        );
     }
 }
 
@@ -283,7 +236,6 @@ impl<S: ReadStore + Send + Sync> ActorSpreadScaler<S> {
                 spread_config,
                 model_name,
             },
-            in_backoff: Arc::new(RwLock::new(false)),
         }
     }
 
