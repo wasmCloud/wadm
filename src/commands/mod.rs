@@ -94,7 +94,9 @@ pub struct StartProvider {
     pub link_name: Option<String>,
     /// The name of the model/manifest that generated this command
     pub model_name: String,
-    // TODO: Do we need to support config_json paths?
+    /// Provider Config
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub config: Option<String>,
     /// Additional annotations to attach on this command
     pub annotations: HashMap<String, String>,
 }

@@ -64,6 +64,7 @@ impl Worker for CommandWorker {
                     .await
             }
             Command::StartProvider(prov) => {
+                let config = prov.config.clone();
                 // Order here is intentional to prevent scalers from overwriting managed annotations
                 let mut annotations = prov.annotations.clone();
                 annotations.extend(MANAGED_BY_ANNOTATIONS.clone());
@@ -73,6 +74,7 @@ impl Worker for CommandWorker {
                         &prov.host_id,
                         &prov.reference,
                         prov.link_name.clone(),
+                        Some(config),
                         Some(annotations),
                         None,
                     )
@@ -91,6 +93,7 @@ impl Worker for CommandWorker {
                             .as_deref()
                             .unwrap_or(crate::DEFAULT_LINK_NAME),
                         &prov.contract_id,
+                        Some(config),
                         Some(annotations),
                     )
                     .await
