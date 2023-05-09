@@ -93,7 +93,6 @@ impl Worker for CommandWorker {
                             .as_deref()
                             .unwrap_or(crate::DEFAULT_LINK_NAME),
                         &prov.contract_id,
-                        Some(config),
                         Some(annotations),
                     )
                     .await
