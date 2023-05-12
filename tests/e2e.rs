@@ -13,7 +13,7 @@ use tokio::{
 };
 use wadm::{
     model::Manifest,
-    server::{DeployModelRequest, DeployModelResponse, PutModelResponse},
+    server::{DeployModelRequest, DeployModelResponse, PutModelResponse, UndeployModelRequest},
 };
 use wasmcloud_control_interface::HostInventory;
 
@@ -37,6 +37,7 @@ pub struct ClientInfo {
 
 // NOTE: We are likely to need this to be reusable for future e2e tests so I am trying to future
 // proof with some of the functions here
+#[allow(unused)]
 impl ClientInfo {
     /// Create a new ClientInfo. This will start the docker compose file, start 3 wadm instances,
     /// and then when dropped clean everything up.
@@ -210,6 +211,28 @@ impl ClientInfo {
             .await
             .expect("Unable to deploy manifest");
         serde_json::from_slice(&msg.payload).expect("Unable to decode deploy model response")
+    }
+
+    /// Undeploys the manifest in the lattice
+    pub async fn undeploy_manifest(
+        &self,
+        name: &str,
+        lattice_id: Option<&str>,
+    ) -> DeployModelResponse {
+        let subject = format!(
+            "wadm.api.{}.model.undeploy.{name}",
+            lattice_id.unwrap_or(DEFAULT_LATTICE_ID)
+        );
+        let data = serde_json::to_vec(&UndeployModelRequest {
+            non_destructive: false,
+        })
+        .unwrap();
+        let msg = self
+            .client
+            .request(subject, data.into())
+            .await
+            .expect("Unable to undeploy manifest");
+        serde_json::from_slice(&msg.payload).expect("Unable to decode undeploy model response")
     }
 
     /********************* HELPER FUNCTIONS *********************/
