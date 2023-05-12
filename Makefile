@@ -60,7 +60,7 @@ endif
 test-e2e::
 ifeq ($(shell nc -czt -w1 127.0.0.1 4222 || echo fail),fail)
 	@$(MAKE) build
-	$(CARGO) test --test e2e_multiple_hosts --features _e2e_tests --  --nocapture 
+	RUST_BACKTRACE=1 $(CARGO) test --test e2e_multiple_hosts --features _e2e_tests --  --nocapture 
 else
 	@echo "WARN: Not running e2e tests. NATS must not be currently running"
 	exit 1

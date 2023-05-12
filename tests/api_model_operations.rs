@@ -6,7 +6,6 @@ use serde::de::DeserializeOwned;
 use wadm::{
     model::{Manifest, VERSION_ANNOTATION_KEY},
     server::*,
-    storage::nats_kv::NatsKvStore,
 };
 
 mod helpers;
@@ -87,7 +86,7 @@ async fn setup_server(id: String) -> TestServer {
 
     let prefix = format!("testing.{id}");
     let server = Server::new(
-        NatsKvStore::new(store),
+        store,
         client.clone(),
         Some(&id),
         ManifestNotifier::new(&prefix, client.clone()),

@@ -57,7 +57,7 @@ pub struct ModelSummary {
     pub name: String,
     pub version: String,
     pub description: Option<String>,
-    pub deployed: bool,
+    pub deployed_version: Option<String>,
     pub status: StatusType,
 }
 

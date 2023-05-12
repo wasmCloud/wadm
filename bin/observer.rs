@@ -12,27 +12,26 @@ use wadm::{
     events::{EventType, HostHeartbeat, HostStarted},
     mirror::Mirror,
     nats_utils::LatticeIdParser,
-    storage::{nats_kv::NatsKvStore, reaper::Reaper, ReadStore, Store},
+    storage::{nats_kv::NatsKvStore, reaper::Reaper, Store},
     DEFAULT_COMMANDS_TOPIC, DEFAULT_WADM_EVENTS_TOPIC,
 };
 
 use super::{CommandWorkerCreator, EventWorkerCreator};
 
-pub(crate) struct Observer<StateStore, ManifestStore> {
+pub(crate) struct Observer<StateStore> {
     pub(crate) parser: LatticeIdParser,
     pub(crate) command_manager: ConsumerManager<CommandConsumer>,
     pub(crate) event_manager: ConsumerManager<EventConsumer>,
     pub(crate) mirror: Mirror,
     pub(crate) client: async_nats::Client,
     pub(crate) reaper: Reaper<NatsKvStore>,
-    pub(crate) event_worker_creator: EventWorkerCreator<StateStore, ManifestStore>,
+    pub(crate) event_worker_creator: EventWorkerCreator<StateStore>,
     pub(crate) command_worker_creator: CommandWorkerCreator,
 }
 
-impl<StateStore, ManifestStore> Observer<StateStore, ManifestStore>
+impl<StateStore> Observer<StateStore>
 where
     StateStore: Store + Send + Sync + Clone + 'static,
-    ManifestStore: ReadStore + Send + Sync + Clone + 'static,
 {
     /// Watches the given topic (with wildcards) for wasmbus events. If it finds a lattice that it
     /// isn't managing, it will start managing it immediately

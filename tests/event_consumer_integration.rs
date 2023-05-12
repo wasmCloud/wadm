@@ -13,7 +13,7 @@ use helpers::{setup_test_wash, TestWashConfig};
 use anyhow::Result;
 
 const HTTP_SERVER_PROVIDER_ID: &str = "VAG3QITQQ2ODAOWB5TTQSDJ53XK3SHBEIFNK4AYJ5RKAX2UNSCAPHA5M";
-const HTTP_SERVER_REFERENCE: &str = "wasmcloud.azurecr.io/httpserver:0.16.0";
+const HTTP_SERVER_REFERENCE: &str = "wasmcloud.azurecr.io/httpserver:0.17.0";
 const ECHO_ACTOR_ID: &str = "MBCFOPM6JW2APJLXJD3Z5O4CN7CPYJ2B4FTKLJUR5YR5MITIU7HD3WD5";
 const ECHO_REFERENCE: &str = "wasmcloud.azurecr.io/echo:0.3.4";
 const CONTRACT_ID: &str = "wasmcloud:httpserver";
@@ -31,12 +31,27 @@ async fn get_event_consumer(nats_url: String) -> EventConsumer {
         .await
         .expect("Unable to setup nats event consumer client");
     let context = async_nats::jetstream::new(client);
-    // If the stream exists, purge it
+    // HACK: Other tests may create the mirror stream, which overlaps with the consumers here for
+    // our test, so delete it
+    let _ = context.delete_stream("wadm_mirror").await;
+    // If the stream exists, purge it and remove all consumers
     let stream = if let Ok(stream) = context.get_stream(STREAM_NAME).await {
         stream
             .purge()
             .await
             .expect("Unable to cleanup stream before test");
+
+        while let Some(consumer) = stream
+            .consumer_names()
+            .try_next()
+            .await
+            .expect("Unable to get consumer name")
+        {
+            stream
+                .delete_consumer(&consumer)
+                .await
+                .expect("Unable to delete consumer");
+        }
         stream
     } else {
         // Create it if it doesn't exist

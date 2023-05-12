@@ -248,7 +248,7 @@ impl StreamWrapper {
             context
                 .create_stream(async_nats::jetstream::stream::Config {
                     name: id.to_owned(),
-                    description: Some("A stream that stores all events coming in on the wasmbus.evt topics in a cluster".to_string()),
+                    description: Some("A stream that stores all commands".to_string()),
                     num_replicas: 1,
                     retention: async_nats::jetstream::stream::RetentionPolicy::WorkQueue,
                     subjects: vec![topic.clone()],

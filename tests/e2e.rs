@@ -1,3 +1,4 @@
+#![cfg(feature = "_e2e_tests")]
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
