@@ -54,7 +54,7 @@ async fn test_no_requirements(client_info: &ClientInfo) {
     // NOTE: This runs for a while, but it's because we're waiting for the provider to download,
     // which can take a bit
     assert_status(None, Some(5), || async {
-        let inventory = client_info.get_all_inventory().await;
+        let inventory = client_info.get_all_inventory().await?;
 
         let all_echo_actors = inventory
             .values()

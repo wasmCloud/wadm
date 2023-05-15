@@ -214,8 +214,9 @@ impl ClientInfo {
 
     /********************* HELPER FUNCTIONS *********************/
 
-    /// Returns all host inventories in a hashmap keyed by host ID
-    pub async fn get_all_inventory(&self) -> HashMap<String, HostInventory> {
+    /// Returns all host inventories in a hashmap keyed by host ID. This returns a result so it can
+    /// be used inside of a `assert_status` without any problems
+    pub async fn get_all_inventory(&self) -> anyhow::Result<HashMap<String, HostInventory>> {
         let futs = self
             .ctl_client
             .get_hosts()
@@ -227,8 +228,8 @@ impl ClientInfo {
                 let inventory = client
                     .get_host_inventory(&host_id)
                     .await
-                    .expect("Unable to get host inventory");
-                (host_id, inventory)
+                    .map_err(|e| anyhow::anyhow!("{e:?}"))?;
+                Ok((host_id, inventory))
             });
         futures::future::join_all(futs).await.into_iter().collect()
     }
