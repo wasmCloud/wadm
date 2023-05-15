@@ -3,7 +3,7 @@ name = "wadm"
 description = "wasmCloud Application Deployment Manager: A tool for running Wasm applications in wasmCloud"
 version = "0.4.0-alpha.3"
 edition = "2021"
-maintainers = ["wasmCloud Team"]
+authors = ["wasmCloud Team"]
 keywords = ["webassembly", "wasmcloud", "wadm"]
 license = "Apache-2.0"
 readme = "README.md"
@@ -19,6 +19,8 @@ cli = [
     "opentelemetry-otlp",
     "atty",
 ]
+# internal feature for e2e tests
+_e2e_tests = []
 
 [dependencies]
 anyhow = "1"

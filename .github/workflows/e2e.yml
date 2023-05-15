@@ -1,0 +1,41 @@
+name: e2e Tests Wadm
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test:
+    name: e2e
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Install latest Rust stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          default: true
+          components: clippy, rustfmt
+
+      # Cache: rust
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: "ubuntu-22.04-rust-cache"
+
+      # Run all tests
+      - name: Run tests
+        id: test
+        run: make test-e2e
+    
+      # if the previous step fails, upload logs
+      - name: Upload logs for debugging
+        uses: actions/upload-artifact@v2
+        if: ${{ failure() && steps.test.outcome == 'failure' }}
+        with:
+          name: e2e-logs
+          path: ./test/e2e_log/*
+          # Be nice and only retain the logs for 7 days
+          retention-days: 7

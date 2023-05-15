@@ -16,13 +16,13 @@ use crate::{
     model::{Spread, SpreadScalerProperty, TraitProperty, DEFAULT_SPREAD_WEIGHT},
     scaler::Scaler,
     storage::{Actor, Host, ReadStore, WadmActorInstance},
+    SCALER_KEY,
 };
 
 pub mod link;
 pub mod provider;
 
 // Annotation constants
-const SCALER_KEY: &str = "wasmcloud.dev/scaler";
 const SCALER_VALUE: &str = "spreadscaler";
 const SPREAD_KEY: &str = "wasmcloud.dev/spread_name";
 const BACKOFF_TIME: Duration = Duration::from_secs(30);

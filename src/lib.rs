@@ -33,5 +33,7 @@ pub const MANAGED_BY_ANNOTATION: &str = "wasmcloud.dev/managed-by";
 pub const MANAGED_BY_IDENTIFIER: &str = "wadm";
 /// An annotation that denotes which model a resource belongs to
 pub const APP_SPEC_ANNOTATION: &str = "wasmcloud.dev/appspec";
+/// An annotation that denotes which scaler is managing a resource
+pub const SCALER_KEY: &str = "wasmcloud.dev/scaler";
 /// The default link name. In the future, this will likely be pulled in from another crate
 pub const DEFAULT_LINK_NAME: &str = "default";

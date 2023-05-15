@@ -10,7 +10,6 @@ MAKEFLAGS += -S
 .DEFAULT: all
 
 CARGO ?= cargo
-CARGO_WATCH ?= cargo-watch
 CARGO_CLIPPY ?= cargo-clippy
 DOCKER ?= docker
 NATS ?= nats
@@ -23,12 +22,6 @@ help:  ## Display this help
 ###########
 # Tooling #
 ###########
-
-# Ensure that cargo watch is installed
-check-cargo-watch:
-ifeq ("",$(shell command -v $(CARGO_WATCH)))
-	$(error "ERROR: cargo-watch is not installed (see: https://crates.io/crates/cargo-watch)")
-endif
 
 # Ensure that clippy is installed
 check-cargo-clippy:
@@ -44,14 +37,8 @@ lint: check-cargo-clippy ## Run code lint
 	$(CARGO) fmt --all --check
 	$(CARGO) clippy --all-features --all-targets --workspace
 
-lint-watch: check-cargo-clippy ## Run code lint (continuously)
-	$(CARGO) watch -- $(MAKE) lint
-
 build: ## Build wadm
-	$(CARGO) build
-
-build-watch: check-cargo-watch ## Build wadm (continuously)
-	$(CARGO) watch -- $(MAKE) build
+	$(CARGO) build --bin wadm --features cli
 
 ########
 # Test #
@@ -70,21 +57,14 @@ else
 	$(CARGO) test $(CARGO_TEST_TARGET) -- --nocapture
 endif
 
-test-watch: ## Run tests (continuously)
-	$(CARGO) watch -- $(MAKE) test
-
-test-int:: ## Run integration tests
-ifeq (,$(CARGO_TEST_TARGET))
-	$(CARGO) test --test ="*" -- --nocapture
+test-e2e::
+ifeq ($(shell nc -czt -w1 127.0.0.1 4222 || echo fail),fail)
+	@$(MAKE) build
+	$(CARGO) test --test e2e_multiple_hosts --features _e2e_tests --  --nocapture 
 else
-	$(CARGO) test --test $(CARGO_TEST_TARGET) -- --nocapture
+	@echo "WARN: Not running e2e tests. NATS must not be currently running"
+	exit 1
 endif
-
-test-int-watch: ## Run integration tests (continuously)
-	$(CARGO) watch -- $(MAKE) test-int
-
-test-int-all:: ## Run all integration tests
-	$(MAKE) test-int CARGO_TEST_TARGET='*'
 
 ###########
 # Cleanup #
@@ -98,4 +78,4 @@ stream-cleanup: ## Purges all streams that wadm creates
 	$(NATS) stream purge KV_wadm_state --force
 	$(NATS) stream purge KV_wadm_manifests --force
 
-.PHONY: check-cargo-watch check-cargo-clippy lint build build-watch test test-watch test-int test-int-all test-int-watch stream-cleanup
+.PHONY: check-cargo-clippy lint build build-watch test stream-cleanup clean test-e2e test 
