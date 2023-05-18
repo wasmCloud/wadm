@@ -25,16 +25,16 @@ issues/missing features to be aware of that we plan on addressing by the time we
 
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://github.com/codespaces/new?hide_repo_select=true&ref=main&repo=401352358&machine=standardLinux32gb&location=EastUs)
 
-### Install
+### Install & Run
 
-You can deploy **wadm** by downloading the binary for your host operating system and architecture, and then running it alongside your wasmCloud host. We recommend using **wash** to run wasmCloud and NATS, and then running **wadm** afterwards connected to the same NATS connection.
-
-Ensure you have a proper [rust](https://www.rust-lang.org/tools/install) toolchain installed to install **wash**, until we release wash v0.18.0.
+You can easily run **wadm** by downloading [wash](https://wasmcloud.com/docs/installation) and launching it alongside NATS and wasmCloud. Then, you can use the `wash app` command to query, create, and deploy applications.
 
 ```
-# Install wash
-cargo install wash-cli --git https://github.com/wasmcloud/wash --branch feat/wadm_0.4_support --force
+wash up -d    # Start NATS, wasmCloud, and wadm in the background
+wash app list # Query the list of applications
 ```
+
+If you prefer to run **wadm** separately and/or connect to running wasmCloud hosts, you can instead opt for using the latest GitHub release artifact and executing the binary. Simply replace the latest version, your operating system, and architecture below.
 
 ```
 # Install wadm
@@ -42,13 +42,6 @@ curl -fLO https://github.com/wasmCloud/wadm/releases/download/<version>/wadm-<ve
 tar -xvf wadm-<version>-<os>-<arch>.tar.gz
 cd wadm-<version>-<os>-<arch>
 ./wadm
-```
-
-### Setup
-
-```
-wash up -d   # Start NATS and wasmCloud in the background
-wadm         # Start wadm
 ```
 
 ### Deploying an application
