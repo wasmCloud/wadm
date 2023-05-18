@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::model::Manifest;
 use crate::server::ComponentStatus;
-use crate::storage::StateKind;
 
 use super::LATEST_VERSION;
 
@@ -22,10 +21,6 @@ pub(crate) struct StoredManifest {
     status: Vec<ComponentStatus>,
     // An optional top level status message to help with debugging or status for the whole manifest
     status_message: Option<String>,
-}
-
-impl StateKind for StoredManifest {
-    const KIND: &'static str = "manifest";
 }
 
 impl StoredManifest {
@@ -110,6 +105,11 @@ impl StoredManifest {
             .last()
             .map(|(_, v)| v)
             .expect("A manifest should always exist. This is programmer error")
+    }
+
+    /// Returns the name of the manifest
+    pub fn name(&self) -> &str {
+        &self.get_current().metadata.name
     }
 
     /// Gets a reference to the specified version of the manifest

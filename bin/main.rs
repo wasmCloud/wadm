@@ -189,9 +189,7 @@ async fn main() -> anyhow::Result<()> {
 
     let state_storage = NatsKvStore::new(store);
 
-    let store = nats::ensure_kv_bucket(&context, args.manifest_bucket, 1).await?;
-
-    let manifest_storage = NatsKvStore::new(store);
+    let manifest_storage = nats::ensure_kv_bucket(&context, args.manifest_bucket, 1).await?;
 
     let event_stream = nats::ensure_stream(
         &context,
@@ -320,9 +318,9 @@ impl WorkerCreator for CommandWorkerCreator {
 }
 
 #[derive(Clone)]
-struct EventWorkerCreator<StateStore, ManifestStore> {
+struct EventWorkerCreator<StateStore> {
     state_store: StateStore,
-    manifest_store: ManifestStore,
+    manifest_store: async_nats::jetstream::kv::Store,
     pool: ControlClientConstructor,
     command_topic_prefix: String,
     publisher: Context,
@@ -330,10 +328,9 @@ struct EventWorkerCreator<StateStore, ManifestStore> {
 }
 
 #[async_trait::async_trait]
-impl<StateStore, ManifestStore> WorkerCreator for EventWorkerCreator<StateStore, ManifestStore>
+impl<StateStore> WorkerCreator for EventWorkerCreator<StateStore>
 where
     StateStore: wadm::storage::Store + Send + Sync + Clone + 'static,
-    ManifestStore: wadm::storage::ReadStore + Send + Sync + Clone + 'static,
 {
     type Output = EventWorker<StateStore, wasmcloud_control_interface::Client, Context>;
 

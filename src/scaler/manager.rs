@@ -5,6 +5,7 @@ use std::{collections::HashMap, ops::Deref, sync::Arc};
 use anyhow::Result;
 use async_nats::jetstream::{
     consumer::pull::{Config as PullConfig, Stream as MessageStream},
+    kv::Store as KvStore,
     stream::Stream as JsStream,
     AckKind,
 };
@@ -21,8 +22,8 @@ use tracing::{debug, error, instrument, trace, warn};
 
 use crate::{
     model::{
-        internal::StoredManifest, Component, Manifest, Properties, SpreadScalerProperty, Trait,
-        TraitProperty, LINKDEF_TRAIT, SPREADSCALER_TRAIT,
+        Component, Manifest, Properties, SpreadScalerProperty, Trait, TraitProperty, LINKDEF_TRAIT,
+        SPREADSCALER_TRAIT,
     },
     publisher::Publisher,
     scaler::{spreadscaler::ActorSpreadScaler, Command, Scaler},
@@ -162,17 +163,14 @@ where
     /// Creates a new ScalerManager configured to notify messages to `wadm.notify.{lattice_id}`
     /// using the given jetstream client. Also creates an ephemeral consumer for notifications on
     /// the given stream
-    pub async fn new<ManifestStore>(
+    pub async fn new(
         client: P,
         stream: JsStream,
         lattice_id: &str,
         state_store: StateStore,
-        manifest_store: ManifestStore,
+        manifest_store: KvStore,
         publisher: CommandPublisher<P>,
-    ) -> Result<ScalerManager<StateStore, P>>
-    where
-        ManifestStore: ReadStore + Send + Sync + Clone + 'static,
-    {
+    ) -> Result<ScalerManager<StateStore, P>> {
         // Create the consumer first so that we can make sure we don't miss anything during the
         // first reconcile pass
         let subject = format!("{WADM_NOTIFY_PREFIX}.{lattice_id}");
@@ -198,11 +196,23 @@ where
             .map_err(|e| anyhow::anyhow!("Unable to subscribe to consumer: {e:?}"))?;
 
         // Get current scalers set up
-        let all_manifests = manifest_store.list::<StoredManifest>(lattice_id).await?;
+        let manifest_store = crate::server::ModelStorage::new(manifest_store);
+        let futs = manifest_store
+            .list(lattice_id)
+            .await?
+            .into_iter()
+            .map(|summary| manifest_store.get(lattice_id, summary.name));
+        let all_manifests = futures::future::join_all(futs)
+            .await
+            .into_iter()
+            .filter_map(|manifest| manifest.transpose())
+            .map(|res| res.map(|(manifest, _)| manifest))
+            .collect::<Result<Vec<_>>>()?;
         let scalers: HashMap<String, ScalerList> = all_manifests
             .into_iter()
-            .filter_map(|(name, manifest)| {
+            .filter_map(|manifest| {
                 let data = manifest.get_deployed()?;
+                let name = manifest.name().to_owned();
                 let scalers =
                     components_to_scalers(&data.spec.components, &state_store, lattice_id, &name);
                 Some((name, scalers))

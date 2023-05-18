@@ -12,9 +12,8 @@ production-ready `0.4` version.
 **Heads Up**
 
 Wadm is still in alpha as we continue to tie up a few loose ends. Below is a list of known
-issues/missing features to be aware of:
+issues/missing features to be aware of that we plan on addressing by the time we hit `0.4`:
 
-- Currently the API does not update with the status of each scaler and reconcile action
 - The current scaling algorithm is a bit jittery and puts the "eventual" in eventual consistency. It
   will get to the right number of replicas, but may take a second. We've already identified a fix,
   but it is in the the wasmCloud host, so we'll need to update things there first
@@ -176,6 +175,24 @@ a single lattice. Proceed with caution while we do further testing.
 Interacting with **wadm** is done over NATS on the root topic `wadm.api.{prefix}` where `prefix` is
 the lattice namespace prefix. For more information on this API, please consult the [wadm
 Reference](https://wasmcloud.dev/reference/wadm).
+
+## Known Issues/Missing functionality
+
+As this is a new project there are some things we know are missing or buggy. A non-exhaustive list
+of these can be found below:
+
+- Currently the API does not update with the status of each scaler and reconcile action
+- It is _technically_ possible as things stand right now for a race condition with manifests when a
+  manifest is updated/created and deleted simultaneously. In this case, one of the operations will
+  win and you will end up with a manifest that still exists after you delete it or a manifest that
+  does not exist after you create it. This is a very unlikely scenario as only one person or process
+  is interacting with a specific, but it is possible. If this becomes a problem for you, please let
+  us know and we will consider additional ways of how we can address it.
+- Manifest validation is not yet implemented. Right now wadm will accept the manifest blindly so
+  long as it can parse it. It will not validate that the model name is valid or if you specified
+  entirely invalid properties. This will be added in a future version.
+- Nondestructive (e.g. orphaning resources) undeploys are not currently implemented. You can set the
+  field in the request, but it won't do anything
 
 ## References
 

@@ -5,23 +5,22 @@ use tracing::{debug, error, instrument, trace};
 use crate::{
     model::{internal::StoredManifest, LATEST_VERSION},
     publisher::Publisher,
-    storage::Store,
 };
 
 use super::{
-    parser::parse_manifest, DeleteModelRequest, DeleteModelResponse, DeleteResult,
-    DeployModelRequest, DeployModelResponse, DeployResult, GetModelRequest, GetModelResponse,
-    GetResult, ManifestNotifier, ModelSummary, PutModelResponse, PutResult, Status, StatusInfo,
-    StatusResponse, StatusResult, StatusType, UndeployModelRequest, VersionInfo, VersionResponse,
+    parser::parse_manifest, storage::ModelStorage, DeleteModelRequest, DeleteModelResponse,
+    DeleteResult, DeployModelRequest, DeployModelResponse, DeployResult, GetModelRequest,
+    GetModelResponse, GetResult, ManifestNotifier, PutModelResponse, PutResult, Status, StatusInfo,
+    StatusResponse, StatusResult, UndeployModelRequest, VersionInfo, VersionResponse,
 };
 
-pub(crate) struct Handler<S, P> {
-    pub(crate) store: S,
+pub(crate) struct Handler<P> {
+    pub(crate) store: ModelStorage,
     pub(crate) client: Client,
     pub(crate) notifier: ManifestNotifier<P>,
 }
 
-impl<S: Store + Send + Sync, P: Publisher> Handler<S, P> {
+impl<P: Publisher> Handler<P> {
     #[instrument(level = "debug", skip(self, msg))]
     pub async fn put_model(&self, msg: Message, lattice_id: &str) {
         trace!("Parsing incoming manifest");
@@ -50,9 +49,10 @@ impl<S: Store + Send + Sync, P: Publisher> Handler<S, P> {
 
         let manifest_name = manifest.metadata.name.clone();
 
-        let mut current_manifests: StoredManifest =
+        let (mut current_manifests, current_revision) =
             match self.store.get(lattice_id, &manifest_name).await {
-                Ok(d) => d.unwrap_or_default(),
+                Ok(Some(data)) => data,
+                Ok(None) => (StoredManifest::default(), 0),
                 Err(e) => {
                     error!(error = %e, "Unable to fetch data from store");
                     self.send_error(msg.reply, "Internal storage error".to_string())
@@ -87,7 +87,7 @@ impl<S: Store + Send + Sync, P: Publisher> Handler<S, P> {
         trace!(total_manifests = %resp.total_versions, "Storing manifests");
         if let Err(e) = self
             .store
-            .store(lattice_id, manifest_name, current_manifests)
+            .set(lattice_id, current_manifests, Some(current_revision))
             .await
         {
             error!(error = %e, "Unable to store updated data");
@@ -125,7 +125,7 @@ impl<S: Store + Send + Sync, P: Publisher> Handler<S, P> {
             }
         };
 
-        let manifests: StoredManifest = match self.store.get(lattice_id, name).await {
+        let (manifests, _) = match self.store.get(lattice_id, name).await {
             Ok(Some(m)) => m,
             Ok(None) => {
                 self.send_reply(
@@ -187,25 +187,8 @@ impl<S: Store + Send + Sync, P: Publisher> Handler<S, P> {
 
     #[instrument(level = "debug", skip(self, msg))]
     pub async fn list_models(&self, msg: Message, lattice_id: &str) {
-        let data: Vec<ModelSummary> = match self.store.list::<StoredManifest>(lattice_id).await {
-            Ok(manifests) => {
-                manifests
-                    .into_iter()
-                    .map(|(name, manifest)| {
-                        let current = manifest.get_current();
-                        let version = current.version();
-                        ModelSummary {
-                            name,
-                            version: version.to_owned(),
-                            description: current.description().map(|s| s.to_owned()),
-                            deployed: manifest.is_deployed(version),
-                            // TODO: Actually fetch the status info from the stored manifest once we
-                            // figure it out
-                            status: StatusType::default(),
-                        }
-                    })
-                    .collect()
-            }
+        let data = match self.store.list(lattice_id).await {
+            Ok(d) => d,
             Err(e) => {
                 error!(error = %e, "Unable to fetch data");
                 self.send_error(msg.reply, "Internal storage error".to_string())
@@ -224,8 +207,8 @@ impl<S: Store + Send + Sync, P: Publisher> Handler<S, P> {
     // ordered by time of creation. When we document, we should change this to reflect that
     #[instrument(level = "debug", skip(self, msg))]
     pub async fn list_versions(&self, msg: Message, lattice_id: &str, name: &str) {
-        let data: VersionResponse = match self.store.get::<StoredManifest>(lattice_id, name).await {
-            Ok(Some(manifest)) => VersionResponse {
+        let data: VersionResponse = match self.store.get(lattice_id, name).await {
+            Ok(Some((manifest, _))) => VersionResponse {
                 result: GetResult::Success,
                 message: "Successfully fetched versions".to_string(),
                 versions: manifest
@@ -278,7 +261,7 @@ impl<S: Store + Send + Sync, P: Publisher> Handler<S, P> {
                 }
             };
         let reply_data = if req.delete_all {
-            match self.store.delete::<StoredManifest>(lattice_id, name).await {
+            match self.store.delete(lattice_id, name).await {
                 Ok(_) => {
                     DeleteModelResponse {
                         result: DeleteResult::Deleted,
@@ -297,8 +280,8 @@ impl<S: Store + Send + Sync, P: Publisher> Handler<S, P> {
                 }
             }
         } else {
-            match self.store.get::<StoredManifest>(lattice_id, name).await {
-                Ok(Some(mut current)) => {
+            match self.store.get(lattice_id, name).await {
+                Ok(Some((mut current, current_revision))) => {
                     let deleted = current.delete_version(&req.version);
                     if deleted && !current.is_empty() {
                         // If the version we deleted was the deployed one, undeploy it
@@ -315,7 +298,7 @@ impl<S: Store + Send + Sync, P: Publisher> Handler<S, P> {
                             false
                         };
                         self.store
-                            .store(lattice_id, name.to_owned(), current)
+                            .set(lattice_id, current, Some(current_revision))
                             .await
                             .map(|_| DeleteModelResponse {
                                 result: DeleteResult::Deleted,
@@ -333,7 +316,7 @@ impl<S: Store + Send + Sync, P: Publisher> Handler<S, P> {
                     } else if deleted && current.is_empty() {
                         // If we deleted the last one, delete the model from the store
                         self.store
-                            .delete::<StoredManifest>(lattice_id, name)
+                            .delete(lattice_id, name)
                             .await
                             .map(|_| DeleteModelResponse {
                                 result: DeleteResult::Deleted,
@@ -426,7 +409,7 @@ impl<S: Store + Send + Sync, P: Publisher> Handler<S, P> {
         trace!(?req, "Got request");
 
         trace!("Fetching current data from store");
-        let mut manifests: StoredManifest = match self.store.get(lattice_id, name).await {
+        let (mut manifests, current_revision) = match self.store.get(lattice_id, name).await {
             Ok(Some(m)) => m,
             Ok(None) => {
                 self.send_reply(
@@ -475,7 +458,7 @@ impl<S: Store + Send + Sync, P: Publisher> Handler<S, P> {
 
         let reply = self
             .store
-            .store(lattice_id, name.to_owned(), manifests)
+            .set(lattice_id, manifests, Some(current_revision))
             .await
             .map(|_| DeployModelResponse {
                 result: DeployResult::Acknowledged,
@@ -539,7 +522,7 @@ impl<S: Store + Send + Sync, P: Publisher> Handler<S, P> {
         trace!(?req, "Got request");
 
         trace!("Fetching current data from store");
-        let mut manifests: StoredManifest = match self.store.get(lattice_id, name).await {
+        let (mut manifests, current_revision) = match self.store.get(lattice_id, name).await {
             Ok(Some(m)) => m,
             Ok(None) => {
                 self.send_reply(
@@ -566,7 +549,7 @@ impl<S: Store + Send + Sync, P: Publisher> Handler<S, P> {
         let reply = if manifests.undeploy() {
             trace!("Manifest undeployed. Storing updated manifest");
             self.store
-                .store(lattice_id, name.to_owned(), manifests)
+                .set(lattice_id, manifests, Some(current_revision))
                 .await
                 .map(|_| DeployModelResponse {
                     result: DeployResult::Acknowledged,
@@ -619,7 +602,7 @@ impl<S: Store + Send + Sync, P: Publisher> Handler<S, P> {
     pub async fn model_status(&self, msg: Message, lattice_id: &str, name: &str) {
         trace!("Fetching current manifest from store");
         let manifests: StoredManifest = match self.store.get(lattice_id, name).await {
-            Ok(Some(m)) => m,
+            Ok(Some((m, _))) => m,
             Ok(None) => {
                 self.send_reply(
                     msg.reply,
