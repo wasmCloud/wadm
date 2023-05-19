@@ -44,7 +44,6 @@ pub const WADM_NOTIFY_PREFIX: &str = "wadm.notify";
 pub enum Notifications {
     CreateScalers(Manifest),
     DeleteScalers(String),
-
     /// Register expected events for a manifest. Should only be used when a full reconcile
     /// is being done (like on first deploy), rather than just handling a single event
     RegisterExpectedEvents(String),

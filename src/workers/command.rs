@@ -1,13 +1,12 @@
-use std::collections::HashMap;
-
 use crate::{
     commands::*,
     consumers::{
         manager::{WorkError, WorkResult, Worker},
         ScopedMessage,
     },
-    APP_SPEC_ANNOTATION,
 };
+
+use super::insert_managed_annotations;
 
 /// A worker implementation for handling incoming commands
 #[derive(Clone)]
@@ -111,15 +110,4 @@ impl Worker for CommandWorker {
         }
         message.ack().await.map_err(WorkError::from)
     }
-}
-
-/// Inserts managed annotations to the given `annotations` HashMap.
-pub fn insert_managed_annotations(annotations: &mut HashMap<String, String>, model_name: &str) {
-    annotations.extend([
-        (
-            crate::MANAGED_BY_ANNOTATION.to_owned(),
-            crate::MANAGED_BY_IDENTIFIER.to_owned(),
-        ),
-        (APP_SPEC_ANNOTATION.to_owned(), model_name.to_owned()),
-    ])
 }
