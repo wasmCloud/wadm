@@ -119,7 +119,7 @@ pub struct CapabilityProperties {
     pub link_name: Option<String>,
     /// Optional configuration for this capability provider
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub config: Option<HashMap<String, String>>,
+    pub config: Option<HashMap<String, serde_json::Value>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

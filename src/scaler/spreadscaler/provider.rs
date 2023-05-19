@@ -29,7 +29,7 @@ pub struct ProviderSpreadConfig {
     /// Contract ID the provider implements
     provider_contract_id: String,
     /// Provider config, to be serialized as a JSON string
-    provider_config: Option<HashMap<String, String>>,
+    provider_config: Option<HashMap<String, serde_json::Value>>,
     /// The name of the wadm model this SpreadScaler is under
     model_name: String,
     /// Configuration for this SpreadScaler
@@ -186,7 +186,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
                             })
                             .map(|host| {
                                 let config_json =
-                                    self.config.provider_config.as_ref().map(|c| serde_json::to_string(c).ok()).flatten();
+                                    self.config.provider_config.as_ref().and_then(|c| serde_json::to_string(c).ok());
                                 Command::StartProvider(StartProvider {
                                     reference: provider_ref.to_owned(),
                                     host_id: host.id.to_string(),
@@ -223,12 +223,13 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
 
 impl<S: ReadStore + Send + Sync> ProviderSpreadScaler<S> {
     /// Construct a new ProviderSpreadScaler with specified configuration values
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         store: S,
         provider_reference: String,
         provider_contract_id: String,
         provider_link_name: Option<String>,
-        provider_config: Option<HashMap<String, String>>,
+        provider_config: Option<HashMap<String, serde_json::Value>>,
         lattice_id: String,
         model_name: String,
         spread_config: SpreadScalerProperty,
