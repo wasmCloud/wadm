@@ -83,7 +83,7 @@ pub trait EventType {
 }
 
 /// A lattice event
-#[derive(Debug)]
+#[derive(Debug, Clone, Deserialize)]
 pub enum Event {
     ActorStarted(ActorStarted),
     ActorsStarted(ActorsStarted),
@@ -113,7 +113,12 @@ impl TryFrom<CloudEvent> for Event {
     fn try_from(value: CloudEvent) -> Result<Self, Self::Error> {
         match value.ty() {
             ActorStarted::TYPE => ActorStarted::try_from(value).map(Event::ActorStarted),
+            ActorsStarted::TYPE => ActorsStarted::try_from(value).map(Event::ActorsStarted),
+            ActorsStartFailed::TYPE => {
+                ActorsStartFailed::try_from(value).map(Event::ActorsStartFailed)
+            }
             ActorStopped::TYPE => ActorStopped::try_from(value).map(Event::ActorStopped),
+            ActorsStopped::TYPE => ActorsStopped::try_from(value).map(Event::ActorsStopped),
             ProviderStarted::TYPE => ProviderStarted::try_from(value).map(Event::ProviderStarted),
             ProviderStopped::TYPE => ProviderStopped::try_from(value).map(Event::ProviderStopped),
             ProviderStartFailed::TYPE => {

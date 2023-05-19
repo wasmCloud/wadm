@@ -32,32 +32,13 @@ use crate::{
     workers::CommandPublisher,
 };
 
-use super::spreadscaler::{link::LinkScaler, provider::ProviderSpreadScaler};
+use super::{
+    spreadscaler::{link::LinkScaler, provider::ProviderSpreadScaler},
+    BackoffAwareScaler,
+};
 
 pub type BoxedScaler = Box<dyn Scaler + Send + Sync + 'static>;
-pub type ScalerList = Vec<ScalerWithEvents>;
-
-pub struct ScalerWithEvents {
-    scaler: BoxedScaler,
-    pub(crate) backoff_events: Arc<RwLock<Vec<(Event, Option<Event>)>>>,
-}
-
-impl Deref for ScalerWithEvents {
-    type Target = BoxedScaler;
-
-    fn deref(&self) -> &Self::Target {
-        &self.scaler
-    }
-}
-
-impl From<BoxedScaler> for ScalerWithEvents {
-    fn from(scaler: BoxedScaler) -> Self {
-        Self {
-            scaler,
-            backoff_events: Arc::new(RwLock::new(vec![])),
-        }
-    }
-}
+pub type ScalerList = Vec<BackoffAwareScaler>;
 
 pub const WADM_NOTIFY_PREFIX: &str = "wadm.notify";
 // The backoff channel buffer size. This is an arbitrary number, but we want to make sure we cap it
@@ -69,6 +50,14 @@ const CHANNEL_BUFFER_SIZE: usize = 250;
 pub enum Notifications {
     CreateScalers(Manifest),
     DeleteScalers(String),
+
+    /// Register expected events for a manifest. Should only be used when a full reconcile
+    /// is being done (like on first deploy), rather than just handling a single event
+    RegisterExpectedEvents(String),
+    /// Remove an event from the expected list for a manifest scaler
+    RemoveExpectedEvent((String, Event)),
+    /// Clear all expected events for a manifest
+    ClearExpectedEvents(String),
 }
 
 /// A wrapper type returned when getting a list of scalers. Implements a backoff operation that can
@@ -87,6 +76,51 @@ impl<'a, P> Deref for Scalers<'a, P> {
 
     fn deref(&self) -> &Self::Target {
         self.scalers.deref()
+    }
+}
+
+impl<'a, P> Scalers<'a, P>
+where
+    P: Publisher,
+{
+    pub async fn reconcile_and_register(&self) -> Result<Vec<Result<Vec<Command>>>> {
+        let manifest_name = self.name;
+
+        // Publish the message first because otherwise we could get scalers that don't go to backoff
+        // mode
+        let data = serde_json::to_vec(&Notifications::RegisterExpectedEvents(
+            manifest_name.to_owned(),
+        ))?;
+        self.publisher.publish(data, Some(self.subject)).await?;
+
+        Ok(self
+            .reconcile_and_register_expected_events(manifest_name)
+            .await)
+    }
+
+    /// Computes commands and registers expected events for each scaler.
+    /// Should only be called when you plan to publish all of the commands,
+    /// as this function will register expected events for each scaler.
+    pub async fn reconcile_and_register_expected_events(
+        &self,
+        manifest_name: &str,
+    ) -> Vec<Result<Vec<Command>>> {
+        futures::future::join_all(self.scalers.iter().map(|scaler| async move {
+            match scaler.reconcile().await {
+                // "Backoff" scalers with expected corresponding events
+                Ok(commands) => scaler
+                    .add_events(
+                        commands
+                            .iter()
+                            .filter_map(|command| command.corresponding_event(manifest_name)),
+                        true,
+                    )
+                    .await
+                    .map(|_| commands),
+                Err(e) => Err(e),
+            }
+        }))
+        .await
     }
 }
 
@@ -412,6 +446,36 @@ where
                                     // NOTE(thomastaylor312): We could find that this strategy actually
                                     // doesn't tear down everything or leaves something hanging. If that is
                                     // the case, a new part of the reaper logic should handle it
+                                },
+                                Notifications::RegisterExpectedEvents(name) => {
+                                    trace!(%name, "Computing and registering expected events for manifest");
+                                    if let Some(scalers) = self.get_scalers(&name).await {
+                                        scalers.reconcile_and_register_expected_events(&name).await;
+                                    } else {
+                                        debug!(%name, "Received request to register events for non-existent scalers, ignoring");
+                                    }
+                                },
+                                Notifications::RemoveExpectedEvent((name, event)) => {
+                                    trace!(%name, "Removing expected event for manifest");
+                                    if let Some(scalers) = self.get_scalers(&name).await {
+                                        futures::future::join_all(scalers.iter().map(|scaler| async {
+                                            scaler.remove_event(&event).await
+                                        }
+                                        )).await;
+                                    } else {
+                                        debug!(%name, "Received request to remove event for non-existent scalers, ignoring");
+                                    }
+                                }
+                                Notifications::ClearExpectedEvents(name) => {
+                                    trace!(%name, "Clearing expected events for all scalers for manifest");
+                                    if let Some(scalers) = self.get_scalers(&name).await {
+                                        futures::future::join_all(scalers.iter().map(|scaler| async {
+                                            scaler.set_events(vec![]).await
+                                        }
+                                        )).await;
+                                    } else {
+                                        debug!(%name, "Received request to clear events for non-existent scalers, ignoring");
+                                    }
                                 }
                             }
                             // Always ack if we get here
@@ -438,6 +502,13 @@ where
 
 const EMPTY_TRAIT_VEC: Vec<Trait> = Vec::new();
 
+/// Converts a list of components into a list of scalers
+///
+/// # Arguments
+/// * `components` - The list of components to convert
+/// * `store` - The store to use when creating the scalers so they can access lattice state
+/// * `lattice_id` - The lattice id the scalers operate on
+/// * `name` - The name of the manifest that the scalers are being created for
 pub(crate) fn components_to_scalers<S: ReadStore + Send + Sync + Clone + 'static>(
     components: &[Component],
     store: &S,
@@ -485,7 +556,7 @@ pub(crate) fn components_to_scalers<S: ReadStore + Send + Sync + Clone + 'static
                                 }),
                             _ => None,
                         })
-                        .map(|boxed| boxed.into()),
+                        .map(|boxed| BackoffAwareScaler::new(boxed, name)),
                 )
             }
             Properties::Capability { properties: props } => {
@@ -507,12 +578,12 @@ pub(crate) fn components_to_scalers<S: ReadStore + Send + Sync + Clone + 'static
                                 }
                                 _ => None,
                             })
-                            .map(|boxed| boxed.into()),
+                            .map(|boxed| BackoffAwareScaler::new(boxed, name)),
                     )
                 } else {
                     // Allow providers to omit the scaler entirely for simplicity
-                    scalers.push(
-                        (Box::new(ProviderSpreadScaler::new(
+                    scalers.push(BackoffAwareScaler::new(
+                        Box::new(ProviderSpreadScaler::new(
                             store.clone(),
                             props.image.to_owned(),
                             props.contract.to_owned(),
@@ -523,9 +594,9 @@ pub(crate) fn components_to_scalers<S: ReadStore + Send + Sync + Clone + 'static
                                 replicas: 1,
                                 spread: vec![],
                             },
-                        )) as BoxedScaler)
-                            .into(),
-                    )
+                        )),
+                        name,
+                    ))
                 }
             }
         }

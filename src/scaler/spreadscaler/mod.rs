@@ -61,19 +61,17 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
         };
         self.config.spread_config = spread_config;
         self.spread_requirements = compute_spread(&self.config.spread_config);
-        //TODO: do we need to remove the backoff?
         self.reconcile().await
     }
 
     #[instrument(level = "trace", skip(self))]
     async fn handle_event(&self, event: &Event) -> Result<Vec<Command>> {
         //TODO: race condition, first actorstarted can come in before the rwlock updated?
-        println!("spreadscaler handling {:?}", event);
         // NOTE(brooksmtownsend): We could be more efficient here and instead of running
         // the entire reconcile, smart compute exactly what needs to change, but it just
         // requires more code branches and would be fine as a future improvement
         match event {
-            Event::ActorStarted(actor_started) => {
+            Event::ActorsStarted(actor_started) => {
                 if actor_started.image_ref == self.config.actor_reference {
                     trace!(image_ref = %actor_started.image_ref, "Found image we care about");
                     self.reconcile().await
@@ -81,7 +79,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
                     Ok(Vec::new())
                 }
             }
-            Event::ActorStopped(actor_stopped) => {
+            Event::ActorsStopped(actor_stopped) => {
                 let actor_id = self.actor_id().await?;
                 if actor_stopped.public_key == actor_id {
                     trace!(%actor_id, "Found actor we care about");
@@ -112,7 +110,6 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
 
     #[instrument(level = "trace", skip_all, fields(name = %self.config.model_name))]
     async fn reconcile(&self) -> Result<Vec<Command>> {
-        println!("spreadscaler reconciling");
         let hosts = self.store.list::<Host>(&self.config.lattice_id).await?;
 
         let actor = if let Ok(id) = self.actor_id().await {
