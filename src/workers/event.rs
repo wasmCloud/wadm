@@ -11,7 +11,7 @@ use crate::consumers::{
 };
 use crate::events::*;
 use crate::publisher::Publisher;
-use crate::scaler::manager::{ScalerManager, Scalers};
+use crate::scaler::manager::ScalerManager;
 use crate::scaler::BackoffAwareScaler;
 use crate::storage::{Actor, Host, Provider, ProviderStatus, Store, WadmActorInstance};
 use crate::APP_SPEC_ANNOTATION;
@@ -719,30 +719,28 @@ where
     async fn run_all_scalers(&self, event: &Event) -> anyhow::Result<()> {
         let scalers = self.scalers.get_all_scalers().await;
 
-        let (affected_models, commands): (Vec<&str>, Vec<Vec<Command>>) =
+        let commands: Vec<Command> =
             futures::future::join_all(scalers.iter().map(|(name, scalers)| async move {
-                // Get commands
-                let commands =
-                // Check event
                 futures::future::join_all(scalers.iter().map(|scaler| async move {
                     //TODO: handle error
-                    scaler_handle_event(scaler, event, name).await.unwrap_or_default()
-                })).await;
-
-                (name, commands)
+                    scaler_handle_event(scaler, event, name)
+                        .await
+                        .unwrap_or_default()
+                }))
+                .await
             }))
             .await
             .into_iter()
-            .filter_map(|(name, commands)| {
+            .filter_map(|commands| {
                 let commands = commands.into_iter().flatten().collect::<Vec<_>>();
                 if commands.is_empty() {
                     return None;
                 }
-                Some((name.as_str(), commands))
+                Some(commands)
             })
-            .unzip();
+            .flatten()
+            .collect::<Vec<Command>>();
 
-        let commands = commands.into_iter().flatten().collect::<Vec<Command>>();
         self.publisher.publish_commands(commands).await
     }
 }
@@ -893,7 +891,7 @@ where
                 .map(|s| s.as_str())),
             Event::ProviderStartFailed(_provider) => Ok(None),
             // All other events we don't care about for state.
-            e => {
+            _ => {
                 trace!("Got event we don't care about. Skipping");
                 Ok(None)
             }

@@ -2,7 +2,6 @@ use std::collections::HashMap;
 
 use anyhow::Result;
 use async_trait::async_trait;
-use tokio::sync::mpsc::Sender;
 
 use crate::{
     commands::{Command, StartActor, StopActor},

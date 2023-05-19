@@ -1,13 +1,9 @@
-use std::{cmp::Ordering, collections::HashMap, sync::Arc, time::Duration};
+use std::{cmp::Ordering, collections::HashMap};
 
 use anyhow::Result;
 use async_trait::async_trait;
-use rand::rngs::SmallRng;
-use rand::{Rng, SeedableRng};
-use tokio::sync::mpsc::Sender;
-use tokio::sync::{OnceCell, RwLock};
-use tokio::time::Instant;
-use tracing::{debug, error, instrument, trace, warn, Instrument};
+use tokio::sync::OnceCell;
+use tracing::{instrument, trace, warn};
 
 use crate::events::HostHeartbeat;
 use crate::{
@@ -25,7 +21,6 @@ pub mod provider;
 // Annotation constants
 const SCALER_VALUE: &str = "spreadscaler";
 const SPREAD_KEY: &str = "wasmcloud.dev/spread_name";
-const BACKOFF_TIME: Duration = Duration::from_secs(30);
 
 /// Config for an ActorSpreadScaler
 #[derive(Clone)]

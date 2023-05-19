@@ -57,6 +57,7 @@ pub struct BackoffAwareScaler {
     scaler: Box<dyn Scaler + Send + Sync>,
     pub model_name: String,
     /// A list of (success, Option<failure>) events that the scaler is expecting
+    #[allow(clippy::type_complexity)]
     expected_events: Arc<RwLock<Vec<(Event, Option<Event>)>>>,
 }
 
