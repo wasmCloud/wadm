@@ -54,7 +54,7 @@ impl<S: ReadStore + Send + Sync> Scaler for LinkScaler<S> {
         match event {
             // We can only publish links once we know actor and provider IDs,
             // so we should pay attention to the Started events if we don't know them yet
-            Event::ActorStarted(actor_started)
+            Event::ActorsStarted(actor_started)
                 if !self.actor_id.initialized()
                     && actor_started.image_ref == self.config.actor_reference =>
             {

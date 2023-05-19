@@ -9,8 +9,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     events::{
-        ActorClaims, ActorsStartFailed, ActorsStarted, Event, Linkdef, LinkdefSet, ProviderClaims,
-        ProviderStartFailed, ProviderStarted,
+        ActorClaims, ActorsStartFailed, ActorsStarted, ActorsStopped, Event, Linkdef, LinkdefSet,
+        ProviderClaims, ProviderStartFailed, ProviderStarted,
     },
     model::CapabilityConfig,
     workers::insert_managed_annotations,
@@ -46,7 +46,7 @@ impl Command {
     /// # Return
     /// - The first element in the tuple corresponds to the "success" event a host would output after completing this command
     /// - The second element in the tuple corresponds to an optional "failure" event that a host could output if processing fails
-    pub fn corresponding_event(&self, model_name: &str) -> (Event, Option<Event>) {
+    pub fn corresponding_event(&self, model_name: &str) -> Option<(Event, Option<Event>)> {
         match self {
             Command::StartActor(StartActor {
                 annotations,
@@ -57,7 +57,7 @@ impl Command {
             }) => {
                 let mut annotations = annotations.to_owned();
                 insert_managed_annotations(&mut annotations, model_name);
-                (
+                Some((
                     Event::ActorsStarted(ActorsStarted {
                         annotations: annotations.to_owned(),
                         image_ref: reference.to_owned(),
@@ -75,7 +75,28 @@ impl Command {
                         // We do not know the public key from the command
                         public_key: String::with_capacity(0),
                     })),
-                )
+                ))
+            }
+            Command::StopActor(StopActor {
+                annotations,
+                actor_id,
+                host_id,
+                count,
+                ..
+            }) => {
+                let mut annotations = annotations.to_owned();
+                insert_managed_annotations(&mut annotations, model_name);
+                Some((
+                    Event::ActorsStopped(ActorsStopped {
+                        annotations: annotations.to_owned(),
+                        public_key: actor_id.to_owned(),
+                        host_id: host_id.to_owned(),
+                        count: *count,
+                        // We don't know if there are additional instances, so can't consider remaining
+                        remaining: 0,
+                    }),
+                    None,
+                ))
             }
             Command::StartProvider(StartProvider {
                 annotations,
@@ -86,7 +107,7 @@ impl Command {
             }) => {
                 let mut annotations = annotations.to_owned();
                 insert_managed_annotations(&mut annotations, model_name);
-                (
+                Some((
                     Event::ProviderStarted(ProviderStarted {
                         annotations: annotations.to_owned(),
                         claims: ProviderClaims::default(),
@@ -109,7 +130,7 @@ impl Command {
                         // We don't know this field from the command
                         error: String::with_capacity(0),
                     })),
-                )
+                ))
             }
             Command::PutLinkdef(PutLinkdef {
                 actor_id,
@@ -118,7 +139,7 @@ impl Command {
                 contract_id,
                 values,
                 ..
-            }) => (
+            }) => Some((
                 Event::LinkdefSet(LinkdefSet {
                     linkdef: Linkdef {
                         actor_id: actor_id.to_owned(),
@@ -131,8 +152,8 @@ impl Command {
                     },
                 }),
                 None,
-            ),
-            _ => todo!(),
+            )),
+            _ => None,
         }
     }
 }

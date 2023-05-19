@@ -8,7 +8,9 @@ use semver::Version;
 use serde::{Deserialize, Serialize};
 
 use super::StateKind;
-use crate::events::{ActorStarted, HostHeartbeat, HostStarted, ProviderInfo, ProviderStarted};
+use crate::events::{
+    ActorStarted, ActorsStarted, HostHeartbeat, HostStarted, ProviderInfo, ProviderStarted,
+};
 
 /// A wasmCloud Capability provider
 // NOTE: We probably aren't going to use this _right now_ so we've kept it pretty minimal. But it is
@@ -194,6 +196,34 @@ impl From<ActorStarted> for Actor {
 
 impl From<&ActorStarted> for Actor {
     fn from(value: &ActorStarted) -> Self {
+        Actor {
+            id: value.public_key.clone(),
+            name: value.claims.name.clone(),
+            capabilities: value.claims.capabilites.clone(),
+            issuer: value.claims.issuer.clone(),
+            call_alias: value.claims.call_alias.clone(),
+            reference: value.image_ref.clone(),
+            ..Default::default()
+        }
+    }
+}
+
+impl From<ActorsStarted> for Actor {
+    fn from(value: ActorsStarted) -> Self {
+        Actor {
+            id: value.public_key,
+            name: value.claims.name,
+            capabilities: value.claims.capabilites,
+            issuer: value.claims.issuer,
+            call_alias: value.claims.call_alias,
+            reference: value.image_ref,
+            ..Default::default()
+        }
+    }
+}
+
+impl From<&ActorsStarted> for Actor {
+    fn from(value: &ActorsStarted) -> Self {
         Actor {
             id: value.public_key.clone(),
             name: value.claims.name.clone(),
