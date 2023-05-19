@@ -540,6 +540,7 @@ pub(crate) fn components_to_scalers<S: ReadStore + Send + Sync + Clone + 'static
                                         props.image.to_owned(),
                                         props.contract.to_owned(),
                                         props.link_name.to_owned(),
+                                        props.config.to_owned(),
                                         lattice_id.to_owned(),
                                         name.to_owned(),
                                         p.to_owned(),
@@ -557,6 +558,7 @@ pub(crate) fn components_to_scalers<S: ReadStore + Send + Sync + Clone + 'static
                             props.image.to_owned(),
                             props.contract.to_owned(),
                             props.link_name.to_owned(),
+                            props.config.to_owned(),
                             lattice_id.to_owned(),
                             name.to_owned(),
                             SpreadScalerProperty {

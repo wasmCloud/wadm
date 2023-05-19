@@ -117,6 +117,9 @@ pub struct CapabilityProperties {
     /// An optional link name to use for this capability
     #[serde(skip_serializing_if = "Option::is_none")]
     pub link_name: Option<String>,
+    /// Optional configuration for this capability provider
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub config: Option<HashMap<String, String>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -378,6 +381,7 @@ mod test {
                     image: "wasmcloud.azurecr.io/httpserver:0.13.1".to_string(),
                     contract: "wasmcloud:httpserver".to_string(),
                     link_name: Some("default".to_string()),
+                    config: None,
                 },
             },
             traits: None,
@@ -405,6 +409,7 @@ mod test {
                     image: "wasmcloud.azurecr.io/ledblinky:0.0.1".to_string(),
                     contract: "wasmcloud:blinkenlights".to_string(),
                     link_name: Some(crate::DEFAULT_LINK_NAME.to_owned()),
+                    config: None,
                 },
             },
             traits: Some(trait_vec),

@@ -63,7 +63,7 @@ impl Worker for CommandWorker {
                         &prov.reference,
                         prov.link_name.clone(),
                         Some(annotations),
-                        None,
+                        prov.config_json.clone(),
                     )
                     .await
             }

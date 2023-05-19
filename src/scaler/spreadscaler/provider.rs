@@ -28,6 +28,8 @@ pub struct ProviderSpreadConfig {
     provider_link_name: String,
     /// Contract ID the provider implements
     provider_contract_id: String,
+    /// Provider config, to be serialized as a JSON string
+    provider_config: Option<HashMap<String, String>>,
     /// The name of the wadm model this SpreadScaler is under
     model_name: String,
     /// Configuration for this SpreadScaler
@@ -183,12 +185,15 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
                                 })
                             })
                             .map(|host| {
+                                let config_json =
+                                    self.config.provider_config.as_ref().map(|c| serde_json::to_string(c).ok()).flatten();
                                 Command::StartProvider(StartProvider {
                                     reference: provider_ref.to_owned(),
                                     host_id: host.id.to_string(),
                                     link_name: Some(link_name.to_owned()),
                                     model_name: self.config.model_name.to_owned(),
                                     annotations: spreadscaler_annotations(&spread.name),
+                                    config_json,
                                 })
                             })
                             .take(num_to_start)
@@ -223,6 +228,7 @@ impl<S: ReadStore + Send + Sync> ProviderSpreadScaler<S> {
         provider_reference: String,
         provider_contract_id: String,
         provider_link_name: Option<String>,
+        provider_config: Option<HashMap<String, String>>,
         lattice_id: String,
         model_name: String,
         spread_config: SpreadScalerProperty,
@@ -236,6 +242,7 @@ impl<S: ReadStore + Send + Sync> ProviderSpreadScaler<S> {
                 provider_contract_id,
                 provider_link_name: provider_link_name
                     .unwrap_or_else(|| DEFAULT_LINK_NAME.to_string()),
+                provider_config,
                 lattice_id,
                 spread_config,
                 model_name,
@@ -301,12 +308,6 @@ mod test {
         let host_id_two = "NASDASDIMAREALHOSTTWO";
 
         let store = Arc::new(TestStore::default());
-
-        // let lattice_source = TestLatticeSource {
-        //     claims: HashMap::default(),
-        //     inventory: Arc::new(RwLock::new(HashMap::default())),
-        // };
-        // let worker = EventWorker::new(store.clone(), lattice_source);
 
         store
             .store(
@@ -388,6 +389,7 @@ mod test {
             provider_ref.to_string(),
             "prov:ider".to_string(),
             None,
+            None,
             lattice_id.to_string(),
             MODEL_NAME.to_string(),
             multi_spread_even,
@@ -408,6 +410,7 @@ mod test {
                         link_name: Some(DEFAULT_LINK_NAME.to_string()),
                         model_name: MODEL_NAME.to_string(),
                         annotations: spreadscaler_annotations("SimpleOne"),
+                        config_json: None
                     }
                 );
                 // This manual assertion is because we don't hash on annotations and I want to be extra sure we have the
@@ -429,6 +432,7 @@ mod test {
                         link_name: Some(DEFAULT_LINK_NAME.to_string()),
                         model_name: MODEL_NAME.to_string(),
                         annotations: spreadscaler_annotations("SimpleTwo"),
+                        config_json: None
                     }
                 );
                 // This manual assertion is because we don't hash on annotations and I want to be extra sure we have the
@@ -453,12 +457,6 @@ mod test {
         let host_id_four = "NASDASDIMAREALHOSTFOUR";
 
         let store = Arc::new(TestStore::default());
-
-        // let lattice_source = TestLatticeSource {
-        //     claims: HashMap::default(),
-        //     inventory: Arc::new(RwLock::new(HashMap::default())),
-        // };
-        // let worker = EventWorker::new(store.clone(), lattice_source);
 
         // Needs to request
         // start proivder with 1 replica on 2
@@ -487,6 +485,7 @@ mod test {
             store.clone(),
             provider_ref.to_string(),
             "prov:ider".to_string(),
+            None,
             None,
             lattice_id.to_string(),
             MODEL_NAME.to_string(),
@@ -667,7 +666,8 @@ mod test {
                         host_id: host_id_two.to_string(),
                         link_name: Some(DEFAULT_LINK_NAME.to_string()),
                         model_name: MODEL_NAME.to_string(),
-                        annotations: spreadscaler_annotations("ComplexTwo")
+                        annotations: spreadscaler_annotations("ComplexTwo"),
+                        config_json: None
                     }
                 );
                 // This manual assertion is because we don't hash on annotations and I want to be extra sure we have the
@@ -687,7 +687,8 @@ mod test {
                         host_id: host_id_three.to_string(),
                         link_name: Some(DEFAULT_LINK_NAME.to_string()),
                         model_name: MODEL_NAME.to_string(),
-                        annotations: spreadscaler_annotations("ComplexTwo")
+                        annotations: spreadscaler_annotations("ComplexTwo"),
+                        config_json: None
                     }
                 );
                 // This manual assertion is because we don't hash on annotations and I want to be extra sure we have the

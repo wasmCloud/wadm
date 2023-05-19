@@ -223,9 +223,10 @@ pub struct StartProvider {
     pub link_name: Option<String>,
     /// The name of the model/manifest that generated this command
     pub model_name: String,
-    // TODO: Do we need to support config_json paths?
     /// Additional annotations to attach on this command
     pub annotations: HashMap<String, String>,
+    /// Optional provider configuration to pass to the provider
+    pub config_json: Option<String>,
 }
 
 from_impl!(StartProvider);
