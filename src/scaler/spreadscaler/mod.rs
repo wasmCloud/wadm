@@ -348,8 +348,8 @@ mod test {
         commands::{Command, StartActor},
         consumers::{manager::Worker, ScopedMessage},
         events::{
-            ActorStopped, Event, Linkdef, LinkdefDeleted, LinkdefSet, ProviderClaims,
-            ProviderStarted, ProviderStopped,
+            ActorStopped, ActorsStopped, Event, Linkdef, LinkdefDeleted, LinkdefSet,
+            ProviderClaims, ProviderStarted, ProviderStopped,
         },
         model::{Spread, SpreadScalerProperty},
         scaler::{
@@ -1215,25 +1215,36 @@ mod test {
             }
         }
 
+        // NOTE(brooksmtownsend): Regular ActorStopped modify state, ActorsStopped
+        // is what scalers care about. Should be converted to ActorsStopped once state
+        // updates don't rely on them anymore.
+
         // Stop an instance of an actor, and expect a modified list of commands
-        let modifying_event = ActorStopped {
-            annotations: HashMap::default(),
+        let state_modifying_event = ActorStopped {
+            annotations: HashMap::new(),
             instance_id: "12".to_string(),
             public_key: blobby_id.to_string(),
             host_id: host_id_two.to_string(),
+        };
+        let scaler_modifying_event = ActorsStopped {
+            annotations: HashMap::new(),
+            public_key: blobby_id.to_string(),
+            host_id: host_id_two.to_string(),
+            count: 1,
+            remaining: 15,
         };
 
         worker
             .do_work(ScopedMessage::<Event> {
                 lattice_id: lattice_id.to_string(),
-                inner: Event::ActorStopped(modifying_event.clone()),
+                inner: Event::ActorStopped(state_modifying_event.clone()),
                 acker: None,
             })
             .await
             .expect("should be able to handle an event");
 
         let cmds = blobby_spreadscaler
-            .handle_event(&Event::ActorStopped(modifying_event))
+            .handle_event(&Event::ActorsStopped(scaler_modifying_event))
             .await?;
         assert_eq!(cmds.len(), 2);
 
