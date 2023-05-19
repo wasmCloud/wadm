@@ -2,7 +2,7 @@ use std::{cmp::Ordering, collections::HashMap};
 
 use anyhow::Result;
 use async_trait::async_trait;
-use tokio::sync::{mpsc::Sender, OnceCell};
+use tokio::sync::OnceCell;
 use tracing::{instrument, trace};
 
 use crate::{

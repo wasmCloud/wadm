@@ -12,10 +12,7 @@ use async_nats::jetstream::{
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use tokio::{
-    sync::{
-        mpsc::{self, Receiver, Sender},
-        OwnedRwLockReadGuard, RwLock,
-    },
+    sync::{OwnedRwLockReadGuard, RwLock},
     task::JoinHandle,
 };
 use tracing::{debug, error, instrument, trace, warn};
@@ -41,9 +38,6 @@ pub type BoxedScaler = Box<dyn Scaler + Send + Sync + 'static>;
 pub type ScalerList = Vec<BackoffAwareScaler>;
 
 pub const WADM_NOTIFY_PREFIX: &str = "wadm.notify";
-// The backoff channel buffer size. This is an arbitrary number, but we want to make sure we cap it
-// so we can't consume all memory
-const CHANNEL_BUFFER_SIZE: usize = 250;
 
 /// All events sent for manifest notifications
 #[derive(Debug, Serialize, Deserialize)]
@@ -68,7 +62,6 @@ pub struct Scalers<'a, P> {
     publisher: &'a P,
     name: &'a str,
     subject: &'a str,
-    sender: Sender<String>,
 }
 
 impl<'a, P> Deref for Scalers<'a, P> {
@@ -127,14 +120,11 @@ where
 /// A wrapper type returned when getting all scalers. Implements a backoff operation that can be
 /// called to tell all returned scalers to back off and notifiying with a message so other consumers
 /// can backoff as well
-pub struct AllScalers<'a, P> {
+pub struct AllScalers {
     pub scalers: OwnedRwLockReadGuard<HashMap<String, ScalerList>>,
-    publisher: &'a P,
-    subject: &'a str,
-    sender: Sender<String>,
 }
 
-impl<'a, P> Deref for AllScalers<'a, P> {
+impl Deref for AllScalers {
     type Target = HashMap<String, ScalerList>;
 
     fn deref(&self) -> &Self::Target {
@@ -153,7 +143,6 @@ pub struct ScalerManager<StateStore, P: Clone> {
     lattice_id: String,
     state_store: StateStore,
     publisher: CommandPublisher<P>,
-    backoff_sender: Sender<String>,
 }
 
 impl<StateStore, P: Clone> Drop for ScalerManager<StateStore, P> {
@@ -229,7 +218,6 @@ where
             .collect();
 
         let scalers = Arc::new(RwLock::new(scalers));
-        let (tx, rx) = mpsc::channel(CHANNEL_BUFFER_SIZE);
         let mut manager = ScalerManager {
             handle: None,
             scalers,
@@ -238,10 +226,9 @@ where
             lattice_id: lattice_id.to_owned(),
             state_store,
             publisher,
-            backoff_sender: tx,
         };
         let cloned = manager.clone();
-        let handle = tokio::spawn(async move { cloned.notify(messages, rx).await });
+        let handle = tokio::spawn(async move { cloned.notify(messages).await });
         manager.handle = Some(Arc::new(handle));
         Ok(manager)
     }
@@ -255,14 +242,6 @@ where
         state_store: StateStore,
         publisher: CommandPublisher<P>,
     ) -> ScalerManager<StateStore, P> {
-        let (tx, mut rx) = mpsc::channel(CHANNEL_BUFFER_SIZE);
-        // Spawn the receiver into something that will just receive and drop the message. This makes
-        // it so things won't error when sending messages
-        tokio::spawn(async move {
-            loop {
-                let _ = rx.recv().await;
-            }
-        });
         ScalerManager {
             handle: None,
             scalers: Arc::new(RwLock::new(HashMap::new())),
@@ -271,7 +250,6 @@ where
             lattice_id: lattice_id.to_owned(),
             state_store,
             publisher,
-            backoff_sender: tx,
         }
     }
 
@@ -315,7 +293,6 @@ where
                 publisher: &self.client,
                 name,
                 subject: self.subject.as_str(),
-                sender: self.backoff_sender.clone(),
             })
     }
 
@@ -323,12 +300,9 @@ where
     ///
     /// The returned [`AllScalers`] type can be used to set verious models to backoff mode
     #[instrument(level = "trace", skip(self), fields(lattice_id = %self.lattice_id))]
-    pub async fn get_all_scalers(&self) -> AllScalers<'_, P> {
+    pub async fn get_all_scalers(&self) -> AllScalers {
         AllScalers {
             scalers: self.scalers.clone().read_owned().await,
-            publisher: &self.client,
-            subject: self.subject.as_str(),
-            sender: self.backoff_sender.clone(),
         }
     }
 
@@ -394,11 +368,7 @@ where
     }
 
     #[instrument(level = "debug", skip_all, fields(lattice_id = %self.lattice_id))]
-    async fn notify(
-        &self,
-        mut messages: MessageStream,
-        mut backoff_receiver: Receiver<String>,
-    ) -> Result<()> {
+    async fn notify(&self, mut messages: MessageStream) -> Result<()> {
         loop {
             tokio::select! {
                 res = messages.next() => {
