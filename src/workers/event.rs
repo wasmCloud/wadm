@@ -12,7 +12,6 @@ use crate::consumers::{
 use crate::events::*;
 use crate::publisher::Publisher;
 use crate::scaler::manager::ScalerManager;
-use crate::scaler::BackoffAwareScaler;
 use crate::storage::{Actor, Host, Provider, ProviderStatus, Store, WadmActorInstance};
 use crate::APP_SPEC_ANNOTATION;
 
@@ -706,7 +705,7 @@ where
         let commands = futures::future::join_all(
             scalers
                 .iter()
-                .map(|scaler| scaler_handle_event(scaler, event, name)),
+                .map(|scaler| scaler.handle_event(event, name)),
         )
         .await
         .into_iter()
@@ -723,9 +722,7 @@ where
             futures::future::join_all(scalers.iter().map(|(name, scalers)| async move {
                 futures::future::join_all(scalers.iter().map(|scaler| async move {
                     //TODO: handle error
-                    scaler_handle_event(scaler, event, name)
-                        .await
-                        .unwrap_or_default()
+                    scaler.handle_event(event, name).await.unwrap_or_default()
                 }))
                 .await
             }))
@@ -743,50 +740,6 @@ where
 
         self.publisher.publish_commands(commands).await
     }
-}
-
-/// Handles an incoming event for the given scaler.
-///
-/// This function processes the event and returns a vector of commands to be executed.
-/// It also manages the expected events list, removing successfully handled events
-/// and adding new expected events based on the executed commands.
-///
-/// # Arguments
-///
-/// * `scaler`: A reference to the `ScalerWithEvents` struct which represents the scaler with events.
-/// * `event`: A reference to the `Event` struct which represents the incoming event to be handled.
-///
-/// # Returns
-///
-/// * `Result<Vec<Command>>`: A `Result` containing a vector of `Command` structs if successful,
-///   or an error of type `anyhow::Error` if any error occurs while processing the event.
-async fn scaler_handle_event(
-    scaler: &BackoffAwareScaler,
-    event: &Event,
-    model_name: &str,
-) -> anyhow::Result<Vec<Command>> {
-    let commands = if scaler.remove_event(event).await? {
-        trace!("Scaler received event that it was expecting");
-        // The scaler was expecting this event and it shouldn't respond with commands
-        vec![]
-    } else if scaler.event_count().await > 0 {
-        // If a scaler is expecting events still, don't have it handle events. This is effectively
-        // the backoff mechanism within wadm
-        trace!("Scaler received event but is still expecting events, ignoring");
-        vec![]
-    } else {
-        let commands = scaler.handle_event(event).await?;
-        // TODO: need to notify here :thinking:
-        // Based on the commands, compute the events that we expect to see for this scaler. The scaler
-        // will then ignore incoming events until all of the expected events have been received.
-        let expected_events = commands
-            .iter()
-            .filter_map(|cmd| cmd.corresponding_event(model_name));
-        scaler.add_events(expected_events, false).await?;
-        commands
-    };
-
-    Ok(commands)
 }
 
 #[async_trait::async_trait]

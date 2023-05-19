@@ -2,6 +2,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use tracing::log::trace;
 
 use crate::{
     commands::Command,
@@ -137,6 +138,50 @@ impl BackoffAwareScaler {
         expected_events.clear();
         expected_events.extend(events.into_iter().map(|e| (e, None)));
         Ok(())
+    }
+
+    /// Handles an incoming event for the given scaler.
+    ///
+    /// This function processes the event and returns a vector of commands to be executed.
+    /// It also manages the expected events list, removing successfully handled events
+    /// and adding new expected events based on the executed commands.
+    ///
+    /// # Arguments
+    ///
+    /// * `scaler`: A reference to the `ScalerWithEvents` struct which represents the scaler with events.
+    /// * `event`: A reference to the `Event` struct which represents the incoming event to be handled.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<Vec<Command>>`: A `Result` containing a vector of `Command` structs if successful,
+    ///   or an error of type `anyhow::Error` if any error occurs while processing the event.
+    pub async fn handle_event(
+        &self,
+        event: &Event,
+        model_name: &str,
+    ) -> anyhow::Result<Vec<Command>> {
+        let commands = if self.remove_event(event).await? {
+            trace!("Scaler received event that it was expecting");
+            // The scaler was expecting this event and it shouldn't respond with commands
+            vec![]
+        } else if self.event_count().await > 0 {
+            // If a scaler is expecting events still, don't have it handle events. This is effectively
+            // the backoff mechanism within wadm
+            trace!("Scaler received event but is still expecting events, ignoring");
+            vec![]
+        } else {
+            let commands = self.scaler.handle_event(event).await?;
+            // TODO: need to notify here :thinking:
+            // Based on the commands, compute the events that we expect to see for this scaler. The scaler
+            // will then ignore incoming events until all of the expected events have been received.
+            let expected_events = commands
+                .iter()
+                .filter_map(|cmd| cmd.corresponding_event(model_name));
+            self.add_events(expected_events, false).await?;
+            commands
+        };
+
+        Ok(commands)
     }
 }
 

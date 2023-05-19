@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use tracing::{instrument, warn};
 use wasmcloud_control_interface::HostInventory;
 
-use crate::{commands::Command, publisher::Publisher};
+use crate::{commands::Command, publisher::Publisher, APP_SPEC_ANNOTATION};
 
 /// A subset of needed claims to help populate state
 #[derive(Debug, Clone)]
@@ -112,4 +112,15 @@ impl<Pub: Publisher> CommandPublisher<Pub> {
         .into_iter()
         .collect::<anyhow::Result<()>>()
     }
+}
+
+/// Inserts managed annotations to the given `annotations` HashMap.
+pub fn insert_managed_annotations(annotations: &mut HashMap<String, String>, model_name: &str) {
+    annotations.extend([
+        (
+            crate::MANAGED_BY_ANNOTATION.to_owned(),
+            crate::MANAGED_BY_IDENTIFIER.to_owned(),
+        ),
+        (APP_SPEC_ANNOTATION.to_owned(), model_name.to_owned()),
+    ])
 }
