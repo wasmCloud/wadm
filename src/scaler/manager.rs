@@ -29,9 +29,13 @@ use crate::{
     scaler::{spreadscaler::ActorSpreadScaler, Command, Scaler},
     storage::ReadStore,
     workers::CommandPublisher,
+    DEFAULT_LINK_NAME,
 };
 
-use super::spreadscaler::{link::LinkScaler, provider::ProviderSpreadScaler};
+use super::spreadscaler::{
+    link::LinkScaler,
+    provider::{ProviderSpreadConfig, ProviderSpreadScaler},
+};
 
 pub type BoxedScaler = Box<dyn Scaler + Send + Sync + 'static>;
 pub type ScalerList = Vec<BoxedScaler>;
@@ -556,12 +560,19 @@ pub(crate) fn components_to_scalers<S: ReadStore + Send + Sync + Clone + 'static
                             (SPREADSCALER_TRAIT, TraitProperty::SpreadScaler(p)) => {
                                 Some(Box::new(ProviderSpreadScaler::new(
                                     store.clone(),
-                                    props.image.to_owned(),
-                                    props.contract.to_owned(),
-                                    props.link_name.to_owned(),
-                                    lattice_id.to_owned(),
-                                    name.to_owned(),
-                                    p.to_owned(),
+                                    ProviderSpreadConfig {
+                                        lattice_id: lattice_id.to_owned(),
+                                        provider_reference: props.image.to_owned(),
+                                        spread_config: p.to_owned(),
+                                        provider_contract_id: props.contract.to_owned(),
+                                        provider_link_name: props
+                                            .link_name
+                                            .as_deref()
+                                            .unwrap_or(DEFAULT_LINK_NAME)
+                                            .to_owned(),
+                                        model_name: name.to_owned(),
+                                        provider_config: props.config.to_owned(),
+                                    },
                                 )) as BoxedScaler)
                             }
                             _ => None,
@@ -571,14 +582,21 @@ pub(crate) fn components_to_scalers<S: ReadStore + Send + Sync + Clone + 'static
                     // Allow providers to omit the scaler entirely for simplicity
                     scalers.push(Box::new(ProviderSpreadScaler::new(
                         store.clone(),
-                        props.image.to_owned(),
-                        props.contract.to_owned(),
-                        props.link_name.to_owned(),
-                        lattice_id.to_owned(),
-                        name.to_owned(),
-                        SpreadScalerProperty {
-                            replicas: 1,
-                            spread: vec![],
+                        ProviderSpreadConfig {
+                            lattice_id: lattice_id.to_owned(),
+                            provider_reference: props.image.to_owned(),
+                            spread_config: SpreadScalerProperty {
+                                replicas: 1,
+                                spread: vec![],
+                            },
+                            provider_contract_id: props.contract.to_owned(),
+                            provider_link_name: props
+                                .link_name
+                                .as_deref()
+                                .unwrap_or(DEFAULT_LINK_NAME)
+                                .to_owned(),
+                            model_name: name.to_owned(),
+                            provider_config: props.config.to_owned(),
                         },
                     )) as BoxedScaler)
                 }

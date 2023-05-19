@@ -3,7 +3,9 @@ use std::collections::HashMap;
 use futures::StreamExt;
 use serial_test::serial;
 
-use wadm::{commands::*, consumers::manager::Worker, workers::CommandWorker};
+use wadm::{
+    commands::*, consumers::manager::Worker, model::CapabilityConfig, workers::CommandWorker,
+};
 
 mod helpers;
 use helpers::{setup_test_wash, StreamWrapper, TestWashConfig};
@@ -117,6 +119,9 @@ async fn test_commands() {
             link_name: None,
             model_name: "fake".into(),
             annotations: HashMap::new(),
+            config: Some(CapabilityConfig::Opaque(
+                "{\"address\":\"0.0.0.0:8080\"}".to_string(),
+            )),
         })
         .await;
 

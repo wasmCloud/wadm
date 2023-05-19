@@ -6,6 +6,7 @@ use crate::{
         manager::{WorkError, WorkResult, Worker},
         ScopedMessage,
     },
+    model::CapabilityConfig,
     APP_SPEC_ANNOTATION,
 };
 
@@ -68,13 +69,21 @@ impl Worker for CommandWorker {
                 let mut annotations = prov.annotations.clone();
                 annotations.extend(MANAGED_BY_ANNOTATIONS.clone());
                 annotations.insert(APP_SPEC_ANNOTATION.to_owned(), prov.model_name.clone());
+                let config = prov.config.clone().map(|conf| match conf {
+                    // NOTE: We validate the serialization when we store the model so this should be
+                    // safe to unwrap
+                    CapabilityConfig::Json(conf) => {
+                        serde_json::to_string(&conf).unwrap_or_default()
+                    }
+                    CapabilityConfig::Opaque(conf) => conf,
+                });
                 self.client
                     .start_provider(
                         &prov.host_id,
                         &prov.reference,
                         prov.link_name.clone(),
                         Some(annotations),
-                        None,
+                        config,
                     )
                     .await
             }

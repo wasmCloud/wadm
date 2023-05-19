@@ -1,6 +1,10 @@
 use std::collections::{BTreeMap, HashMap};
 
-use serde::{Deserialize, Serialize};
+use serde::{
+    de::{self, Deserializer, MapAccess, Visitor},
+    ser::Serializer,
+    Deserialize, Serialize,
+};
 
 pub(crate) mod internal;
 
@@ -117,6 +121,64 @@ pub struct CapabilityProperties {
     /// An optional link name to use for this capability
     #[serde(skip_serializing_if = "Option::is_none")]
     pub link_name: Option<String>,
+    /// Optional config to pass to the provider. This can be either a raw string encoded config, or
+    /// a JSON or YAML object
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub config: Option<CapabilityConfig>,
+}
+
+/// Right now providers can technically use any config format they want, although most use JSON.
+/// This enum takes that into account and allows either type of data to be passed
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CapabilityConfig {
+    Json(serde_json::Value),
+    Opaque(String),
+}
+
+impl<'de> Deserialize<'de> for CapabilityConfig {
+    fn deserialize<D>(deserializer: D) -> Result<CapabilityConfig, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_any(CapabilityConfigVisitor)
+    }
+}
+
+struct CapabilityConfigVisitor;
+
+impl<'de> Visitor<'de> for CapabilityConfigVisitor {
+    type Value = CapabilityConfig;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("string or json/yaml object")
+    }
+
+    fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(CapabilityConfig::Opaque(value.to_owned()))
+    }
+
+    fn visit_map<M>(self, map: M) -> Result<Self::Value, M::Error>
+    where
+        M: MapAccess<'de>,
+    {
+        let data = serde_json::Value::deserialize(de::value::MapAccessDeserializer::new(map))?;
+        Ok(CapabilityConfig::Json(data))
+    }
+}
+
+impl Serialize for CapabilityConfig {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            CapabilityConfig::Json(v) => v.serialize(serializer),
+            CapabilityConfig::Opaque(v) => serializer.serialize_str(v),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -280,6 +342,73 @@ mod test {
     }
 
     #[test]
+    fn test_provider_config() {
+        let manifest =
+            deserialize_yaml("./oam/provider_config.yaml").expect("Should be able to parse");
+        let props = match &manifest.spec.components[0].properties {
+            Properties::Capability { properties } => properties,
+            _ => panic!("Should have found capability component"),
+        };
+
+        match props.config.as_ref().expect("Config should have been set") {
+            CapabilityConfig::Opaque(data) => assert_eq!(data, "{\"raw\": \"json\", \"data\": {}}"),
+            _ => panic!("Should have found opaque config"),
+        }
+
+        // YAML should work
+        let props = match &manifest.spec.components[1].properties {
+            Properties::Capability { properties } => properties,
+            _ => panic!("Should have found capability component"),
+        };
+        let config = match props.config.as_ref().expect("Config should have been set") {
+            CapabilityConfig::Json(data) => data,
+            _ => panic!("Should have found json config"),
+        };
+        assert_eq!(
+            config
+                .get("some")
+                .expect("Should have the right key in the config")
+                .as_str()
+                .expect("Should have parsed the right data type"),
+            "config"
+        );
+        assert_eq!(
+            config
+                .get("number")
+                .expect("Should have the right key in the config")
+                .as_u64()
+                .expect("Should have parsed the right data type"),
+            1
+        );
+
+        // So should raw JSON
+        let props = match &manifest.spec.components[2].properties {
+            Properties::Capability { properties } => properties,
+            _ => panic!("Should have found capability component"),
+        };
+        let config = match props.config.as_ref().expect("Config should have been set") {
+            CapabilityConfig::Json(data) => data,
+            _ => panic!("Should have found json config"),
+        };
+        assert_eq!(
+            config
+                .get("some")
+                .expect("Should have the right key in the config")
+                .as_str()
+                .expect("Should have parsed the right data type"),
+            "config"
+        );
+        assert_eq!(
+            config
+                .get("number")
+                .expect("Should have the right key in the config")
+                .as_u64()
+                .expect("Should have parsed the right data type"),
+            1
+        );
+    }
+
+    #[test]
     fn test_component_matching() {
         let manifest = deserialize_yaml("./oam/simple2.yaml").expect("Should be able to parse");
         assert_eq!(
@@ -378,6 +507,7 @@ mod test {
                     image: "wasmcloud.azurecr.io/httpserver:0.13.1".to_string(),
                     contract: "wasmcloud:httpserver".to_string(),
                     link_name: Some("default".to_string()),
+                    config: None,
                 },
             },
             traits: None,
@@ -405,6 +535,7 @@ mod test {
                     image: "wasmcloud.azurecr.io/ledblinky:0.0.1".to_string(),
                     contract: "wasmcloud:blinkenlights".to_string(),
                     link_name: Some(crate::DEFAULT_LINK_NAME.to_owned()),
+                    config: None,
                 },
             },
             traits: Some(trait_vec),
