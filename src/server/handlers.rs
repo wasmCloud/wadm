@@ -3,7 +3,10 @@ use serde_json::json;
 use tracing::{debug, error, instrument, trace};
 
 use crate::{
-    model::{internal::StoredManifest, LATEST_VERSION},
+    model::{
+        internal::StoredManifest, CapabilityConfig, CapabilityProperties, Properties,
+        LATEST_VERSION,
+    },
     publisher::Publisher,
 };
 
@@ -45,6 +48,31 @@ impl<P: Publisher> Handler<P> {
             )
             .await;
             return;
+        }
+
+        // For all components that have JSON config, validate that it can serialize. We need this so
+        // it doesn't trigger an error when sending a command down the line
+        for component in manifest.spec.components.iter() {
+            if let Properties::Capability {
+                properties:
+                    CapabilityProperties {
+                        config: Some(CapabilityConfig::Json(data)),
+                        ..
+                    },
+            } = &component.properties
+            {
+                if let Err(e) = serde_json::to_string(data) {
+                    self.send_error(
+                        msg.reply,
+                        format!(
+                            "Unable to serialize JSON config data for component {}: {e:?}",
+                            component.name,
+                        ),
+                    )
+                    .await;
+                    return;
+                }
+            }
         }
 
         let manifest_name = manifest.metadata.name.clone();

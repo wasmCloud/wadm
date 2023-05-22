@@ -8,30 +8,31 @@ use tracing::{instrument, trace};
 use crate::{
     commands::{Command, StartProvider, StopProvider},
     events::{Event, HostHeartbeat, HostStarted, HostStopped, ProviderInfo},
-    model::{Spread, SpreadScalerProperty, TraitProperty},
+    model::{CapabilityConfig, Spread, SpreadScalerProperty, TraitProperty},
     scaler::{
         spreadscaler::{compute_spread, eligible_hosts, spreadscaler_annotations},
         Scaler,
     },
     storage::{Host, Provider, ReadStore},
-    DEFAULT_LINK_NAME,
 };
 
 /// Config for a ProviderSpreadConfig
 #[derive(Clone)]
 pub struct ProviderSpreadConfig {
     /// Lattice ID that this SpreadScaler monitors
-    lattice_id: String,
+    pub lattice_id: String,
     /// OCI, Bindle, or File reference for a provider
-    provider_reference: String,
+    pub provider_reference: String,
     /// Link name for a provider
-    provider_link_name: String,
+    pub provider_link_name: String,
     /// Contract ID the provider implements
-    provider_contract_id: String,
+    pub provider_contract_id: String,
     /// The name of the wadm model this SpreadScaler is under
-    model_name: String,
+    pub model_name: String,
     /// Configuration for this SpreadScaler
-    spread_config: SpreadScalerProperty,
+    pub spread_config: SpreadScalerProperty,
+    /// Configuration passed to the provider when it starts
+    pub provider_config: Option<CapabilityConfig>,
 }
 
 /// The ProviderSpreadScaler ensures that a certain number of provider replicas are running,
@@ -189,6 +190,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
                                     link_name: Some(link_name.to_owned()),
                                     model_name: self.config.model_name.to_owned(),
                                     annotations: spreadscaler_annotations(&spread.name),
+                                    config: self.config.provider_config.clone(),
                                 })
                             })
                             .take(num_to_start)
@@ -223,28 +225,12 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
 
 impl<S: ReadStore + Send + Sync> ProviderSpreadScaler<S> {
     /// Construct a new ProviderSpreadScaler with specified configuration values
-    pub fn new(
-        store: S,
-        provider_reference: String,
-        provider_contract_id: String,
-        provider_link_name: Option<String>,
-        lattice_id: String,
-        model_name: String,
-        spread_config: SpreadScalerProperty,
-    ) -> Self {
+    pub fn new(store: S, config: ProviderSpreadConfig) -> Self {
         Self {
             store,
-            spread_requirements: compute_spread(&spread_config),
+            spread_requirements: compute_spread(&config.spread_config),
             provider_id: OnceCell::new(),
-            config: ProviderSpreadConfig {
-                provider_reference,
-                provider_contract_id,
-                provider_link_name: provider_link_name
-                    .unwrap_or_else(|| DEFAULT_LINK_NAME.to_string()),
-                lattice_id,
-                spread_config,
-                model_name,
-            },
+            config,
         }
     }
 
@@ -293,6 +279,8 @@ mod test {
         test_util::TestStore,
         DEFAULT_LINK_NAME,
     };
+
+    use super::*;
 
     const MODEL_NAME: &str = "test_provider_spreadscaler";
 
@@ -390,12 +378,15 @@ mod test {
 
         let spreadscaler = ProviderSpreadScaler::new(
             store.clone(),
-            provider_ref.to_string(),
-            "prov:ider".to_string(),
-            None,
-            lattice_id.to_string(),
-            MODEL_NAME.to_string(),
-            multi_spread_even,
+            ProviderSpreadConfig {
+                lattice_id: lattice_id.to_string(),
+                provider_reference: provider_ref.to_string(),
+                spread_config: multi_spread_even,
+                provider_contract_id: "prov:ider".to_string(),
+                provider_link_name: DEFAULT_LINK_NAME.to_string(),
+                model_name: MODEL_NAME.to_string(),
+                provider_config: Some(CapabilityConfig::Opaque("foobar".to_string())),
+            },
         );
 
         let commands = spreadscaler.reconcile().await?;
@@ -413,6 +404,7 @@ mod test {
                         link_name: Some(DEFAULT_LINK_NAME.to_string()),
                         model_name: MODEL_NAME.to_string(),
                         annotations: spreadscaler_annotations("SimpleOne"),
+                        config: Some(CapabilityConfig::Opaque("foobar".to_string())),
                     }
                 );
                 // This manual assertion is because we don't hash on annotations and I want to be extra sure we have the
@@ -434,6 +426,7 @@ mod test {
                         link_name: Some(DEFAULT_LINK_NAME.to_string()),
                         model_name: MODEL_NAME.to_string(),
                         annotations: spreadscaler_annotations("SimpleTwo"),
+                        config: Some(CapabilityConfig::Opaque("foobar".to_string())),
                     }
                 );
                 // This manual assertion is because we don't hash on annotations and I want to be extra sure we have the
@@ -490,12 +483,15 @@ mod test {
 
         let spreadscaler = ProviderSpreadScaler::new(
             store.clone(),
-            provider_ref.to_string(),
-            "prov:ider".to_string(),
-            None,
-            lattice_id.to_string(),
-            MODEL_NAME.to_string(),
-            multi_spread_hard,
+            ProviderSpreadConfig {
+                lattice_id: lattice_id.to_string(),
+                provider_reference: provider_ref.to_string(),
+                spread_config: multi_spread_hard,
+                provider_contract_id: "prov:ider".to_string(),
+                provider_link_name: DEFAULT_LINK_NAME.to_string(),
+                model_name: MODEL_NAME.to_string(),
+                provider_config: None,
+            },
         );
 
         store
@@ -672,7 +668,8 @@ mod test {
                         host_id: host_id_two.to_string(),
                         link_name: Some(DEFAULT_LINK_NAME.to_string()),
                         model_name: MODEL_NAME.to_string(),
-                        annotations: spreadscaler_annotations("ComplexTwo")
+                        annotations: spreadscaler_annotations("ComplexTwo"),
+                        config: None,
                     }
                 );
                 // This manual assertion is because we don't hash on annotations and I want to be extra sure we have the
@@ -692,7 +689,8 @@ mod test {
                         host_id: host_id_three.to_string(),
                         link_name: Some(DEFAULT_LINK_NAME.to_string()),
                         model_name: MODEL_NAME.to_string(),
-                        annotations: spreadscaler_annotations("ComplexTwo")
+                        annotations: spreadscaler_annotations("ComplexTwo"),
+                        config: None,
                     }
                 );
                 // This manual assertion is because we don't hash on annotations and I want to be extra sure we have the
