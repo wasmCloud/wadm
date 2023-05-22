@@ -1,6 +1,7 @@
 use std::collections::{hash_map::Entry, HashMap, HashSet};
 
 use anyhow::Result;
+use futures::stream::Collect;
 use tracing::{debug, instrument, trace, warn};
 use wasmcloud_control_interface::{ActorDescription, ProviderDescription};
 
@@ -720,16 +721,21 @@ where
 
         let commands: Vec<Command> =
             futures::future::join_all(scalers.iter().map(|(name, scalers)| async move {
-                futures::future::join_all(scalers.iter().map(|scaler| async move {
-                    //TODO: handle error
-                    scaler.handle_event(event, name).await.unwrap_or_default()
-                }))
+                futures::future::join_all(
+                    scalers
+                        .iter()
+                        .map(|scaler| async move { scaler.handle_event(event, name).await }),
+                )
                 .await
             }))
             .await
             .into_iter()
             .filter_map(|commands| {
-                let commands = commands.into_iter().flatten().collect::<Vec<_>>();
+                let commands = commands
+                    .into_iter()
+                    .filter_map(|all| all.ok())
+                    .flatten()
+                    .collect::<Vec<_>>();
                 if commands.is_empty() {
                     return None;
                 }

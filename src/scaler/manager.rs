@@ -120,9 +120,7 @@ where
     }
 }
 
-/// A wrapper type returned when getting all scalers. Implements a backoff operation that can be
-/// called to tell all returned scalers to back off and notifiying with a message so other consumers
-/// can backoff as well
+/// A wrapper type returned when getting all scalers.
 pub struct AllScalers {
     pub scalers: OwnedRwLockReadGuard<HashMap<String, ScalerList>>,
 }

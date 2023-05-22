@@ -1,7 +1,10 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::{
+    sync::{Mutex, RwLock},
+    task::JoinHandle,
+};
 use tracing::log::trace;
 
 use crate::{
@@ -60,6 +63,10 @@ pub struct BackoffAwareScaler {
     /// A list of (success, Option<failure>) events that the scaler is expecting
     #[allow(clippy::type_complexity)]
     expected_events: Arc<RwLock<Vec<(Event, Option<Event>)>>>,
+    /// Responsible for clearing up the expected events list after a certain amount of time
+    event_cleaner: Mutex<Option<JoinHandle<()>>>,
+    /// The amount of time to wait before cleaning up the expected events list
+    cleanup_timeout: std::time::Duration,
 }
 
 impl std::ops::Deref for BackoffAwareScaler {
@@ -76,14 +83,17 @@ impl BackoffAwareScaler {
             scaler,
             model_name: model_name.to_string(),
             expected_events: Arc::new(RwLock::new(Vec::new())),
+            event_cleaner: Mutex::new(None),
+            // This is hardcoded for now but could be adjusted based on the scaler in the future if needed
+            cleanup_timeout: std::time::Duration::from_secs(30),
         }
     }
+
     pub async fn event_count(&self) -> usize {
         self.expected_events.read().await.len()
     }
 
     pub async fn get_events(&self) -> Vec<(Event, Option<Event>)> {
-        //TODO: see if I can ref this instead of clone
         self.expected_events.read().await.clone()
     }
 
@@ -114,6 +124,8 @@ impl BackoffAwareScaler {
             expected_events.clear();
         }
         expected_events.extend(events);
+        self.set_timed_cleanup().await;
+
         Ok(())
     }
 
@@ -137,6 +149,8 @@ impl BackoffAwareScaler {
         let mut expected_events = self.expected_events.write().await;
         expected_events.clear();
         expected_events.extend(events.into_iter().map(|e| (e, None)));
+        self.set_timed_cleanup().await;
+
         Ok(())
     }
 
@@ -171,7 +185,8 @@ impl BackoffAwareScaler {
             vec![]
         } else {
             let commands = self.scaler.handle_event(event).await?;
-            // TODO: need to notify here :thinking:
+            // TODO: need to notify here to add events
+
             // Based on the commands, compute the events that we expect to see for this scaler. The scaler
             // will then ignore incoming events until all of the expected events have been received.
             let expected_events = commands
@@ -182,6 +197,23 @@ impl BackoffAwareScaler {
         };
 
         Ok(commands)
+    }
+
+    /// Sets a timed cleanup task to clear the expected events list after a timeout
+    async fn set_timed_cleanup(&self) {
+        let mut event_cleaner = self.event_cleaner.lock().await;
+        // Clear any existing handle
+        if let Some(handle) = self.event_cleaner.lock().await.take() {
+            handle.abort();
+        }
+        let expected_events = self.expected_events.clone();
+        let timeout = self.cleanup_timeout.clone();
+
+        *event_cleaner = Some(tokio::spawn(async move {
+            tokio::time::sleep(timeout).await;
+            // We don't use the method to clear here because of borrowing semantics.
+            expected_events.write().await.clear();
+        }));
     }
 }
 
@@ -214,6 +246,10 @@ impl Scaler for BackoffAwareScaler {
 fn evt_matches_expected(incoming: &Event, expected: &Event) -> bool {
     match (incoming, expected) {
         (
+            // NOTE(brooksmtownsend): It may be worth it to simply use the count here as
+            // extra information. If we receive the exact event but the count is different, that
+            // may mean some instances failed to start on that host. The cause for this isn't
+            // well known but if we find ourselves missing expected events we should revisit
             Event::ActorsStarted(ActorsStarted {
                 annotations: a1,
                 image_ref: i1,

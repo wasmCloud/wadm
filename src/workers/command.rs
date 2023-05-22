@@ -5,7 +5,6 @@ use crate::{
         ScopedMessage,
     },
     model::CapabilityConfig,
-    APP_SPEC_ANNOTATION,
 };
 
 use super::insert_managed_annotations;
