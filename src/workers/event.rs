@@ -1,7 +1,6 @@
 use std::collections::{hash_map::Entry, HashMap, HashSet};
 
 use anyhow::Result;
-use futures::stream::Collect;
 use tracing::{debug, instrument, trace, warn};
 use wasmcloud_control_interface::{ActorDescription, ProviderDescription};
 
@@ -682,11 +681,13 @@ where
 
         // Get the results of the first reconcilation pass before we store the scalers
         let commands = scalers
-            .reconcile_and_register()
+            .reconcile_all()
             .await?
             .into_iter()
             .collect::<Result<Vec<Vec<Command>>, anyhow::Error>>()
             .map(|all| all.into_iter().flatten().collect::<Vec<Command>>())?;
+
+        println!("Commands: {:?}", commands);
 
         trace!(?commands, "Handling commands");
 
@@ -703,15 +704,14 @@ where
                 return Ok(());
             }
         };
-        let commands = futures::future::join_all(
-            scalers
-                .iter()
-                .map(|scaler| scaler.handle_event(event, name)),
-        )
-        .await
-        .into_iter()
-        .collect::<Result<Vec<Vec<Command>>, anyhow::Error>>()
-        .map(|all| all.into_iter().flatten().collect::<Vec<Command>>())?;
+
+        let commands =
+            futures::future::join_all(scalers.iter().map(|scaler| scaler.handle_event(event)))
+                .await
+                .into_iter()
+                .collect::<Result<Vec<Vec<Command>>, anyhow::Error>>()
+                .map(|all| all.into_iter().flatten().collect::<Vec<Command>>())?;
+
         self.publisher.publish_commands(commands).await
     }
 
@@ -720,13 +720,8 @@ where
         let scalers = self.scalers.get_all_scalers().await;
 
         let commands: Vec<Command> =
-            futures::future::join_all(scalers.iter().map(|(name, scalers)| async move {
-                futures::future::join_all(
-                    scalers
-                        .iter()
-                        .map(|scaler| async move { scaler.handle_event(event, name).await }),
-                )
-                .await
+            futures::future::join_all(scalers.iter().map(|(_name, scalers)| {
+                futures::future::join_all(scalers.iter().map(|scaler| scaler.handle_event(event)))
             }))
             .await
             .into_iter()
@@ -760,6 +755,7 @@ where
     #[instrument(level = "debug", skip(self))]
     async fn do_work(&self, mut message: ScopedMessage<Self::Message>) -> WorkResult<()> {
         // Everything in this block returns a name hint for the success case and an error otherwise
+        println!("Message: {:?}", message);
         let res = match message.as_ref() {
             // NOTE(brooksmtownsend): For now, the plural events trigger scaler runs but do
             // not modify state. Ideally we'd use this to update the state of the lattice instead of the

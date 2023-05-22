@@ -39,7 +39,7 @@ use super::{
 };
 
 pub type BoxedScaler = Box<dyn Scaler + Send + Sync + 'static>;
-pub type ScalerList = Vec<BackoffAwareScaler>;
+pub type ScalerList = Vec<BoxedScaler>;
 
 pub const WADM_NOTIFY_PREFIX: &str = "wadm.notify";
 
@@ -48,13 +48,19 @@ pub const WADM_NOTIFY_PREFIX: &str = "wadm.notify";
 pub enum Notifications {
     CreateScalers(Manifest),
     DeleteScalers(String),
-    /// Register expected events for a manifest. Should only be used when a full reconcile
+    /// Register expected events for a manifest. You can either trigger this with an event
+    /// (which will result in calling `handle_event`) or without in order to calculate
+    /// expected events with a full reconcile.
     /// is being done (like on first deploy), rather than just handling a single event
-    RegisterExpectedEvents(String),
+    RegisterExpectedEvents {
+        name: String,
+        triggering_event: Option<Event>,
+    },
     /// Remove an event from the expected list for a manifest scaler
-    RemoveExpectedEvent((String, Event)),
-    /// Clear all expected events for a manifest
-    ClearExpectedEvents(String),
+    RemoveExpectedEvent {
+        name: String,
+        event: Event,
+    },
 }
 
 /// A wrapper type returned when getting a list of scalers. Implements a backoff operation that can
@@ -79,44 +85,32 @@ impl<'a, P> Scalers<'a, P>
 where
     P: Publisher,
 {
-    pub async fn reconcile_and_register(&self) -> Result<Vec<Result<Vec<Command>>>> {
+    pub async fn reconcile_all(&self) -> Result<Vec<Result<Vec<Command>>>> {
         let manifest_name = self.name;
 
         // Publish the message first because otherwise we could get scalers that don't go to backoff
         // mode
-        let data = serde_json::to_vec(&Notifications::RegisterExpectedEvents(
-            manifest_name.to_owned(),
-        ))?;
+        let data = serde_json::to_vec(&Notifications::RegisterExpectedEvents {
+            name: manifest_name.to_owned(),
+            triggering_event: None,
+        })?;
         self.publisher.publish(data, Some(self.subject)).await?;
 
-        Ok(self
-            .reconcile_and_register_expected_events(manifest_name)
-            .await)
+        Ok(futures::future::join_all(self.scalers.iter().map(|scaler| scaler.reconcile())).await)
     }
 
-    /// Computes commands and registers expected events for each scaler.
-    /// Should only be called when you plan to publish all of the commands,
-    /// as this function will register expected events for each scaler.
-    pub async fn reconcile_and_register_expected_events(
-        &self,
-        manifest_name: &str,
-    ) -> Vec<Result<Vec<Command>>> {
-        futures::future::join_all(self.scalers.iter().map(|scaler| async move {
-            match scaler.reconcile().await {
-                // "Backoff" scalers with expected corresponding events
-                Ok(commands) => scaler
-                    .add_events(
-                        commands
-                            .iter()
-                            .filter_map(|command| command.corresponding_event(manifest_name)),
-                        true,
-                    )
-                    .await
-                    .map(|_| commands),
-                Err(e) => Err(e),
-            }
-        }))
-        .await
+    /// Ensures that each Scaler for a manifest removes this event from its expected events list
+    pub async fn remove_expected_event(&self, event: &Event) -> Result<()> {
+        let manifest_name = self.name;
+
+        let data = serde_json::to_vec(&Notifications::RemoveExpectedEvent {
+            name: manifest_name.to_owned(),
+            event: event.clone(),
+        })?;
+
+        self.publisher.publish(data, Some(self.subject)).await?;
+
+        Ok(())
     }
 }
 
@@ -212,8 +206,14 @@ where
             .filter_map(|manifest| {
                 let data = manifest.get_deployed()?;
                 let name = manifest.name().to_owned();
-                let scalers =
-                    components_to_scalers(&data.spec.components, &state_store, lattice_id, &name);
+                let scalers = components_to_scalers(
+                    &data.spec.components,
+                    &state_store,
+                    lattice_id,
+                    &client,
+                    &name,
+                    &subject,
+                );
                 Some((name, scalers))
             })
             .collect();
@@ -266,7 +266,9 @@ where
             &manifest.spec.components,
             &self.state_store,
             &self.lattice_id,
+            &self.client,
             &manifest.metadata.name,
+            &self.subject,
         );
         self.add_raw_scalers(&manifest.metadata.name, scalers).await;
         let notification = serde_json::to_vec(&Notifications::CreateScalers(manifest.to_owned()))?;
@@ -375,6 +377,7 @@ where
                 res = messages.next() => {
                     match res {
                         Some(Ok(msg)) => {
+                            println!("msg: {:?}", msg);
                             let notification: Notifications = match serde_json::from_slice(&msg.payload) {
                                 Ok(n) => n,
                                 Err(e) => {
@@ -390,7 +393,9 @@ where
                                         &manifest.spec.components,
                                         &self.state_store,
                                         &self.lattice_id,
+                                        &self.client,
                                         &manifest.metadata.name,
+                                        &self.subject,
                                     );
                                     let num_scalers = scalers.len();
                                     self.add_raw_scalers(&manifest.metadata.name, scalers).await;
@@ -418,34 +423,33 @@ where
                                     // doesn't tear down everything or leaves something hanging. If that is
                                     // the case, a new part of the reaper logic should handle it
                                 },
-                                Notifications::RegisterExpectedEvents(name) => {
+                                Notifications::RegisterExpectedEvents{ name, triggering_event } => {
                                     trace!(%name, "Computing and registering expected events for manifest");
                                     if let Some(scalers) = self.get_scalers(&name).await {
-                                        scalers.reconcile_and_register_expected_events(&name).await;
+                                        if let Some(event) = triggering_event {
+                                            futures::future::join_all(scalers.iter().map(|scaler| async {
+                                                scaler.handle_event(&event).await
+                                            }
+                                            )).await;
+                                        } else {
+                                            futures::future::join_all(scalers.iter().map(|scaler| async {
+                                                scaler.reconcile().await
+                                            }
+                                            )).await;
+                                        }
                                     } else {
                                         debug!(%name, "Received request to register events for non-existent scalers, ignoring");
                                     }
                                 },
-                                Notifications::RemoveExpectedEvent((name, event)) => {
+                                Notifications::RemoveExpectedEvent{ name, event} => {
                                     trace!(%name, "Removing expected event for manifest");
                                     if let Some(scalers) = self.get_scalers(&name).await {
                                         futures::future::join_all(scalers.iter().map(|scaler| async {
-                                            scaler.remove_event(&event).await
+                                            scaler.handle_event(&event).await
                                         }
                                         )).await;
                                     } else {
                                         debug!(%name, "Received request to remove event for non-existent scalers, ignoring");
-                                    }
-                                }
-                                Notifications::ClearExpectedEvents(name) => {
-                                    trace!(%name, "Clearing expected events for all scalers for manifest");
-                                    if let Some(scalers) = self.get_scalers(&name).await {
-                                        futures::future::join_all(scalers.iter().map(|scaler| async {
-                                            scaler.set_events(vec![]).await
-                                        }
-                                        )).await;
-                                    } else {
-                                        debug!(%name, "Received request to clear events for non-existent scalers, ignoring");
                                     }
                                 }
                             }
@@ -480,64 +484,77 @@ const EMPTY_TRAIT_VEC: Vec<Trait> = Vec::new();
 /// * `store` - The store to use when creating the scalers so they can access lattice state
 /// * `lattice_id` - The lattice id the scalers operate on
 /// * `name` - The name of the manifest that the scalers are being created for
-pub(crate) fn components_to_scalers<S: ReadStore + Send + Sync + Clone + 'static>(
+pub(crate) fn components_to_scalers<S, P>(
     components: &[Component],
     store: &S,
     lattice_id: &str,
+    notifier: &P,
     name: &str,
-) -> ScalerList {
+    notifier_subject: &str,
+) -> ScalerList
+where
+    S: ReadStore + Send + Sync + Clone + 'static,
+    P: Publisher + Clone + Send + Sync + 'static,
+{
     let mut scalers: ScalerList = Vec::new();
     for component in components.iter() {
         let traits = component.traits.as_ref();
         match &component.properties {
             Properties::Actor { properties: props } => {
-                scalers.extend(
-                    traits
-                        .unwrap_or(&EMPTY_TRAIT_VEC)
-                        .iter()
-                        .filter_map(|trt| match (trt.trait_type.as_str(), &trt.properties) {
-                            (SPREADSCALER_TRAIT, TraitProperty::SpreadScaler(p)) => {
-                                Some(Box::new(ActorSpreadScaler::new(
+                scalers.extend(traits.unwrap_or(&EMPTY_TRAIT_VEC).iter().filter_map(|trt| {
+                    match (trt.trait_type.as_str(), &trt.properties) {
+                        (SPREADSCALER_TRAIT, TraitProperty::SpreadScaler(p)) => {
+                            Some(Box::new(BackoffAwareScaler::new(
+                                ActorSpreadScaler::new(
                                     store.clone(),
                                     props.image.to_owned(),
                                     lattice_id.to_owned(),
                                     name.to_owned(),
                                     p.to_owned(),
-                                )) as BoxedScaler)
-                            }
-                            (LINKDEF_TRAIT, TraitProperty::Linkdef(p)) => components
+                                ),
+                                notifier.to_owned(),
+                                notifier_subject,
+                                name,
+                            )) as BoxedScaler)
+                        }
+                        (LINKDEF_TRAIT, TraitProperty::Linkdef(p)) => {
+                            components
                                 .iter()
                                 .find_map(|component| match &component.properties {
                                     Properties::Capability { properties: cappy }
                                         if component.name == p.target =>
                                     {
-                                        Some(Box::new(LinkScaler::new(
-                                            store.clone(),
-                                            props.image.to_owned(),
-                                            cappy.image.to_owned(),
-                                            cappy.contract.to_owned(),
-                                            cappy.link_name.to_owned(),
-                                            lattice_id.to_owned(),
-                                            name.to_owned(),
-                                            p.values.to_owned(),
+                                        Some(Box::new(BackoffAwareScaler::new(
+                                            LinkScaler::new(
+                                                store.clone(),
+                                                props.image.to_owned(),
+                                                cappy.image.to_owned(),
+                                                cappy.contract.to_owned(),
+                                                cappy.link_name.to_owned(),
+                                                lattice_id.to_owned(),
+                                                name.to_owned(),
+                                                p.values.to_owned(),
+                                            ),
+                                            notifier.to_owned(),
+                                            notifier_subject,
+                                            name,
                                         ))
                                             as BoxedScaler)
                                     }
                                     _ => None,
-                                }),
-                            _ => None,
-                        })
-                        .map(|boxed| BackoffAwareScaler::new(boxed, name)),
-                )
+                                })
+                        }
+                        _ => None,
+                    }
+                }))
             }
             Properties::Capability { properties: props } => {
                 if let Some(traits) = traits {
-                    scalers.extend(
-                        traits
-                            .iter()
-                            .filter_map(|trt| match (trt.trait_type.as_str(), &trt.properties) {
-                                (SPREADSCALER_TRAIT, TraitProperty::SpreadScaler(p)) => {
-                                    Some(Box::new(ProviderSpreadScaler::new(
+                    scalers.extend(traits.iter().filter_map(|trt| {
+                        match (trt.trait_type.as_str(), &trt.properties) {
+                            (SPREADSCALER_TRAIT, TraitProperty::SpreadScaler(p)) => {
+                                Some(Box::new(BackoffAwareScaler::new(
+                                    ProviderSpreadScaler::new(
                                         store.clone(),
                                         ProviderSpreadConfig {
                                             lattice_id: lattice_id.to_owned(),
@@ -552,16 +569,19 @@ pub(crate) fn components_to_scalers<S: ReadStore + Send + Sync + Clone + 'static
                                             model_name: name.to_owned(),
                                             provider_config: props.config.to_owned(),
                                         },
-                                    )) as BoxedScaler)
-                                }
-                                _ => None,
-                            })
-                            .map(|boxed| BackoffAwareScaler::new(boxed, name)),
-                    )
+                                    ),
+                                    notifier.to_owned(),
+                                    notifier_subject,
+                                    name,
+                                )) as BoxedScaler)
+                            }
+                            _ => None,
+                        }
+                    }))
                 } else {
                     // Allow providers to omit the scaler entirely for simplicity
-                    scalers.push(BackoffAwareScaler::new(
-                        Box::new(ProviderSpreadScaler::new(
+                    scalers.push(Box::new(BackoffAwareScaler::new(
+                        ProviderSpreadScaler::new(
                             store.clone(),
                             ProviderSpreadConfig {
                                 lattice_id: lattice_id.to_owned(),
@@ -579,9 +599,11 @@ pub(crate) fn components_to_scalers<S: ReadStore + Send + Sync + Clone + 'static
                                 model_name: name.to_owned(),
                                 provider_config: props.config.to_owned(),
                             },
-                        )),
+                        ),
+                        notifier.to_owned(),
+                        notifier_subject,
                         name,
-                    ))
+                    )) as BoxedScaler)
                 }
             }
         }

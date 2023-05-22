@@ -83,6 +83,7 @@ pub trait EventType {
 }
 
 /// A lattice event
+// TODO:  this `Deserialize` impl _compiles_ but doesn't let you deserialize an event because of our custom Serialize
 #[derive(Debug, Clone, Deserialize)]
 pub enum Event {
     ActorStarted(ActorStarted),
