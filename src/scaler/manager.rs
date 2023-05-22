@@ -98,20 +98,6 @@ where
 
         Ok(futures::future::join_all(self.scalers.iter().map(|scaler| scaler.reconcile())).await)
     }
-
-    /// Ensures that each Scaler for a manifest removes this event from its expected events list
-    pub async fn remove_expected_event(&self, event: &Event) -> Result<()> {
-        let manifest_name = self.name;
-
-        let data = serde_json::to_vec(&Notifications::RemoveExpectedEvent {
-            name: manifest_name.to_owned(),
-            event: event.clone(),
-        })?;
-
-        self.publisher.publish(data, Some(self.subject)).await?;
-
-        Ok(())
-    }
 }
 
 /// A wrapper type returned when getting all scalers.
@@ -377,7 +363,6 @@ where
                 res = messages.next() => {
                     match res {
                         Some(Ok(msg)) => {
-                            println!("msg: {:?}", msg);
                             let notification: Notifications = match serde_json::from_slice(&msg.payload) {
                                 Ok(n) => n,
                                 Err(e) => {

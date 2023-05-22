@@ -687,8 +687,6 @@ where
             .collect::<Result<Vec<Vec<Command>>, anyhow::Error>>()
             .map(|all| all.into_iter().flatten().collect::<Vec<Command>>())?;
 
-        println!("Commands: {:?}", commands);
-
         trace!(?commands, "Handling commands");
 
         // Now handle the result from reconciliation
@@ -755,7 +753,6 @@ where
     #[instrument(level = "debug", skip(self))]
     async fn do_work(&self, mut message: ScopedMessage<Self::Message>) -> WorkResult<()> {
         // Everything in this block returns a name hint for the success case and an error otherwise
-        println!("Message: {:?}", message);
         let res = match message.as_ref() {
             // NOTE(brooksmtownsend): For now, the plural events trigger scaler runs but do
             // not modify state. Ideally we'd use this to update the state of the lattice instead of the

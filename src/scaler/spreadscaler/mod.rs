@@ -61,7 +61,6 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
 
     #[instrument(level = "trace", skip(self))]
     async fn handle_event(&self, event: &Event) -> Result<Vec<Command>> {
-        //TODO: race condition, first actorstarted can come in before the rwlock updated?
         // NOTE(brooksmtownsend): We could be more efficient here and instead of running
         // the entire reconcile, smart compute exactly what needs to change, but it just
         // requires more code branches and would be fine as a future improvement
