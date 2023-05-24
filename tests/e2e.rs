@@ -122,7 +122,10 @@ impl ClientInfo {
                 .stderr(file)
                 .stdout(Stdio::null())
                 .kill_on_drop(true)
-                .env("RUST_LOG", "info,wadm=debug,wadm::scaler=trace")
+                .env(
+                    "RUST_LOG",
+                    "info,wadm=debug,wadm::scaler=trace,wadm::workers::event=trace",
+                )
                 .spawn()
                 .expect("Unable to spawn wadm binary");
             commands.push(child);

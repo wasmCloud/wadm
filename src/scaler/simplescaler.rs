@@ -11,6 +11,8 @@ use crate::{
     storage::{Actor, Host, ReadStore},
 };
 
+pub const SIMPLE_SCALER_TYPE: &str = "simplescaler";
+
 /// Config for a SimpleActorScaler, which ensures that an actor as referenced by
 /// `actor_reference` in lattice `lattice_id` runs with `replicas` replicas
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
@@ -34,10 +36,15 @@ struct SimpleScalerConfig {
 struct SimpleActorScaler<S> {
     pub config: SimpleScalerConfig,
     store: S,
+    id: String,
 }
 
 #[async_trait]
 impl<S: ReadStore + Send + Sync + Clone> Scaler for SimpleActorScaler<S> {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
     async fn update_config(&mut self, config: TraitProperty) -> Result<Vec<Command>> {
         self.config = match config {
             TraitProperty::Custom(val) => serde_json::from_value(val)
@@ -71,6 +78,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for SimpleActorScaler<S> {
         let cleanerupper = SimpleActorScaler {
             config,
             store: self.store.clone(),
+            id: self.id.clone(),
         };
 
         cleanerupper.compute_actor_commands(&self.store).await
@@ -87,6 +95,7 @@ impl<S: ReadStore + Send + Sync> SimpleActorScaler<S> {
         replicas: usize,
         model_name: String,
     ) -> Self {
+        let id = format!("{SIMPLE_SCALER_TYPE}-{model_name}-{actor_reference}");
         Self {
             store,
             config: SimpleScalerConfig {
@@ -95,6 +104,7 @@ impl<S: ReadStore + Send + Sync> SimpleActorScaler<S> {
                 replicas,
                 model_name,
             },
+            id,
         }
     }
 

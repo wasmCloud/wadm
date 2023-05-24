@@ -1,13 +1,11 @@
-use cloudevents::{EventBuilder, EventBuilderV10};
+use cloudevents::Event as CloudEvent;
 use tracing::{instrument, trace};
 
 use crate::{
-    events::{EventType, ManifestPublished, ManifestUnpublished},
+    events::{Event, ManifestPublished, ManifestUnpublished},
     model::Manifest,
     publisher::Publisher,
 };
-
-const WADM_SOURCE: &str = "wadm";
 
 /// A notifier that publishes changes about manifests with the given publisher
 pub struct ManifestNotifier<P> {
@@ -26,20 +24,9 @@ impl<P: Publisher> ManifestNotifier<P> {
         }
     }
 
-    #[instrument(level = "trace", skip(self, data))]
-    async fn send_event(
-        &self,
-        lattice_id: &str,
-        ty: &str,
-        data: serde_json::Value,
-    ) -> anyhow::Result<()> {
-        let event = EventBuilderV10::new()
-            .id(uuid::Uuid::new_v4().to_string())
-            .source(WADM_SOURCE)
-            .time(chrono::Utc::now())
-            .ty(ty)
-            .data("application/json", data)
-            .build()?;
+    #[instrument(level = "trace", skip(self))]
+    async fn send_event(&self, lattice_id: &str, event: Event) -> anyhow::Result<()> {
+        let event: CloudEvent = event.try_into()?;
         // NOTE(thomastaylor312): A future improvement could be retries here
         trace!("Sending notification event");
         self.publisher
@@ -53,8 +40,7 @@ impl<P: Publisher> ManifestNotifier<P> {
     pub async fn deployed(&self, lattice_id: &str, manifest: Manifest) -> anyhow::Result<()> {
         self.send_event(
             lattice_id,
-            ManifestPublished::TYPE,
-            serde_json::to_value(manifest)?,
+            Event::ManifestPublished(ManifestPublished { manifest }),
         )
         .await
     }
@@ -62,9 +48,8 @@ impl<P: Publisher> ManifestNotifier<P> {
     pub async fn undeployed(&self, lattice_id: &str, name: &str) -> anyhow::Result<()> {
         self.send_event(
             lattice_id,
-            ManifestUnpublished::TYPE,
-            serde_json::json!({
-                "name": name,
+            Event::ManifestUnpublished(ManifestUnpublished {
+                name: name.to_owned(),
             }),
         )
         .await

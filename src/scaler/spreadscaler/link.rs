@@ -14,6 +14,8 @@ use crate::{
     DEFAULT_LINK_NAME,
 };
 
+pub const LINK_SCALER_TYPE: &str = "linkdefscaler";
+
 /// Config for a LinkSpreadConfig
 pub struct LinkScalerConfig {
     /// OCI, Bindle, or File reference for the actor to link
@@ -40,16 +42,22 @@ pub struct LinkScaler<S: ReadStore + Send + Sync> {
     actor_id: OnceCell<String>,
     /// Provider ID, stored in a OnceCell to facilitate more efficient fetches
     provider_id: OnceCell<String>,
+    id: String,
 }
 
 #[async_trait]
 impl<S: ReadStore + Send + Sync> Scaler for LinkScaler<S> {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
     async fn update_config(&mut self, _config: TraitProperty) -> Result<Vec<Command>> {
         // NOTE(brooksmtownsend): Updating a link scaler essentially means you're creating
         // a totally new scaler, so just do that instead.
         self.reconcile().await
     }
 
+    #[instrument(level = "trace", skip_all, fields(scaler_id = %self.id))]
     async fn handle_event(&self, event: &Event) -> Result<Vec<Command>> {
         match event {
             // We can only publish links once we know actor and provider IDs,
@@ -88,7 +96,7 @@ impl<S: ReadStore + Send + Sync> Scaler for LinkScaler<S> {
         }
     }
 
-    #[instrument(level = "trace", skip_all, fields(actor_ref = %self.config.actor_reference, provider_ref = %self.config.provider_reference, link_name = %self.config.provider_link_name))]
+    #[instrument(level = "trace", skip_all, fields(actor_ref = %self.config.actor_reference, provider_ref = %self.config.provider_reference, link_name = %self.config.provider_link_name, scaler_id = %self.id))]
     async fn reconcile(&self) -> Result<Vec<Command>> {
         if let (Ok(actor_id), Ok(provider_id)) = (self.actor_id().await, self.provider_id().await) {
             // TODO: check to see if linkdef exists. Might need to be deleted first if values differ
@@ -136,6 +144,11 @@ impl<S: ReadStore + Send + Sync> LinkScaler<S> {
         model_name: String,
         values: Option<HashMap<String, String>>,
     ) -> Self {
+        let provider_link_name =
+            provider_link_name.unwrap_or_else(|| DEFAULT_LINK_NAME.to_string());
+        // NOTE(thomastaylor312): Yep, this is gnarly, but it was all the information that would be
+        // useful to have if uniquely identifying a link scaler
+        let id = format!("{LINK_SCALER_TYPE}-{model_name}-{provider_link_name}-{actor_reference}-{provider_reference}");
         Self {
             store,
             actor_id: OnceCell::new(),
@@ -144,12 +157,12 @@ impl<S: ReadStore + Send + Sync> LinkScaler<S> {
                 actor_reference,
                 provider_reference,
                 provider_contract_id,
-                provider_link_name: provider_link_name
-                    .unwrap_or_else(|| DEFAULT_LINK_NAME.to_string()),
+                provider_link_name,
                 lattice_id,
                 model_name,
                 values: values.unwrap_or_default(),
             },
+            id,
         }
     }
 

@@ -679,18 +679,24 @@ where
 
         let scalers = self.scalers.add_scalers(&data.manifest).await?;
 
-        // Get the results of the first reconcilation pass before we store the scalers
-        let commands = scalers
-            .reconcile_all()
-            .await?
-            .into_iter()
-            .collect::<Result<Vec<Vec<Command>>, anyhow::Error>>()
-            .map(|all| all.into_iter().flatten().collect::<Vec<Command>>())?;
+        // Get the results of the first reconcilation pass before we store the scalers. Publish the
+        // commands for the ones that succeeded (as those scalers will have entered backoff mode if
+        // they are backoff wrapped), and then return an error indicating failure so the event is
+        // redelivered. When it is, the ones that succeeded will be in backoff mode and the ones
+        // that failed will be retried.
 
-        trace!(?commands, "Handling commands");
+        let (commands, res) = get_commands_and_result(
+            scalers.iter().map(|s| s.reconcile()),
+            "Errors occurred during initial reconciliation",
+        )
+        .await;
+
+        trace!(?commands, "Publishing commands");
 
         // Now handle the result from reconciliation
-        self.publisher.publish_commands(commands).await
+        self.publisher.publish_commands(commands).await?;
+
+        res
     }
 
     #[instrument(level = "debug", skip(self))]
@@ -702,42 +708,35 @@ where
                 return Ok(());
             }
         };
+        let (commands, res) = get_commands_and_result(
+            scalers.iter().map(|s| s.handle_event(event)),
+            "Errors occurred while handling event",
+        )
+        .await;
 
-        let commands =
-            futures::future::join_all(scalers.iter().map(|scaler| scaler.handle_event(event)))
-                .await
-                .into_iter()
-                .collect::<Result<Vec<Vec<Command>>, anyhow::Error>>()
-                .map(|all| all.into_iter().flatten().collect::<Vec<Command>>())?;
+        trace!(?commands, "Publishing commands");
 
-        self.publisher.publish_commands(commands).await
+        self.publisher.publish_commands(commands).await?;
+
+        res
     }
 
     #[instrument(level = "debug", skip(self))]
     async fn run_all_scalers(&self, event: &Event) -> anyhow::Result<()> {
         let scalers = self.scalers.get_all_scalers().await;
 
-        let commands: Vec<Command> =
-            futures::future::join_all(scalers.iter().map(|(_name, scalers)| {
-                futures::future::join_all(scalers.iter().map(|scaler| scaler.handle_event(event)))
-            }))
-            .await
-            .into_iter()
-            .filter_map(|commands| {
-                let commands = commands
-                    .into_iter()
-                    .filter_map(|all| all.ok())
-                    .flatten()
-                    .collect::<Vec<_>>();
-                if commands.is_empty() {
-                    return None;
-                }
-                Some(commands)
-            })
-            .flatten()
-            .collect::<Vec<Command>>();
+        let (commands, res) = get_commands_and_result(
+            scalers
+                .values()
+                .flatten()
+                .map(|scaler| scaler.handle_event(event)),
+            "Errors occurred while handling event with all scalers",
+        )
+        .await;
 
-        self.publisher.publish_commands(commands).await
+        trace!(?commands, "Publishing commands");
+        self.publisher.publish_commands(commands).await?;
+        res
     }
 }
 
@@ -862,6 +861,39 @@ where
         }
 
         message.ack().await.map_err(WorkError::from)
+    }
+}
+
+/// Helper that runs any iterable of futures and returns a list of commands and the proper result to
+/// use as a response (Ok if there were no errors, all of the errors combined otherwise)
+async fn get_commands_and_result<Fut, I>(futs: I, error_message: &str) -> (Vec<Command>, Result<()>)
+where
+    Fut: futures::Future<Output = Result<Vec<Command>>>,
+    I: IntoIterator<Item = Fut>,
+{
+    let (commands, errors): (Vec<_>, Vec<_>) = futures::future::join_all(futs)
+        .await
+        .into_iter()
+        .partition(Result::is_ok);
+    // SAFETY: We partitioned by Ok and Err, so the unwraps are fine
+    (
+        commands.into_iter().flat_map(Result::unwrap).collect(),
+        map_to_result(
+            errors.into_iter().map(Result::unwrap_err).collect(),
+            error_message,
+        ),
+    )
+}
+
+fn map_to_result(errors: Vec<anyhow::Error>, error_message: &str) -> Result<()> {
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        let mut error = anyhow::anyhow!("{error_message}");
+        for e in errors {
+            error = error.context(e);
+        }
+        Err(error)
     }
 }
 

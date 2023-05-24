@@ -16,6 +16,8 @@ use crate::{
     storage::{Host, Provider, ReadStore},
 };
 
+pub const PROVIDER_SPREAD_SCALER_TYPE: &str = "providerspreadscaler";
+
 /// Config for a ProviderSpreadConfig
 #[derive(Clone)]
 pub struct ProviderSpreadConfig {
@@ -47,11 +49,16 @@ pub struct ProviderSpreadScaler<S: ReadStore + Send + Sync> {
     spread_requirements: Vec<(Spread, usize)>,
     /// Provider ID, stored in a OnceCell to facilitate more efficient fetches
     provider_id: OnceCell<String>,
+    id: String,
 }
 
 #[async_trait]
 impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
-    #[instrument(level = "debug", skip_all)]
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    #[instrument(level = "debug", skip_all, fields(scaler_id = %self.id))]
     async fn update_config(&mut self, config: TraitProperty) -> Result<Vec<Command>> {
         let spread_config = match config {
             TraitProperty::SpreadScaler(prop) => prop,
@@ -62,7 +69,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
         self.reconcile().await
     }
 
-    #[instrument(level = "debug", skip_all)]
+    #[instrument(level = "debug", skip_all, fields(scaler_id = %self.id))]
     async fn handle_event(&self, event: &Event) -> Result<Vec<Command>> {
         // NOTE(brooksmtownsend): We could be more efficient here and instead of running
         // the entire reconcile, smart compute exactly what needs to change, but it just
@@ -100,7 +107,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
         }
     }
 
-    #[instrument(level = "debug", skip_all, fields(provider_ref = %self.config.provider_reference, link_name = %self.config.provider_link_name))]
+    #[instrument(level = "debug", skip_all, fields(provider_ref = %self.config.provider_reference, link_name = %self.config.provider_link_name, scaler_id = %self.id))]
     async fn reconcile(&self) -> Result<Vec<Command>> {
         let hosts = self.store.list::<Host>(&self.config.lattice_id).await?;
         // Defaulting to empty String is ok here, since it's only going to happen if this provider has never
@@ -127,7 +134,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
                                 annotations: HashMap::default(),
                             })
                             .map(|provider| {
-                                spreadscaler_annotations(&spread.name).iter().all(|(k, v)| {
+                                spreadscaler_annotations(&spread.name, &self.id).iter().all(|(k, v)| {
                                     let has_annotation = provider
                                         .annotations
                                         .get(k)
@@ -159,7 +166,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
                                     link_name: Some(self.config.provider_link_name.to_owned()),
                                     contract_id: self.config.provider_contract_id.to_owned(),
                                     model_name: self.config.model_name.to_owned(),
-                                    annotations: spreadscaler_annotations(&spread.name),
+                                    annotations: spreadscaler_annotations(&spread.name, &self.id),
                                 })
                             })
                             .take(num_to_stop)
@@ -189,7 +196,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
                                     host_id: host.id.to_string(),
                                     link_name: Some(link_name.to_owned()),
                                     model_name: self.config.model_name.to_owned(),
-                                    annotations: spreadscaler_annotations(&spread.name),
+                                    annotations: spreadscaler_annotations(&spread.name, &self.id),
                                     config: self.config.provider_config.clone(),
                                 })
                             })
@@ -212,6 +219,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
             config: config_clone,
             spread_requirements,
             provider_id: self.provider_id.clone(),
+            id: self.id.clone(),
         };
 
         cleanerupper.reconcile().await
@@ -220,12 +228,17 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
 
 impl<S: ReadStore + Send + Sync> ProviderSpreadScaler<S> {
     /// Construct a new ProviderSpreadScaler with specified configuration values
-    pub fn new(store: S, config: ProviderSpreadConfig) -> Self {
+    pub fn new(store: S, config: ProviderSpreadConfig, component_name: &str) -> Self {
+        let id = format!(
+            "{PROVIDER_SPREAD_SCALER_TYPE}-{}-{component_name}-{}-{}",
+            config.model_name, config.provider_link_name, config.provider_reference
+        );
         Self {
             store,
             spread_requirements: compute_spread(&config.spread_config),
             provider_id: OnceCell::new(),
             config,
+            id,
         }
     }
 
@@ -382,6 +395,7 @@ mod test {
                 model_name: MODEL_NAME.to_string(),
                 provider_config: Some(CapabilityConfig::Opaque("foobar".to_string())),
             },
+            "fake_component",
         );
 
         let commands = spreadscaler.reconcile().await?;
@@ -398,13 +412,16 @@ mod test {
                         host_id: host_id_one.to_string(),
                         link_name: Some(DEFAULT_LINK_NAME.to_string()),
                         model_name: MODEL_NAME.to_string(),
-                        annotations: spreadscaler_annotations("SimpleOne"),
+                        annotations: spreadscaler_annotations("SimpleOne", spreadscaler.id()),
                         config: Some(CapabilityConfig::Opaque("foobar".to_string())),
                     }
                 );
                 // This manual assertion is because we don't hash on annotations and I want to be extra sure we have the
                 // correct ones
-                assert_eq!(start.annotations, spreadscaler_annotations("SimpleOne"))
+                assert_eq!(
+                    start.annotations,
+                    spreadscaler_annotations("SimpleOne", spreadscaler.id())
+                )
             }
             Some(_other) => panic!("command should have been a start provider"),
         }
@@ -420,13 +437,16 @@ mod test {
                         host_id: host_id_two.to_string(),
                         link_name: Some(DEFAULT_LINK_NAME.to_string()),
                         model_name: MODEL_NAME.to_string(),
-                        annotations: spreadscaler_annotations("SimpleTwo"),
+                        annotations: spreadscaler_annotations("SimpleTwo", spreadscaler.id()),
                         config: Some(CapabilityConfig::Opaque("foobar".to_string())),
                     }
                 );
                 // This manual assertion is because we don't hash on annotations and I want to be extra sure we have the
                 // correct ones
-                assert_eq!(start.annotations, spreadscaler_annotations("SimpleTwo"))
+                assert_eq!(
+                    start.annotations,
+                    spreadscaler_annotations("SimpleTwo", spreadscaler.id())
+                )
             }
             Some(_other) => panic!("command should have been a start provider"),
         }
@@ -487,6 +507,7 @@ mod test {
                 model_name: MODEL_NAME.to_string(),
                 provider_config: None,
             },
+            "fake_component",
         );
 
         store
@@ -505,7 +526,7 @@ mod test {
                         contract_id: "prov:ider".to_string(),
                         link_name: DEFAULT_LINK_NAME.to_string(),
                         public_key: provider_id.to_string(),
-                        annotations: spreadscaler_annotations("ComplexOne"),
+                        annotations: spreadscaler_annotations("ComplexOne", spreadscaler.id()),
                     }]),
                     uptime_seconds: 123,
                     version: None,
@@ -571,7 +592,7 @@ mod test {
                         contract_id: "prov:ider".to_string(),
                         link_name: DEFAULT_LINK_NAME.to_string(),
                         public_key: provider_id.to_string(),
-                        annotations: spreadscaler_annotations("ComplexOne"),
+                        annotations: spreadscaler_annotations("ComplexOne", spreadscaler.id()),
                     }]),
                     uptime_seconds: 123,
                     version: None,
@@ -630,7 +651,7 @@ mod test {
                         link_name: Some(DEFAULT_LINK_NAME.to_string()),
                         contract_id: "prov:ider".to_string(),
                         model_name: MODEL_NAME.to_string(),
-                        annotations: spreadscaler_annotations("ComplexOne")
+                        annotations: spreadscaler_annotations("ComplexOne", spreadscaler.id())
                     }
                 );
             }
@@ -643,12 +664,15 @@ mod test {
                         link_name: Some(DEFAULT_LINK_NAME.to_string()),
                         contract_id: "prov:ider".to_string(),
                         model_name: MODEL_NAME.to_string(),
-                        annotations: spreadscaler_annotations("ComplexOne")
+                        annotations: spreadscaler_annotations("ComplexOne", spreadscaler.id())
                     }
                 );
                 // This manual assertion is because we don't hash on annotations and I want to be extra sure we have the
                 // correct ones
-                assert_eq!(stop.annotations, spreadscaler_annotations("ComplexOne"))
+                assert_eq!(
+                    stop.annotations,
+                    spreadscaler_annotations("ComplexOne", spreadscaler.id())
+                )
             }
             (_, _) => panic!("command should have been a stop provider"),
         }
@@ -663,13 +687,16 @@ mod test {
                         host_id: host_id_two.to_string(),
                         link_name: Some(DEFAULT_LINK_NAME.to_string()),
                         model_name: MODEL_NAME.to_string(),
-                        annotations: spreadscaler_annotations("ComplexTwo"),
+                        annotations: spreadscaler_annotations("ComplexTwo", spreadscaler.id()),
                         config: None,
                     }
                 );
                 // This manual assertion is because we don't hash on annotations and I want to be extra sure we have the
                 // correct ones
-                assert_eq!(start.annotations, spreadscaler_annotations("ComplexTwo"))
+                assert_eq!(
+                    start.annotations,
+                    spreadscaler_annotations("ComplexTwo", spreadscaler.id())
+                )
             }
             Some(_other) => panic!("command should have been a start provider"),
         }
@@ -684,13 +711,16 @@ mod test {
                         host_id: host_id_three.to_string(),
                         link_name: Some(DEFAULT_LINK_NAME.to_string()),
                         model_name: MODEL_NAME.to_string(),
-                        annotations: spreadscaler_annotations("ComplexTwo"),
+                        annotations: spreadscaler_annotations("ComplexTwo", spreadscaler.id()),
                         config: None,
                     }
                 );
                 // This manual assertion is because we don't hash on annotations and I want to be extra sure we have the
                 // correct ones
-                assert_eq!(start.annotations, spreadscaler_annotations("ComplexTwo"))
+                assert_eq!(
+                    start.annotations,
+                    spreadscaler_annotations("ComplexTwo", spreadscaler.id())
+                )
             }
             Some(_other) => panic!("command should have been a start provider"),
         }

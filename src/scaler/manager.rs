@@ -9,6 +9,7 @@ use async_nats::jetstream::{
     stream::Stream as JsStream,
     AckKind,
 };
+use cloudevents::Event as CloudEvent;
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use tokio::{
@@ -48,55 +49,33 @@ pub const WADM_NOTIFY_PREFIX: &str = "wadm.notify";
 pub enum Notifications {
     CreateScalers(Manifest),
     DeleteScalers(String),
-    /// Register expected events for a manifest. You can either trigger this with an event
-    /// (which will result in calling `handle_event`) or without in order to calculate
-    /// expected events with a full reconcile.
-    /// is being done (like on first deploy), rather than just handling a single event
+    /// Register expected events for a manifest. You can either trigger this with an event (which
+    /// will result in calling `handle_event`) or without in order to calculate expected events with
+    /// a full reconcile. is being done (like on first deploy), rather than just handling a single
+    /// event
     RegisterExpectedEvents {
         name: String,
-        triggering_event: Option<Event>,
+        scaler_id: String,
+        triggering_event: Option<CloudEvent>,
     },
     /// Remove an event from the expected list for a manifest scaler
     RemoveExpectedEvent {
         name: String,
-        event: Event,
+        scaler_id: String,
+        event: CloudEvent,
     },
 }
 
-/// A wrapper type returned when getting a list of scalers. Implements a backoff operation that can
-/// be called to tell all returned scalers to back off and notifiying with a message so other
-/// consumers can backoff as well
-pub struct Scalers<'a, P> {
+/// A wrapper type returned when getting a list of scalers for a model
+pub struct Scalers {
     pub scalers: OwnedRwLockReadGuard<HashMap<String, ScalerList>, ScalerList>,
-    publisher: &'a P,
-    name: &'a str,
-    subject: &'a str,
 }
 
-impl<'a, P> Deref for Scalers<'a, P> {
+impl Deref for Scalers {
     type Target = ScalerList;
 
     fn deref(&self) -> &Self::Target {
         self.scalers.deref()
-    }
-}
-
-impl<'a, P> Scalers<'a, P>
-where
-    P: Publisher,
-{
-    pub async fn reconcile_all(&self) -> Result<Vec<Result<Vec<Command>>>> {
-        let manifest_name = self.name;
-
-        // Publish the message first because otherwise we could get scalers that don't go to backoff
-        // mode
-        let data = serde_json::to_vec(&Notifications::RegisterExpectedEvents {
-            name: manifest_name.to_owned(),
-            triggering_event: None,
-        })?;
-        self.publisher.publish(data, Some(self.subject)).await?;
-
-        Ok(futures::future::join_all(self.scalers.iter().map(|scaler| scaler.reconcile())).await)
     }
 }
 
@@ -110,6 +89,19 @@ impl Deref for AllScalers {
 
     fn deref(&self) -> &Self::Target {
         self.scalers.deref()
+    }
+}
+
+/// A wrapper type returned when getting a specific scaler
+pub struct SingleScaler {
+    pub scaler: OwnedRwLockReadGuard<HashMap<String, ScalerList>, BoxedScaler>,
+}
+
+impl Deref for SingleScaler {
+    type Target = BoxedScaler;
+
+    fn deref(&self) -> &Self::Target {
+        self.scaler.deref()
     }
 }
 
@@ -247,7 +239,7 @@ where
     /// This only constructs the scalers and doesn't reconcile. The returned [`Scalers`] type can be
     /// used to set this model to backoff mode
     #[instrument(level = "trace", skip_all, fields(name = %manifest.metadata.name, lattice_id = %self.lattice_id))]
-    pub async fn add_scalers<'a>(&'a self, manifest: &'a Manifest) -> Result<Scalers<'a, P>> {
+    pub async fn add_scalers<'a>(&'a self, manifest: &'a Manifest) -> Result<Scalers> {
         let scalers = components_to_scalers(
             &manifest.spec.components,
             &self.state_store,
@@ -270,24 +262,31 @@ where
     }
 
     /// Gets the scalers for the given model name, returning None if they don't exist.
-    ///
-    /// The returned [`Scalers`] type can be used to set this model to backoff mode
     #[instrument(level = "trace", skip(self), fields(lattice_id = %self.lattice_id))]
-    pub async fn get_scalers<'a>(&'a self, name: &'a str) -> Option<Scalers<'a, P>> {
+    pub async fn get_scalers<'a>(&'a self, name: &'a str) -> Option<Scalers> {
         let lock = self.scalers.clone().read_owned().await;
         OwnedRwLockReadGuard::try_map(lock, |scalers| scalers.get(name))
             .ok()
-            .map(|scalers| Scalers {
-                scalers,
-                publisher: &self.client,
-                name,
-                subject: self.subject.as_str(),
-            })
+            .map(|scalers| Scalers { scalers })
+    }
+
+    /// Gets a specific scaler for the given model name with the given ID, returning None if it doesn't exist.
+    #[instrument(level = "trace", skip(self), fields(lattice_id = %self.lattice_id))]
+    pub async fn get_specific_scaler<'a>(
+        &'a self,
+        name: &'a str,
+        scaler_id: &'a str,
+    ) -> Option<SingleScaler> {
+        let lock = self.scalers.clone().read_owned().await;
+        OwnedRwLockReadGuard::try_map(lock, |scalers| match scalers.get(name) {
+            Some(scalers) => scalers.iter().find(|s| s.id() == scaler_id),
+            None => None,
+        })
+        .ok()
+        .map(|scaler| SingleScaler { scaler })
     }
 
     /// Gets all current managed scalers
-    ///
-    /// The returned [`AllScalers`] type can be used to set verious models to backoff mode
     #[instrument(level = "trace", skip(self), fields(lattice_id = %self.lattice_id))]
     pub async fn get_all_scalers(&self) -> AllScalers {
         AllScalers {
@@ -408,31 +407,40 @@ where
                                     // doesn't tear down everything or leaves something hanging. If that is
                                     // the case, a new part of the reaper logic should handle it
                                 },
-                                Notifications::RegisterExpectedEvents{ name, triggering_event } => {
+                                Notifications::RegisterExpectedEvents{ name, scaler_id, triggering_event } => {
                                     trace!(%name, "Computing and registering expected events for manifest");
-                                    if let Some(scalers) = self.get_scalers(&name).await {
+                                    if let Some(scaler) = self.get_specific_scaler(&name, &scaler_id).await {
                                         if let Some(event) = triggering_event {
-                                            futures::future::join_all(scalers.iter().map(|scaler| async {
-                                                scaler.handle_event(&event).await
+                                            let parsed_event: Event = match event.try_into() {
+                                                Ok(e) => e,
+                                                Err(e) => {
+                                                    error!(error = %e, %name, "Unable to parse given event");
+                                                    continue;
+                                                }
+                                            };
+                                            if let Err(e) = scaler.handle_event(&parsed_event).await {
+                                                error!(error = %e, %name, %scaler_id, "Unable to register expected events for scaler");
                                             }
-                                            )).await;
-                                        } else {
-                                            futures::future::join_all(scalers.iter().map(|scaler| async {
-                                                scaler.reconcile().await
-                                            }
-                                            )).await;
+                                        } else if let Err(e) = scaler.reconcile().await {
+                                            error!(error = %e, %name, %scaler_id, "Unable to register expected events for scaler");
                                         }
                                     } else {
                                         debug!(%name, "Received request to register events for non-existent scalers, ignoring");
                                     }
                                 },
-                                Notifications::RemoveExpectedEvent{ name, event} => {
+                                Notifications::RemoveExpectedEvent{ name, scaler_id, event } => {
                                     trace!(%name, "Removing expected event for manifest");
-                                    if let Some(scalers) = self.get_scalers(&name).await {
-                                        futures::future::join_all(scalers.iter().map(|scaler| async {
-                                            scaler.handle_event(&event).await
+                                    if let Some(scaler) = self.get_specific_scaler(&name, &scaler_id).await {
+                                        let parsed_event: Event = match event.try_into() {
+                                            Ok(e) => e,
+                                            Err(e) => {
+                                                error!(error = %e, %name, "Unable to parse given event");
+                                                continue;
+                                            }
+                                        };
+                                        if let Err(e) = scaler.handle_event(&parsed_event).await {
+                                            error!(error = %e, %name, %scaler_id, "Unable to register expected events for scaler");
                                         }
-                                        )).await;
                                     } else {
                                         debug!(%name, "Received request to remove event for non-existent scalers, ignoring");
                                     }
@@ -496,6 +504,7 @@ where
                                     lattice_id.to_owned(),
                                     name.to_owned(),
                                     p.to_owned(),
+                                    &component.name,
                                 ),
                                 notifier.to_owned(),
                                 notifier_subject,
@@ -554,6 +563,7 @@ where
                                             model_name: name.to_owned(),
                                             provider_config: props.config.to_owned(),
                                         },
+                                        &component.name,
                                     ),
                                     notifier.to_owned(),
                                     notifier_subject,
@@ -584,6 +594,7 @@ where
                                 model_name: name.to_owned(),
                                 provider_config: props.config.to_owned(),
                             },
+                            &component.name,
                         ),
                         notifier.to_owned(),
                         notifier_subject,

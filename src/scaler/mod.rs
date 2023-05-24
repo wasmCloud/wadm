@@ -5,7 +5,7 @@ use tokio::{
     sync::{Mutex, RwLock},
     task::JoinHandle,
 };
-use tracing::log::trace;
+use tracing::{instrument, trace};
 
 use crate::{
     commands::Command,
@@ -35,6 +35,12 @@ use manager::Notifications;
 /// to determine if actions need to be taken in response to an event
 #[async_trait]
 pub trait Scaler {
+    /// A unique identifier for this scaler type. This is used for logging and for selecting
+    /// specific scalers as needed. Generally this should be something like
+    /// `$NAME_OF_SCALER_TYPE-$MODEL_NAME-$OCI_REF`. However, the only requirement is that it can
+    /// uniquely identify a scaler
+    fn id(&self) -> &str;
+
     /// Provide a scaler with configuration to use internally when computing commands This should
     /// trigger a reconcile with the new configuration.
     ///
@@ -152,13 +158,15 @@ where
     ///
     /// * `Result<Vec<Command>>`: A `Result` containing a vector of `Command` structs if successful,
     ///   or an error of type `anyhow::Error` if any error occurs while processing the event.
+    #[instrument(level = "trace", skip_all, fields(scaler_id = %self.id()))]
     async fn handle_event_internal(&self, event: &Event) -> anyhow::Result<Vec<Command>> {
         let model_name = &self.model_name;
         let commands: Vec<Command> = if self.remove_event(event).await? {
             trace!("Scaler received event that it was expecting");
             let data = serde_json::to_vec(&Notifications::RemoveExpectedEvent {
                 name: model_name.to_owned(),
-                event: event.to_owned(),
+                scaler_id: self.scaler.id().to_owned(),
+                event: event.to_owned().try_into()?,
             })?;
             self.notifier
                 .publish(data, Some(&self.notify_subject))
@@ -172,6 +180,7 @@ where
             // the backoff mechanism within wadm
             Vec::with_capacity(0)
         } else {
+            trace!("Scaler is not backing off, handling event");
             let commands = self.scaler.handle_event(event).await?;
 
             // Based on the commands, compute the events that we expect to see for this scaler. The scaler
@@ -184,15 +193,17 @@ where
             // NOTE(brooksmtownsend): I tried to make the events iterator peekable and look at that instead
             // but that resulted in a "higher ranked lifetime error". Weird.
             if !commands.is_empty() {
+                trace!("Scaler generated commands, notifying other scalers to register expected events");
                 let data = serde_json::to_vec(&Notifications::RegisterExpectedEvents {
                     name: model_name.to_owned(),
-                    triggering_event: Some(event.to_owned()),
+                    scaler_id: self.scaler.id().to_owned(),
+                    triggering_event: Some(event.to_owned().try_into()?),
                 })?;
+
                 self.notifier
                     .publish(data, Some(&self.notify_subject))
                     .await?;
             }
-
             self.add_events(expected_events, false).await;
             commands
         };
@@ -200,10 +211,26 @@ where
         Ok(commands)
     }
 
+    #[instrument(level = "trace", skip_all, fields(scaler_id = %self.id()))]
     async fn reconcile_internal(&self) -> Result<Vec<Command>> {
+        // If we're already in backoff, return an empty list
+        let current_event_count = self.event_count().await;
+        if current_event_count > 0 {
+            trace!(%current_event_count, "Scaler is backing off, not reconciling");
+            return Ok(Vec::with_capacity(0));
+        }
         match self.scaler.reconcile().await {
-            // "Back off" scaler with expected corresponding events
-            Ok(commands) => {
+            // "Back off" scaler with expected corresponding events if the scaler generated commands
+            Ok(commands) if !commands.is_empty() => {
+                trace!("Reconcile generated commands, notifying other scalers to register expected events");
+                let data = serde_json::to_vec(&Notifications::RegisterExpectedEvents {
+                    name: self.model_name.to_owned(),
+                    scaler_id: self.scaler.id().to_owned(),
+                    triggering_event: None,
+                })?;
+                self.notifier
+                    .publish(data, Some(&self.notify_subject))
+                    .await?;
                 self.add_events(
                     commands
                         .iter()
@@ -211,6 +238,10 @@ where
                     true,
                 )
                 .await;
+                Ok(commands)
+            }
+            Ok(commands) => {
+                trace!("Reconcile generated no commands, no need to register expected events");
                 Ok(commands)
             }
             Err(e) => Err(e),
@@ -221,7 +252,7 @@ where
     async fn set_timed_cleanup(&self) {
         let mut event_cleaner = self.event_cleaner.lock().await;
         // Clear any existing handle
-        if let Some(handle) = self.event_cleaner.lock().await.take() {
+        if let Some(handle) = event_cleaner.take() {
             handle.abort();
         }
         let expected_events = self.expected_events.clone();
@@ -251,6 +282,11 @@ where
     T: Scaler + Send + Sync,
     P: Publisher + Send + Sync + 'static,
 {
+    fn id(&self) -> &str {
+        // Pass through the ID of the wrapped scaler
+        self.scaler.id()
+    }
+
     async fn update_config(&mut self, config: TraitProperty) -> Result<Vec<Command>> {
         self.scaler.update_config(config).await
     }

@@ -4,13 +4,16 @@
 
 use std::{collections::HashMap, convert::TryFrom};
 
-use cloudevents::{AttributesReader, Data, Event as CloudEvent};
+use cloudevents::{AttributesReader, Data, Event as CloudEvent, EventBuilder, EventBuilderV10};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::model::Manifest;
 
 use super::data::*;
+
+/// The source used for cloud events that wadm emits
+pub const WADM_SOURCE: &str = "wadm";
 
 // NOTE: this macro is a helper so we don't have to copy/paste these impls for each type. The first
 // argument is the struct name you are generating for and the second argument is the event type as
@@ -147,6 +150,42 @@ impl TryFrom<CloudEvent> for Event {
             }
             _ => Err(ConversionError::WrongEvent(value)),
         }
+    }
+}
+
+impl TryFrom<Event> for CloudEvent {
+    type Error = anyhow::Error;
+
+    fn try_from(value: Event) -> Result<Self, Self::Error> {
+        let ty = match value {
+            Event::ActorStarted(_) => ActorStarted::TYPE,
+            Event::ActorsStarted(_) => ActorsStarted::TYPE,
+            Event::ActorsStartFailed(_) => ActorsStartFailed::TYPE,
+            Event::ActorStopped(_) => ActorStopped::TYPE,
+            Event::ActorsStopped(_) => ActorsStopped::TYPE,
+            Event::ProviderStarted(_) => ProviderStarted::TYPE,
+            Event::ProviderStopped(_) => ProviderStopped::TYPE,
+            Event::ProviderStartFailed(_) => ProviderStartFailed::TYPE,
+            Event::ProviderHealthCheckPassed(_) => ProviderHealthCheckPassed::TYPE,
+            Event::ProviderHealthCheckFailed(_) => ProviderHealthCheckFailed::TYPE,
+            Event::ProviderHealthCheckStatus(_) => ProviderHealthCheckStatus::TYPE,
+            Event::HostStarted(_) => HostStarted::TYPE,
+            Event::HostStopped(_) => HostStopped::TYPE,
+            Event::HostHeartbeat(_) => HostHeartbeat::TYPE,
+            Event::LinkdefSet(_) => LinkdefSet::TYPE,
+            Event::LinkdefDeleted(_) => LinkdefDeleted::TYPE,
+            Event::ManifestPublished(_) => ManifestPublished::TYPE,
+            Event::ManifestUnpublished(_) => ManifestUnpublished::TYPE,
+        };
+
+        EventBuilderV10::new()
+            .id(uuid::Uuid::new_v4().to_string())
+            .source(WADM_SOURCE)
+            .time(chrono::Utc::now())
+            .data("application/json", serde_json::to_value(value)?)
+            .ty(ty)
+            .build()
+            .map_err(anyhow::Error::from)
     }
 }
 
