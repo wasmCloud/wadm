@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use tracing::{instrument, warn};
+use wasmbus_rpc::core::LinkDefinition;
 use wasmcloud_control_interface::HostInventory;
 
 use crate::{commands::Command, publisher::Publisher, APP_SPEC_ANNOTATION};
@@ -30,6 +31,15 @@ pub trait ClaimsSource {
 #[async_trait::async_trait]
 pub trait InventorySource {
     async fn get_inventory(&self, host_id: &str) -> anyhow::Result<HostInventory>;
+}
+
+/// A trait for anything that can fetch the links in a lattice
+///
+/// NOTE: This trait right now exists as a convenience for testing. It isn't ideal to have this just
+/// due to testing, but it does allow us to abstract away the concrete type of the client
+#[async_trait::async_trait]
+pub trait LinkSource {
+    async fn get_links(&self) -> anyhow::Result<Vec<LinkDefinition>>;
 }
 
 #[async_trait::async_trait]
@@ -69,6 +79,20 @@ impl InventorySource for wasmcloud_control_interface::Client {
             .get_host_inventory(host_id)
             .await
             .map_err(|e| anyhow::anyhow!("{e}"))?)
+    }
+}
+
+// NOTE(thomastaylor312): A future improvement here that would make things more efficient is if this
+// was just a cache of the links. On startup, it could fetch once, and then it could subscribe to
+// the KV store for updates. This would allow us to not have to fetch every time we need to get
+// links
+#[async_trait::async_trait]
+impl LinkSource for wasmcloud_control_interface::Client {
+    async fn get_links(&self) -> anyhow::Result<Vec<LinkDefinition>> {
+        self.query_links()
+            .await
+            .map(|resp| resp.links)
+            .map_err(|e| anyhow::anyhow!("{e:?}"))
     }
 }
 

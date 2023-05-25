@@ -1,6 +1,6 @@
 //! A struct that manages creating and removing scalers for all manifests
 
-use std::{collections::HashMap, ops::Deref, sync::Arc};
+use std::{collections::HashMap, ops::Deref, sync::Arc, time::Duration};
 
 use anyhow::Result;
 use async_nats::jetstream::{
@@ -27,7 +27,7 @@ use crate::{
     publisher::Publisher,
     scaler::{spreadscaler::ActorSpreadScaler, Command, Scaler},
     storage::ReadStore,
-    workers::CommandPublisher,
+    workers::{CommandPublisher, LinkSource},
     DEFAULT_LINK_NAME,
 };
 
@@ -51,8 +51,7 @@ pub enum Notifications {
     DeleteScalers(String),
     /// Register expected events for a manifest. You can either trigger this with an event (which
     /// will result in calling `handle_event`) or without in order to calculate expected events with
-    /// a full reconcile. is being done (like on first deploy), rather than just handling a single
-    /// event
+    /// a full reconcile (like on first deploy), rather than just handling a single event
     RegisterExpectedEvents {
         name: String,
         scaler_id: String,
@@ -108,7 +107,7 @@ impl Deref for SingleScaler {
 /// A manager that consumes notifications from a stream for a lattice and then either adds or removes the
 /// necessary scalers
 #[derive(Clone)]
-pub struct ScalerManager<StateStore, P: Clone> {
+pub struct ScalerManager<StateStore, P: Clone, L: Clone> {
     handle: Option<Arc<JoinHandle<Result<()>>>>,
     scalers: Arc<RwLock<HashMap<String, ScalerList>>>,
     client: P,
@@ -116,9 +115,10 @@ pub struct ScalerManager<StateStore, P: Clone> {
     lattice_id: String,
     state_store: StateStore,
     publisher: CommandPublisher<P>,
+    link_getter: L,
 }
 
-impl<StateStore, P: Clone> Drop for ScalerManager<StateStore, P> {
+impl<StateStore, P: Clone, L: Clone> Drop for ScalerManager<StateStore, P, L> {
     fn drop(&mut self) {
         if let Some(handle) = self.handle.take() {
             handle.abort()
@@ -126,10 +126,11 @@ impl<StateStore, P: Clone> Drop for ScalerManager<StateStore, P> {
     }
 }
 
-impl<StateStore, P> ScalerManager<StateStore, P>
+impl<StateStore, P, L> ScalerManager<StateStore, P, L>
 where
     StateStore: ReadStore + Send + Sync + Clone + 'static,
     P: Publisher + Clone + Send + Sync + 'static,
+    L: LinkSource + Clone + Send + Sync + 'static,
 {
     /// Creates a new ScalerManager configured to notify messages to `wadm.notify.{lattice_id}`
     /// using the given jetstream client. Also creates an ephemeral consumer for notifications on
@@ -141,7 +142,8 @@ where
         state_store: StateStore,
         manifest_store: KvStore,
         publisher: CommandPublisher<P>,
-    ) -> Result<ScalerManager<StateStore, P>> {
+        link_getter: L,
+    ) -> Result<ScalerManager<StateStore, P, L>> {
         // Create the consumer first so that we can make sure we don't miss anything during the
         // first reconcile pass
         let subject = format!("{WADM_NOTIFY_PREFIX}.{lattice_id}");
@@ -191,6 +193,7 @@ where
                     &client,
                     &name,
                     &subject,
+                    &link_getter,
                 );
                 Some((name, scalers))
             })
@@ -205,6 +208,7 @@ where
             lattice_id: lattice_id.to_owned(),
             state_store,
             publisher,
+            link_getter,
         };
         let cloned = manager.clone();
         let handle = tokio::spawn(async move { cloned.notify(messages).await });
@@ -220,7 +224,8 @@ where
         lattice_id: &str,
         state_store: StateStore,
         publisher: CommandPublisher<P>,
-    ) -> ScalerManager<StateStore, P> {
+        link_getter: L,
+    ) -> ScalerManager<StateStore, P, L> {
         ScalerManager {
             handle: None,
             scalers: Arc::new(RwLock::new(HashMap::new())),
@@ -229,6 +234,7 @@ where
             lattice_id: lattice_id.to_owned(),
             state_store,
             publisher,
+            link_getter,
         }
     }
 
@@ -247,6 +253,7 @@ where
             &self.client,
             &manifest.metadata.name,
             &self.subject,
+            &self.link_getter,
         );
         self.add_raw_scalers(&manifest.metadata.name, scalers).await;
         let notification = serde_json::to_vec(&Notifications::CreateScalers(manifest.to_owned()))?;
@@ -278,9 +285,10 @@ where
         scaler_id: &'a str,
     ) -> Option<SingleScaler> {
         let lock = self.scalers.clone().read_owned().await;
-        OwnedRwLockReadGuard::try_map(lock, |scalers| match scalers.get(name) {
-            Some(scalers) => scalers.iter().find(|s| s.id() == scaler_id),
-            None => None,
+        OwnedRwLockReadGuard::try_map(lock, |scalers| {
+            scalers
+                .get(name)
+                .and_then(|scalers| scalers.iter().find(|s| s.id() == scaler_id))
         })
         .ok()
         .map(|scaler| SingleScaler { scaler })
@@ -380,6 +388,7 @@ where
                                         &self.client,
                                         &manifest.metadata.name,
                                         &self.subject,
+                                        &self.link_getter,
                                     );
                                     let num_scalers = scalers.len();
                                     self.add_raw_scalers(&manifest.metadata.name, scalers).await;
@@ -407,6 +416,20 @@ where
                                     // doesn't tear down everything or leaves something hanging. If that is
                                     // the case, a new part of the reaper logic should handle it
                                 },
+                                // NOTE(thomastaylor312): Please note that both of the
+                                // ExpectedEvents blocks are "cheating". If the scaler is a backoff
+                                // wrapped scaler, calling `reconcile` or `handle_event` will
+                                // trigger the creation of the expected events for this scaler.
+                                // Otherwise, it will just run the logic for handling stuff. Either
+                                // way, we ignore the returned events. Right now this is totally
+                                // fine because scalers should run fairly quickly and we only run
+                                // them in the case where something is observed. It also leaves the
+                                // flexibility of managing any scaler rather than just backoff
+                                // wrapped ones (which is good from a Rust API point of view). If
+                                // this starts to become a problem, we can revisit how we handle
+                                // this (probably by requiring that this struct always wraps any
+                                // scaler in the backoff scaler and using custom methods from that
+                                // type)
                                 Notifications::RegisterExpectedEvents{ name, scaler_id, triggering_event } => {
                                     trace!(%name, "Computing and registering expected events for manifest");
                                     if let Some(scaler) = self.get_specific_scaler(&name, &scaler_id).await {
@@ -477,17 +500,19 @@ const EMPTY_TRAIT_VEC: Vec<Trait> = Vec::new();
 /// * `store` - The store to use when creating the scalers so they can access lattice state
 /// * `lattice_id` - The lattice id the scalers operate on
 /// * `name` - The name of the manifest that the scalers are being created for
-pub(crate) fn components_to_scalers<S, P>(
+pub(crate) fn components_to_scalers<S, P, L>(
     components: &[Component],
     store: &S,
     lattice_id: &str,
     notifier: &P,
     name: &str,
     notifier_subject: &str,
+    link_getter: &L,
 ) -> ScalerList
 where
     S: ReadStore + Send + Sync + Clone + 'static,
     P: Publisher + Clone + Send + Sync + 'static,
+    L: LinkSource + Clone + Send + Sync + 'static,
 {
     let mut scalers: ScalerList = Vec::new();
     for component in components.iter() {
@@ -509,6 +534,7 @@ where
                                 notifier.to_owned(),
                                 notifier_subject,
                                 name,
+                                None,
                             )) as BoxedScaler)
                         }
                         (LINKDEF_TRAIT, TraitProperty::Linkdef(p)) => {
@@ -528,10 +554,12 @@ where
                                                 lattice_id.to_owned(),
                                                 name.to_owned(),
                                                 p.values.to_owned(),
+                                                link_getter.clone(),
                                             ),
                                             notifier.to_owned(),
                                             notifier_subject,
                                             name,
+                                            None,
                                         ))
                                             as BoxedScaler)
                                     }
@@ -568,6 +596,8 @@ where
                                     notifier.to_owned(),
                                     notifier_subject,
                                     name,
+                                    // Providers are a bit longer because it can take a bit to download
+                                    Some(Duration::from_secs(60)),
                                 )) as BoxedScaler)
                             }
                             _ => None,
@@ -599,6 +629,8 @@ where
                         notifier.to_owned(),
                         notifier_subject,
                         name,
+                        // Providers are a bit longer because it can take a bit to download
+                        Some(Duration::from_secs(60)),
                     )) as BoxedScaler)
                 }
             }

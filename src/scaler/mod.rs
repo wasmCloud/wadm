@@ -1,11 +1,12 @@
+use std::{sync::Arc, time::Duration};
+
 use anyhow::Result;
 use async_trait::async_trait;
-use std::sync::Arc;
 use tokio::{
     sync::{Mutex, RwLock},
     task::JoinHandle,
 };
-use tracing::{instrument, trace};
+use tracing::{instrument, trace, Instrument};
 
 use crate::{
     commands::Command,
@@ -22,6 +23,8 @@ mod simplescaler;
 pub mod spreadscaler;
 
 use manager::Notifications;
+
+const DEFAULT_WAIT_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// A trait describing a struct that can be configured to compute the difference between
 /// desired state and configured state, returning a set of commands to approach desired state.
@@ -93,7 +96,15 @@ where
     T: Scaler + Send + Sync,
     P: Publisher + Send + Sync + 'static,
 {
-    pub fn new(scaler: T, notifier: P, notify_subject: &str, model_name: &str) -> Self {
+    /// Wraps the given scaler in a new backoff aware scaler. `cleanup_timeout` can be set to a
+    /// desired waiting time, otherwise it will default to 30s
+    pub fn new(
+        scaler: T,
+        notifier: P,
+        notify_subject: &str,
+        model_name: &str,
+        cleanup_timeout: Option<Duration>,
+    ) -> Self {
         Self {
             scaler,
             notifier,
@@ -101,8 +112,7 @@ where
             model_name: model_name.to_string(),
             expected_events: Arc::new(RwLock::new(Vec::new())),
             event_cleaner: Mutex::new(None),
-            // This is hardcoded for now but could be adjusted based on the scaler in the future if needed
-            cleanup_timeout: std::time::Duration::from_secs(30),
+            cleanup_timeout: cleanup_timeout.unwrap_or(DEFAULT_WAIT_TIMEOUT),
         }
     }
 
@@ -133,6 +143,9 @@ where
         let mut expected_events = self.expected_events.write().await;
         let before_count = expected_events.len();
         expected_events.retain(|(success, fail)| {
+            // Retain the event if it doesn't match either the success or optional failure event.
+            // Most events have a possibility of seeing a failure and either one means we saw the
+            // event we were expecting
             !evt_matches_expected(success, event)
                 && !fail
                     .as_ref()
@@ -190,8 +203,6 @@ where
                 .filter_map(|cmd| cmd.corresponding_event(model_name));
 
             // Only let other scalers know if we generated commands to take
-            // NOTE(brooksmtownsend): I tried to make the events iterator peekable and look at that instead
-            // but that resulted in a "higher ranked lifetime error". Weird.
             if !commands.is_empty() {
                 trace!("Scaler generated commands, notifying other scalers to register expected events");
                 let data = serde_json::to_vec(&Notifications::RegisterExpectedEvents {
@@ -258,11 +269,14 @@ where
         let expected_events = self.expected_events.clone();
         let timeout = self.cleanup_timeout;
 
-        *event_cleaner = Some(tokio::spawn(async move {
-            tokio::time::sleep(timeout).await;
-            // We don't use the method to clear here because of borrowing semantics.
-            expected_events.write().await.clear();
-        }));
+        *event_cleaner = Some(tokio::spawn(
+            async move {
+                tokio::time::sleep(timeout).await;
+                trace!("Reached event cleanup timeout, clearing expected events");
+                expected_events.write().await.clear();
+            }
+            .instrument(tracing::trace_span!("event_cleaner", scaler_id = %self.id())),
+        ));
     }
 }
 

@@ -37,6 +37,8 @@ services:
     image: wasmcloud/wasmcloud_host:0.63.1
     depends_on: 
       - nats
+    ports:
+     - 4000:4000
     deploy:
       replicas: 1
     environment:

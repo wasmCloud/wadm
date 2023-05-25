@@ -213,8 +213,6 @@ impl<S: ReadStore + Send + Sync> SimpleActorScaler<S> {
 mod test {
     use std::{collections::HashMap, sync::Arc};
 
-    use tokio::sync::RwLock;
-
     use crate::{
         commands::{Command, StartActor},
         consumers::{manager::Worker, ScopedMessage},
@@ -259,17 +257,20 @@ mod test {
         // Lattice State: One empty host
 
         let store = Arc::new(TestStore::default());
-        let lattice_source = TestLatticeSource {
-            claims: HashMap::default(),
-            inventory: Arc::new(RwLock::new(HashMap::default())),
-        };
+        let lattice_source = TestLatticeSource::default();
         let command_publisher = CommandPublisher::new(NoopPublisher, "doesntmatter");
         let worker = EventWorker::new(
             store.clone(),
-            lattice_source,
+            lattice_source.clone(),
             command_publisher.clone(),
-            ScalerManager::test_new(NoopPublisher, lattice_id, store.clone(), command_publisher)
-                .await,
+            ScalerManager::test_new(
+                NoopPublisher,
+                lattice_id,
+                store.clone(),
+                command_publisher,
+                lattice_source,
+            )
+            .await,
         );
 
         let host_id = "NASDASDIAMAREALHOST".to_string();
@@ -327,17 +328,20 @@ mod test {
         let replicas = 2;
 
         let store = Arc::new(TestStore::default());
-        let lattice_source = TestLatticeSource {
-            claims: HashMap::default(),
-            inventory: Arc::new(RwLock::new(HashMap::default())),
-        };
+        let lattice_source = TestLatticeSource::default();
         let command_publisher = CommandPublisher::new(NoopPublisher, "doesntmatter");
         let worker = EventWorker::new(
             store.clone(),
-            lattice_source,
+            lattice_source.clone(),
             command_publisher.clone(),
-            ScalerManager::test_new(NoopPublisher, lattice_id, store.clone(), command_publisher)
-                .await,
+            ScalerManager::test_new(
+                NoopPublisher,
+                lattice_id,
+                store.clone(),
+                command_publisher,
+                lattice_source,
+            )
+            .await,
         );
 
         // *** STATE SETUP BEGIN ***

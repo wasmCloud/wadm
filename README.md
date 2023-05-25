@@ -186,6 +186,9 @@ of these can be found below:
   entirely invalid properties. This will be added in a future version.
 - Nondestructive (e.g. orphaning resources) undeploys are not currently implemented. You can set the
   field in the request, but it won't do anything
+- If wadm discovers a provider in the lattice that isn't already started via a manifest, the
+  manifest won't be able to reconcile until another start provider event is received. This will
+  require a feature add to the ctl client to fix
 
 ## References
 

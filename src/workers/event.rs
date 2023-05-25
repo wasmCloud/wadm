@@ -17,17 +17,17 @@ use crate::APP_SPEC_ANNOTATION;
 
 use super::event_helpers::*;
 
-pub struct EventWorker<StateStore, C, P: Clone> {
+pub struct EventWorker<StateStore, C: Clone, P: Clone> {
     store: StateStore,
     ctl_client: C,
     publisher: CommandPublisher<P>,
-    scalers: ScalerManager<StateStore, P>,
+    scalers: ScalerManager<StateStore, P, C>,
 }
 
 impl<StateStore, C, P> EventWorker<StateStore, C, P>
 where
     StateStore: Store + Send + Sync + Clone + 'static,
-    C: ClaimsSource + InventorySource + Send + Sync,
+    C: ClaimsSource + InventorySource + LinkSource + Clone + Send + Sync + 'static,
     P: Publisher + Clone + Send + Sync + 'static,
 {
     /// Creates a new event worker configured to use the given store and control interface client for fetching state
@@ -35,7 +35,7 @@ where
         store: StateStore,
         ctl_client: C,
         publisher: CommandPublisher<P>,
-        manager: ScalerManager<StateStore, P>,
+        manager: ScalerManager<StateStore, P, C>,
     ) -> EventWorker<StateStore, C, P> {
         EventWorker {
             store,
@@ -342,33 +342,45 @@ where
         debug!("Handling provider started event");
         let id = crate::storage::provider_id(&provider.public_key, &provider.link_name);
         trace!("Fetching current data from store");
+        let mut needs_host_update = false;
         let provider_data = if let Some(mut current) =
             self.store.get::<Provider>(lattice_id, &id).await?
         {
             // Using the entry api is a bit more efficient because we do a single key lookup
-            match current.hosts.entry(provider.host_id.clone()) {
+            let mut prov = match current.hosts.entry(provider.host_id.clone()) {
                 Entry::Occupied(_) => {
-                    trace!("Found host entry for the provider already in store. Returning early");
-                    return Ok(());
+                    trace!("Found host entry for the provider already in store. Will not update");
+                    current
                 }
                 Entry::Vacant(entry) => {
                     entry.insert(ProviderStatus::default());
+                    needs_host_update = true;
                     current
                 }
+            };
+            // Update missing fields if they exist. Right now if we just discover a provider from
+            // health check, these will be empty
+            if prov.issuer.is_empty() || prov.reference.is_empty() {
+                let new_prov = Provider::from(provider);
+                prov.issuer = new_prov.issuer;
+                prov.reference = new_prov.reference;
             }
+            prov
         } else {
             trace!("No current provider found in store");
             let mut prov = Provider::from(provider);
             prov.hosts = HashMap::from([(provider.host_id.clone(), ProviderStatus::default())]);
+            needs_host_update = true;
             prov
         };
 
         // Insert provider into host map
-        if let Some(mut host) = self
-            .store
-            .get::<Host>(lattice_id, &provider.host_id)
-            .await?
-        {
+        if let (Some(mut host), true) = (
+            self.store
+                .get::<Host>(lattice_id, &provider.host_id)
+                .await?,
+            needs_host_update,
+        ) {
             trace!(host = ?host, "Found existing host data");
 
             host.providers.replace(ProviderInfo {
@@ -490,6 +502,10 @@ where
             ProviderStatus::Running
         };
         current.hosts.insert(host_id.to_owned(), status);
+
+        // TODO(thomastaylor312): Once we are able to fetch refmaps from the ctl client, we should
+        // make it update any empty references with the data from the refmap
+
         self.store
             .store(lattice_id, id, current)
             .await
@@ -744,7 +760,7 @@ where
 impl<StateStore, C, P> Worker for EventWorker<StateStore, C, P>
 where
     StateStore: Store + Send + Sync + Clone + 'static,
-    C: ClaimsSource + InventorySource + Send + Sync,
+    C: ClaimsSource + InventorySource + LinkSource + Clone + Send + Sync + 'static,
     P: Publisher + Clone + Send + Sync + 'static,
 {
     type Message = Event;
@@ -921,8 +937,8 @@ mod test {
         let store = Arc::new(TestStore::default());
         let inventory = Arc::new(RwLock::new(HashMap::default()));
         let lattice_source = TestLatticeSource {
-            claims: HashMap::default(),
             inventory: inventory.clone(),
+            ..Default::default()
         };
 
         let lattice_id = "all_state";
@@ -930,10 +946,16 @@ mod test {
         let command_publisher = CommandPublisher::new(NoopPublisher, "doesntmatter");
         let worker = EventWorker::new(
             store.clone(),
-            lattice_source,
+            lattice_source.clone(),
             command_publisher.clone(),
-            ScalerManager::test_new(NoopPublisher, lattice_id, store.clone(), command_publisher)
-                .await,
+            ScalerManager::test_new(
+                NoopPublisher,
+                lattice_id,
+                store.clone(),
+                command_publisher,
+                lattice_source,
+            )
+            .await,
         );
 
         let host1_id = "DS1".to_string();
@@ -1709,14 +1731,21 @@ mod test {
         let lattice_source = TestLatticeSource {
             claims: claims.clone(),
             inventory: inventory.clone(),
+            ..Default::default()
         };
         let command_publisher = CommandPublisher::new(NoopPublisher, "doesntmatter");
         let worker = EventWorker::new(
             store.clone(),
-            lattice_source,
+            lattice_source.clone(),
             command_publisher.clone(),
-            ScalerManager::test_new(NoopPublisher, lattice_id, store.clone(), command_publisher)
-                .await,
+            ScalerManager::test_new(
+                NoopPublisher,
+                lattice_id,
+                store.clone(),
+                command_publisher,
+                lattice_source,
+            )
+            .await,
         );
 
         let provider_id = "HYPERDRIVE".to_string();
@@ -1852,18 +1881,21 @@ mod test {
     #[tokio::test]
     async fn test_provider_status_update() {
         let store = Arc::new(TestStore::default());
-        let lattice_source = TestLatticeSource {
-            claims: HashMap::default(),
-            inventory: Arc::new(RwLock::new(HashMap::default())),
-        };
+        let lattice_source = TestLatticeSource::default();
         let lattice_id = "provider_status";
         let command_publisher = CommandPublisher::new(NoopPublisher, "doesntmatter");
         let worker = EventWorker::new(
             store.clone(),
-            lattice_source,
+            lattice_source.clone(),
             command_publisher.clone(),
-            ScalerManager::test_new(NoopPublisher, lattice_id, store.clone(), command_publisher)
-                .await,
+            ScalerManager::test_new(
+                NoopPublisher,
+                lattice_id,
+                store.clone(),
+                command_publisher,
+                lattice_source,
+            )
+            .await,
         );
 
         let host_id = "CLOUDCITY".to_string();
@@ -1960,18 +1992,24 @@ mod test {
         let store = Arc::new(TestStore::default());
         let inventory = Arc::new(RwLock::new(HashMap::default()));
         let lattice_source = TestLatticeSource {
-            claims: HashMap::default(),
             inventory: inventory.clone(),
+            ..Default::default()
         };
         let lattice_id = "provider_contract_id";
 
         let command_publisher = CommandPublisher::new(NoopPublisher, "doesntmatter");
         let worker = EventWorker::new(
             store.clone(),
-            lattice_source,
+            lattice_source.clone(),
             command_publisher.clone(),
-            ScalerManager::test_new(NoopPublisher, lattice_id, store.clone(), command_publisher)
-                .await,
+            ScalerManager::test_new(
+                NoopPublisher,
+                lattice_id,
+                store.clone(),
+                command_publisher,
+                lattice_source,
+            )
+            .await,
         );
 
         let host_id = "BEGGARSCANYON";
@@ -2053,18 +2091,24 @@ mod test {
         let store = Arc::new(TestStore::default());
         let inventory = Arc::new(RwLock::new(HashMap::default()));
         let lattice_source = TestLatticeSource {
-            claims: HashMap::default(),
             inventory: inventory.clone(),
+            ..Default::default()
         };
         let lattice_id = "update_data";
 
         let command_publisher = CommandPublisher::new(NoopPublisher, "doesntmatter");
         let worker = EventWorker::new(
             store.clone(),
-            lattice_source,
+            lattice_source.clone(),
             command_publisher.clone(),
-            ScalerManager::test_new(NoopPublisher, lattice_id, store.clone(), command_publisher)
-                .await,
+            ScalerManager::test_new(
+                NoopPublisher,
+                lattice_id,
+                store.clone(),
+                command_publisher,
+                lattice_source,
+            )
+            .await,
         );
 
         let actor_instance = "asdhjkahsd-123123-fasda-feeee";

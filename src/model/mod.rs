@@ -31,7 +31,7 @@ pub const LINKDEF_TRAIT: &str = "linkdef";
 pub const LATEST_VERSION: &str = "latest";
 
 /// An OAM manifest
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct Manifest {
     /// The OAM version of the manifest
     #[serde(rename = "apiVersion")]
@@ -64,7 +64,7 @@ impl Manifest {
 }
 
 /// The metadata describing the manifest
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct Metadata {
     /// The name of the manifest. This should be unique
     pub name: String,
@@ -74,14 +74,14 @@ pub struct Metadata {
 }
 
 /// A representation of an OAM specification
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct Specification {
     /// The list of components for describing an application
     pub components: Vec<Component>,
 }
 
 /// A component definition
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct Component {
     /// The name of this component
     pub name: String,
@@ -97,7 +97,7 @@ pub struct Component {
 }
 
 /// Properties that can be defined for a component
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(tag = "type")]
 pub enum Properties {
     #[serde(rename = "actor")]
@@ -106,13 +106,13 @@ pub enum Properties {
     Capability { properties: CapabilityProperties },
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct ActorProperties {
     /// The image reference to use
     pub image: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct CapabilityProperties {
     /// The image reference to use
     pub image: String,
@@ -181,7 +181,7 @@ impl Serialize for CapabilityConfig {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct Trait {
     /// The type of trait specified. This should be a unique string for the type of scaler. As we
     /// plan on supporting custom scalers, these traits are not enumerated
@@ -210,7 +210,7 @@ impl Trait {
 }
 
 /// Properties for defining traits
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum TraitProperty {
     Linkdef(LinkdefProperty),
@@ -240,7 +240,7 @@ impl From<serde_json::Value> for TraitProperty {
 }
 
 /// Properties for linkdefs
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct LinkdefProperty {
     /// The target this linkdef applies to. This should be the name of an actor component
     pub target: String,
@@ -250,7 +250,7 @@ pub struct LinkdefProperty {
 }
 
 /// Properties for spread scalers
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct SpreadScalerProperty {
     /// Number of replicas to scale
     pub replicas: usize,
@@ -260,7 +260,7 @@ pub struct SpreadScalerProperty {
 }
 
 /// Configuration for various spreading requirements
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct Spread {
     /// The name of this spread requirement
     pub name: String,

@@ -33,7 +33,7 @@ impl Hash for ProviderInfo {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Default, Clone)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq)]
 pub struct ProviderClaims {
     pub expires_human: String,
     // TODO: Should we actually parse the nkey?
@@ -48,7 +48,7 @@ pub struct ProviderClaims {
     pub version: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Default, Clone)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq)]
 pub struct ProviderHealthCheckInfo {
     pub link_name: String,
     // TODO: Should we make this a parsed nkey?
@@ -56,7 +56,7 @@ pub struct ProviderHealthCheckInfo {
     pub contract_id: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Default, Clone)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq)]
 pub struct ActorClaims {
     pub call_alias: Option<String>,
     #[serde(rename = "caps")]

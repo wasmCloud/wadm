@@ -3,11 +3,12 @@ use std::{collections::HashMap, sync::Arc};
 
 use serde::{de::DeserializeOwned, Serialize};
 use tokio::sync::RwLock;
+use wasmbus_rpc::core::LinkDefinition;
 use wasmcloud_control_interface::HostInventory;
 
 use crate::publisher::Publisher;
 use crate::storage::StateKind;
-use crate::workers::{Claims, ClaimsSource, InventorySource};
+use crate::workers::{Claims, ClaimsSource, InventorySource, LinkSource};
 
 fn generate_key<T: StateKind>(lattice_id: &str) -> String {
     format!("{}_{lattice_id}", T::KIND)
@@ -104,9 +105,10 @@ impl crate::storage::Store for TestStore {
 
 #[derive(Clone, Default, Debug)]
 /// A test "lattice source" for use with testing
-pub(crate) struct TestLatticeSource {
-    pub(crate) claims: HashMap<String, Claims>,
-    pub(crate) inventory: Arc<RwLock<HashMap<String, HostInventory>>>,
+pub struct TestLatticeSource {
+    pub claims: HashMap<String, Claims>,
+    pub inventory: Arc<RwLock<HashMap<String, HostInventory>>>,
+    pub links: Vec<LinkDefinition>,
 }
 
 #[async_trait::async_trait]
@@ -120,6 +122,13 @@ impl ClaimsSource for TestLatticeSource {
 impl InventorySource for TestLatticeSource {
     async fn get_inventory(&self, host_id: &str) -> anyhow::Result<HostInventory> {
         Ok(self.inventory.read().await.get(host_id).cloned().unwrap())
+    }
+}
+
+#[async_trait::async_trait]
+impl LinkSource for TestLatticeSource {
+    async fn get_links(&self) -> anyhow::Result<Vec<LinkDefinition>> {
+        Ok(self.links.clone())
     }
 }
 

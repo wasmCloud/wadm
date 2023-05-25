@@ -110,8 +110,8 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
     #[instrument(level = "debug", skip_all, fields(provider_ref = %self.config.provider_reference, link_name = %self.config.provider_link_name, scaler_id = %self.id))]
     async fn reconcile(&self) -> Result<Vec<Command>> {
         let hosts = self.store.list::<Host>(&self.config.lattice_id).await?;
-        // Defaulting to empty String is ok here, since it's only going to happen if this provider has never
-        // been started in the lattice
+        // Defaulting to empty String is a bit iffy as providers don't have their oci references if
+        // they were discovered via host heartbeat.
         let provider_id = self.provider_id().await.unwrap_or_default();
         let contract_id = &self.config.provider_contract_id;
         let link_name = &self.config.provider_link_name;
@@ -151,7 +151,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
                                 false}
                             )
                     });
-                trace!(current = %running_for_spread.len(), expected = %count, "Calculated running providers, reconciling with expected count");
+                trace!(current = %running_for_spread.len(), expected = %count, eligible_hosts = %eligible_hosts.len(), %provider_id, "Calculated running providers, reconciling with expected count");
                 match running_for_spread.len().cmp(count) {
                     Ordering::Equal => Vec::new(),
                     Ordering::Greater => {
