@@ -1,5 +1,6 @@
 use std::collections::{hash_map::Entry, HashMap, HashSet};
 
+use anyhow::Result;
 use tracing::{debug, instrument, trace, warn};
 use wasmcloud_control_interface::{ActorDescription, ProviderDescription};
 
@@ -16,17 +17,17 @@ use crate::APP_SPEC_ANNOTATION;
 
 use super::event_helpers::*;
 
-pub struct EventWorker<StateStore, C, P: Clone> {
+pub struct EventWorker<StateStore, C: Clone, P: Clone> {
     store: StateStore,
     ctl_client: C,
     publisher: CommandPublisher<P>,
-    scalers: ScalerManager<StateStore, P>,
+    scalers: ScalerManager<StateStore, P, C>,
 }
 
 impl<StateStore, C, P> EventWorker<StateStore, C, P>
 where
     StateStore: Store + Send + Sync + Clone + 'static,
-    C: ClaimsSource + InventorySource + Send + Sync,
+    C: ClaimsSource + InventorySource + LinkSource + Clone + Send + Sync + 'static,
     P: Publisher + Clone + Send + Sync + 'static,
 {
     /// Creates a new event worker configured to use the given store and control interface client for fetching state
@@ -34,7 +35,7 @@ where
         store: StateStore,
         ctl_client: C,
         publisher: CommandPublisher<P>,
-        manager: ScalerManager<StateStore, P>,
+        manager: ScalerManager<StateStore, P, C>,
     ) -> EventWorker<StateStore, C, P> {
         EventWorker {
             store,
@@ -341,33 +342,45 @@ where
         debug!("Handling provider started event");
         let id = crate::storage::provider_id(&provider.public_key, &provider.link_name);
         trace!("Fetching current data from store");
+        let mut needs_host_update = false;
         let provider_data = if let Some(mut current) =
             self.store.get::<Provider>(lattice_id, &id).await?
         {
             // Using the entry api is a bit more efficient because we do a single key lookup
-            match current.hosts.entry(provider.host_id.clone()) {
+            let mut prov = match current.hosts.entry(provider.host_id.clone()) {
                 Entry::Occupied(_) => {
-                    trace!("Found host entry for the provider already in store. Returning early");
-                    return Ok(());
+                    trace!("Found host entry for the provider already in store. Will not update");
+                    current
                 }
                 Entry::Vacant(entry) => {
                     entry.insert(ProviderStatus::default());
+                    needs_host_update = true;
                     current
                 }
+            };
+            // Update missing fields if they exist. Right now if we just discover a provider from
+            // health check, these will be empty
+            if prov.issuer.is_empty() || prov.reference.is_empty() {
+                let new_prov = Provider::from(provider);
+                prov.issuer = new_prov.issuer;
+                prov.reference = new_prov.reference;
             }
+            prov
         } else {
             trace!("No current provider found in store");
             let mut prov = Provider::from(provider);
             prov.hosts = HashMap::from([(provider.host_id.clone(), ProviderStatus::default())]);
+            needs_host_update = true;
             prov
         };
 
         // Insert provider into host map
-        if let Some(mut host) = self
-            .store
-            .get::<Host>(lattice_id, &provider.host_id)
-            .await?
-        {
+        if let (Some(mut host), true) = (
+            self.store
+                .get::<Host>(lattice_id, &provider.host_id)
+                .await?,
+            needs_host_update,
+        ) {
             trace!(host = ?host, "Found existing host data");
 
             host.providers.replace(ProviderInfo {
@@ -489,6 +502,10 @@ where
             ProviderStatus::Running
         };
         current.hosts.insert(host_id.to_owned(), status);
+
+        // TODO(thomastaylor312): Once we are able to fetch refmaps from the ctl client, we should
+        // make it update any empty references with the data from the refmap
+
         self.store
             .store(lattice_id, id, current)
             .await
@@ -678,17 +695,24 @@ where
 
         let scalers = self.scalers.add_scalers(&data.manifest).await?;
 
-        // Get the results of the first reconcilation pass before we store the scalers
-        let commands = futures::future::join_all(scalers.iter().map(|scaler| scaler.reconcile()))
-            .await
-            .into_iter()
-            .collect::<Result<Vec<Vec<Command>>, anyhow::Error>>()
-            .map(|all| all.into_iter().flatten().collect::<Vec<Command>>())?;
+        // Get the results of the first reconcilation pass before we store the scalers. Publish the
+        // commands for the ones that succeeded (as those scalers will have entered backoff mode if
+        // they are backoff wrapped), and then return an error indicating failure so the event is
+        // redelivered. When it is, the ones that succeeded will be in backoff mode and the ones
+        // that failed will be retried.
 
-        trace!(?commands, "Handling commands");
+        let (commands, res) = get_commands_and_result(
+            scalers.iter().map(|s| s.reconcile()),
+            "Errors occurred during initial reconciliation",
+        )
+        .await;
+
+        trace!(?commands, "Publishing commands");
 
         // Now handle the result from reconciliation
-        self.publisher.publish_commands(commands).await
+        self.publisher.publish_commands(commands).await?;
+
+        res
     }
 
     #[instrument(level = "debug", skip(self))]
@@ -700,51 +724,35 @@ where
                 return Ok(());
             }
         };
-        let commands =
-            futures::future::join_all(scalers.iter().map(|scaler| scaler.handle_event(event)))
-                .await
-                .into_iter()
-                .collect::<Result<Vec<Vec<Command>>, anyhow::Error>>()
-                .map(|all| all.into_iter().flatten().collect::<Vec<Command>>())?;
-        if !commands.is_empty() {
-            // If we have commands to run, then make sure to set stuff to backup mode
-            scalers.backoff().await?;
-        }
-        self.publisher.publish_commands(commands).await
+        let (commands, res) = get_commands_and_result(
+            scalers.iter().map(|s| s.handle_event(event)),
+            "Errors occurred while handling event",
+        )
+        .await;
+
+        trace!(?commands, "Publishing commands");
+
+        self.publisher.publish_commands(commands).await?;
+
+        res
     }
 
     #[instrument(level = "debug", skip(self))]
     async fn run_all_scalers(&self, event: &Event) -> anyhow::Result<()> {
         let scalers = self.scalers.get_all_scalers().await;
-        let (affected_models, commands): (Vec<&str>, Vec<Vec<Command>>) =
-            futures::future::join_all(scalers.iter().map(|(name, scalers)| async move {
-                Ok::<_, anyhow::Error>((
-                    name,
-                    futures::future::join_all(
-                        scalers.iter().map(|scaler| scaler.handle_event(event)),
-                    )
-                    .await
-                    .into_iter()
-                    .collect::<anyhow::Result<Vec<Vec<Command>>>>()?
-                    .into_iter()
-                    .flatten()
-                    .collect::<Vec<Command>>(),
-                ))
-            }))
-            .await
-            .into_iter()
-            .collect::<anyhow::Result<Vec<_>>>()?
-            .into_iter()
-            .filter_map(|(name, commands)| {
-                if commands.is_empty() {
-                    return None;
-                }
-                Some((name.as_str(), commands))
-            })
-            .unzip();
-        let commands = commands.into_iter().flatten().collect::<Vec<Command>>();
-        scalers.backoff(affected_models).await?;
-        self.publisher.publish_commands(commands).await
+
+        let (commands, res) = get_commands_and_result(
+            scalers
+                .values()
+                .flatten()
+                .map(|scaler| scaler.handle_event(event)),
+            "Errors occurred while handling event with all scalers",
+        )
+        .await;
+
+        trace!(?commands, "Publishing commands");
+        self.publisher.publish_commands(commands).await?;
+        res
     }
 }
 
@@ -752,7 +760,7 @@ where
 impl<StateStore, C, P> Worker for EventWorker<StateStore, C, P>
 where
     StateStore: Store + Send + Sync + Clone + 'static,
-    C: ClaimsSource + InventorySource + Send + Sync,
+    C: ClaimsSource + InventorySource + LinkSource + Clone + Send + Sync + 'static,
     P: Publisher + Clone + Send + Sync + 'static,
 {
     type Message = Event;
@@ -761,6 +769,18 @@ where
     async fn do_work(&self, mut message: ScopedMessage<Self::Message>) -> WorkResult<()> {
         // Everything in this block returns a name hint for the success case and an error otherwise
         let res = match message.as_ref() {
+            // NOTE(brooksmtownsend): For now, the plural events trigger scaler runs but do
+            // not modify state. Ideally we'd use this to update the state of the lattice instead of the
+            // individual events, but for now we're missing instance_id information. A separate issue should
+            // be opened to track this and treating actors as cattle not pets (ignoring instance IDs).
+            Event::ActorsStarted(actor) => Ok(actor
+                .annotations
+                .get(APP_SPEC_ANNOTATION)
+                .map(|s| s.as_str())),
+            Event::ActorsStopped(actor) => Ok(actor
+                .annotations
+                .get(APP_SPEC_ANNOTATION)
+                .map(|s| s.as_str())),
             Event::ActorStarted(actor) => self
                 .handle_actor_started(&message.lattice_id, actor)
                 .await
@@ -830,6 +850,13 @@ where
                     None => Ok(None),
                 }
             }
+            // These events won't ever update state, but it's important to let the scalers know
+            // that a start failed because they may be waiting for it to start
+            Event::ActorsStartFailed(actor) => Ok(actor
+                .annotations
+                .get(APP_SPEC_ANNOTATION)
+                .map(|s| s.as_str())),
+            Event::ProviderStartFailed(_provider) => Ok(None),
             // All other events we don't care about for state.
             _ => {
                 trace!("Got event we don't care about. Skipping");
@@ -850,6 +877,39 @@ where
         }
 
         message.ack().await.map_err(WorkError::from)
+    }
+}
+
+/// Helper that runs any iterable of futures and returns a list of commands and the proper result to
+/// use as a response (Ok if there were no errors, all of the errors combined otherwise)
+async fn get_commands_and_result<Fut, I>(futs: I, error_message: &str) -> (Vec<Command>, Result<()>)
+where
+    Fut: futures::Future<Output = Result<Vec<Command>>>,
+    I: IntoIterator<Item = Fut>,
+{
+    let (commands, errors): (Vec<_>, Vec<_>) = futures::future::join_all(futs)
+        .await
+        .into_iter()
+        .partition(Result::is_ok);
+    // SAFETY: We partitioned by Ok and Err, so the unwraps are fine
+    (
+        commands.into_iter().flat_map(Result::unwrap).collect(),
+        map_to_result(
+            errors.into_iter().map(Result::unwrap_err).collect(),
+            error_message,
+        ),
+    )
+}
+
+fn map_to_result(errors: Vec<anyhow::Error>, error_message: &str) -> Result<()> {
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        let mut error = anyhow::anyhow!("{error_message}");
+        for e in errors {
+            error = error.context(e);
+        }
+        Err(error)
     }
 }
 
@@ -877,8 +937,8 @@ mod test {
         let store = Arc::new(TestStore::default());
         let inventory = Arc::new(RwLock::new(HashMap::default()));
         let lattice_source = TestLatticeSource {
-            claims: HashMap::default(),
             inventory: inventory.clone(),
+            ..Default::default()
         };
 
         let lattice_id = "all_state";
@@ -886,10 +946,16 @@ mod test {
         let command_publisher = CommandPublisher::new(NoopPublisher, "doesntmatter");
         let worker = EventWorker::new(
             store.clone(),
-            lattice_source,
+            lattice_source.clone(),
             command_publisher.clone(),
-            ScalerManager::test_new(NoopPublisher, lattice_id, store.clone(), command_publisher)
-                .await,
+            ScalerManager::test_new(
+                NoopPublisher,
+                lattice_id,
+                store.clone(),
+                command_publisher,
+                lattice_source,
+            )
+            .await,
         );
 
         let host1_id = "DS1".to_string();
@@ -1665,14 +1731,21 @@ mod test {
         let lattice_source = TestLatticeSource {
             claims: claims.clone(),
             inventory: inventory.clone(),
+            ..Default::default()
         };
         let command_publisher = CommandPublisher::new(NoopPublisher, "doesntmatter");
         let worker = EventWorker::new(
             store.clone(),
-            lattice_source,
+            lattice_source.clone(),
             command_publisher.clone(),
-            ScalerManager::test_new(NoopPublisher, lattice_id, store.clone(), command_publisher)
-                .await,
+            ScalerManager::test_new(
+                NoopPublisher,
+                lattice_id,
+                store.clone(),
+                command_publisher,
+                lattice_source,
+            )
+            .await,
         );
 
         let provider_id = "HYPERDRIVE".to_string();
@@ -1808,18 +1881,21 @@ mod test {
     #[tokio::test]
     async fn test_provider_status_update() {
         let store = Arc::new(TestStore::default());
-        let lattice_source = TestLatticeSource {
-            claims: HashMap::default(),
-            inventory: Arc::new(RwLock::new(HashMap::default())),
-        };
+        let lattice_source = TestLatticeSource::default();
         let lattice_id = "provider_status";
         let command_publisher = CommandPublisher::new(NoopPublisher, "doesntmatter");
         let worker = EventWorker::new(
             store.clone(),
-            lattice_source,
+            lattice_source.clone(),
             command_publisher.clone(),
-            ScalerManager::test_new(NoopPublisher, lattice_id, store.clone(), command_publisher)
-                .await,
+            ScalerManager::test_new(
+                NoopPublisher,
+                lattice_id,
+                store.clone(),
+                command_publisher,
+                lattice_source,
+            )
+            .await,
         );
 
         let host_id = "CLOUDCITY".to_string();
@@ -1916,18 +1992,24 @@ mod test {
         let store = Arc::new(TestStore::default());
         let inventory = Arc::new(RwLock::new(HashMap::default()));
         let lattice_source = TestLatticeSource {
-            claims: HashMap::default(),
             inventory: inventory.clone(),
+            ..Default::default()
         };
         let lattice_id = "provider_contract_id";
 
         let command_publisher = CommandPublisher::new(NoopPublisher, "doesntmatter");
         let worker = EventWorker::new(
             store.clone(),
-            lattice_source,
+            lattice_source.clone(),
             command_publisher.clone(),
-            ScalerManager::test_new(NoopPublisher, lattice_id, store.clone(), command_publisher)
-                .await,
+            ScalerManager::test_new(
+                NoopPublisher,
+                lattice_id,
+                store.clone(),
+                command_publisher,
+                lattice_source,
+            )
+            .await,
         );
 
         let host_id = "BEGGARSCANYON";
@@ -2009,18 +2091,24 @@ mod test {
         let store = Arc::new(TestStore::default());
         let inventory = Arc::new(RwLock::new(HashMap::default()));
         let lattice_source = TestLatticeSource {
-            claims: HashMap::default(),
             inventory: inventory.clone(),
+            ..Default::default()
         };
         let lattice_id = "update_data";
 
         let command_publisher = CommandPublisher::new(NoopPublisher, "doesntmatter");
         let worker = EventWorker::new(
             store.clone(),
-            lattice_source,
+            lattice_source.clone(),
             command_publisher.clone(),
-            ScalerManager::test_new(NoopPublisher, lattice_id, store.clone(), command_publisher)
-                .await,
+            ScalerManager::test_new(
+                NoopPublisher,
+                lattice_id,
+                store.clone(),
+                command_publisher,
+                lattice_source,
+            )
+            .await,
         );
 
         let actor_instance = "asdhjkahsd-123123-fasda-feeee";

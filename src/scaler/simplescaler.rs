@@ -2,7 +2,6 @@ use std::collections::HashMap;
 
 use anyhow::Result;
 use async_trait::async_trait;
-use tokio::sync::mpsc::Sender;
 
 use crate::{
     commands::{Command, StartActor, StopActor},
@@ -11,6 +10,8 @@ use crate::{
     scaler::Scaler,
     storage::{Actor, Host, ReadStore},
 };
+
+pub const SIMPLE_SCALER_TYPE: &str = "simplescaler";
 
 /// Config for a SimpleActorScaler, which ensures that an actor as referenced by
 /// `actor_reference` in lattice `lattice_id` runs with `replicas` replicas
@@ -35,10 +36,15 @@ struct SimpleScalerConfig {
 struct SimpleActorScaler<S> {
     pub config: SimpleScalerConfig,
     store: S,
+    id: String,
 }
 
 #[async_trait]
 impl<S: ReadStore + Send + Sync + Clone> Scaler for SimpleActorScaler<S> {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
     async fn update_config(&mut self, config: TraitProperty) -> Result<Vec<Command>> {
         self.config = match config {
             TraitProperty::Custom(val) => serde_json::from_value(val)
@@ -72,13 +78,10 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for SimpleActorScaler<S> {
         let cleanerupper = SimpleActorScaler {
             config,
             store: self.store.clone(),
+            id: self.id.clone(),
         };
 
         cleanerupper.compute_actor_commands(&self.store).await
-    }
-
-    async fn backoff(&self, notifier: Sender<String>) {
-        let _ = notifier.send(String::with_capacity(0)).await;
     }
 }
 
@@ -92,6 +95,7 @@ impl<S: ReadStore + Send + Sync> SimpleActorScaler<S> {
         replicas: usize,
         model_name: String,
     ) -> Self {
+        let id = format!("{SIMPLE_SCALER_TYPE}-{model_name}-{actor_reference}");
         Self {
             store,
             config: SimpleScalerConfig {
@@ -100,6 +104,7 @@ impl<S: ReadStore + Send + Sync> SimpleActorScaler<S> {
                 replicas,
                 model_name,
             },
+            id,
         }
     }
 
@@ -208,8 +213,6 @@ impl<S: ReadStore + Send + Sync> SimpleActorScaler<S> {
 mod test {
     use std::{collections::HashMap, sync::Arc};
 
-    use tokio::sync::RwLock;
-
     use crate::{
         commands::{Command, StartActor},
         consumers::{manager::Worker, ScopedMessage},
@@ -254,17 +257,20 @@ mod test {
         // Lattice State: One empty host
 
         let store = Arc::new(TestStore::default());
-        let lattice_source = TestLatticeSource {
-            claims: HashMap::default(),
-            inventory: Arc::new(RwLock::new(HashMap::default())),
-        };
+        let lattice_source = TestLatticeSource::default();
         let command_publisher = CommandPublisher::new(NoopPublisher, "doesntmatter");
         let worker = EventWorker::new(
             store.clone(),
-            lattice_source,
+            lattice_source.clone(),
             command_publisher.clone(),
-            ScalerManager::test_new(NoopPublisher, lattice_id, store.clone(), command_publisher)
-                .await,
+            ScalerManager::test_new(
+                NoopPublisher,
+                lattice_id,
+                store.clone(),
+                command_publisher,
+                lattice_source,
+            )
+            .await,
         );
 
         let host_id = "NASDASDIAMAREALHOST".to_string();
@@ -322,17 +328,20 @@ mod test {
         let replicas = 2;
 
         let store = Arc::new(TestStore::default());
-        let lattice_source = TestLatticeSource {
-            claims: HashMap::default(),
-            inventory: Arc::new(RwLock::new(HashMap::default())),
-        };
+        let lattice_source = TestLatticeSource::default();
         let command_publisher = CommandPublisher::new(NoopPublisher, "doesntmatter");
         let worker = EventWorker::new(
             store.clone(),
-            lattice_source,
+            lattice_source.clone(),
             command_publisher.clone(),
-            ScalerManager::test_new(NoopPublisher, lattice_id, store.clone(), command_publisher)
-                .await,
+            ScalerManager::test_new(
+                NoopPublisher,
+                lattice_id,
+                store.clone(),
+                command_publisher,
+                lattice_source,
+            )
+            .await,
         );
 
         // *** STATE SETUP BEGIN ***

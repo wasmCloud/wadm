@@ -7,7 +7,14 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::model::CapabilityConfig;
+use crate::{
+    events::{
+        ActorClaims, ActorsStartFailed, ActorsStarted, ActorsStopped, Event, Linkdef, LinkdefSet,
+        ProviderClaims, ProviderStartFailed, ProviderStarted,
+    },
+    model::CapabilityConfig,
+    workers::insert_managed_annotations,
+};
 
 macro_rules! from_impl {
     ($t:ident) => {
@@ -28,6 +35,127 @@ pub enum Command {
     StopProvider(StopProvider),
     PutLinkdef(PutLinkdef),
     DeleteLinkdef(DeleteLinkdef),
+}
+
+impl Command {
+    /// Generates the corresponding event for a [Command](Command) in the form of a two-tuple ([Event](Event), Option<Event>)
+    ///
+    /// # Arguments
+    /// `model_name` - The model name that the command satisfies, needed to compute the proper annotations
+    ///
+    /// # Return
+    /// - The first element in the tuple corresponds to the "success" event a host would output after completing this command
+    /// - The second element in the tuple corresponds to an optional "failure" event that a host could output if processing fails
+    pub fn corresponding_event(&self, model_name: &str) -> Option<(Event, Option<Event>)> {
+        match self {
+            Command::StartActor(StartActor {
+                annotations,
+                reference,
+                host_id,
+                count,
+                ..
+            }) => {
+                let mut annotations = annotations.to_owned();
+                insert_managed_annotations(&mut annotations, model_name);
+                Some((
+                    Event::ActorsStarted(ActorsStarted {
+                        annotations: annotations.to_owned(),
+                        image_ref: reference.to_owned(),
+                        host_id: host_id.to_owned(),
+                        count: *count,
+                        // We do not know the public key or claims from the command
+                        public_key: String::with_capacity(0),
+                        claims: ActorClaims::default(),
+                    }),
+                    Some(Event::ActorsStartFailed(ActorsStartFailed {
+                        annotations,
+                        image_ref: reference.to_owned(),
+                        host_id: host_id.to_owned(),
+                        error: String::with_capacity(0),
+                        // We do not know the public key from the command
+                        public_key: String::with_capacity(0),
+                    })),
+                ))
+            }
+            Command::StopActor(StopActor {
+                annotations,
+                actor_id,
+                host_id,
+                count,
+                ..
+            }) => {
+                let mut annotations = annotations.to_owned();
+                insert_managed_annotations(&mut annotations, model_name);
+                Some((
+                    Event::ActorsStopped(ActorsStopped {
+                        annotations: annotations.to_owned(),
+                        public_key: actor_id.to_owned(),
+                        host_id: host_id.to_owned(),
+                        count: *count,
+                        // We don't know if there are additional instances, so can't consider remaining
+                        remaining: 0,
+                    }),
+                    None,
+                ))
+            }
+            Command::StartProvider(StartProvider {
+                annotations,
+                reference,
+                host_id,
+                link_name,
+                ..
+            }) => {
+                let mut annotations = annotations.to_owned();
+                insert_managed_annotations(&mut annotations, model_name);
+                Some((
+                    Event::ProviderStarted(ProviderStarted {
+                        annotations: annotations.to_owned(),
+                        claims: ProviderClaims::default(),
+                        image_ref: reference.to_owned(),
+                        link_name: link_name
+                            .to_owned()
+                            .unwrap_or_else(|| "default".to_string()),
+                        host_id: host_id.to_owned(),
+                        // We don't know these fields from the command
+                        contract_id: String::with_capacity(0),
+                        instance_id: String::with_capacity(0),
+                        public_key: String::with_capacity(0),
+                    }),
+                    Some(Event::ProviderStartFailed(ProviderStartFailed {
+                        provider_ref: reference.to_owned(),
+                        link_name: link_name
+                            .to_owned()
+                            .unwrap_or_else(|| "default".to_string()),
+                        host_id: host_id.to_owned(),
+                        // We don't know this field from the command
+                        error: String::with_capacity(0),
+                    })),
+                ))
+            }
+            Command::PutLinkdef(PutLinkdef {
+                actor_id,
+                provider_id,
+                link_name,
+                contract_id,
+                values,
+                ..
+            }) => Some((
+                Event::LinkdefSet(LinkdefSet {
+                    linkdef: Linkdef {
+                        actor_id: actor_id.to_owned(),
+                        contract_id: contract_id.to_owned(),
+                        link_name: link_name.to_owned(),
+                        provider_id: provider_id.to_owned(),
+                        values: values.to_owned(),
+                        // We don't know the linkdef ID from the command
+                        id: String::with_capacity(0),
+                    },
+                }),
+                None,
+            )),
+            _ => None,
+        }
+    }
 }
 
 /// Struct for the StartActor command

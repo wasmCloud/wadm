@@ -2912,6 +2912,7 @@ dependencies = [
  "tracing-opentelemetry",
  "tracing-subscriber",
  "uuid",
+ "wasmbus-rpc",
  "wasmcloud-control-interface",
 ]
 

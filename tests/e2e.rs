@@ -57,8 +57,39 @@ impl ClientInfo {
         if !status.success() {
             panic!("Docker compose up didn't exit successfully")
         }
+
         let repo_root =
             PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("Unable to find repo root"));
+        // Create the logging directory
+        let log_dir = repo_root.join(LOG_DIR);
+        tokio::fs::create_dir_all(&log_dir)
+            .await
+            .expect("Unable to create log dir");
+
+        let mut commands = Vec::with_capacity(4);
+
+        // Start a process for capturing docker logs
+        let log_path = log_dir.join("docker-compose");
+        let file = tokio::fs::File::create(log_path)
+            .await
+            .expect("Unable to create log file")
+            .into_std()
+            .await;
+        let child = Command::new("docker")
+            .args([
+                "compose",
+                "-f",
+                compose_file.as_ref().to_str().unwrap(),
+                "logs",
+                "--follow",
+            ])
+            .stdout(file)
+            .stderr(Stdio::null())
+            .kill_on_drop(true)
+            .spawn()
+            .expect("Unable to spawn wadm binary");
+        commands.push(child);
+
         // Wait for hosts to start
         let client = async_nats::connect("127.0.0.1:4222")
             .await
@@ -105,12 +136,6 @@ impl ClientInfo {
             )
         }
 
-        // Create the logging directory
-        let log_dir = repo_root.join(LOG_DIR);
-        tokio::fs::create_dir_all(&log_dir)
-            .await
-            .expect("Unable to create log dir");
-        let mut commands = Vec::with_capacity(3);
         for i in 0..3 {
             let log_path = log_dir.join(format!("wadm-{i}"));
             let file = tokio::fs::File::create(log_path)
@@ -122,7 +147,10 @@ impl ClientInfo {
                 .stderr(file)
                 .stdout(Stdio::null())
                 .kill_on_drop(true)
-                .env("RUST_LOG", "info,wadm=debug,wadm::scaler=trace")
+                .env(
+                    "RUST_LOG",
+                    "info,wadm=debug,wadm::scaler=trace,wadm::workers::event=trace",
+                )
                 .spawn()
                 .expect("Unable to spawn wadm binary");
             commands.push(child);

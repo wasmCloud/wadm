@@ -1,13 +1,9 @@
-use std::{cmp::Ordering, collections::HashMap, sync::Arc, time::Duration};
+use std::{cmp::Ordering, collections::HashMap};
 
 use anyhow::Result;
 use async_trait::async_trait;
-use rand::rngs::SmallRng;
-use rand::{Rng, SeedableRng};
-use tokio::sync::mpsc::Sender;
-use tokio::sync::{OnceCell, RwLock};
-use tokio::time::Instant;
-use tracing::{debug, error, instrument, trace, warn, Instrument};
+use tokio::sync::OnceCell;
+use tracing::{instrument, trace, warn};
 
 use crate::events::HostHeartbeat;
 use crate::{
@@ -23,9 +19,9 @@ pub mod link;
 pub mod provider;
 
 // Annotation constants
-const SCALER_VALUE: &str = "spreadscaler";
 const SPREAD_KEY: &str = "wasmcloud.dev/spread_name";
-const BACKOFF_TIME: Duration = Duration::from_secs(30);
+
+pub const ACTOR_SPREAD_SCALER_TYPE: &str = "actorspreadscaler";
 
 /// Config for an ActorSpreadScaler
 #[derive(Clone)]
@@ -50,11 +46,15 @@ pub struct ActorSpreadScaler<S> {
     spread_requirements: Vec<(Spread, usize)>,
     actor_id: OnceCell<String>,
     store: S,
-    in_backoff: Arc<RwLock<bool>>,
+    id: String,
 }
 
 #[async_trait]
 impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
     async fn update_config(&mut self, config: TraitProperty) -> Result<Vec<Command>> {
         let spread_config = match config {
             TraitProperty::SpreadScaler(prop) => prop,
@@ -65,17 +65,13 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
         self.reconcile().await
     }
 
-    #[instrument(level = "trace", skip(self))]
+    #[instrument(level = "trace", skip_all, fields(scaler_id = %self.id))]
     async fn handle_event(&self, event: &Event) -> Result<Vec<Command>> {
-        if *self.in_backoff.read().await {
-            trace!("Scaler is currently in backoff, not performing reconciliation");
-            return Ok(Vec::with_capacity(0));
-        }
         // NOTE(brooksmtownsend): We could be more efficient here and instead of running
         // the entire reconcile, smart compute exactly what needs to change, but it just
         // requires more code branches and would be fine as a future improvement
         match event {
-            Event::ActorStarted(actor_started) => {
+            Event::ActorsStarted(actor_started) => {
                 if actor_started.image_ref == self.config.actor_reference {
                     trace!(image_ref = %actor_started.image_ref, "Found image we care about");
                     self.reconcile().await
@@ -83,7 +79,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
                     Ok(Vec::new())
                 }
             }
-            Event::ActorStopped(actor_stopped) => {
+            Event::ActorsStopped(actor_stopped) => {
                 let actor_id = self.actor_id().await?;
                 if actor_stopped.public_key == actor_id {
                     trace!(%actor_id, "Found actor we care about");
@@ -112,12 +108,8 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
         }
     }
 
-    #[instrument(level = "trace", skip_all, fields(name = %self.config.model_name))]
+    #[instrument(level = "trace", skip_all, fields(name = %self.config.model_name, scaler_id = %self.id))]
     async fn reconcile(&self) -> Result<Vec<Command>> {
-        if *self.in_backoff.read().await {
-            trace!("Scaler is currently in backoff, not performing reconciliation");
-            return Ok(Vec::with_capacity(0));
-        }
         let hosts = self.store.list::<Host>(&self.config.lattice_id).await?;
 
         let actor = if let Ok(id) = self.actor_id().await {
@@ -154,7 +146,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
                                     instances
                                         .iter()
                                         .filter(|instance| {
-                                            spreadscaler_annotations(&spread.name).iter().all(
+                                            spreadscaler_annotations(&spread.name, self.id()).iter().all(
                                                 |(key, value)| {
                                                     instance
                                                         .annotations
@@ -170,7 +162,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
                                 .sum()
                         })
                         .unwrap_or(0);
-
+                    trace!(current = %current_count, expected = %count, "Calculated running actors, reconciling with expected count");
                     match current_count.cmp(count) {
                         Ordering::Equal => None,
                         // Start actors to reach desired replicas
@@ -179,7 +171,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
                             host_id: first_host.id.to_owned(),
                             count: count - current_count,
                             model_name: self.config.model_name.to_owned(),
-                            annotations: spreadscaler_annotations(&spread.name),
+                            annotations: spreadscaler_annotations(&spread.name, self.id()),
                         })),
                         // Stop actors to reach desired replicas
                         Ordering::Greater => Some(Command::StopActor(StopActor {
@@ -190,7 +182,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
                             host_id: first_host.id.to_owned(),
                             count: current_count - count,
                             model_name: self.config.model_name.to_owned(),
-                            annotations: spreadscaler_annotations(&spread.name),
+                            annotations: spreadscaler_annotations(&spread.name, self.id()),
                         })),
                     }
                 } else {
@@ -216,51 +208,10 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
             store: self.store.clone(),
             spread_requirements,
             actor_id: self.actor_id.clone(),
-            // Doesn't matter if we're in backoff as we want to reconcile now
-            in_backoff: Arc::new(RwLock::new(false)),
+            id: self.id.clone(),
         };
 
         cleanerupper.reconcile().await
-    }
-
-    #[instrument(level = "trace", skip_all, fields(name = %self.config.model_name))]
-    async fn backoff(&self, notifier: Sender<String>) {
-        // If we're already in backoff, don't do it again
-        if *self.in_backoff.read().await {
-            return;
-        }
-        // For actors we need to back off because each actor is a new event
-        *(self.in_backoff.write().await) = true;
-        debug!("Set scaler to backoff mode");
-        let in_backoff = self.in_backoff.clone();
-        let model_name = self.config.model_name.clone();
-        // Configure backoff time with a random "jitter" +/- the configured time. This makes it so
-        // that not every single scaler in a wadm cluster tries to reconcile simultaneously after
-        // backoff
-        let mut jitterer = SmallRng::from_entropy();
-        let jitter_time = Duration::from_millis(jitterer.gen_range(0..5000));
-        // Doing this here rather than with the range so that we can get around the fact that the
-        // standard duration is unsigned
-        let backoff_time = if jitterer.gen_bool(0.5) {
-            BACKOFF_TIME + jitter_time
-        } else {
-            BACKOFF_TIME - jitter_time
-        };
-        // Spawn a task to stop backoff after a certain amount of time
-        tokio::spawn(
-            async move {
-                let mut interval =
-                    tokio::time::interval_at(Instant::now() + backoff_time, backoff_time);
-                interval.tick().await;
-                *(in_backoff.write().await) = false;
-                debug!("Scaler backoff complete. Sending notification");
-                if let Err(e) = notifier.send(model_name).await {
-                    // This should only happen if the top level receiver is closed
-                    error!(error = %e, "Got error when trying to send reconcile commands after backoff period");
-                }
-            }
-            .instrument(tracing::debug_span!("backoff_expire", name = %self.config.model_name)),
-        );
     }
 }
 
@@ -272,7 +223,10 @@ impl<S: ReadStore + Send + Sync> ActorSpreadScaler<S> {
         lattice_id: String,
         model_name: String,
         spread_config: SpreadScalerProperty,
+        component_name: &str,
     ) -> Self {
+        let id =
+            format!("{ACTOR_SPREAD_SCALER_TYPE}-{model_name}-{component_name}-{actor_reference}");
         Self {
             store,
             spread_requirements: compute_spread(&spread_config),
@@ -283,7 +237,7 @@ impl<S: ReadStore + Send + Sync> ActorSpreadScaler<S> {
                 spread_config,
                 model_name,
             },
-            in_backoff: Arc::new(RwLock::new(false)),
+            id,
         }
     }
 
@@ -312,9 +266,9 @@ impl<S: ReadStore + Send + Sync> ActorSpreadScaler<S> {
 }
 
 /// Helper function to create a predictable annotations map for a spread
-fn spreadscaler_annotations(spread_name: &str) -> HashMap<String, String> {
+fn spreadscaler_annotations(spread_name: &str, scaler_id: &str) -> HashMap<String, String> {
     HashMap::from_iter([
-        (SCALER_KEY.to_string(), SCALER_VALUE.to_string()),
+        (SCALER_KEY.to_string(), scaler_id.to_string()),
         (SPREAD_KEY.to_string(), spread_name.to_string()),
     ])
 }
@@ -398,14 +352,13 @@ mod test {
         collections::{BTreeMap, HashMap, HashSet},
         sync::Arc,
     };
-    use tokio::sync::RwLock;
 
     use crate::{
         commands::{Command, StartActor},
         consumers::{manager::Worker, ScopedMessage},
         events::{
-            ActorStopped, Event, Linkdef, LinkdefDeleted, LinkdefSet, ProviderClaims,
-            ProviderStarted, ProviderStopped,
+            ActorStopped, ActorsStopped, Event, Linkdef, LinkdefDeleted, LinkdefSet,
+            ProviderClaims, ProviderStarted, ProviderStopped,
         },
         model::{Spread, SpreadScalerProperty},
         scaler::{
@@ -635,6 +588,7 @@ mod test {
             lattice_id.to_string(),
             MODEL_NAME.to_string(),
             complex_spread,
+            "fake_component",
         );
 
         let cmds = spreadscaler.reconcile().await?;
@@ -644,28 +598,28 @@ mod test {
             host_id: host_id.to_string(),
             count: 10,
             model_name: MODEL_NAME.to_string(),
-            annotations: spreadscaler_annotations("ComplexOne")
+            annotations: spreadscaler_annotations("ComplexOne", spreadscaler.id())
         })));
         assert!(cmds.contains(&Command::StartActor(StartActor {
             reference: actor_reference.to_string(),
             host_id: host_id.to_string(),
             count: 1,
             model_name: MODEL_NAME.to_string(),
-            annotations: spreadscaler_annotations("ComplexTwo")
+            annotations: spreadscaler_annotations("ComplexTwo", spreadscaler.id())
         })));
         assert!(cmds.contains(&Command::StartActor(StartActor {
             reference: actor_reference.to_string(),
             host_id: host_id.to_string(),
             count: 8,
             model_name: MODEL_NAME.to_string(),
-            annotations: spreadscaler_annotations("ComplexThree")
+            annotations: spreadscaler_annotations("ComplexThree", spreadscaler.id())
         })));
         assert!(cmds.contains(&Command::StartActor(StartActor {
             reference: actor_reference.to_string(),
             host_id: host_id.to_string(),
             count: 84,
             model_name: MODEL_NAME.to_string(),
-            annotations: spreadscaler_annotations("ComplexFour")
+            annotations: spreadscaler_annotations("ComplexFour", spreadscaler.id())
         })));
 
         Ok(())
@@ -745,6 +699,7 @@ mod test {
             lattice_id.to_string(),
             MODEL_NAME.to_string(),
             echo_spread_property,
+            "fake_echo",
         );
 
         let blobby_spreadscaler = ActorSpreadScaler::new(
@@ -753,6 +708,7 @@ mod test {
             lattice_id.to_string(),
             MODEL_NAME.to_string(),
             blobby_spread_property,
+            "fake_blobby",
         );
 
         // STATE SETUP BEGIN
@@ -773,7 +729,10 @@ mod test {
                             // One instance on this host
                             HashSet::from_iter([WadmActorInstance {
                                 instance_id: "1".to_string(),
-                                annotations: spreadscaler_annotations("RunInFakeCloud"),
+                                annotations: spreadscaler_annotations(
+                                    "RunInFakeCloud",
+                                    echo_spreadscaler.id(),
+                                ),
                             }]),
                         ),
                         (
@@ -781,7 +740,10 @@ mod test {
                             // 103 instances on this host
                             HashSet::from_iter((2..105).map(|n| WadmActorInstance {
                                 instance_id: format!("{n}"),
-                                annotations: spreadscaler_annotations("RunInRealCloud"),
+                                annotations: spreadscaler_annotations(
+                                    "RunInRealCloud",
+                                    echo_spreadscaler.id(),
+                                ),
                             })),
                         ),
                         (
@@ -789,7 +751,10 @@ mod test {
                             // 400 instances on this host
                             HashSet::from_iter((105..505).map(|n| WadmActorInstance {
                                 instance_id: format!("{n}"),
-                                annotations: spreadscaler_annotations("RunInPurgatoryCloud"),
+                                annotations: spreadscaler_annotations(
+                                    "RunInPurgatoryCloud",
+                                    echo_spreadscaler.id(),
+                                ),
                             })),
                         ),
                     ]),
@@ -814,7 +779,10 @@ mod test {
                             // 3 instances on this host
                             HashSet::from_iter((0..3).map(|n| WadmActorInstance {
                                 instance_id: format!("{n}"),
-                                annotations: spreadscaler_annotations("CrossRegionCustom"),
+                                annotations: spreadscaler_annotations(
+                                    "CrossRegionCustom",
+                                    blobby_spreadscaler.id(),
+                                ),
                             })),
                         ),
                         (
@@ -822,7 +790,10 @@ mod test {
                             // 19 instances on this host
                             HashSet::from_iter((3..22).map(|n| WadmActorInstance {
                                 instance_id: format!("{n}"),
-                                annotations: spreadscaler_annotations("CrossRegionReal"),
+                                annotations: spreadscaler_annotations(
+                                    "CrossRegionReal",
+                                    blobby_spreadscaler.id(),
+                                ),
                             })),
                         ),
                     ]),
@@ -980,6 +951,7 @@ mod test {
             lattice_id.to_string(),
             MODEL_NAME.to_string(),
             real_spread,
+            "fake_component",
         );
 
         // STATE SETUP BEGIN, ONE HOST
@@ -1019,7 +991,7 @@ mod test {
                         // 10 instances on this host under the first spread
                         HashSet::from_iter((0..10).map(|n| WadmActorInstance {
                             instance_id: format!("{n}"),
-                            annotations: spreadscaler_annotations("SimpleOne"),
+                            annotations: spreadscaler_annotations("SimpleOne", spreadscaler.id()),
                         })),
                     )]),
                     reference: actor_reference.to_string(),
@@ -1036,14 +1008,14 @@ mod test {
             host_id: host_id.to_string(),
             count: 5,
             model_name: MODEL_NAME.to_string(),
-            annotations: spreadscaler_annotations("SimpleOne")
+            annotations: spreadscaler_annotations("SimpleOne", spreadscaler.id())
         })));
         assert!(cmds.contains(&Command::StartActor(StartActor {
             reference: actor_reference.to_string(),
             host_id: host_id.to_string(),
             count: 5,
             model_name: MODEL_NAME.to_string(),
-            annotations: spreadscaler_annotations("SimpleTwo")
+            annotations: spreadscaler_annotations("SimpleTwo", spreadscaler.id())
         })));
 
         Ok(())
@@ -1061,17 +1033,20 @@ mod test {
 
         let store = Arc::new(TestStore::default());
 
-        let lattice_source = TestLatticeSource {
-            claims: HashMap::default(),
-            inventory: Arc::new(RwLock::new(HashMap::default())),
-        };
+        let lattice_source = TestLatticeSource::default();
         let command_publisher = CommandPublisher::new(NoopPublisher, "doesntmatter");
         let worker = EventWorker::new(
             store.clone(),
-            lattice_source,
+            lattice_source.clone(),
             command_publisher.clone(),
-            ScalerManager::test_new(NoopPublisher, lattice_id, store.clone(), command_publisher)
-                .await,
+            ScalerManager::test_new(
+                NoopPublisher,
+                lattice_id,
+                store.clone(),
+                command_publisher,
+                lattice_source,
+            )
+            .await,
         );
         let blobby_spread_property = SpreadScalerProperty {
             replicas: 9,
@@ -1109,6 +1084,7 @@ mod test {
             lattice_id.to_string(),
             MODEL_NAME.to_string(),
             blobby_spread_property,
+            "fake_blobby",
         );
 
         // STATE SETUP BEGIN
@@ -1128,7 +1104,10 @@ mod test {
                             // 3 instances on this host
                             HashSet::from_iter((0..3).map(|n| WadmActorInstance {
                                 instance_id: format!("{n}"),
-                                annotations: spreadscaler_annotations("CrossRegionCustom"),
+                                annotations: spreadscaler_annotations(
+                                    "CrossRegionCustom",
+                                    blobby_spreadscaler.id(),
+                                ),
                             })),
                         ),
                         (
@@ -1136,7 +1115,10 @@ mod test {
                             // 19 instances on this host
                             HashSet::from_iter((3..22).map(|n| WadmActorInstance {
                                 instance_id: format!("{n}"),
-                                annotations: spreadscaler_annotations("CrossRegionReal"),
+                                annotations: spreadscaler_annotations(
+                                    "CrossRegionReal",
+                                    blobby_spreadscaler.id(),
+                                ),
                             })),
                         ),
                     ]),
@@ -1271,25 +1253,36 @@ mod test {
             }
         }
 
+        // NOTE(brooksmtownsend): Regular ActorStopped modify state, ActorsStopped
+        // is what scalers care about. Should be converted to ActorsStopped once state
+        // updates don't rely on them anymore.
+
         // Stop an instance of an actor, and expect a modified list of commands
-        let modifying_event = ActorStopped {
-            annotations: HashMap::default(),
+        let state_modifying_event = ActorStopped {
+            annotations: HashMap::new(),
             instance_id: "12".to_string(),
             public_key: blobby_id.to_string(),
             host_id: host_id_two.to_string(),
+        };
+        let scaler_modifying_event = ActorsStopped {
+            annotations: HashMap::new(),
+            public_key: blobby_id.to_string(),
+            host_id: host_id_two.to_string(),
+            count: 1,
+            remaining: 15,
         };
 
         worker
             .do_work(ScopedMessage::<Event> {
                 lattice_id: lattice_id.to_string(),
-                inner: Event::ActorStopped(modifying_event.clone()),
+                inner: Event::ActorStopped(state_modifying_event.clone()),
                 acker: None,
             })
             .await
             .expect("should be able to handle an event");
 
         let cmds = blobby_spreadscaler
-            .handle_event(&Event::ActorStopped(modifying_event))
+            .handle_event(&Event::ActorsStopped(scaler_modifying_event))
             .await?;
         assert_eq!(cmds.len(), 2);
 

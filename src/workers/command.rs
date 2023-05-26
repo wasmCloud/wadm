@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use crate::{
     commands::*,
     consumers::{
@@ -7,15 +5,9 @@ use crate::{
         ScopedMessage,
     },
     model::CapabilityConfig,
-    APP_SPEC_ANNOTATION,
 };
 
-lazy_static::lazy_static! {
-    static ref MANAGED_BY_ANNOTATIONS: HashMap<String, String> =
-        HashMap::from(
-            [(crate::MANAGED_BY_ANNOTATION.to_owned(), crate::MANAGED_BY_IDENTIFIER.to_owned())]
-        );
-}
+use super::insert_managed_annotations;
 
 /// A worker implementation for handling incoming commands
 #[derive(Clone)]
@@ -39,8 +31,7 @@ impl Worker for CommandWorker {
             Command::StartActor(actor) => {
                 // Order here is intentional to prevent scalers from overwriting managed annotations
                 let mut annotations = actor.annotations.clone();
-                annotations.extend(MANAGED_BY_ANNOTATIONS.clone());
-                annotations.insert(APP_SPEC_ANNOTATION.to_owned(), actor.model_name.clone());
+                insert_managed_annotations(&mut annotations, &actor.model_name);
                 self.client
                     .start_actor(
                         &actor.host_id,
@@ -53,8 +44,7 @@ impl Worker for CommandWorker {
             Command::StopActor(actor) => {
                 // Order here is intentional to prevent scalers from overwriting managed annotations
                 let mut annotations = actor.annotations.clone();
-                annotations.extend(MANAGED_BY_ANNOTATIONS.clone());
-                annotations.insert(APP_SPEC_ANNOTATION.to_owned(), actor.model_name.clone());
+                insert_managed_annotations(&mut annotations, &actor.model_name);
                 self.client
                     .stop_actor(
                         &actor.host_id,
@@ -67,8 +57,7 @@ impl Worker for CommandWorker {
             Command::StartProvider(prov) => {
                 // Order here is intentional to prevent scalers from overwriting managed annotations
                 let mut annotations = prov.annotations.clone();
-                annotations.extend(MANAGED_BY_ANNOTATIONS.clone());
-                annotations.insert(APP_SPEC_ANNOTATION.to_owned(), prov.model_name.clone());
+                insert_managed_annotations(&mut annotations, &prov.model_name);
                 let config = prov.config.clone().map(|conf| match conf {
                     // NOTE: We validate the serialization when we store the model so this should be
                     // safe to unwrap
@@ -90,8 +79,7 @@ impl Worker for CommandWorker {
             Command::StopProvider(prov) => {
                 // Order here is intentional to prevent scalers from overwriting managed annotations
                 let mut annotations = prov.annotations.clone();
-                annotations.extend(MANAGED_BY_ANNOTATIONS.clone());
-                annotations.insert(APP_SPEC_ANNOTATION.to_owned(), prov.model_name.clone());
+                insert_managed_annotations(&mut annotations, &prov.model_name);
                 self.client
                     .stop_provider(
                         &prov.host_id,

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use anyhow::Result;
 use async_trait::async_trait;
-use tokio::sync::{mpsc::Sender, OnceCell};
+use tokio::sync::OnceCell;
 use tracing::{instrument, trace};
 
 use crate::{
@@ -11,8 +11,11 @@ use crate::{
     model::TraitProperty,
     scaler::Scaler,
     storage::{Actor, Provider, ReadStore},
+    workers::LinkSource,
     DEFAULT_LINK_NAME,
 };
+
+pub const LINK_SCALER_TYPE: &str = "linkdefscaler";
 
 /// Config for a LinkSpreadConfig
 pub struct LinkScalerConfig {
@@ -33,28 +36,39 @@ pub struct LinkScalerConfig {
 }
 
 /// The LinkSpreadScaler ensures that link configuration exists on a specified lattice.
-pub struct LinkScaler<S: ReadStore + Send + Sync> {
+pub struct LinkScaler<S, L> {
     pub config: LinkScalerConfig,
     store: S,
     /// Actor ID, stored in a OnceCell to facilitate more efficient fetches
     actor_id: OnceCell<String>,
     /// Provider ID, stored in a OnceCell to facilitate more efficient fetches
     provider_id: OnceCell<String>,
+    ctl_client: L,
+    id: String,
 }
 
 #[async_trait]
-impl<S: ReadStore + Send + Sync> Scaler for LinkScaler<S> {
+impl<S, L> Scaler for LinkScaler<S, L>
+where
+    S: ReadStore + Send + Sync,
+    L: LinkSource + Send + Sync,
+{
+    fn id(&self) -> &str {
+        &self.id
+    }
+
     async fn update_config(&mut self, _config: TraitProperty) -> Result<Vec<Command>> {
         // NOTE(brooksmtownsend): Updating a link scaler essentially means you're creating
         // a totally new scaler, so just do that instead.
         self.reconcile().await
     }
 
+    #[instrument(level = "trace", skip_all, fields(scaler_id = %self.id))]
     async fn handle_event(&self, event: &Event) -> Result<Vec<Command>> {
         match event {
             // We can only publish links once we know actor and provider IDs,
             // so we should pay attention to the Started events if we don't know them yet
-            Event::ActorStarted(actor_started)
+            Event::ActorsStarted(actor_started)
                 if !self.actor_id.initialized()
                     && actor_started.image_ref == self.config.actor_reference =>
             {
@@ -88,18 +102,50 @@ impl<S: ReadStore + Send + Sync> Scaler for LinkScaler<S> {
         }
     }
 
-    #[instrument(level = "trace", skip_all, fields(actor_ref = %self.config.actor_reference, provider_ref = %self.config.provider_reference, link_name = %self.config.provider_link_name))]
+    #[instrument(level = "trace", skip_all, fields(actor_ref = %self.config.actor_reference, provider_ref = %self.config.provider_reference, link_name = %self.config.provider_link_name, scaler_id = %self.id))]
     async fn reconcile(&self) -> Result<Vec<Command>> {
         if let (Ok(actor_id), Ok(provider_id)) = (self.actor_id().await, self.provider_id().await) {
-            // TODO: check to see if linkdef exists. Might need to be deleted first if values differ
-            Ok(vec![Command::PutLinkdef(PutLinkdef {
-                actor_id: actor_id.to_owned(),
-                provider_id: provider_id.to_owned(),
-                link_name: self.config.provider_link_name.to_owned(),
-                contract_id: self.config.provider_contract_id.to_owned(),
-                values: self.config.values.to_owned(),
-                model_name: self.config.model_name.to_owned(),
-            })])
+            let linkdefs = self.ctl_client.get_links().await?;
+            let (exists, values_different) = linkdefs
+                .into_iter()
+                .find(|linkdef| {
+                    linkdef.actor_id == actor_id
+                        && linkdef.provider_id == provider_id
+                        && linkdef.link_name == self.config.provider_link_name
+                        && linkdef.contract_id == self.config.provider_contract_id
+                })
+                .map(|linkdef| (true, linkdef.values != self.config.values))
+                .unwrap_or((false, false));
+
+            // If it already exists, but values are different, we need to have a delete event first
+            // and recreate it with the correct values second
+            let mut commands = values_different
+                .then(|| {
+                    trace!("Linkdef exists, but values are different, deleting and recreating");
+                    vec![Command::DeleteLinkdef(DeleteLinkdef {
+                        actor_id: actor_id.to_owned(),
+                        provider_id: provider_id.to_owned(),
+                        contract_id: self.config.provider_contract_id.to_owned(),
+                        link_name: self.config.provider_link_name.to_owned(),
+                        model_name: self.config.model_name.to_owned(),
+                    })]
+                })
+                .unwrap_or_default();
+
+            if exists && !values_different {
+                trace!("Linkdef already exists, skipping");
+            } else if !exists || values_different {
+                trace!("Linkdef does not exist or needs to be recreated");
+                commands.push(Command::PutLinkdef(PutLinkdef {
+                    actor_id: actor_id.to_owned(),
+                    provider_id: provider_id.to_owned(),
+                    link_name: self.config.provider_link_name.to_owned(),
+                    contract_id: self.config.provider_contract_id.to_owned(),
+                    values: self.config.values.to_owned(),
+                    model_name: self.config.model_name.to_owned(),
+                }))
+            };
+            Ok(commands)
         } else {
             trace!("Actor ID and provider ID are not initialized, skipping linkdef creation");
             Ok(Vec::new())
@@ -121,13 +167,9 @@ impl<S: ReadStore + Send + Sync> Scaler for LinkScaler<S> {
             Ok(Vec::new())
         }
     }
-
-    async fn backoff(&self, notifier: Sender<String>) {
-        let _ = notifier.send(String::with_capacity(0)).await;
-    }
 }
 
-impl<S: ReadStore + Send + Sync> LinkScaler<S> {
+impl<S: ReadStore + Send + Sync, L: LinkSource> LinkScaler<S, L> {
     /// Construct a new LinkScaler with specified configuration values
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -139,7 +181,13 @@ impl<S: ReadStore + Send + Sync> LinkScaler<S> {
         lattice_id: String,
         model_name: String,
         values: Option<HashMap<String, String>>,
+        ctl_client: L,
     ) -> Self {
+        let provider_link_name =
+            provider_link_name.unwrap_or_else(|| DEFAULT_LINK_NAME.to_string());
+        // NOTE(thomastaylor312): Yep, this is gnarly, but it was all the information that would be
+        // useful to have if uniquely identifying a link scaler
+        let id = format!("{LINK_SCALER_TYPE}-{model_name}-{provider_link_name}-{actor_reference}-{provider_reference}");
         Self {
             store,
             actor_id: OnceCell::new(),
@@ -148,12 +196,13 @@ impl<S: ReadStore + Send + Sync> LinkScaler<S> {
                 actor_reference,
                 provider_reference,
                 provider_contract_id,
-                provider_link_name: provider_link_name
-                    .unwrap_or_else(|| DEFAULT_LINK_NAME.to_string()),
+                provider_link_name,
                 lattice_id,
                 model_name,
                 values: values.unwrap_or_default(),
             },
+            ctl_client,
+            id,
         }
     }
 
@@ -200,5 +249,143 @@ impl<S: ReadStore + Send + Sync> LinkScaler<S> {
             })
             .await
             .map(|id| id.as_str())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use wasmbus_rpc::core::LinkDefinition;
+
+    use super::*;
+
+    use crate::{
+        storage::Store,
+        test_util::{TestLatticeSource, TestStore},
+    };
+
+    async fn create_store(lattice_id: &str, actor_ref: &str, provider_ref: &str) -> TestStore {
+        let store = TestStore::default();
+        store
+            .store(
+                lattice_id,
+                "actor".to_string(),
+                Actor {
+                    id: "actor".to_string(),
+                    reference: actor_ref.to_owned(),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("Couldn't store actor");
+        store
+            .store(
+                lattice_id,
+                "provider".to_string(),
+                Provider {
+                    id: "provider".to_string(),
+                    reference: provider_ref.to_owned(),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("Couldn't store actor");
+        store
+    }
+
+    #[tokio::test]
+    async fn test_no_linkdef() {
+        let lattice_id = "no-linkdef".to_string();
+        let actor_ref = "actor_ref".to_string();
+        let provider_ref = "provider_ref".to_string();
+
+        let scaler = LinkScaler::new(
+            create_store(&lattice_id, &actor_ref, &provider_ref).await,
+            actor_ref,
+            provider_ref,
+            "contract".to_string(),
+            None,
+            lattice_id.clone(),
+            "model".to_string(),
+            None,
+            TestLatticeSource::default(),
+        );
+
+        // Run a reconcile and make sure it returns a single put linkdef command
+        let commands = scaler.reconcile().await.expect("Couldn't reconcile");
+        assert_eq!(commands.len(), 1, "Expected 1 command, got {commands:?}");
+        assert!(matches!(commands[0], Command::PutLinkdef(_)));
+    }
+
+    #[tokio::test]
+    async fn test_different_values() {
+        let lattice_id = "different-values".to_string();
+        let actor_ref = "actor_ref".to_string();
+        let provider_ref = "provider_ref".to_string();
+
+        let values = HashMap::from([("foo".to_string(), "bar".to_string())]);
+
+        let mut linkdef = LinkDefinition::default();
+        linkdef.actor_id = "actor".to_string();
+        linkdef.provider_id = "provider".to_string();
+        linkdef.contract_id = "contract".to_string();
+        linkdef.link_name = "default".to_string();
+        linkdef.values = [("foo".to_string(), "nope".to_string())].into();
+
+        let scaler = LinkScaler::new(
+            create_store(&lattice_id, &actor_ref, &provider_ref).await,
+            actor_ref,
+            provider_ref,
+            "contract".to_string(),
+            None,
+            lattice_id.clone(),
+            "model".to_string(),
+            Some(values),
+            TestLatticeSource {
+                links: vec![linkdef],
+                ..Default::default()
+            },
+        );
+
+        let commands = scaler.reconcile().await.expect("Couldn't reconcile");
+        assert_eq!(commands.len(), 2);
+        assert!(matches!(commands[0], Command::DeleteLinkdef(_)));
+        assert!(matches!(commands[1], Command::PutLinkdef(_)));
+    }
+
+    #[tokio::test]
+    async fn test_existing_linkdef() {
+        let lattice_id = "existing-linkdef".to_string();
+        let actor_ref = "actor_ref".to_string();
+        let provider_ref = "provider_ref".to_string();
+
+        let values = HashMap::from([("foo".to_string(), "bar".to_string())]);
+        let mut linkdef = LinkDefinition::default();
+        linkdef.actor_id = "actor".to_string();
+        linkdef.provider_id = "provider".to_string();
+        linkdef.contract_id = "contract".to_string();
+        linkdef.link_name = "default".to_string();
+        linkdef.values = values.clone();
+
+        let scaler = LinkScaler::new(
+            create_store(&lattice_id, &actor_ref, &provider_ref).await,
+            actor_ref,
+            provider_ref,
+            "contract".to_string(),
+            None,
+            lattice_id.clone(),
+            "model".to_string(),
+            Some(values),
+            TestLatticeSource {
+                links: vec![linkdef],
+                ..Default::default()
+            },
+        );
+
+        let commands = scaler.reconcile().await.expect("Couldn't reconcile");
+        assert_eq!(
+            commands.len(),
+            0,
+            "Scaler shouldn't have returned any commands"
+        );
     }
 }

@@ -4,13 +4,16 @@
 
 use std::{collections::HashMap, convert::TryFrom};
 
-use cloudevents::{AttributesReader, Data, Event as CloudEvent};
+use cloudevents::{AttributesReader, Data, Event as CloudEvent, EventBuilder, EventBuilderV10};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::model::Manifest;
 
 use super::data::*;
+
+/// The source used for cloud events that wadm emits
+pub const WADM_SOURCE: &str = "wadm";
 
 // NOTE: this macro is a helper so we don't have to copy/paste these impls for each type. The first
 // argument is the struct name you are generating for and the second argument is the event type as
@@ -83,10 +86,13 @@ pub trait EventType {
 }
 
 /// A lattice event
-#[derive(Debug)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 pub enum Event {
     ActorStarted(ActorStarted),
+    ActorsStarted(ActorsStarted),
+    ActorsStartFailed(ActorsStartFailed),
     ActorStopped(ActorStopped),
+    ActorsStopped(ActorsStopped),
     ProviderStarted(ProviderStarted),
     ProviderStopped(ProviderStopped),
     ProviderStartFailed(ProviderStartFailed),
@@ -110,7 +116,12 @@ impl TryFrom<CloudEvent> for Event {
     fn try_from(value: CloudEvent) -> Result<Self, Self::Error> {
         match value.ty() {
             ActorStarted::TYPE => ActorStarted::try_from(value).map(Event::ActorStarted),
+            ActorsStarted::TYPE => ActorsStarted::try_from(value).map(Event::ActorsStarted),
+            ActorsStartFailed::TYPE => {
+                ActorsStartFailed::try_from(value).map(Event::ActorsStartFailed)
+            }
             ActorStopped::TYPE => ActorStopped::try_from(value).map(Event::ActorStopped),
+            ActorsStopped::TYPE => ActorsStopped::try_from(value).map(Event::ActorsStopped),
             ProviderStarted::TYPE => ProviderStarted::try_from(value).map(Event::ProviderStarted),
             ProviderStopped::TYPE => ProviderStopped::try_from(value).map(Event::ProviderStopped),
             ProviderStartFailed::TYPE => {
@@ -141,6 +152,42 @@ impl TryFrom<CloudEvent> for Event {
     }
 }
 
+impl TryFrom<Event> for CloudEvent {
+    type Error = anyhow::Error;
+
+    fn try_from(value: Event) -> Result<Self, Self::Error> {
+        let ty = match value {
+            Event::ActorStarted(_) => ActorStarted::TYPE,
+            Event::ActorsStarted(_) => ActorsStarted::TYPE,
+            Event::ActorsStartFailed(_) => ActorsStartFailed::TYPE,
+            Event::ActorStopped(_) => ActorStopped::TYPE,
+            Event::ActorsStopped(_) => ActorsStopped::TYPE,
+            Event::ProviderStarted(_) => ProviderStarted::TYPE,
+            Event::ProviderStopped(_) => ProviderStopped::TYPE,
+            Event::ProviderStartFailed(_) => ProviderStartFailed::TYPE,
+            Event::ProviderHealthCheckPassed(_) => ProviderHealthCheckPassed::TYPE,
+            Event::ProviderHealthCheckFailed(_) => ProviderHealthCheckFailed::TYPE,
+            Event::ProviderHealthCheckStatus(_) => ProviderHealthCheckStatus::TYPE,
+            Event::HostStarted(_) => HostStarted::TYPE,
+            Event::HostStopped(_) => HostStopped::TYPE,
+            Event::HostHeartbeat(_) => HostHeartbeat::TYPE,
+            Event::LinkdefSet(_) => LinkdefSet::TYPE,
+            Event::LinkdefDeleted(_) => LinkdefDeleted::TYPE,
+            Event::ManifestPublished(_) => ManifestPublished::TYPE,
+            Event::ManifestUnpublished(_) => ManifestUnpublished::TYPE,
+        };
+
+        EventBuilderV10::new()
+            .id(uuid::Uuid::new_v4().to_string())
+            .source(WADM_SOURCE)
+            .time(chrono::Utc::now())
+            .data("application/json", serde_json::to_value(value)?)
+            .ty(ty)
+            .build()
+            .map_err(anyhow::Error::from)
+    }
+}
+
 // Custom serialize that just delegates to the underlying event type
 impl Serialize for Event {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -149,7 +196,10 @@ impl Serialize for Event {
     {
         match self {
             Event::ActorStarted(evt) => evt.serialize(serializer),
+            Event::ActorsStarted(evt) => evt.serialize(serializer),
+            Event::ActorsStartFailed(evt) => evt.serialize(serializer),
             Event::ActorStopped(evt) => evt.serialize(serializer),
+            Event::ActorsStopped(evt) => evt.serialize(serializer),
             Event::ProviderStarted(evt) => evt.serialize(serializer),
             Event::ProviderStopped(evt) => evt.serialize(serializer),
             Event::ProviderStartFailed(evt) => evt.serialize(serializer),
@@ -177,7 +227,10 @@ impl Event {
     pub fn raw_type(&self) -> &str {
         match self {
             Event::ActorStarted(_) => ActorStarted::TYPE,
+            Event::ActorsStarted(_) => ActorsStarted::TYPE,
+            Event::ActorsStartFailed(_) => ActorsStartFailed::TYPE,
             Event::ActorStopped(_) => ActorStopped::TYPE,
+            Event::ActorsStopped(_) => ActorsStopped::TYPE,
             Event::ProviderStarted(_) => ProviderStarted::TYPE,
             Event::ProviderStopped(_) => ProviderStopped::TYPE,
             Event::ProviderStartFailed(_) => ProviderStopped::TYPE,
@@ -215,7 +268,7 @@ pub enum ConversionError {
 // EVENTS START HERE
 //
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct ActorStarted {
     pub annotations: HashMap<String, String>,
     // Commented out for now because the host broken it and we actually don't use this right now
@@ -237,7 +290,46 @@ event_impl!(
     host_id
 );
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct ActorsStarted {
+    pub annotations: HashMap<String, String>,
+    // Commented out for now because the host broken it and we actually don't use this right now
+    // pub api_version: usize,
+    pub claims: ActorClaims,
+    pub image_ref: String,
+    pub count: usize,
+    // TODO: Parse as nkey?
+    pub public_key: String,
+    #[serde(default)]
+    pub host_id: String,
+}
+
+event_impl!(
+    ActorsStarted,
+    "com.wasmcloud.lattice.actors_started",
+    source,
+    host_id
+);
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct ActorsStartFailed {
+    pub annotations: HashMap<String, String>,
+    pub image_ref: String,
+    // TODO: Parse as nkey?
+    pub public_key: String,
+    #[serde(default)]
+    pub host_id: String,
+    pub error: String,
+}
+
+event_impl!(
+    ActorsStartFailed,
+    "com.wasmcloud.lattice.actors_start_failed",
+    source,
+    host_id
+);
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct ActorStopped {
     #[serde(default)]
     pub annotations: HashMap<String, String>,
@@ -255,7 +347,28 @@ event_impl!(
     host_id
 );
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct ActorsStopped {
+    #[serde(default)]
+    pub annotations: HashMap<String, String>,
+    // TODO: Parse as nkey?
+    pub public_key: String,
+    #[serde(default)]
+    pub host_id: String,
+    /// Number of actors stopped from this command
+    pub count: usize,
+    /// Remaining number of this actor running on the host
+    pub remaining: usize,
+}
+
+event_impl!(
+    ActorsStopped,
+    "com.wasmcloud.lattice.actors_stopped",
+    source,
+    host_id
+);
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct ProviderStarted {
     pub annotations: HashMap<String, String>,
     pub claims: ProviderClaims,
@@ -277,7 +390,7 @@ event_impl!(
     host_id
 );
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct ProviderStartFailed {
     pub error: String,
     pub link_name: String,
@@ -293,7 +406,7 @@ event_impl!(
     host_id
 );
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct ProviderStopped {
     #[serde(default)]
     // TODO(thomastaylor312): Yep, there was a spelling bug in the host is 0.62.1. Revert this once
@@ -319,7 +432,7 @@ event_impl!(
     host_id
 );
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct ProviderHealthCheckPassed {
     #[serde(flatten)]
     pub data: ProviderHealthCheckInfo,
@@ -334,7 +447,7 @@ event_impl!(
     host_id
 );
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct ProviderHealthCheckFailed {
     #[serde(flatten)]
     pub data: ProviderHealthCheckInfo,
@@ -349,7 +462,7 @@ event_impl!(
     host_id
 );
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct ProviderHealthCheckStatus {
     #[serde(flatten)]
     pub data: ProviderHealthCheckInfo,
@@ -364,7 +477,7 @@ event_impl!(
     host_id
 );
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct LinkdefSet {
     #[serde(flatten)]
     pub linkdef: Linkdef,
@@ -372,7 +485,7 @@ pub struct LinkdefSet {
 
 event_impl!(LinkdefSet, "com.wasmcloud.lattice.linkdef_set");
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct LinkdefDeleted {
     #[serde(flatten)]
     pub linkdef: Linkdef,
@@ -380,7 +493,7 @@ pub struct LinkdefDeleted {
 
 event_impl!(LinkdefDeleted, "com.wasmcloud.lattice.linkdef_deleted");
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct HostStarted {
     pub labels: HashMap<String, String>,
     pub friendly_name: String,
@@ -396,7 +509,7 @@ event_impl!(
     id
 );
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct HostStopped {
     pub labels: HashMap<String, String>,
     // TODO: Parse as nkey?
@@ -411,7 +524,7 @@ event_impl!(
     id
 );
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct HostHeartbeat {
     pub actors: HashMap<String, usize>,
     pub friendly_name: String,
@@ -434,7 +547,7 @@ event_impl!(
     id
 );
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct ManifestPublished {
     #[serde(flatten)]
     pub manifest: Manifest,
@@ -442,7 +555,7 @@ pub struct ManifestPublished {
 
 event_impl!(ManifestPublished, "com.wadm.manifest_published");
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct ManifestUnpublished {
     pub name: String,
 }

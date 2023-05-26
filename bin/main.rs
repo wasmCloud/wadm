@@ -348,6 +348,7 @@ where
                     self.state_store.clone(),
                     self.manifest_store.clone(),
                     publisher.clone(),
+                    client.clone(),
                 )
                 .await?;
                 Ok(EventWorker::new(
