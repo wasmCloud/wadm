@@ -11,7 +11,7 @@ use crate::{
     events::{Event, HostStarted, HostStopped},
     model::{Spread, SpreadScalerProperty, TraitProperty, DEFAULT_SPREAD_WEIGHT},
     scaler::Scaler,
-    storage::{Actor, Host, ReadStore, WadmActorInstance},
+    storage::{Actor, Host, ReadStore},
     SCALER_KEY,
 };
 
@@ -126,7 +126,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
         // NOTE(brooksmtownsend) it's easier to assign one host per list of requirements than
         // balance within those requirements. Users should be specific with their requirements
         // as wadm is not responsible for ambiguity, a future scaler like a DaemonScaler could handle this
-
+        trace!(spread_requirements = ?self.spread_requirements, ?actor_id, "Computing commands");
         let commands = self
             .spread_requirements
             .iter()
@@ -156,13 +156,13 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
                                                 },
                                             )
                                         })
-                                        .collect::<Vec<&WadmActorInstance>>()
+                                        .count()
                                 })
-                                .map(|instance| instance.len())
                                 .sum()
                         })
                         .unwrap_or(0);
-                    trace!(current = %current_count, expected = %count, "Calculated running actors, reconciling with expected count");
+                    trace!(current = %current_count, expected = %count, host_id = ?first_host.id, "Calculated running actors, reconciling with expected count");
+                    // TODO: Figure out why a new deploy doesn't scale things down properly
                     match current_count.cmp(count) {
                         Ordering::Equal => None,
                         // Start actors to reach desired replicas
@@ -193,6 +193,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
                 }
             })
             .collect::<Vec<Command>>();
+        trace!(?commands, "Calculated commands for actor scaler");
 
         Ok(commands)
     }
@@ -225,8 +226,7 @@ impl<S: ReadStore + Send + Sync> ActorSpreadScaler<S> {
         spread_config: SpreadScalerProperty,
         component_name: &str,
     ) -> Self {
-        let id =
-            format!("{ACTOR_SPREAD_SCALER_TYPE}-{model_name}-{component_name}-{actor_reference}");
+        let id = format!("{ACTOR_SPREAD_SCALER_TYPE}-{model_name}-{component_name}");
         Self {
             store,
             spread_requirements: compute_spread(&spread_config),
@@ -296,7 +296,6 @@ fn compute_spread(spread_config: &SpreadScalerProperty) -> Vec<(Spread, usize)> 
         .iter()
         .map(|s| s.weight.unwrap_or(DEFAULT_SPREAD_WEIGHT))
         .sum::<usize>();
-
     let spreads: Vec<(Spread, usize)> = spread_config
         .spread
         .iter()

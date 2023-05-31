@@ -821,15 +821,16 @@ where
                         .get(APP_SPEC_ANNOTATION)
                         .map(|s| s.as_str())
                 }),
+            // NOTE(thomastaylor312): Provider stopped events need to be handled by all scalers as
+            // it they could need to adjust their provider count based on the number of providers
+            // available throughout the whole lattice (e.g. if a provider managed by another
+            // manifest is removed, but this manifest still needs one). Ideally we should have a way
+            // to have a "global" list of required providers in a lattice so we never shut one down
+            // just to spin it back up, but for now we'll just deal with this as is
             Event::ProviderStopped(provider) => self
                 .handle_provider_stopped(&message.lattice_id, provider)
                 .await
-                .map(|_| {
-                    provider
-                        .annotations
-                        .get(APP_SPEC_ANNOTATION)
-                        .map(|s| s.as_str())
-                }),
+                .map(|_| None),
             Event::ProviderHealthCheckPassed(ProviderHealthCheckPassed { data, host_id }) => self
                 .handle_provider_health_check(&message.lattice_id, host_id, data, false)
                 .await
