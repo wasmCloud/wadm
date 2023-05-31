@@ -122,43 +122,56 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
             .iter()
             .flat_map(|(spread, count)| {
                 let eligible_hosts = eligible_hosts(&hosts, spread);
-
-                // Partition hosts into ones running this provider for this spread, and others
-                let (running_for_spread, other): (Vec<&Host>, Vec<&Host>) =
-                    eligible_hosts.iter().partition(|host| {
+                let eligible_count = eligible_hosts.len();
+                // Partition hosts into ones running this provider (no matter what is running it, and others
+                let (running, other): (Vec<&Host>, Vec<&Host>) =
+                    eligible_hosts.into_iter().partition(|host| {
                         host.providers
                             .get(&ProviderInfo {
                                 contract_id: contract_id.to_string(),
                                 link_name: link_name.to_string(),
                                 public_key: provider_id.to_string(),
                                 annotations: HashMap::default(),
-                            })
-                            .map(|provider| {
-                                spreadscaler_annotations(&spread.name, &self.id).iter().all(|(k, v)| {
-                                    let has_annotation = provider
-                                        .annotations
-                                        .get(k)
-                                        .map(|val| val == v)
-                                        .unwrap_or(false);
-                                    if !has_annotation {
-                                        trace!(key = %k, value = %v, "Provider is missing annotation. Expected correct key and value");
-                                    }
-                                    has_annotation
-                                })
-                            })
-                            .unwrap_or_else(|| {
-                                trace!(%provider_id, "Couldn't find matching provider in host provider list");
-                                false}
-                            )
+                            }).is_some()
                     });
-                trace!(current = %running_for_spread.len(), expected = %count, eligible_hosts = %eligible_hosts.len(), %provider_id, "Calculated running providers, reconciling with expected count");
-                match running_for_spread.len().cmp(count) {
-                    Ordering::Equal => Vec::new(),
-                    Ordering::Greater => {
-                        let num_to_stop = running_for_spread.len() - count;
+                // Get the count of all running providers
+                let current_running = running.len();
+                // Now get only the hosts running a provider we own
+                let running_for_spread = running.into_iter().filter(|host| {
+                    host.providers
+                        .get(&ProviderInfo {
+                            contract_id: contract_id.to_string(),
+                            link_name: link_name.to_string(),
+                            public_key: provider_id.to_string(),
+                            annotations: HashMap::default(),
+                        })
+                        .map(|provider| {
+                            spreadscaler_annotations(&spread.name, &self.id).iter().all(|(k, v)| {
+                                let has_annotation = provider
+                                    .annotations
+                                    .get(k)
+                                    .map(|val| val == v)
+                                    .unwrap_or(false);
+                                if !has_annotation {
+                                    trace!(key = %k, value = %v, "Provider is missing annotation. Expected correct key and value");
+                                }
+                                has_annotation
+                            })
+                        })
+                        .unwrap_or_else(|| {
+                            trace!(%provider_id, "Couldn't find matching provider in host provider list");
+                            false
+                        })
+                }).collect::<Vec<_>>();
+                trace!(current_for_spread = %running_for_spread.len(), %current_running, expected = %count, eligible_hosts = %eligible_count, %provider_id, "Calculated running providers, reconciling with expected count");
+                match current_running.cmp(count) {
+                    // We can only stop providers that we own, so if we have more than we need, we
+                    // need to stop some
+                    Ordering::Greater if !running_for_spread.is_empty() => {
+                        let num_to_stop = current_running - count;
                         // Take `num_to_stop` commands from this iterator
                         running_for_spread
-                            .iter()
+                            .into_iter()
                             .map(|host| {
                                 Command::StopProvider(StopProvider {
                                     provider_id: provider_id.to_owned(),
@@ -173,7 +186,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
                             .collect::<Vec<Command>>()
                     }
                     Ordering::Less => {
-                        let num_to_start = count - running_for_spread.len();
+                        let num_to_start = count - current_running;
 
                         // NOTE(brooksmtownsend): It's possible that this does not fully satisfy
                         // the requirements if we are unable to form enough start commands. Update
@@ -181,7 +194,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
 
                         // Take `num_to_start` commands from this iterator
                         other
-                            .iter()
+                            .into_iter()
                             .filter(|host| {
                                 !host.providers.contains(&ProviderInfo {
                                     contract_id: contract_id.to_string(),
@@ -203,6 +216,9 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
                             .take(num_to_start)
                             .collect::<Vec<Command>>()
                     }
+                    // If we're equal or are greater and have nothing from our spread running, we do
+                    // nothing
+                    _ => Vec::new(),
                 }
             })
             .collect::<Vec<Command>>())
@@ -230,8 +246,8 @@ impl<S: ReadStore + Send + Sync> ProviderSpreadScaler<S> {
     /// Construct a new ProviderSpreadScaler with specified configuration values
     pub fn new(store: S, config: ProviderSpreadConfig, component_name: &str) -> Self {
         let id = format!(
-            "{PROVIDER_SPREAD_SCALER_TYPE}-{}-{component_name}-{}-{}",
-            config.model_name, config.provider_link_name, config.provider_reference
+            "{PROVIDER_SPREAD_SCALER_TYPE}-{}-{component_name}-{}",
+            config.model_name, config.provider_link_name,
         );
         Self {
             store,
@@ -720,6 +736,395 @@ mod test {
                 assert_eq!(
                     start.annotations,
                     spreadscaler_annotations("ComplexTwo", spreadscaler.id())
+                )
+            }
+            Some(_other) => panic!("command should have been a start provider"),
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn can_handle_too_few_preexisting() -> Result<()> {
+        let lattice_id = "can_handle_too_few_preexisting";
+        let provider_ref = "fakecloud.azurecr.io/provider:3.2.1".to_string();
+        let provider_id = "VASDASDIAMAREALPROVIDERPROVIDER";
+
+        let host_id_one = "NASDASDIMAREALHOSTONE";
+        let host_id_two = "NASDASDIMAREALHOSTTWO";
+
+        let store = Arc::new(TestStore::default());
+
+        store
+            .store(
+                lattice_id,
+                host_id_one.to_string(),
+                Host {
+                    actors: HashMap::new(),
+                    friendly_name: "hey".to_string(),
+                    labels: HashMap::from_iter([
+                        ("cloud".to_string(), "fake".to_string()),
+                        ("region".to_string(), "us-noneofyourbusiness-1".to_string()),
+                    ]),
+                    annotations: HashMap::new(),
+                    providers: HashSet::new(),
+                    uptime_seconds: 123,
+                    version: None,
+                    id: host_id_one.to_string(),
+                    last_seen: Utc::now(),
+                },
+            )
+            .await?;
+
+        store
+            .store(
+                lattice_id,
+                host_id_two.to_string(),
+                Host {
+                    actors: HashMap::new(),
+                    friendly_name: "hey".to_string(),
+                    labels: HashMap::from_iter([
+                        ("cloud".to_string(), "real".to_string()),
+                        ("region".to_string(), "us-yourhouse-1".to_string()),
+                    ]),
+                    annotations: HashMap::new(),
+                    providers: HashSet::from_iter([ProviderInfo {
+                        public_key: provider_id.to_string(),
+                        contract_id: "prov:ider".to_string(),
+                        link_name: DEFAULT_LINK_NAME.to_string(),
+                        annotations: HashMap::new(),
+                    }]),
+
+                    uptime_seconds: 123,
+                    version: None,
+                    id: host_id_two.to_string(),
+                    last_seen: Utc::now(),
+                },
+            )
+            .await?;
+
+        store
+            .store(
+                lattice_id,
+                provider_id.to_string(),
+                Provider {
+                    id: provider_id.to_string(),
+                    name: "provider".to_string(),
+                    issuer: "issuer".to_string(),
+                    contract_id: "prov:ider".to_string(),
+                    reference: provider_ref.to_string(),
+                    link_name: DEFAULT_LINK_NAME.to_string(),
+                    hosts: HashMap::new(),
+                },
+            )
+            .await?;
+
+        // Ensure we spread evenly with equal weights, clean division
+        let multi_spread_even = SpreadScalerProperty {
+            replicas: 2,
+            spread: vec![
+                Spread {
+                    name: "SimpleOne".to_string(),
+                    requirements: BTreeMap::from_iter([("cloud".to_string(), "fake".to_string())]),
+                    weight: Some(100),
+                },
+                Spread {
+                    name: "SimpleTwo".to_string(),
+                    requirements: BTreeMap::from_iter([("cloud".to_string(), "real".to_string())]),
+                    weight: Some(100),
+                },
+            ],
+        };
+
+        let spreadscaler = ProviderSpreadScaler::new(
+            store.clone(),
+            ProviderSpreadConfig {
+                lattice_id: lattice_id.to_string(),
+                provider_reference: provider_ref.to_string(),
+                spread_config: multi_spread_even,
+                provider_contract_id: "prov:ider".to_string(),
+                provider_link_name: DEFAULT_LINK_NAME.to_string(),
+                model_name: MODEL_NAME.to_string(),
+                provider_config: Some(CapabilityConfig::Opaque("foobar".to_string())),
+            },
+            "fake_component",
+        );
+
+        let commands = spreadscaler.reconcile().await?;
+        assert_eq!(commands.len(), 1);
+
+        let cmd_one = commands.get(0).cloned();
+        match cmd_one {
+            None => panic!("command should have existed"),
+            Some(Command::StartProvider(start)) => {
+                assert_eq!(
+                    start,
+                    StartProvider {
+                        reference: provider_ref.to_string(),
+                        host_id: host_id_one.to_string(),
+                        link_name: Some(DEFAULT_LINK_NAME.to_string()),
+                        model_name: MODEL_NAME.to_string(),
+                        annotations: spreadscaler_annotations("SimpleOne", spreadscaler.id()),
+                        config: Some(CapabilityConfig::Opaque("foobar".to_string())),
+                    }
+                );
+                // This manual assertion is because we don't hash on annotations and I want to be extra sure we have the
+                // correct ones
+                assert_eq!(
+                    start.annotations,
+                    spreadscaler_annotations("SimpleOne", spreadscaler.id())
+                )
+            }
+            Some(_other) => panic!("command should have been a start provider"),
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn can_handle_enough_preexisting() -> Result<()> {
+        let lattice_id = "can_handle_enough_preexisting";
+        let provider_ref = "fakecloud.azurecr.io/provider:3.2.1".to_string();
+        let provider_id = "VASDASDIAMAREALPROVIDERPROVIDER";
+
+        let host_id_one = "NASDASDIMAREALHOSTONE";
+        let host_id_two = "NASDASDIMAREALHOSTTWO";
+
+        let store = Arc::new(TestStore::default());
+
+        store
+            .store(
+                lattice_id,
+                host_id_one.to_string(),
+                Host {
+                    actors: HashMap::new(),
+                    friendly_name: "hey".to_string(),
+                    labels: HashMap::from_iter([
+                        ("cloud".to_string(), "fake".to_string()),
+                        ("region".to_string(), "us-noneofyourbusiness-1".to_string()),
+                    ]),
+                    annotations: HashMap::new(),
+                    providers: HashSet::from_iter([ProviderInfo {
+                        public_key: provider_id.to_string(),
+                        contract_id: "prov:ider".to_string(),
+                        link_name: DEFAULT_LINK_NAME.to_string(),
+                        annotations: HashMap::new(),
+                    }]),
+                    uptime_seconds: 123,
+                    version: None,
+                    id: host_id_one.to_string(),
+                    last_seen: Utc::now(),
+                },
+            )
+            .await?;
+
+        store
+            .store(
+                lattice_id,
+                host_id_two.to_string(),
+                Host {
+                    actors: HashMap::new(),
+                    friendly_name: "hey".to_string(),
+                    labels: HashMap::from_iter([
+                        ("cloud".to_string(), "real".to_string()),
+                        ("region".to_string(), "us-yourhouse-1".to_string()),
+                    ]),
+                    annotations: HashMap::new(),
+                    providers: HashSet::from_iter([ProviderInfo {
+                        public_key: provider_id.to_string(),
+                        contract_id: "prov:ider".to_string(),
+                        link_name: DEFAULT_LINK_NAME.to_string(),
+                        annotations: HashMap::new(),
+                    }]),
+
+                    uptime_seconds: 123,
+                    version: None,
+                    id: host_id_two.to_string(),
+                    last_seen: Utc::now(),
+                },
+            )
+            .await?;
+
+        store
+            .store(
+                lattice_id,
+                provider_id.to_string(),
+                Provider {
+                    id: provider_id.to_string(),
+                    name: "provider".to_string(),
+                    issuer: "issuer".to_string(),
+                    contract_id: "prov:ider".to_string(),
+                    reference: provider_ref.to_string(),
+                    link_name: DEFAULT_LINK_NAME.to_string(),
+                    hosts: HashMap::new(),
+                },
+            )
+            .await?;
+
+        // Ensure we spread evenly with equal weights, clean division
+        let multi_spread_even = SpreadScalerProperty {
+            replicas: 2,
+            spread: vec![
+                Spread {
+                    name: "SimpleOne".to_string(),
+                    requirements: BTreeMap::from_iter([("cloud".to_string(), "fake".to_string())]),
+                    weight: Some(100),
+                },
+                Spread {
+                    name: "SimpleTwo".to_string(),
+                    requirements: BTreeMap::from_iter([("cloud".to_string(), "real".to_string())]),
+                    weight: Some(100),
+                },
+            ],
+        };
+
+        let spreadscaler = ProviderSpreadScaler::new(
+            store.clone(),
+            ProviderSpreadConfig {
+                lattice_id: lattice_id.to_string(),
+                provider_reference: provider_ref.to_string(),
+                spread_config: multi_spread_even,
+                provider_contract_id: "prov:ider".to_string(),
+                provider_link_name: DEFAULT_LINK_NAME.to_string(),
+                model_name: MODEL_NAME.to_string(),
+                provider_config: Some(CapabilityConfig::Opaque("foobar".to_string())),
+            },
+            "fake_component",
+        );
+
+        let commands = spreadscaler.reconcile().await?;
+        assert!(commands.is_empty());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn can_handle_too_many_preexisting() -> Result<()> {
+        let lattice_id = "can_handle_too_many_preexisting";
+        let provider_ref = "fakecloud.azurecr.io/provider:3.2.1".to_string();
+        let provider_id = "VASDASDIAMAREALPROVIDERPROVIDER";
+
+        let host_id_one = "NASDASDIMAREALHOSTONE";
+        let host_id_two = "NASDASDIMAREALHOSTTWO";
+
+        let store = Arc::new(TestStore::default());
+
+        store
+            .store(
+                lattice_id,
+                host_id_one.to_string(),
+                Host {
+                    actors: HashMap::new(),
+                    friendly_name: "hey".to_string(),
+                    labels: HashMap::from_iter([
+                        ("cloud".to_string(), "fake".to_string()),
+                        ("region".to_string(), "us-noneofyourbusiness-1".to_string()),
+                    ]),
+                    annotations: HashMap::new(),
+                    providers: HashSet::from_iter([ProviderInfo {
+                        public_key: provider_id.to_string(),
+                        contract_id: "prov:ider".to_string(),
+                        link_name: DEFAULT_LINK_NAME.to_string(),
+                        annotations: HashMap::new(),
+                    }]),
+                    uptime_seconds: 123,
+                    version: None,
+                    id: host_id_one.to_string(),
+                    last_seen: Utc::now(),
+                },
+            )
+            .await?;
+
+        // Ensure we spread evenly with equal weights, clean division
+        let multi_spread_even = SpreadScalerProperty {
+            replicas: 1,
+            spread: vec![Spread {
+                name: "SimpleOne".to_string(),
+                requirements: BTreeMap::from_iter([("cloud".to_string(), "fake".to_string())]),
+                weight: Some(100),
+            }],
+        };
+
+        let spreadscaler = ProviderSpreadScaler::new(
+            store.clone(),
+            ProviderSpreadConfig {
+                lattice_id: lattice_id.to_string(),
+                provider_reference: provider_ref.to_string(),
+                spread_config: multi_spread_even,
+                provider_contract_id: "prov:ider".to_string(),
+                provider_link_name: DEFAULT_LINK_NAME.to_string(),
+                model_name: MODEL_NAME.to_string(),
+                provider_config: Some(CapabilityConfig::Opaque("foobar".to_string())),
+            },
+            "fake_component",
+        );
+
+        store
+            .store(
+                lattice_id,
+                host_id_two.to_string(),
+                Host {
+                    actors: HashMap::new(),
+                    friendly_name: "hey".to_string(),
+                    labels: HashMap::from_iter([
+                        ("cloud".to_string(), "fake".to_string()),
+                        ("region".to_string(), "us-yourhouse-1".to_string()),
+                    ]),
+                    annotations: HashMap::new(),
+                    providers: HashSet::from_iter([ProviderInfo {
+                        public_key: provider_id.to_string(),
+                        contract_id: "prov:ider".to_string(),
+                        link_name: DEFAULT_LINK_NAME.to_string(),
+                        annotations: spreadscaler_annotations("SimpleOne", spreadscaler.id()),
+                    }]),
+
+                    uptime_seconds: 123,
+                    version: None,
+                    id: host_id_two.to_string(),
+                    last_seen: Utc::now(),
+                },
+            )
+            .await?;
+
+        store
+            .store(
+                lattice_id,
+                provider_id.to_string(),
+                Provider {
+                    id: provider_id.to_string(),
+                    name: "provider".to_string(),
+                    issuer: "issuer".to_string(),
+                    contract_id: "prov:ider".to_string(),
+                    reference: provider_ref.to_string(),
+                    link_name: DEFAULT_LINK_NAME.to_string(),
+                    hosts: HashMap::new(),
+                },
+            )
+            .await?;
+
+        let commands = spreadscaler.reconcile().await?;
+        assert_eq!(commands.len(), 1);
+
+        let cmd = commands.get(0).cloned();
+        match cmd {
+            None => panic!("command should have existed"),
+            Some(Command::StopProvider(stop)) => {
+                assert_eq!(
+                    stop,
+                    StopProvider {
+                        host_id: host_id_two.to_string(),
+                        link_name: Some(DEFAULT_LINK_NAME.to_string()),
+                        model_name: MODEL_NAME.to_string(),
+                        annotations: spreadscaler_annotations("SimpleOne", spreadscaler.id()),
+                        provider_id: provider_id.to_owned(),
+                        contract_id: "prov:ider".to_string(),
+                    }
+                );
+                // This manual assertion is because we don't hash on annotations and I want to be extra sure we have the
+                // correct ones
+                assert_eq!(
+                    stop.annotations,
+                    spreadscaler_annotations("SimpleOne", spreadscaler.id())
                 )
             }
             Some(_other) => panic!("command should have been a start provider"),

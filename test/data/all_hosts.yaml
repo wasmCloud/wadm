@@ -15,19 +15,19 @@ spec:
         - type: spreadscaler
           properties:
             replicas: 5
-          spread:
-            - name: eastcoast
-              requirements:
-                region: us-brooks-east
-              weight: 40
-            - name: westcoast
-              requirements:
-                zone: us-taylor-west
-              weight: 40
-            - name: the-moon
-              requirements:
-                zone: moon
-              weight: 20
+            spread:
+              - name: eastcoast
+                requirements:
+                  region: us-brooks-east
+                weight: 40
+              - name: westcoast
+                requirements:
+                  region: us-taylor-west
+                weight: 40
+              - name: the-moon
+                requirements:
+                  region: moon
+                weight: 20
         - type: linkdef
           properties:
             target: httpserver
@@ -43,16 +43,16 @@ spec:
         - type: spreadscaler
           properties:
             replicas: 5
-          spread:
-            - name: eastcoast
-              requirements:
-                region: us-brooks-east
-              weight: 40
-            - name: westcoast
-              requirements:
-                zone: us-taylor-west
-              weight: 40
-            - name: the-moon
-              requirements:
-                zone: moon
-              weight: 20
+            spread:
+              - name: eastcoast
+                requirements:
+                  region: us-brooks-east
+                weight: 40
+              - name: westcoast
+                requirements:
+                  region: us-taylor-west
+                weight: 40
+              - name: the-moon
+                requirements:
+                  region: moon
+                weight: 20
