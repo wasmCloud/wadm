@@ -215,7 +215,7 @@ impl<C> ConsumerManager<C> {
         let consumer = C::create(self.stream.clone(), topic, lattice_id).await?;
         let permits = self.permits.clone();
         Ok(tokio::spawn(work_fn(consumer, permits, worker).instrument(
-            tracing::info_span!("consumer_worker", %topic),
+            tracing::info_span!("consumer_worker", %topic, worker_type = %std::any::type_name::<W>()),
         )))
     }
 

@@ -1,4 +1,5 @@
 #![cfg(feature = "_e2e_tests")]
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use futures::FutureExt;
@@ -8,6 +9,7 @@ use wadm::{APP_SPEC_ANNOTATION, MANAGED_BY_ANNOTATION, MANAGED_BY_IDENTIFIER};
 mod e2e;
 
 use e2e::{assert_status, ClientInfo};
+use wasmcloud_control_interface::HostInventory;
 
 const MANIFESTS_PATH: &str = "test/data";
 const DOCKER_COMPOSE_FILE: &str = "test/docker-compose-e2e.yaml";
@@ -31,11 +33,13 @@ async fn run_all_tests() {
     // about which test failed. Another issue is that only the first panic will be returned, so
     // capturing the backtraces and then printing them nicely would probably be good
 
+    // We run this test first by itself because it is a basic test that wadm only spins up the exact
+    // number of resources requested. If we were to run it in parallel, some of the shared resources
+    // will be created with other tests (namely providers) and this test will fail
+    test_no_requirements(&client_info).boxed().await;
+
     // The futures must be boxed or they're technically different types
-    let tests = [
-        test_no_requirements(&client_info).boxed(),
-        // test_spread_all_hosts(&client_info).boxed(),
-    ];
+    let tests = [test_spread_all_hosts(&client_info).boxed()];
     futures::future::join_all(tests).await;
 }
 
@@ -62,222 +66,150 @@ async fn test_no_requirements(client_info: &ClientInfo) {
     assert_status(None, Some(5), || async {
         let inventory = client_info.get_all_inventory().await?;
 
-        let all_echo_actors = inventory
-            .values()
-            .flat_map(|inv| &inv.actors)
-            .filter_map(|actor| {
-                (actor.image_ref.as_deref().unwrap_or_default()
-                    == "wasmcloud.azurecr.io/echo:0.3.7")
-                    .then_some(&actor.instances)
-            })
-            .flatten();
-        let actor_count = all_echo_actors
-            .filter(|actor| {
-                actor
-                    .annotations
-                    .as_ref()
-                    .and_then(|annotations| {
-                        annotations
-                            .get(APP_SPEC_ANNOTATION)
-                            .map(|val| val == "echo-simple")
-                    })
-                    .unwrap_or(false)
-            })
-            .count();
-        if actor_count != 4 {
-            anyhow::bail!(
-                "Should have had 4 actors managed by wadm running, only found {actor_count}"
-            )
-        }
+        check_actors(
+            &inventory,
+            "wasmcloud.azurecr.io/echo:0.3.7",
+            "echo-simple",
+            4,
+        )?;
+        check_providers(&inventory, "wasmcloud.azurecr.io/httpserver:0.17.0", 1)?;
 
-        // Get count of providers matching annotation
-        let provider_count = inventory
-            .values()
-            .flat_map(|inv| &inv.providers)
-            .filter(|provider| {
-                // You can only have 1 provider per host and that could be created by any manifest,
-                // so we can just check the image ref and that it is managed by wadm
-                provider
-                    .image_ref
-                    .as_deref()
-                    .map(|image| image == "wasmcloud.azurecr.io/httpserver:0.17.0")
-                    .unwrap_or(false)
-                    && provider
-                        .annotations
-                        .as_ref()
-                        .and_then(|annotations| {
-                            annotations
-                                .get(MANAGED_BY_ANNOTATION)
-                                .map(|val| val == MANAGED_BY_IDENTIFIER)
-                        })
-                        .unwrap_or(false)
-            })
-            .count();
+        Ok(())
+    })
+    .await;
 
-        if provider_count < 1 {
-            anyhow::bail!(
-                "Should have had at least 1 provider managed by wadm running, found {provider_count}"
-            )
-        }
+    // Undeploy manifest
+    let resp = client_info.undeploy_manifest("echo-simple", None).await;
+
+    assert_ne!(
+        resp.result,
+        DeployResult::Error,
+        "Shouldn't have errored when undeploying manifest: {resp:?}"
+    );
+
+    // assert that no actors or providers with annotations exist
+    assert_status(None, None, || async {
+        let inventory = client_info.get_all_inventory().await?;
+
+        check_actors(
+            &inventory,
+            "wasmcloud.azurecr.io/echo:0.3.7",
+            "echo-simple",
+            0,
+        )?;
+        check_providers(&inventory, "wasmcloud.azurecr.io/httpserver:0.17.0", 0)?;
+
         Ok(())
     })
     .await;
 }
 
-// async fn test_spread_all_hosts(client_info: &ClientInfo) {
-//     let resp = client_info
-//         .put_manifest_from_file("all_hosts.yaml", None)
-//         .await;
+async fn test_spread_all_hosts(client_info: &ClientInfo) {
+    let resp = client_info
+        .put_manifest_from_file("all_hosts.yaml", None)
+        .await;
 
-//     assert_ne!(
-//         resp.result,
-//         PutResult::Error,
-//         "Shouldn't have errored when creating manifest: {resp:?}"
-//     );
+    assert_ne!(
+        resp.result,
+        PutResult::Error,
+        "Shouldn't have errored when creating manifest: {resp:?}"
+    );
 
-//     // Deploy manifest
-//     let resp = client_info
-//         .deploy_manifest("echo-all-hosts", None, None)
-//         .await;
-//     assert_ne!(
-//         resp.result,
-//         DeployResult::Error,
-//         "Shouldn't have errored when deploying manifest: {resp:?}"
-//     );
+    // Deploy manifest
+    let resp = client_info
+        .deploy_manifest("echo-all-hosts", None, None)
+        .await;
+    assert_ne!(
+        resp.result,
+        DeployResult::Error,
+        "Shouldn't have errored when deploying manifest: {resp:?}"
+    );
 
-//     assert_status(None, Some(5), || async {
-//         let inventory = client_info.get_all_inventory().await?;
+    assert_status(None, Some(5), || async {
+        let inventory = client_info.get_all_inventory().await?;
 
-//         let all_echo_actors = inventory
-//             .values()
-//             .flat_map(|inv| &inv.actors)
-//             .filter_map(|actor| {
-//                 (actor.image_ref.as_deref().unwrap_or_default()
-//                     == "wasmcloud.azurecr.io/echo:0.3.7")
-//                     .then_some(&actor.instances)
-//             })
-//             .flatten();
-//         let actor_count = all_echo_actors
-//             .filter(|actor| {
-//                 actor
-//                     .annotations
-//                     .as_ref()
-//                     .and_then(|annotations| {
-//                         annotations
-//                             .get(APP_SPEC_ANNOTATION)
-//                             .map(|val| val == "echo-all-hosts")
-//                     })
-//                     .unwrap_or(false)
-//             })
-//             .count();
-//         if actor_count != 5 {
-//             anyhow::bail!(
-//                 "Should have had 5 actors managed by wadm running, only found {actor_count}"
-//             )
-//         }
+        check_actors(
+            &inventory,
+            "wasmcloud.azurecr.io/echo:0.3.7",
+            "echo-all-hosts",
+            5,
+        )?;
+        check_providers(&inventory, "wasmcloud.azurecr.io/httpserver:0.17.0", 5)?;
 
-//         // Get count of providers matching annotation
-//         let provider_count = inventory
-//             .values()
-//             .flat_map(|inv| &inv.providers)
-//             .filter(|provider| {
-//                 // You can only have 1 provider per host and that could be created by any manifest,
-//                 // so we can just check the image ref and that it is managed by wadm
-//                 provider
-//                     .image_ref
-//                     .as_deref()
-//                     .map(|image| image == "wasmcloud.azurecr.io/httpserver:0.17.0")
-//                     .unwrap_or(false)
-//                     && provider
-//                         .annotations
-//                         .as_ref()
-//                         .and_then(|annotations| {
-//                             annotations
-//                                 .get(MANAGED_BY_ANNOTATION)
-//                                 .map(|val| val == MANAGED_BY_IDENTIFIER)
-//                         })
-//                         .unwrap_or(false)
-//             })
-//             .count();
+        Ok(())
+    })
+    .await;
+}
 
-//         if provider_count != 5 {
-//             anyhow::bail!(
-//                 "Should have had 5 providers managed by wadm running, found {provider_count}"
-//             )
-//         }
-//         Ok(())
-//     })
-//     .await;
+// NOTE(thomastaylor312): Future tests could include actually making sure the app works as expected and also manually killing hosts and seeing if things recover
 
-//     // Undeploy manifest
-//     let resp = client_info.undeploy_manifest("echo-all-hosts", None).await;
+fn check_actors(
+    inventory: &HashMap<String, HostInventory>,
+    image_ref: &str,
+    manifest_name: &str,
+    expected_count: usize,
+) -> anyhow::Result<()> {
+    let all_actors = inventory
+        .values()
+        .flat_map(|inv| &inv.actors)
+        .filter_map(|actor| {
+            (actor.image_ref.as_deref().unwrap_or_default() == image_ref)
+                .then_some(&actor.instances)
+        })
+        .flatten();
+    let actor_count = all_actors
+        .filter(|actor| {
+            actor
+                .annotations
+                .as_ref()
+                .and_then(|annotations| {
+                    annotations
+                        .get(APP_SPEC_ANNOTATION)
+                        .map(|val| val == manifest_name)
+                })
+                .unwrap_or(false)
+        })
+        .count();
+    if actor_count != expected_count {
+        anyhow::bail!(
+            "Should have had {expected_count} actors managed by wadm running, found {actor_count}"
+        )
+    }
+    Ok(())
+}
 
-//     assert_ne!(
-//         resp.result,
-//         DeployResult::Error,
-//         "Shouldn't have errored when undeploying manifest: {resp:?}"
-//     );
+fn check_providers(
+    inventory: &HashMap<String, HostInventory>,
+    image_ref: &str,
+    expected_count: usize,
+) -> anyhow::Result<()> {
+    let provider_count = inventory
+        .values()
+        .flat_map(|inv| &inv.providers)
+        .filter(|provider| {
+            // You can only have 1 provider per host and that could be created by any manifest,
+            // so we can just check the image ref and that it is managed by wadm
+            provider
+                .image_ref
+                .as_deref()
+                .map(|image| image == image_ref)
+                .unwrap_or(false)
+                && provider
+                    .annotations
+                    .as_ref()
+                    .and_then(|annotations| {
+                        annotations
+                            .get(MANAGED_BY_ANNOTATION)
+                            .map(|val| val == MANAGED_BY_IDENTIFIER)
+                    })
+                    .unwrap_or(false)
+        })
+        .count();
 
-//     // assert that no actors or providers with annotations exist
-//     assert_status(None, None, || async {
-//         let inventory = client_info.get_all_inventory().await?;
-
-//         let all_echo_actors = inventory
-//             .values()
-//             .flat_map(|inv| &inv.actors)
-//             .filter_map(|actor| {
-//                 (actor.image_ref.as_deref().unwrap_or_default()
-//                     == "wasmcloud.azurecr.io/echo:0.3.7")
-//                     .then_some(&actor.instances)
-//             })
-//             .flatten();
-//         let actor_count = all_echo_actors
-//             .filter(|actor| {
-//                 actor
-//                     .annotations
-//                     .as_ref()
-//                     .and_then(|annotations| {
-//                         annotations
-//                             .get(APP_SPEC_ANNOTATION)
-//                             .map(|val| val == "echo-all-hosts")
-//                     })
-//                     .unwrap_or(false)
-//             })
-//             .count();
-//         if actor_count != 0 {
-//             anyhow::bail!(
-//                 "Should have no actors belonging to this model running, found {actor_count}"
-//             )
-//         }
-
-//         // Get count of providers matching annotation
-//         let provider_count = inventory
-//             .values()
-//             .flat_map(|inv| &inv.providers)
-//             .filter(|provider| {
-//                 provider
-//                     .image_ref
-//                     .as_deref()
-//                     .map(|image| image == "wasmcloud.azurecr.io/httpserver:0.17.0")
-//                     .unwrap_or(false)
-//                     && provider
-//                         .annotations
-//                         .as_ref()
-//                         .and_then(|annotations| {
-//                             annotations
-//                                 .get(APP_SPEC_ANNOTATION)
-//                                 .map(|val| val == "echo-all-hosts")
-//                         })
-//                         .unwrap_or(false)
-//             })
-//             .count();
-
-//         if provider_count != 0 {
-//             anyhow::bail!(
-//                 "Should have no provider belonging to this model running, found {provider_count}"
-//             )
-//         }
-//         Ok(())
-//     })
-//     .await;
-// }
+    if provider_count != expected_count {
+        anyhow::bail!(
+            "Should have had {expected_count} providers managed by wadm running, found {provider_count}"
+        )
+    }
+    Ok(())
+}

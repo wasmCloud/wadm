@@ -39,6 +39,10 @@ services:
       - nats
     deploy:
       replicas: 1
+    # Uncomment these lines if you want to spin up the e2e test environment locally and have access
+    # to the washboard
+    # ports:
+    #   - 4000:4000
     environment:
       LC_ALL: en_US.UTF-8
       RUST_LOG: debug,hyper=info

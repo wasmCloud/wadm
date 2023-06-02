@@ -189,6 +189,9 @@ of these can be found below:
 - If wadm discovers a provider in the lattice that isn't already started via a manifest, the
   manifest won't be able to reconcile until another start provider event is received. This will
   require a feature add to the ctl client to fix
+- All manifests belonging to a lattice must be using the same version of actors and providers. This
+  is an important limitation of the host RPC protocol. We are open to ideas about how to best handle
+  manifests with different actor/provider versions
 
 ## References
 

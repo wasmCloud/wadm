@@ -1,3 +1,5 @@
+use tracing::{instrument, trace};
+
 use crate::{
     commands::*,
     consumers::{
@@ -26,9 +28,11 @@ impl CommandWorker {
 impl Worker for CommandWorker {
     type Message = Command;
 
+    #[instrument(level = "trace", skip_all)]
     async fn do_work(&self, mut message: ScopedMessage<Self::Message>) -> WorkResult<()> {
         let res = match message.as_ref() {
             Command::StartActor(actor) => {
+                trace!(command = ?actor, "Handling start actor command");
                 // Order here is intentional to prevent scalers from overwriting managed annotations
                 let mut annotations = actor.annotations.clone();
                 insert_managed_annotations(&mut annotations, &actor.model_name);
@@ -42,6 +46,7 @@ impl Worker for CommandWorker {
                     .await
             }
             Command::StopActor(actor) => {
+                trace!(command = ?actor, "Handling stop actor command");
                 // Order here is intentional to prevent scalers from overwriting managed annotations
                 let mut annotations = actor.annotations.clone();
                 insert_managed_annotations(&mut annotations, &actor.model_name);
@@ -55,6 +60,7 @@ impl Worker for CommandWorker {
                     .await
             }
             Command::StartProvider(prov) => {
+                trace!(command = ?prov, "Handling start provider command");
                 // Order here is intentional to prevent scalers from overwriting managed annotations
                 let mut annotations = prov.annotations.clone();
                 insert_managed_annotations(&mut annotations, &prov.model_name);
@@ -77,6 +83,7 @@ impl Worker for CommandWorker {
                     .await
             }
             Command::StopProvider(prov) => {
+                trace!(command = ?prov, "Handling stop provider command");
                 // Order here is intentional to prevent scalers from overwriting managed annotations
                 let mut annotations = prov.annotations.clone();
                 insert_managed_annotations(&mut annotations, &prov.model_name);
@@ -93,6 +100,7 @@ impl Worker for CommandWorker {
                     .await
             }
             Command::PutLinkdef(ld) => {
+                trace!(command = ?ld, "Handling put linkdef command");
                 // TODO(thomastaylor312): We should probably change ScopedMessage to allow us `pub`
                 // access to the inner type so we don't have to clone, but no need to worry for now
                 self.client
@@ -106,6 +114,7 @@ impl Worker for CommandWorker {
                     .await
             }
             Command::DeleteLinkdef(ld) => {
+                trace!(command = ?ld, "Handling delete linkdef command");
                 self.client
                     .remove_link(&ld.actor_id, &ld.contract_id, &ld.link_name)
                     .await

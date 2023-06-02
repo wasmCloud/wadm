@@ -165,12 +165,32 @@ impl<S: Store + Clone + Send + Sync + 'static> Undertaker<S> {
                 .into_iter()
                 .filter_map(|(id, mut actor)| {
                     let current_num_hosts = actor.instances.len();
-                    // Only keep the instances where the host exists
+                    // Only keep the instances where the host exists and the actor is in its map
                     actor
                         .instances
-                        .retain(|host_id, _| hosts.contains_key(host_id));
-                    // If we got rid of something, that means this needs to update
-                    (current_num_hosts != actor.instances.len()).then_some((id, actor))
+                        .retain(|host_id, _| hosts.get(host_id).map(|host| host.actors.contains_key(&actor.id)).unwrap_or(false));
+                    // Now for the remaining instances, make sure the number of instances is equal
+                    // to what is observed on the host, otherwise truncate.
+                    // NOTE: If for some reason we start using instance IDs, than things will need
+                    // to be updated so we can clear the instance ID
+                    let mut did_truncate = false;
+                    for (host_id, instances) in actor.instances.iter_mut() {
+                        if let Some(host) = hosts.get(host_id) {
+                            // This unwrap shouldn't happen because we just retained the instances
+                            // that have the actor ID in their list. If it does, we unwrap to
+                            // current length so it just skips this logic for now
+                            let current_num_instances = *host.actors.get(&actor.id).unwrap_or(&instances.len());
+                            if instances.len() > current_num_instances {
+                                debug!(%id, %host_id, num_instances = %instances.len(), %current_num_instances, "Number of instances for actor is greater than number of instances observed on host. Truncating to correct number");
+                                *instances = instances.drain().take(current_num_instances).collect();
+                                did_truncate = true;
+                            }
+                            // If we have less instances than the host, then it just means the host
+                            // heartbeat will update them down the line
+                        }
+                    }
+                    // If we got rid of something or truncated instances, that means this needs to update
+                    ((current_num_hosts != actor.instances.len()) || did_truncate).then_some((id, actor))
                 })
                 .partition(|(_, actor)| actor.instances.is_empty());
 
@@ -259,6 +279,7 @@ mod test {
         let actor_id = "testactor";
         let actor_instance_id_one = "asdasdj-asdada-132123-ffff";
         let actor_instance_id_two = "123abc-asdada-132123-ffff";
+        let actor_instance_id_three = "123abc-asdada-132123-blahblah";
         let host1_id = "host1";
         let host2_id = "host2";
 
@@ -274,9 +295,14 @@ mod test {
                             instances: HashMap::from([
                                 (
                                     host1_id.to_string(),
-                                    HashSet::from_iter([WadmActorInstance::from_id(
-                                        actor_instance_id_one.to_string(),
-                                    )]),
+                                    HashSet::from_iter([
+                                        WadmActorInstance::from_id(
+                                            actor_instance_id_one.to_string(),
+                                        ),
+                                        WadmActorInstance::from_id(
+                                            actor_instance_id_three.to_string(),
+                                        ),
+                                    ]),
                                 ),
                                 (
                                     host2_id.to_string(),
@@ -369,6 +395,102 @@ mod test {
         assert!(
             store.list::<Provider>(lattice_id).await.unwrap().is_empty(),
             "No providers should exist"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_stale_actor() {
+        let store = Arc::new(TestStore::default());
+
+        let lattice_id = "reaper";
+        let actor_id = "testactor";
+        let actor_instance_id_one = "asdasdj-asdada-132123-ffff";
+        let actor_instance_id_two = "123abc-asdada-132123-ffff";
+        let host1_id = "host1";
+        let host2_id = "host2";
+
+        // Prepopulate the store
+        store
+            .store(
+                lattice_id,
+                actor_id.to_string(),
+                Actor {
+                    id: actor_id.to_string(),
+                    instances: HashMap::from([
+                        (
+                            host1_id.to_string(),
+                            HashSet::from_iter([WadmActorInstance::from_id(
+                                actor_instance_id_one.to_string(),
+                            )]),
+                        ),
+                        (
+                            host2_id.to_string(),
+                            HashSet::from_iter([WadmActorInstance::from_id(
+                                actor_instance_id_two.to_string(),
+                            )]),
+                        ),
+                    ]),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+
+        store
+            .store_many(
+                lattice_id,
+                [
+                    (
+                        host1_id.to_string(),
+                        Host {
+                            actors: HashMap::from([(actor_id.to_string(), 1)]),
+                            providers: HashSet::default(),
+                            id: host1_id.to_string(),
+                            last_seen: Utc::now() + Duration::milliseconds(600),
+                            ..Default::default()
+                        },
+                    ),
+                    (
+                        host2_id.to_string(),
+                        Host {
+                            actors: HashMap::default(),
+                            providers: HashSet::default(),
+                            id: host2_id.to_string(),
+                            last_seen: Utc::now() + Duration::milliseconds(600),
+                            ..Default::default()
+                        },
+                    ),
+                ],
+            )
+            .await
+            .unwrap();
+
+        let reap_interval = std::time::Duration::from_millis(50);
+        // Interval + wiggle
+        let wait = std::time::Duration::from_millis(70);
+        let _reaper = Reaper::new(store.clone(), reap_interval, [lattice_id.to_owned()]);
+
+        // Wait for first tick
+        tokio::time::sleep(wait).await;
+
+        // Make sure we only have one instance of the actor left
+        let actors = store.list::<Actor>(lattice_id).await.unwrap();
+        let actor = actors
+            .get(actor_id)
+            .expect("Should have the correct actor in the store");
+        assert_eq!(
+            actor.instances.len(),
+            1,
+            "Only one host should remain in instances"
+        );
+        assert_eq!(
+            actor
+                .instances
+                .get(host1_id)
+                .expect("Should have instance left on the correct host")
+                .len(),
+            1,
+            "Only one instance should remain on host"
         );
     }
 }
