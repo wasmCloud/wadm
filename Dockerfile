@@ -1,26 +1,24 @@
-FROM rust:1.68.0-slim as builder
+FROM debian:bullseye-slim AS base
 
-WORKDIR /usr/src/wadm
+FROM base AS base-amd64
+ARG BIN_AMD64
+ARG BIN=$BIN_AMD64
 
-COPY . /usr/src/wadm/
+FROM base AS base-arm64
+ARG BIN_ARM64
+ARG BIN=$BIN_ARM64
 
-RUN rustup target add x86_64-unknown-linux-musl
-RUN apt update && apt install -y musl-tools musl-dev
-RUN update-ca-certificates
-
-RUN cargo build --bin wadm --features cli --target x86_64-unknown-linux-musl --release
-
-FROM alpine:3.16.0 AS runtime 
+FROM base-$TARGETARCH
 
 ARG USERNAME=wadm
 ARG USER_UID=1000
 ARG USER_GID=$USER_UID
 
-RUN addgroup -g $USER_GID $USERNAME \
-    && adduser -D -u $USER_UID -G $USERNAME $USERNAME
+RUN addgroup --gid $USER_GID $USERNAME \
+    && adduser --disabled-login -u $USER_UID --ingroup $USERNAME $USERNAME
 
-# Copy application binary from builder image
-COPY --from=builder --chown=$USERNAME /usr/src/wadm/target/x86_64-unknown-linux-musl/release/wadm /usr/local/bin/wadm
+# Copy application binary from disk
+COPY --chown=$USERNAME ${BIN} /usr/local/bin/wadm
 
 USER $USERNAME
 # Run the application
