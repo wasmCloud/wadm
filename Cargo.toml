@@ -59,7 +59,7 @@ tracing-subscriber = { version = "0.3.7", features = [
     "json",
 ], optional = true }
 uuid = "1"
-wasmbus-rpc = "*"
+wasmbus-rpc = "0.13"
 wasmcloud-control-interface = "0.25"
 semver = { version = "1.0.16", features = ["serde"] }
 
