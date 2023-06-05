@@ -3,7 +3,6 @@
 use std::convert::TryFrom;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use std::time::Duration;
 
 use async_nats::{
     jetstream::{
@@ -20,8 +19,6 @@ use crate::events::*;
 
 /// The name of the durable NATS stream and consumer that contains incoming lattice events
 pub const EVENTS_CONSUMER_PREFIX: &str = "wadm_events";
-/// The default time given for an event to ack
-pub const DEFAULT_ACK_TIME: Duration = Duration::from_secs(2);
 
 /// A stream of all events of a lattice, consumed from a durable NATS stream and consumer
 pub struct EventConsumer {
@@ -55,7 +52,7 @@ impl EventConsumer {
                         "Durable wadm events consumer for lattice {lattice_id}"
                     )),
                     ack_policy: async_nats::jetstream::consumer::AckPolicy::Explicit,
-                    ack_wait: DEFAULT_ACK_TIME,
+                    ack_wait: super::DEFAULT_ACK_TIME,
                     max_deliver: 3,
                     deliver_policy: async_nats::jetstream::consumer::DeliverPolicy::All,
                     filter_subject: topic.to_owned(),
