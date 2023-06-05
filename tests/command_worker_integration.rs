@@ -8,10 +8,9 @@ use wadm::{
 };
 
 mod helpers;
-use helpers::{setup_test_wash, StreamWrapper, TestWashConfig};
-
-const ECHO_ACTOR_ID: &str = "MBCFOPM6JW2APJLXJD3Z5O4CN7CPYJ2B4FTKLJUR5YR5MITIU7HD3WD5";
-const HTTP_SERVER_PROVIDER_ID: &str = "VAG3QITQQ2ODAOWB5TTQSDJ53XK3SHBEIFNK4AYJ5RKAX2UNSCAPHA5M";
+use helpers::{
+    setup_test_wash, StreamWrapper, TestWashConfig, ECHO_ACTOR_ID, HTTP_SERVER_PROVIDER_ID,
+};
 
 #[tokio::test]
 // TODO: Run in parallel once https://github.com/wasmCloud/wash/issues/402 is fixed. Please

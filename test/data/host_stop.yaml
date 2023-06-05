@@ -1,0 +1,22 @@
+apiVersion: core.oam.dev/v1beta1
+kind: Application
+metadata:
+  name: host-stop
+  annotations:
+    version: v0.0.1
+    description: "This is my app"
+spec:
+  components:
+    - name: echo
+      type: actor
+      properties:
+        image: wasmcloud.azurecr.io/kvcounter:0.4.2
+      traits:
+        - type: spreadscaler
+          properties:
+            replicas: 5
+            spread:
+              - name: eastcoast
+                requirements:
+                  region: us-brooks-east
+                weight: 100

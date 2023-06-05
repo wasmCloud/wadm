@@ -8,13 +8,11 @@ use wadm::{
 };
 
 mod helpers;
-use helpers::{setup_test_wash, TestWashConfig};
+use helpers::{setup_test_wash, TestWashConfig, ECHO_ACTOR_ID, HTTP_SERVER_PROVIDER_ID};
 
 use anyhow::Result;
 
-const HTTP_SERVER_PROVIDER_ID: &str = "VAG3QITQQ2ODAOWB5TTQSDJ53XK3SHBEIFNK4AYJ5RKAX2UNSCAPHA5M";
 const HTTP_SERVER_REFERENCE: &str = "wasmcloud.azurecr.io/httpserver:0.17.0";
-const ECHO_ACTOR_ID: &str = "MBCFOPM6JW2APJLXJD3Z5O4CN7CPYJ2B4FTKLJUR5YR5MITIU7HD3WD5";
 const ECHO_REFERENCE: &str = "wasmcloud.azurecr.io/echo:0.3.4";
 const CONTRACT_ID: &str = "wasmcloud:httpserver";
 const LINK_NAME: &str = "default";

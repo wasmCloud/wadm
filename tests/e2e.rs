@@ -20,9 +20,9 @@ use wasmcloud_control_interface::HostInventory;
 
 const LOG_DIR: &str = "test/e2e_log";
 const DEFAULT_LATTICE_ID: &str = "default";
-// This time only has to be this long until we fix the issue with jittery-ness due to host events.
-// This number comes from 35s (max backoff time) + 1s of wiggle room
-pub const DEFAULT_WAIT_TIME: Duration = Duration::from_secs(36);
+// Due to download times and the time needed to stabilize, we still need to wait for just a little bit
+// This number comes from 30s (max backoff time) + 5s of wiggle room
+pub const DEFAULT_WAIT_TIME: Duration = Duration::from_secs(35);
 // This is the first try, plus 2 additional tries after waiting
 pub const DEFAULT_MAX_TRIES: usize = 3;
 

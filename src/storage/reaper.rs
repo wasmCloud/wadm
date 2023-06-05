@@ -279,7 +279,6 @@ mod test {
         let actor_id = "testactor";
         let actor_instance_id_one = "asdasdj-asdada-132123-ffff";
         let actor_instance_id_two = "123abc-asdada-132123-ffff";
-        let actor_instance_id_three = "123abc-asdada-132123-blahblah";
         let host1_id = "host1";
         let host2_id = "host2";
 
@@ -295,14 +294,9 @@ mod test {
                             instances: HashMap::from([
                                 (
                                     host1_id.to_string(),
-                                    HashSet::from_iter([
-                                        WadmActorInstance::from_id(
-                                            actor_instance_id_one.to_string(),
-                                        ),
-                                        WadmActorInstance::from_id(
-                                            actor_instance_id_three.to_string(),
-                                        ),
-                                    ]),
+                                    HashSet::from_iter([WadmActorInstance::from_id(
+                                        actor_instance_id_one.to_string(),
+                                    )]),
                                 ),
                                 (
                                     host2_id.to_string(),
@@ -362,7 +356,7 @@ mod test {
                     (
                         host2_id.to_string(),
                         Host {
-                            actors: HashMap::default(),
+                            actors: HashMap::from([(actor_id.to_string(), 1)]),
                             providers: HashSet::default(),
                             id: host2_id.to_string(),
                             // Make this host stick around for longer

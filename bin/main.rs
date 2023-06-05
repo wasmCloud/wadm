@@ -150,7 +150,7 @@ struct Args {
     /// Run wadm in multitenant mode. This is for advanced multitenant use cases with segmented NATS
     /// account traffic and not simple cases where all lattices use credentials from the same
     /// account. See the deployment guide for more information
-    #[arg(long = "multitenant", env = "WADM_MULTITENANT")]
+    #[arg(long = "multitenant", env = "WADM_MULTITENANT", hide = true)]
     multitenant: bool,
 }
 

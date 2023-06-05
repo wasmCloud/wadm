@@ -124,8 +124,8 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
                 let eligible_hosts = eligible_hosts(&hosts, spread);
                 let eligible_count = eligible_hosts.len();
                 // Partition hosts into ones running this provider (no matter what is running it, and others
-                let (running, other): (Vec<&Host>, Vec<&Host>) =
-                    eligible_hosts.into_iter().partition(|host| {
+                let (running, other): (HashMap<&String, &Host>, HashMap<&String, &Host>) =
+                    eligible_hosts.into_iter().partition(|(_host_id, host)| {
                         host.providers
                             .get(&ProviderInfo {
                                 contract_id: contract_id.to_string(),
@@ -137,7 +137,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
                 // Get the count of all running providers
                 let current_running = running.len();
                 // Now get only the hosts running a provider we own
-                let running_for_spread = running.into_iter().filter(|host| {
+                let running_for_spread = running.into_iter().filter(|(_host_id, host)| {
                     host.providers
                         .get(&ProviderInfo {
                             contract_id: contract_id.to_string(),
@@ -162,7 +162,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
                             trace!(%provider_id, "Couldn't find matching provider in host provider list");
                             false
                         })
-                }).collect::<Vec<_>>();
+                }).collect::<HashMap<_, _>>();
                 trace!(current_for_spread = %running_for_spread.len(), %current_running, expected = %count, eligible_hosts = %eligible_count, %provider_id, "Calculated running providers, reconciling with expected count");
                 match current_running.cmp(count) {
                     // We can only stop providers that we own, so if we have more than we need, we
@@ -171,7 +171,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
                         let num_to_stop = current_running - count;
                         // Take `num_to_stop` commands from this iterator
                         running_for_spread
-                            .into_iter()
+                            .into_values()
                             .map(|host| {
                                 Command::StopProvider(StopProvider {
                                     provider_id: provider_id.to_owned(),
@@ -195,7 +195,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
                         // Take `num_to_start` commands from this iterator
                         other
                             .into_iter()
-                            .filter(|host| {
+                            .filter(|(_host_id, host)| {
                                 !host.providers.contains(&ProviderInfo {
                                     contract_id: contract_id.to_string(),
                                     link_name: link_name.to_string(),
@@ -203,7 +203,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
                                     annotations: HashMap::new(),
                                 })
                             })
-                            .map(|host| {
+                            .map(|(_host_id, host)| {
                                 Command::StartProvider(StartProvider {
                                     reference: provider_ref.to_owned(),
                                     host_id: host.id.to_string(),

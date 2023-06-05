@@ -6,20 +6,6 @@ The wasmCloud Application Deployment Manager (**wadm**) enables declarative wasm
 It's responsible for managing a set of application deployment specifications, monitoring the current
 state of an entire [lattice](https://wasmcloud.com/docs/reference/lattice/), and issuing the
 appropriate lattice control commands required to close the gap between observed and desired state.
-It is currently in an `alpha` release state and undergoing further rigor and testing approaching a
-production-ready `0.4` version.
-
-**Heads Up**
-
-Wadm is still in alpha as we continue to tie up a few loose ends. Below is a list of known
-issues/missing features to be aware of that we plan on addressing by the time we hit `0.4`:
-
-- The current scaling algorithm is a bit jittery and puts the "eventual" in eventual consistency. It
-  will get to the right number of replicas, but may take a second. We've already identified a fix,
-  but it is in the the wasmCloud host, so we'll need to update things there first
-- Full e2e tests. There are integration tests, but not full e2e tests in place yet
-- Full/updated documentation
-- More examples!
 
 ## Using wadm
 
@@ -34,7 +20,7 @@ wash up -d    # Start NATS, wasmCloud, and wadm in the background
 wash app list # Query the list of applications
 ```
 
-If you prefer to run **wadm** separately and/or connect to running wasmCloud hosts, you can instead opt for using the latest GitHub release artifact and executing the binary. Simply replace the latest version, your operating system, and architecture below.
+If you prefer to run **wadm** separately and/or connect to running wasmCloud hosts, you can instead opt for using the latest GitHub release artifact and executing the binary. Simply replace the latest version, your operating system, and architecture below. Please note that wadm requires a wasmCloud host version >=0.63.0
 
 ```
 # Install wadm
@@ -192,6 +178,10 @@ of these can be found below:
 - All manifests belonging to a lattice must be using the same version of actors and providers. This
   is an important limitation of the host RPC protocol. We are open to ideas about how to best handle
   manifests with different actor/provider versions
+- When running multiple wadm processes, you can still get a little bit of jitter with starting
+  actors and providers (in some cases). This will always resolve after a few ticks and isn't a huge
+  problem as actors are "cheap" from a compute standpoint. If anyone would like to submit a PR to
+  make this better, we'd love to see it!
 
 ## References
 

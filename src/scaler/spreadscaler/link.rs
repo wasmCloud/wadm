@@ -74,9 +74,6 @@ where
             {
                 self.reconcile().await
             }
-            // TODO(thomastaylor312): Come up with a better way to reconcile on startup rather than
-            // putting a linkdef on every provider status event. Probably need to put a ctl client
-            // in here to do the check, but that was nasty to do right now
             Event::ProviderHealthCheckPassed(ProviderHealthCheckPassed { data, .. })
             | Event::ProviderHealthCheckStatus(ProviderHealthCheckStatus { data, .. })
                 if self
@@ -106,7 +103,7 @@ where
     async fn reconcile(&self) -> Result<Vec<Command>> {
         if let (Ok(actor_id), Ok(provider_id)) = (self.actor_id().await, self.provider_id().await) {
             let linkdefs = self.ctl_client.get_links().await?;
-            let (exists, values_different) = linkdefs
+            let (exists, _values_different) = linkdefs
                 .into_iter()
                 .find(|linkdef| {
                     linkdef.actor_id == actor_id
@@ -117,33 +114,48 @@ where
                 .map(|linkdef| (true, linkdef.values != self.config.values))
                 .unwrap_or((false, false));
 
+            // TODO: Reenable this functionality once we figure out https://github.com/wasmCloud/wadm/issues/123
+
             // If it already exists, but values are different, we need to have a delete event first
             // and recreate it with the correct values second
-            let mut commands = values_different
-                .then(|| {
-                    trace!("Linkdef exists, but values are different, deleting and recreating");
-                    vec![Command::DeleteLinkdef(DeleteLinkdef {
-                        actor_id: actor_id.to_owned(),
-                        provider_id: provider_id.to_owned(),
-                        contract_id: self.config.provider_contract_id.to_owned(),
-                        link_name: self.config.provider_link_name.to_owned(),
-                        model_name: self.config.model_name.to_owned(),
-                    })]
-                })
-                .unwrap_or_default();
+            // let mut commands = values_different
+            //     .then(|| {
+            //         trace!("Linkdef exists, but values are different, deleting and recreating");
+            //         vec![Command::DeleteLinkdef(DeleteLinkdef {
+            //             actor_id: actor_id.to_owned(),
+            //             provider_id: provider_id.to_owned(),
+            //             contract_id: self.config.provider_contract_id.to_owned(),
+            //             link_name: self.config.provider_link_name.to_owned(),
+            //             model_name: self.config.model_name.to_owned(),
+            //         })]
+            //     })
+            //     .unwrap_or_default();
 
-            if exists && !values_different {
-                trace!("Linkdef already exists, skipping");
-            } else if !exists || values_different {
-                trace!("Linkdef does not exist or needs to be recreated");
-                commands.push(Command::PutLinkdef(PutLinkdef {
+            // if exists && !values_different {
+            //     trace!("Linkdef already exists, skipping");
+            // } else if !exists || values_different {
+            //     trace!("Linkdef does not exist or needs to be recreated");
+            //     commands.push(Command::PutLinkdef(PutLinkdef {
+            //         actor_id: actor_id.to_owned(),
+            //         provider_id: provider_id.to_owned(),
+            //         link_name: self.config.provider_link_name.to_owned(),
+            //         contract_id: self.config.provider_contract_id.to_owned(),
+            //         values: self.config.values.to_owned(),
+            //         model_name: self.config.model_name.to_owned(),
+            //     }))
+            // };
+
+            let commands = if !exists {
+                vec![Command::PutLinkdef(PutLinkdef {
                     actor_id: actor_id.to_owned(),
                     provider_id: provider_id.to_owned(),
                     link_name: self.config.provider_link_name.to_owned(),
                     contract_id: self.config.provider_contract_id.to_owned(),
                     values: self.config.values.to_owned(),
                     model_name: self.config.model_name.to_owned(),
-                }))
+                })]
+            } else {
+                Vec::with_capacity(0)
             };
             Ok(commands)
         } else {
@@ -316,41 +328,43 @@ mod test {
         assert!(matches!(commands[0], Command::PutLinkdef(_)));
     }
 
-    #[tokio::test]
-    async fn test_different_values() {
-        let lattice_id = "different-values".to_string();
-        let actor_ref = "actor_ref".to_string();
-        let provider_ref = "provider_ref".to_string();
+    // TODO: Uncomment once https://github.com/wasmCloud/wadm/issues/123 is fixed
 
-        let values = HashMap::from([("foo".to_string(), "bar".to_string())]);
+    // #[tokio::test]
+    // async fn test_different_values() {
+    //     let lattice_id = "different-values".to_string();
+    //     let actor_ref = "actor_ref".to_string();
+    //     let provider_ref = "provider_ref".to_string();
 
-        let mut linkdef = LinkDefinition::default();
-        linkdef.actor_id = "actor".to_string();
-        linkdef.provider_id = "provider".to_string();
-        linkdef.contract_id = "contract".to_string();
-        linkdef.link_name = "default".to_string();
-        linkdef.values = [("foo".to_string(), "nope".to_string())].into();
+    //     let values = HashMap::from([("foo".to_string(), "bar".to_string())]);
 
-        let scaler = LinkScaler::new(
-            create_store(&lattice_id, &actor_ref, &provider_ref).await,
-            actor_ref,
-            provider_ref,
-            "contract".to_string(),
-            None,
-            lattice_id.clone(),
-            "model".to_string(),
-            Some(values),
-            TestLatticeSource {
-                links: vec![linkdef],
-                ..Default::default()
-            },
-        );
+    //     let mut linkdef = LinkDefinition::default();
+    //     linkdef.actor_id = "actor".to_string();
+    //     linkdef.provider_id = "provider".to_string();
+    //     linkdef.contract_id = "contract".to_string();
+    //     linkdef.link_name = "default".to_string();
+    //     linkdef.values = [("foo".to_string(), "nope".to_string())].into();
 
-        let commands = scaler.reconcile().await.expect("Couldn't reconcile");
-        assert_eq!(commands.len(), 2);
-        assert!(matches!(commands[0], Command::DeleteLinkdef(_)));
-        assert!(matches!(commands[1], Command::PutLinkdef(_)));
-    }
+    //     let scaler = LinkScaler::new(
+    //         create_store(&lattice_id, &actor_ref, &provider_ref).await,
+    //         actor_ref,
+    //         provider_ref,
+    //         "contract".to_string(),
+    //         None,
+    //         lattice_id.clone(),
+    //         "model".to_string(),
+    //         Some(values),
+    //         TestLatticeSource {
+    //             links: vec![linkdef],
+    //             ..Default::default()
+    //         },
+    //     );
+
+    //     let commands = scaler.reconcile().await.expect("Couldn't reconcile");
+    //     assert_eq!(commands.len(), 2);
+    //     assert!(matches!(commands[0], Command::DeleteLinkdef(_)));
+    //     assert!(matches!(commands[1], Command::PutLinkdef(_)));
+    // }
 
     #[tokio::test]
     async fn test_existing_linkdef() {
