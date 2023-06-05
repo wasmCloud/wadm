@@ -18,6 +18,9 @@ use wadm::consumers::{CommandConsumer, ScopedMessage};
 
 const DEFAULT_WASMCLOUD_PORT: u16 = 4000;
 const DEFAULT_NATS_PORT: u16 = 4222;
+pub const ECHO_ACTOR_ID: &str = "MBCFOPM6JW2APJLXJD3Z5O4CN7CPYJ2B4FTKLJUR5YR5MITIU7HD3WD5";
+pub const HTTP_SERVER_PROVIDER_ID: &str =
+    "VAG3QITQQ2ODAOWB5TTQSDJ53XK3SHBEIFNK4AYJ5RKAX2UNSCAPHA5M";
 
 /// Get a TCP random port
 fn get_random_tcp_port() -> u16 {

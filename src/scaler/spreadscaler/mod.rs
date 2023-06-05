@@ -132,18 +132,20 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
             .iter()
             .filter_map(|(spread, count)| {
                 let eligible_hosts = eligible_hosts(&hosts, spread);
-                if let Some(first_host) = eligible_hosts.get(0) {
+                if !eligible_hosts.is_empty() {
                     // In the future we may want more information from this chain, but for now
                     // we just need the number of running actors that match this spread's annotations
-                    let current_count = actor
+
+                    // Parse the instances into a map of host_id -> number of running actors managed
+                    // by this scaler. Ignoring ones where we aren't running anything
+                    let running_actors_per_host: HashMap<&String, usize> = actor
                         .as_ref()
                         .map(|actor| &actor.instances)
                         .map(|instances| {
                             instances
                                 .iter()
-                                .map(|(_host_id, instances)| instances)
-                                .map(|instances| {
-                                    instances
+                                .filter_map(|(host_id, instances)| {
+                                    let count = instances
                                         .iter()
                                         .filter(|instance| {
                                             spreadscaler_annotations(&spread.name, self.id()).iter().all(
@@ -156,34 +158,56 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
                                                 },
                                             )
                                         })
-                                        .count()
-                                })
-                                .sum()
+                                        .count();
+                                    (count > 0).then_some((host_id, count))
+                                }).collect()
                         })
-                        .unwrap_or(0);
-                    trace!(current = %current_count, expected = %count, host_id = ?first_host.id, "Calculated running actors, reconciling with expected count");
-                    // TODO: Figure out why a new deploy doesn't scale things down properly
+                        .unwrap_or_default();
+                    let current_count: usize = running_actors_per_host.values().sum();
+                    trace!(current = %current_count, expected = %count, "Calculated running actors, reconciling with expected count");
+                    // Here we'll generate commands for the proper host depending on where they are running
                     match current_count.cmp(count) {
                         Ordering::Equal => None,
                         // Start actors to reach desired replicas
-                        Ordering::Less => Some(Command::StartActor(StartActor {
-                            reference: self.config.actor_reference.to_owned(),
-                            host_id: first_host.id.to_owned(),
-                            count: count - current_count,
-                            model_name: self.config.model_name.to_owned(),
-                            annotations: spreadscaler_annotations(&spread.name, self.id()),
-                        })),
+                        Ordering::Less =>{
+                            // Right now just start on the first available host. We can be smarter about it later
+                            Some(vec![Command::StartActor(StartActor {
+                                reference: self.config.actor_reference.to_owned(),
+                                // SAFETY: We already checked that the list of hosts is not empty, so we can unwrap here
+                                host_id: eligible_hosts.keys().next().unwrap().to_string(),
+                                count: count - current_count,
+                                model_name: self.config.model_name.to_owned(),
+                                annotations: spreadscaler_annotations(&spread.name, self.id()),
+                            })])
+                        } 
                         // Stop actors to reach desired replicas
-                        Ordering::Greater => Some(Command::StopActor(StopActor {
-                            // We shouldn't ever get a stop actor command if this is the first actor
-                            // to be started. In the off chance we do, this command will result in
-                            // nothing due to the empty id
-                            actor_id: actor_id.unwrap_or_default().to_owned(),
-                            host_id: first_host.id.to_owned(),
-                            count: current_count - count,
-                            model_name: self.config.model_name.to_owned(),
-                            annotations: spreadscaler_annotations(&spread.name, self.id()),
-                        })),
+                        Ordering::Greater => {
+                            let count_to_stop = current_count - count;
+                            let (_, commands) = running_actors_per_host.into_iter().fold((0usize, Vec::new()), |(mut current_stopped, mut commands), (host_id, instance_count)| {
+                                let remaining_to_stop = count_to_stop - current_stopped;
+                                let stop = if instance_count >= remaining_to_stop {
+                                    remaining_to_stop
+                                } else {
+                                    instance_count
+                                };
+                                // If there aren't any on here then we don't need a command to stop
+                                if stop > 0 {
+                                    current_stopped += stop;
+                                    commands.push(Command::StopActor(StopActor {
+                                        // We shouldn't ever get a stop actor command if this is the first actor
+                                        // to be started. In the o ff chance we do, this command will result in
+                                        // nothing due to the empty id
+                                        actor_id: actor_id.unwrap_or_default().to_owned(),
+                                        host_id: host_id.to_owned(),
+                                        count: stop,
+                                        model_name: self.config.model_name.to_owned(),
+                                        annotations: spreadscaler_annotations(&spread.name, self.id()),
+                                    }));
+                                }
+                                (current_stopped, commands)
+                            });
+                            Some(commands)
+                        }
                     }
                 } else {
                     // No hosts were eligible, so we can't attempt to add or remove actors
@@ -192,6 +216,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
                     None
                 }
             })
+            .flatten()
             .collect::<Vec<Command>>();
         trace!(?commands, "Calculated commands for actor scaler");
 
@@ -274,7 +299,10 @@ fn spreadscaler_annotations(spread_name: &str, scaler_id: &str) -> HashMap<Strin
 }
 
 /// Helper function that computes a list of eligible hosts to match with a spread
-fn eligible_hosts<'a>(all_hosts: &'a HashMap<String, Host>, spread: &Spread) -> Vec<&'a Host> {
+fn eligible_hosts<'a>(
+    all_hosts: &'a HashMap<String, Host>,
+    spread: &Spread,
+) -> HashMap<&'a String, &'a Host> {
     all_hosts
         .iter()
         .filter(|(_id, host)| {
@@ -283,8 +311,8 @@ fn eligible_hosts<'a>(all_hosts: &'a HashMap<String, Host>, spread: &Spread) -> 
                 .iter()
                 .all(|(key, value)| host.labels.get(key).map(|v| v.eq(value)).unwrap_or(false))
         })
-        .map(|(_id, host)| host)
-        .collect::<Vec<&Host>>()
+        .map(|(id, host)| (id, host))
+        .collect()
 }
 
 /// Given a spread config, return a vector of tuples that represents the spread
@@ -345,12 +373,15 @@ fn compute_spread(spread_config: &SpreadScalerProperty) -> Vec<(Spread, usize)> 
 
 #[cfg(test)]
 mod test {
-    use anyhow::Result;
-    use chrono::Utc;
+    use super::*;
+
     use std::{
         collections::{BTreeMap, HashMap, HashSet},
         sync::Arc,
     };
+
+    use anyhow::Result;
+    use chrono::Utc;
 
     use crate::{
         commands::{Command, StartActor},
@@ -1017,6 +1048,133 @@ mod test {
             annotations: spreadscaler_annotations("SimpleTwo", spreadscaler.id())
         })));
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn calculates_proper_stop_commands() -> Result<()> {
+        let lattice_id = "calculates_proper_stop_commands";
+        let actor_reference = "fakecloud.azurecr.io/echo:0.3.4".to_string();
+        let actor_id = "MASDASDASDASDASDADSDDAAASDDD".to_string();
+        let host_id = "NASDASDIMAREALHOST";
+        let host_id2 = "NASDASDIMAREALHOST2";
+
+        let store = Arc::new(TestStore::default());
+
+        let real_spread = SpreadScalerProperty {
+            // Makes it so we always get at least 2 commands
+            replicas: 9,
+            spread: Vec::new()
+        };
+
+        let spreadscaler = ActorSpreadScaler::new(
+            store.clone(),
+            actor_reference.to_string(),
+            lattice_id.to_string(),
+            MODEL_NAME.to_string(),
+            real_spread,
+            "fake_component",
+        );
+
+        // STATE SETUP BEGIN, ONE HOST
+        store
+            .store_many(
+                lattice_id,
+                [
+                    (host_id.to_string(),
+                Host {
+                    actors: HashMap::from_iter([(actor_id.to_string(), 10)]),
+                    friendly_name: "hey".to_string(),
+                    labels: HashMap::new(),
+                    annotations: HashMap::new(),
+                    providers: HashSet::new(),
+                    uptime_seconds: 123,
+                    version: None,
+                    id: host_id.to_string(),
+                    last_seen: Utc::now(),
+                }),
+                    (
+                        host_id2.to_string(),
+                        Host {
+                            actors: HashMap::from_iter([(actor_id.to_string(), 10)]),
+                            friendly_name: "hey2".to_string(),
+                            labels: HashMap::new(),
+                            annotations: HashMap::new(),
+                            providers: HashSet::new(),
+                            uptime_seconds: 123,
+                            version: None,
+                            id: host_id2.to_string(),
+                            last_seen: Utc::now(),
+                        }
+                    )
+                ]
+                
+            )
+            .await?;
+
+        store
+            .store(
+                lattice_id,
+                actor_id.to_string(),
+                Actor {
+                    id: actor_id.to_string(),
+                    name: "Faketor".to_string(),
+                    capabilities: vec![],
+                    issuer: "AASDASDASDASD".to_string(),
+                    call_alias: None,
+                    instances: HashMap::from_iter([(
+                        host_id.to_string(),
+                        HashSet::from_iter((0..10).map(|n| WadmActorInstance {
+                            instance_id: format!("{n}"),
+                            annotations: spreadscaler_annotations("default", spreadscaler.id()),
+                        })),
+                    ),
+                    (host_id2.to_string(), HashSet::from_iter((0..10).map(|n| WadmActorInstance {
+                        instance_id: format!("blah{n}"),
+                        annotations: spreadscaler_annotations("default", spreadscaler.id()),
+                    })))]),
+                    reference: actor_reference.to_string(),
+                },
+            )
+            .await?;
+
+        // Make sure they get at least 2 commands for stopping, one from each host. We don't know
+        // which one will have more stopped, but both should show up
+        let cmds = spreadscaler.reconcile().await?;
+        assert_eq!(cmds.len(), 2);
+        assert!(cmds.iter().any(|command| {
+            if let Command::StopActor(actor) = command {
+                actor.host_id == host_id
+            } else {
+                false
+            }
+        }), "Should have found both hosts for stopping commands");
+        assert!(cmds.iter().any(|command| {
+            if let Command::StopActor(actor) = command {
+                actor.host_id == host_id2
+            } else {
+                false
+            }
+        }), "Should have found both hosts for stopping commands");
+
+        // Now check that cleanup removes everything
+        let cmds = spreadscaler.cleanup().await?;
+
+        // Should stop 10 on each host
+        assert!(cmds.contains(&Command::StopActor(StopActor {
+            actor_id: actor_id.clone(),
+            host_id: host_id.to_string(),
+            count: 10,
+            model_name: MODEL_NAME.to_string(),
+            annotations: spreadscaler_annotations("default", spreadscaler.id())
+        })));
+        assert!(cmds.contains(&Command::StopActor(StopActor {
+            actor_id: actor_id.clone(),
+            host_id: host_id2.to_string(),
+            count: 10,
+            model_name: MODEL_NAME.to_string(),
+            annotations: spreadscaler_annotations("default", spreadscaler.id())
+        })));
         Ok(())
     }
 

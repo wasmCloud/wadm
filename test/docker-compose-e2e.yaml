@@ -39,6 +39,9 @@ services:
       - nats
     deploy:
       replicas: 1
+    # Expose the washboard in case you want to observe the tasks in progress
+    ports:
+      - 40000:4000
     environment:
       LC_ALL: en_US.UTF-8
       RUST_LOG: debug,hyper=info

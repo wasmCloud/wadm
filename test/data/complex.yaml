@@ -1,0 +1,70 @@
+apiVersion: core.oam.dev/v1beta1
+kind: Application
+metadata:
+  name: complex
+  annotations:
+    version: v0.0.1
+    description: "This is my app"
+spec:
+  components:
+    - name: echo
+      type: actor
+      properties:
+        image: wasmcloud.azurecr.io/blobby:0.2.0
+      traits:
+        - type: spreadscaler
+          properties:
+            replicas: 5
+            spread:
+              - name: eastcoast
+                requirements:
+                  region: us-brooks-east
+                weight: 40
+              - name: westcoast
+                requirements:
+                  region: us-taylor-west
+                weight: 40
+        - type: linkdef
+          properties:
+            target: httpserver
+            values:
+              address: 0.0.0.0:8081
+        - type: linkdef
+          properties:
+            target: fileserver
+            values:
+              ROOT: /tmp
+
+    - name: httpserver
+      type: capability
+      properties:
+        contract: wasmcloud:httpserver
+        image: wasmcloud.azurecr.io/httpserver:0.17.0
+      traits:
+        - type: spreadscaler
+          properties:
+            replicas: 3
+            spread:
+              - name: westcoast
+                requirements:
+                  region: us-taylor-west
+                weight: 40
+              - name: the-moon
+                requirements:
+                  region: moon
+                weight: 20
+
+    - name: fileserver
+      type: capability
+      properties:
+        contract: wasmcloud:blobstore
+        image: wasmcloud.azurecr.io/blobstore_fs:0.3.2
+      traits:
+        - type: spreadscaler
+          properties:
+            replicas: 1
+            spread:
+              - name: the-moon
+                requirements:
+                  region: moon
+                weight: 100
