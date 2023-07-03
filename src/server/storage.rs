@@ -73,11 +73,16 @@ impl ModelStorage {
         trace!(%key, "Storing manifest at key");
         let data = serde_json::to_vec(&model).map_err(anyhow::Error::from)?;
         if let Some(revision) = current_revision {
-            self.store.update(&key, data.into(), revision).await
+            self.store
+                .update(&key, data.into(), revision)
+                .await
+                .map_err(|e| anyhow::anyhow!("{e:?}"))?;
         } else {
-            self.store.put(&key, data.into()).await
+            self.store
+                .put(&key, data.into())
+                .await
+                .map_err(|e| anyhow::anyhow!("{e:?}"))?;
         }
-        .map_err(|e| anyhow::anyhow!("{e:?}"))?;
 
         trace!("Adding model to set");
         self.retry_model_update(lattice_id, ModelNameOperation::Add(model.name()))

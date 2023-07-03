@@ -69,23 +69,24 @@ impl NatsKvStore {
         let key = generate_key::<T>(lattice_id);
         tracing::Span::current().record("key", &key);
         debug!("Fetching data from store");
-        match self.store.entry(key).await? {
-            Some(entry) if !matches!(entry.operation, Operation::Delete | Operation::Purge) => {
+        match self.store.entry(key).await {
+            Ok(Some(entry)) if !matches!(entry.operation, Operation::Delete | Operation::Purge) => {
                 trace!(len = %entry.value.len(), "Fetched bytes from store...deserializing");
                 serde_json::from_slice::<'_, HashMap<String, T>>(&entry.value)
                     .map(|d| (d, entry.revision))
                     .map_err(NatsStoreError::from)
             }
             // If it was a delete entry, we still need to return the revision
-            Some(entry) => {
+            Ok(Some(entry)) => {
                 trace!("Data was deleted, returning last revision");
                 debug!("No data found for key, returning empty");
                 Ok((HashMap::with_capacity(0), entry.revision))
             }
-            None => {
+            Ok(None) => {
                 debug!("No data found for key, returning empty");
                 Ok((HashMap::with_capacity(0), 0))
             }
+            Err(e) => Err(NatsStoreError::Nats(e.into())),
         }
     }
 }
@@ -179,7 +180,7 @@ impl Store for NatsKvStore {
             .update(key, serialized.into(), revision)
             .await
             .map(|_| ())
-            .map_err(NatsStoreError::from)
+            .map_err(|e| NatsStoreError::Nats(e.into()))
     }
 
     #[instrument(level = "debug", skip(self, data), fields(key = Empty))]
@@ -222,7 +223,7 @@ impl Store for NatsKvStore {
             .update(key, serialized.into(), revision)
             .await
             .map(|_| ())
-            .map_err(NatsStoreError::from)
+            .map_err(|e| NatsStoreError::Nats(e.into()))
     }
 }
 

@@ -1,7 +1,7 @@
 [package]
 name = "wadm"
 description = "wasmCloud Application Deployment Manager: A tool for running Wasm applications in wasmCloud"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2021"
 authors = ["wasmCloud Team"]
 keywords = ["webassembly", "wasmcloud", "wadm"]
@@ -24,8 +24,7 @@ _e2e_tests = []
 
 [dependencies]
 anyhow = "1"
-# async-nats = "0.30.0"
-async-nats = { version = "0.29", git = "https://github.com/nats-io/nats.rs", branch = "main" }
+async-nats = "0.30"
 async-trait = "0.1"
 atty = { version = "0.2", optional = true }
 bytes = "1"
@@ -60,9 +59,8 @@ tracing-subscriber = { version = "0.3.7", features = [
     "json",
 ], optional = true }
 uuid = "1"
-# wasmbus-rpc = "0.13"
-wasmbus-rpc = { version = "0.14", features = ["otel"], git = "https://github.com/wasmCloud/weld", branch = "bump/rpc-v0.14.0" }
-# wasmcloud-control-interface = "0.26"
+wasmbus-rpc = "0.13"
+# wasmcloud-control-interface = "0.27"
 wasmcloud-control-interface  = { version = "0.27", git = "https://github.com/wasmCloud/control-interface-client", branch = "bump/v0.27.0" }
 semver = { version = "1.0.16", features = ["serde"] }
 

@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 
 use tracing::{instrument, warn};
-use wasmbus_rpc::core::LinkDefinition;
-use wasmcloud_control_interface::HostInventory;
+use wasmcloud_control_interface::{HostInventory, LinkDefinition};
 
 use crate::{commands::Command, publisher::Publisher, APP_SPEC_ANNOTATION};
 

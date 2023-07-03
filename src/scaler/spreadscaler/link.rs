@@ -266,7 +266,7 @@ impl<S: ReadStore + Send + Sync, L: LinkSource> LinkScaler<S, L> {
 
 #[cfg(test)]
 mod test {
-    use wasmbus_rpc::core::LinkDefinition;
+    use wasmcloud_control_interface::LinkDefinition;
 
     use super::*;
 

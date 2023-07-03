@@ -179,7 +179,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
                                 model_name: self.config.model_name.to_owned(),
                                 annotations: spreadscaler_annotations(&spread.name, self.id()),
                             })])
-                        } 
+                        }
                         // Stop actors to reach desired replicas
                         Ordering::Greater => {
                             let count_to_stop = current_count - count;
@@ -1064,7 +1064,7 @@ mod test {
         let real_spread = SpreadScalerProperty {
             // Makes it so we always get at least 2 commands
             replicas: 9,
-            spread: Vec::new()
+            spread: Vec::new(),
         };
 
         let spreadscaler = ActorSpreadScaler::new(
@@ -1081,18 +1081,20 @@ mod test {
             .store_many(
                 lattice_id,
                 [
-                    (host_id.to_string(),
-                Host {
-                    actors: HashMap::from_iter([(actor_id.to_string(), 10)]),
-                    friendly_name: "hey".to_string(),
-                    labels: HashMap::new(),
-                    annotations: HashMap::new(),
-                    providers: HashSet::new(),
-                    uptime_seconds: 123,
-                    version: None,
-                    id: host_id.to_string(),
-                    last_seen: Utc::now(),
-                }),
+                    (
+                        host_id.to_string(),
+                        Host {
+                            actors: HashMap::from_iter([(actor_id.to_string(), 10)]),
+                            friendly_name: "hey".to_string(),
+                            labels: HashMap::new(),
+                            annotations: HashMap::new(),
+                            providers: HashSet::new(),
+                            uptime_seconds: 123,
+                            version: None,
+                            id: host_id.to_string(),
+                            last_seen: Utc::now(),
+                        },
+                    ),
                     (
                         host_id2.to_string(),
                         Host {
@@ -1105,10 +1107,9 @@ mod test {
                             version: None,
                             id: host_id2.to_string(),
                             last_seen: Utc::now(),
-                        }
-                    )
-                ]
-                
+                        },
+                    ),
+                ],
             )
             .await?;
 
@@ -1122,17 +1123,22 @@ mod test {
                     capabilities: vec![],
                     issuer: "AASDASDASDASD".to_string(),
                     call_alias: None,
-                    instances: HashMap::from_iter([(
-                        host_id.to_string(),
-                        HashSet::from_iter((0..10).map(|n| WadmActorInstance {
-                            instance_id: format!("{n}"),
-                            annotations: spreadscaler_annotations("default", spreadscaler.id()),
-                        })),
-                    ),
-                    (host_id2.to_string(), HashSet::from_iter((0..10).map(|n| WadmActorInstance {
-                        instance_id: format!("blah{n}"),
-                        annotations: spreadscaler_annotations("default", spreadscaler.id()),
-                    })))]),
+                    instances: HashMap::from_iter([
+                        (
+                            host_id.to_string(),
+                            HashSet::from_iter((0..10).map(|n| WadmActorInstance {
+                                instance_id: format!("{n}"),
+                                annotations: spreadscaler_annotations("default", spreadscaler.id()),
+                            })),
+                        ),
+                        (
+                            host_id2.to_string(),
+                            HashSet::from_iter((0..10).map(|n| WadmActorInstance {
+                                instance_id: format!("blah{n}"),
+                                annotations: spreadscaler_annotations("default", spreadscaler.id()),
+                            })),
+                        ),
+                    ]),
                     reference: actor_reference.to_string(),
                 },
             )
@@ -1142,20 +1148,26 @@ mod test {
         // which one will have more stopped, but both should show up
         let cmds = spreadscaler.reconcile().await?;
         assert_eq!(cmds.len(), 2);
-        assert!(cmds.iter().any(|command| {
-            if let Command::StopActor(actor) = command {
-                actor.host_id == host_id
-            } else {
-                false
-            }
-        }), "Should have found both hosts for stopping commands");
-        assert!(cmds.iter().any(|command| {
-            if let Command::StopActor(actor) = command {
-                actor.host_id == host_id2
-            } else {
-                false
-            }
-        }), "Should have found both hosts for stopping commands");
+        assert!(
+            cmds.iter().any(|command| {
+                if let Command::StopActor(actor) = command {
+                    actor.host_id == host_id
+                } else {
+                    false
+                }
+            }),
+            "Should have found both hosts for stopping commands"
+        );
+        assert!(
+            cmds.iter().any(|command| {
+                if let Command::StopActor(actor) = command {
+                    actor.host_id == host_id2
+                } else {
+                    false
+                }
+            }),
+            "Should have found both hosts for stopping commands"
+        );
 
         // Now check that cleanup removes everything
         let cmds = spreadscaler.cleanup().await?;

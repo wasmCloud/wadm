@@ -3,8 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use serde::{de::DeserializeOwned, Serialize};
 use tokio::sync::RwLock;
-use wasmbus_rpc::core::LinkDefinition;
-use wasmcloud_control_interface::HostInventory;
+use wasmcloud_control_interface::{HostInventory, LinkDefinition};
 
 use crate::publisher::Publisher;
 use crate::storage::StateKind;
