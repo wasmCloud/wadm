@@ -76,7 +76,11 @@ pub trait Worker {
 pub trait WorkerCreator {
     type Output: Worker + Send + Sync + 'static;
 
-    async fn create(&self, lattice_id: &str) -> anyhow::Result<Self::Output>;
+    async fn create(
+        &self,
+        lattice_id: &str,
+        multitenant_prefix: Option<&str>,
+    ) -> anyhow::Result<Self::Output>;
 }
 
 /// A manager of a specific type of Consumer that handles giving out permits to work and managing
@@ -147,7 +151,7 @@ impl<C> ConsumerManager<C> {
                 // friendly consumer manager name
                 trace!(%lattice_id, subject = %info.config.filter_subject, "Adding consumer for lattice");
 
-                let worker = match worker_generator.create(lattice_id).await {
+                let worker = match worker_generator.create(lattice_id, None).await {
                     Ok(w) => w,
                     Err(e) => {
                         error!(error = %e, %lattice_id, "Unable to add consumer for lattice. Error when generating worker");
