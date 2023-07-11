@@ -15,6 +15,7 @@ use tokio::{
 use wadm::{
     model::Manifest,
     server::{DeployModelRequest, DeployModelResponse, PutModelResponse, UndeployModelRequest},
+    APP_SPEC_ANNOTATION, MANAGED_BY_ANNOTATION, MANAGED_BY_IDENTIFIER,
 };
 use wasmcloud_control_interface::HostInventory;
 
@@ -30,7 +31,8 @@ pub const DEFAULT_MAX_TRIES: usize = 3;
 /// interacting with wadm. On drop, it will cleanup all resources that it created
 pub struct ClientInfo {
     pub client: Client,
-    pub ctl_client: wasmcloud_control_interface::Client,
+    // Map of lattice prefix to control client
+    ctl_clients: HashMap<String, wasmcloud_control_interface::Client>,
     manifest_dir: PathBuf,
     compose_file: PathBuf,
     commands: Vec<Child>,
@@ -40,8 +42,7 @@ pub struct ClientInfo {
 // proof with some of the functions here
 #[allow(unused)]
 impl ClientInfo {
-    /// Create a new ClientInfo. This will start the docker compose file, start 3 wadm instances,
-    /// and then when dropped clean everything up.
+    /// Create a new ClientInfo, which launches docker compose and connects to NATS
     pub async fn new(manifest_dir: impl AsRef<Path>, compose_file: impl AsRef<Path>) -> ClientInfo {
         let status = Command::new("docker")
             .args([
@@ -66,8 +67,6 @@ impl ClientInfo {
             .await
             .expect("Unable to create log dir");
 
-        let mut commands = Vec::with_capacity(4);
-
         // Start a process for capturing docker logs
         let log_path = log_dir.join("docker-compose");
         let file = tokio::fs::File::create(log_path)
@@ -87,44 +86,55 @@ impl ClientInfo {
             .stderr(Stdio::null())
             .kill_on_drop(true)
             .spawn()
-            .expect("Unable to spawn wadm binary");
-        commands.push(child);
-
-        // Wait for hosts to start
+            .expect("Unable to watch docker logs");
+        // Connect to NATS
         let client = async_nats::connect("127.0.0.1:4222")
             .await
             .expect("Unable to connect to nats");
-        // TODO(thomastaylor312): When we use this elsewhere, we will need to handle having a map of clients to lattice ids
-        let ctl_client = wasmcloud_control_interface::ClientBuilder::new(client.clone())
-            .lattice_prefix(DEFAULT_LATTICE_ID)
-            .build()
+
+        ClientInfo {
+            client,
+            ctl_clients: HashMap::new(),
+            manifest_dir: manifest_dir.as_ref().to_owned(),
+            compose_file: compose_file.as_ref().to_owned(),
+            commands: Vec::from_iter([child]),
+        }
+    }
+
+    pub fn ctl_client(&self, lattice_prefix: &str) -> &wasmcloud_control_interface::Client {
+        &self
+            .ctl_clients
+            .get(lattice_prefix)
+            .expect("Should have ctl client for specified lattice")
+    }
+
+    pub async fn add_ctl_client(&mut self, lattice_prefix: &str, topic_prefix: Option<&str>) {
+        let builder = wasmcloud_control_interface::ClientBuilder::new(self.client.clone())
+            .lattice_prefix(lattice_prefix);
+
+        let builder = if let Some(topic_prefix) = topic_prefix {
+            builder.topic_prefix(topic_prefix)
+        } else {
+            builder
+        };
+
+        self.ctl_clients.insert(
+            lattice_prefix.to_string(),
+            builder
+                .build()
+                .await
+                .expect("Unable to construct ctl client"),
+        );
+    }
+
+    pub async fn launch_wadm(&mut self) {
+        let repo_root =
+            PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("Unable to find repo root"));
+        // Create the logging directory
+        let log_dir = repo_root.join(LOG_DIR);
+        tokio::fs::create_dir_all(&log_dir)
             .await
-            .expect("Unable to construct ctl client");
-
-        let mut did_start = false;
-        for _ in 0..10 {
-            match ctl_client.get_hosts().await {
-                Ok(hosts) if hosts.len() == 5 => {
-                    did_start = true;
-                    break;
-                }
-                Ok(hosts) => {
-                    eprintln!(
-                        "Waiting for all hosts to be available {}/5 currently available",
-                        hosts.len()
-                    );
-                }
-                Err(e) => {
-                    eprintln!("Error when fetching hosts: {e}",)
-                }
-            }
-            tokio::time::sleep(Duration::from_secs(1)).await;
-        }
-
-        if !did_start {
-            panic!("Hosts didn't start")
-        }
-
+            .expect("Unable to create log dir");
         let wadm_binary_path = repo_root.join("target/debug/wadm");
         if !tokio::fs::try_exists(&wadm_binary_path)
             .await
@@ -153,19 +163,11 @@ impl ClientInfo {
                 )
                 .spawn()
                 .expect("Unable to spawn wadm binary");
-            commands.push(child);
+            self.commands.push(child);
         }
 
         // Let everything start up
         tokio::time::sleep(Duration::from_secs(2)).await;
-
-        ClientInfo {
-            client,
-            ctl_client,
-            manifest_dir: manifest_dir.as_ref().to_owned(),
-            compose_file: compose_file.as_ref().to_owned(),
-            commands,
-        }
     }
 
     /// Loads a manifest with the given file name. This will look in the configured `manifest_dir`
@@ -268,14 +270,17 @@ impl ClientInfo {
 
     /// Returns all host inventories in a hashmap keyed by host ID. This returns a result so it can
     /// be used inside of a `assert_status` without any problems
-    pub async fn get_all_inventory(&self) -> anyhow::Result<HashMap<String, HostInventory>> {
+    pub async fn get_all_inventory(
+        &self,
+        lattice_prefix: &str,
+    ) -> anyhow::Result<HashMap<String, HostInventory>> {
         let futs = self
-            .ctl_client
+            .ctl_client(lattice_prefix)
             .get_hosts()
             .await
             .expect("Should be able to fetch hosts")
             .into_iter()
-            .map(|host| (self.ctl_client.clone(), host.id))
+            .map(|host| (self.ctl_client(lattice_prefix).clone(), host.id))
             .map(|(client, host_id)| async move {
                 let inventory = client
                     .get_host_inventory(&host_id)
@@ -295,7 +300,13 @@ impl Drop for ClientInfo {
             }
         });
         match std::process::Command::new("docker")
-            .args(["compose", "-f", self.compose_file.to_str().unwrap(), "down"])
+            .args([
+                "compose",
+                "-f",
+                self.compose_file.to_str().unwrap(),
+                "down",
+                "--volumes",
+            ])
             .output()
         {
             Ok(output) => {
@@ -340,4 +351,93 @@ where
     if let Err(e) = last_result {
         panic!("Failed to get ok response from check: {e}");
     }
+}
+
+pub fn check_actors(
+    inventory: &HashMap<String, HostInventory>,
+    image_ref: &str,
+    manifest_name: &str,
+    expected_count: usize,
+) -> anyhow::Result<()> {
+    let all_actors = inventory
+        .values()
+        .flat_map(|inv| &inv.actors)
+        .filter_map(|actor| {
+            (actor.image_ref.as_deref().unwrap_or_default() == image_ref)
+                .then_some(&actor.instances)
+        })
+        .flatten();
+    let actor_count = all_actors
+        .filter(|actor| {
+            actor
+                .annotations
+                .as_ref()
+                .and_then(|annotations| {
+                    annotations
+                        .get(APP_SPEC_ANNOTATION)
+                        .map(|val| val == manifest_name)
+                })
+                .unwrap_or(false)
+        })
+        .count();
+    if actor_count != expected_count {
+        anyhow::bail!(
+            "Should have had {expected_count} actors managed by wadm running, found {actor_count}"
+        )
+    }
+    Ok(())
+}
+
+// I could use the Ordering enum here, but I feel like that would be more confusing to follow along
+pub enum ExpectedCount {
+    #[allow(dead_code)]
+    AtLeast(usize),
+    Exactly(usize),
+}
+
+pub fn check_providers(
+    inventory: &HashMap<String, HostInventory>,
+    image_ref: &str,
+    expected_count: ExpectedCount,
+) -> anyhow::Result<()> {
+    let provider_count = inventory
+        .values()
+        .flat_map(|inv| &inv.providers)
+        .filter(|provider| {
+            // You can only have 1 provider per host and that could be created by any manifest,
+            // so we can just check the image ref and that it is managed by wadm
+            provider
+                .image_ref
+                .as_deref()
+                .map(|image| image == image_ref)
+                .unwrap_or(false)
+                && provider
+                    .annotations
+                    .as_ref()
+                    .and_then(|annotations| {
+                        annotations
+                            .get(MANAGED_BY_ANNOTATION)
+                            .map(|val| val == MANAGED_BY_IDENTIFIER)
+                    })
+                    .unwrap_or(false)
+        })
+        .count();
+
+    match expected_count {
+        ExpectedCount::AtLeast(expected_count) => {
+            if provider_count < expected_count {
+                anyhow::bail!(
+                    "Should have had at least {expected_count} providers managed by wadm running, found {provider_count}"
+                )
+            }
+        }
+        ExpectedCount::Exactly(expected_count) => {
+            if provider_count != expected_count {
+                anyhow::bail!(
+                    "Should have had {expected_count} providers managed by wadm running, found {provider_count}"
+                )
+            }
+        }
+    }
+    Ok(())
 }
