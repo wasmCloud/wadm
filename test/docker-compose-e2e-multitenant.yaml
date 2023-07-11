@@ -1,0 +1,65 @@
+services:
+  # Set up a NATS core node and two leaf nodes which will connect with basic auth.
+  nats-core:
+    image: nats:2.9.16-alpine
+    ports:
+      - "127.0.0.1:5222:5222"
+      - "127.0.0.1:7422:7422"
+    command: ["-js", "-a", "0.0.0.0", "-c", "/nats/config/nats-test.conf"]
+    volumes:
+      - ./nats/:/nats/config
+  nats-leaf-wadm:
+    depends_on:
+      - nats-core
+    image: nats:2.9.16-alpine
+    ports:
+      - "127.0.0.1:4222:4222"
+    command: ["-js", "-a", "0.0.0.0", "-c", "/nats/config/nats-leaf-wadm.conf"]
+    volumes:
+      - ./nats/:/nats/config
+  nats-leaf-a:
+    depends_on:
+      - nats-core
+    image: nats:2.9.16-alpine
+    command: ["-js", "-a", "0.0.0.0", "-c", "/nats/config/nats-leaf-a.conf"]
+    volumes:
+      - ./nats/:/nats/config
+  nats-leaf-b:
+    depends_on:
+      - nats-core
+    image: nats:2.9.16-alpine
+    command: ["-js", "-a", "0.0.0.0", "-c", "/nats/config/nats-leaf-b.conf"]
+    volumes:
+      - ./nats/:/nats/config
+
+  # Have hosts in two different accounts
+  wasmcloud_east:
+    image: wasmcloud/wasmcloud_host:0.63.1
+    depends_on:
+      - nats-leaf-a
+    deploy:
+      replicas: 2
+    environment:
+      LC_ALL: en_US.UTF-8
+      RUST_LOG: debug,hyper=info
+      WASMCLOUD_LATTICE_PREFIX: wasmcloud-east
+      WASMCLOUD_RPC_HOST: nats-leaf-a
+      WASMCLOUD_CTL_HOST: nats-leaf-a
+      WASMCLOUD_PROV_RPC_HOST: nats-leaf-a
+      WASMCLOUD_CLUSTER_SEED: SCAOGJWX53TGI4233T6GAXWYWBIB5ZDGPTCO6ODJQYELS52YCQCBQSRPA4
+      HOST_region: us-brooks-east
+  wasmcloud_west:
+    image: wasmcloud/wasmcloud_host:0.63.1
+    depends_on:
+      - nats-leaf-b
+    deploy:
+      replicas: 2
+    environment:
+      LC_ALL: en_US.UTF-8
+      RUST_LOG: debug,hyper=info
+      WASMCLOUD_LATTICE_PREFIX: wasmcloud-west
+      WASMCLOUD_RPC_HOST: nats-leaf-b
+      WASMCLOUD_CTL_HOST: nats-leaf-b
+      WASMCLOUD_PROV_RPC_HOST: nats-leaf-b
+      WASMCLOUD_CLUSTER_SEED: SCAOGJWX53TGI4233T6GAXWYWBIB5ZDGPTCO6ODJQYELS52YCQCBQSRPA4
+      HOST_region: us-taylor-west
