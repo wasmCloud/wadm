@@ -48,7 +48,6 @@ async fn run_multitenant_tests() {
     test_basic_separation(&client_info)
         .await
         .expect("basic multitenant separation to work");
-    assert!(true)
 }
 
 async fn test_basic_separation(client_info: &ClientInfo) -> anyhow::Result<()> {
@@ -69,6 +68,8 @@ async fn test_basic_separation(client_info: &ClientInfo) -> anyhow::Result<()> {
         PutResult::Error,
         "Shouldn't have errored when creating manifest: {resp:?}"
     );
+
+    eprintln!("Deploying manifests to east and west");
 
     let resp = client_info
         .deploy_manifest("echo-simple", Some(LATTICE_EAST), None)
@@ -96,6 +97,7 @@ async fn test_basic_separation(client_info: &ClientInfo) -> anyhow::Result<()> {
         let west_inventory = client_info.get_all_inventory(LATTICE_WEST).await?;
 
         // Check for echo actor and httpserver in east, as well as the link between them
+        eprintln!("Ensuring east has echo, httpserver and link");
         check_actors(
             &east_inventory,
             "wasmcloud.azurecr.io/echo:0.3.7",
@@ -125,6 +127,7 @@ async fn test_basic_separation(client_info: &ClientInfo) -> anyhow::Result<()> {
         }
 
         // Check for messaging actor, httpserver and messaging in west, as well as the links between them
+        eprintln!("Ensuring west has message-pub, httpserver, messaging and link");
         check_actors(
             &west_inventory,
             "wasmcloud.azurecr.io/message-pub:0.1.3",
@@ -169,6 +172,7 @@ async fn test_basic_separation(client_info: &ClientInfo) -> anyhow::Result<()> {
         }
 
         // Check to ensure that no resources from west are running in east and vice versa
+        eprintln!("Ensuring east has no west resources and vice versa");
         check_actors(
             &west_inventory,
             "wasmcloud.azurecr.io/echo:0.3.7",
@@ -244,6 +248,7 @@ async fn test_basic_separation(client_info: &ClientInfo) -> anyhow::Result<()> {
     .await;
 
     // Undeploy manifests
+    eprintln!("Undeploying manifest from east and west");
     let resp = client_info
         .undeploy_manifest("echo-simple", Some(LATTICE_EAST))
         .await;
@@ -267,6 +272,7 @@ async fn test_basic_separation(client_info: &ClientInfo) -> anyhow::Result<()> {
         let east_inventory = client_info.get_all_inventory(LATTICE_EAST).await?;
         let west_inventory = client_info.get_all_inventory(LATTICE_WEST).await?;
 
+        eprintln!("Ensuring resources stopped in east");
         check_actors(
             &east_inventory,
             "wasmcloud.azurecr.io/echo:0.3.7",
@@ -279,6 +285,7 @@ async fn test_basic_separation(client_info: &ClientInfo) -> anyhow::Result<()> {
             ExpectedCount::Exactly(0),
         )?;
 
+        eprintln!("Ensuring resources stopped in west");
         check_actors(
             &west_inventory,
             "wasmcloud.azurecr.io/message-pub:0.1.3",
