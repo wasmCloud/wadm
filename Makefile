@@ -14,6 +14,12 @@ CARGO_CLIPPY ?= cargo-clippy
 DOCKER ?= docker
 NATS ?= nats
 
+# Defaulting to the local registry since multi-arch containers have to be pushed
+WADM_TAG ?= localhost:5000/wasmcloud/wadm:latest
+# These should be either built locally or downloaded from a release.
+BIN_AMD64 ?= wadm-amd64
+BIN_ARM64 ?= wadm-aarch64
+
 help:  ## Display this help
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_\-.*]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
 
@@ -40,6 +46,21 @@ lint: check-cargo-clippy ## Run code lint
 build: ## Build wadm
 	$(CARGO) build --bin wadm --features cli
 
+build-docker: ## Build wadm docker image
+    ifndef BIN_AMD64
+        $(error BIN_AMD64 is not set, required for docker building)
+    endif
+    ifndef BIN_ARM64
+        $(error BIN_ARM64 is not set, required for docker building)
+    endif
+
+	$(DOCKER) buildx build --platform linux/amd64,linux/arm64 \
+		--build-arg BIN_AMD64=$(BIN_AMD64) \
+		--build-arg BIN_ARM64=$(BIN_ARM64) \
+		-t $(WADM_TAG) \
+		--push .
+
+
 ########
 # Test #
 ########
@@ -57,9 +78,10 @@ else
 	$(CARGO) test $(CARGO_TEST_TARGET) -- --nocapture
 endif
 
-test-e2e::
+test-e2e:: ## Run e2e tests
 ifeq ($(shell nc -czt -w1 127.0.0.1 4222 || echo fail),fail)
 	@$(MAKE) build
+	RUST_BACKTRACE=1 $(CARGO) test --test e2e_multitenant --features _e2e_tests --  --nocapture 
 	RUST_BACKTRACE=1 $(CARGO) test --test e2e_multiple_hosts --features _e2e_tests --  --nocapture 
 else
 	@echo "WARN: Not running e2e tests. NATS must not be currently running"
