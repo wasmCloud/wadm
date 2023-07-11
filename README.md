@@ -142,7 +142,7 @@ in a lattice is forthcoming._
 
 In advanced use cases, **wadm** is also capable of:
 
-- Monitoring multiple lattices
+- Monitoring multiple lattices.
 - Running multiple replicas to distribute load among multiple processes, or for a high-availability
   architecture.
 

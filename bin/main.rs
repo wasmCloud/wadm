@@ -309,9 +309,13 @@ struct CommandWorkerCreator {
 impl WorkerCreator for CommandWorkerCreator {
     type Output = CommandWorker;
 
-    async fn create(&self, lattice_id: &str) -> anyhow::Result<Self::Output> {
+    async fn create(
+        &self,
+        lattice_id: &str,
+        multitenant_prefix: Option<&str>,
+    ) -> anyhow::Result<Self::Output> {
         self.pool
-            .get_connection(lattice_id)
+            .get_connection(lattice_id, multitenant_prefix)
             .await
             .map(CommandWorker::new)
     }
@@ -334,8 +338,16 @@ where
 {
     type Output = EventWorker<StateStore, wasmcloud_control_interface::Client, Context>;
 
-    async fn create(&self, lattice_id: &str) -> anyhow::Result<Self::Output> {
-        match self.pool.get_connection(lattice_id).await {
+    async fn create(
+        &self,
+        lattice_id: &str,
+        multitenant_prefix: Option<&str>,
+    ) -> anyhow::Result<Self::Output> {
+        match self
+            .pool
+            .get_connection(lattice_id, multitenant_prefix)
+            .await
+        {
             Ok(client) => {
                 let publisher = CommandPublisher::new(
                     self.publisher.clone(),

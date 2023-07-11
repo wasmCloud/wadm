@@ -46,9 +46,10 @@ where
                     if !is_event_we_care_about(&msg.payload) {
                         continue;
                     }
-                    let lattice_id = match self.parser.parse(&msg.subject) {
-                        Some(id) => id,
-                        None => {
+                    let (lattice_id, multitenant_prefix) = match self.parser.parse(&msg.subject) {
+                        (Some(lattice), Some(account)) => (lattice, Some(account)),
+                        (Some(lattice), None) => (lattice, None),
+                        (None, _) => {
                             trace!(subject = %msg.subject, "Found non-matching lattice subject");
                             continue;
                         }
@@ -72,7 +73,11 @@ where
                     let needs_event = !self.event_manager.has_consumer(&events_topic).await;
                     if needs_command {
                         debug!(%lattice_id, subject = %msg.subject, mapped_subject = %command_topic, "Found unmonitored lattice, adding command consumer");
-                        let worker = match self.command_worker_creator.create(lattice_id).await {
+                        let worker = match self
+                            .command_worker_creator
+                            .create(lattice_id, multitenant_prefix)
+                            .await
+                        {
                             Ok(w) => w,
                             Err(e) => {
                                 error!(error = %e, %lattice_id, "Couldn't construct worker for command consumer. Will retry on next heartbeat");
@@ -88,7 +93,11 @@ where
                     }
                     if needs_event {
                         debug!(%lattice_id, subject = %msg.subject, mapped_subject = %events_topic,  "Found unmonitored lattice, adding event consumer");
-                        let worker = match self.event_worker_creator.create(lattice_id).await {
+                        let worker = match self
+                            .event_worker_creator
+                            .create(lattice_id, multitenant_prefix)
+                            .await
+                        {
                             Ok(w) => w,
                             Err(e) => {
                                 error!(error = %e, %lattice_id, "Couldn't construct worker for event consumer. Will retry on next heartbeat");

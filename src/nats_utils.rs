@@ -20,9 +20,10 @@ impl LatticeIdParser {
         }
     }
 
-    /// Parses the given subject based on settings and then returns the lattice ID of the subject.
+    /// Parses the given subject based on settings and then returns the lattice ID of the subject and
+    /// the account ID if it is multitenant.
     /// Returns None if it couldn't parse the topic
-    pub fn parse<'a>(&self, subject: &'a str) -> Option<&'a str> {
+    pub fn parse<'a>(&self, subject: &'a str) -> (Option<&'a str>, Option<&'a str>) {
         let separated: Vec<&str> = subject.split('.').collect();
         // For reference, topics look like the following:
         //
@@ -32,7 +33,7 @@ impl LatticeIdParser {
         // Note that the account ID should be prefaced with an `A`
         match separated[..] {
             [prefix, evt, lattice_id] if prefix == self.prefix && evt == EVENT_SUBJECT => {
-                Some(lattice_id)
+                (Some(lattice_id), None)
             }
             [account_id, prefix, evt, lattice_id]
                 if self.multitenant
@@ -40,9 +41,9 @@ impl LatticeIdParser {
                     && evt == EVENT_SUBJECT
                     && account_id.starts_with('A') =>
             {
-                Some(lattice_id)
+                (Some(lattice_id), Some(&account_id))
             }
-            _ => None,
+            _ => (None, None),
         }
     }
 }
@@ -59,6 +60,7 @@ mod test {
         assert_eq!(
             parser
                 .parse("wasmbus.evt.blahblah")
+                .0
                 .expect("Should return lattice id"),
             "blahblah",
             "Should return the right ID"
@@ -66,7 +68,7 @@ mod test {
 
         // Shouldn't parse a multitenant
         assert!(
-            parser.parse("ACCOUNTID.wasmbus.evt.default").is_none(),
+            parser.parse("ACCOUNTID.wasmbus.evt.default").0.is_none(),
             "Shouldn't parse a multitenant topic"
         );
 
@@ -76,16 +78,23 @@ mod test {
         assert_eq!(
             parser
                 .parse("wasmbus.evt.blahblah")
+                .0
                 .expect("Should return lattice id"),
             "blahblah",
             "Should return the right ID"
         );
 
+        let res = parser.parse("ACCOUNTID.wasmbus.evt.blahblah");
+
         assert_eq!(
-            parser
-                .parse("ACCOUNTID.wasmbus.evt.blahblah")
-                .expect("Should return lattice id"),
+            res.0.expect("Should return lattice id"),
             "blahblah",
+            "Should return the right ID"
+        );
+
+        assert_eq!(
+            res.1.expect("Should return account id in multitenant mode"),
+            "ACCOUNTID",
             "Should return the right ID"
         );
     }
@@ -96,32 +105,32 @@ mod test {
 
         // Test 3 and 4 part subjects to make sure they don't parse
         assert!(
-            parser.parse("BLAH.wasmbus.notevt.default").is_none(),
+            parser.parse("BLAH.wasmbus.notevt.default").0.is_none(),
             "Shouldn't parse 4 part invalid topic"
         );
 
         assert!(
-            parser.parse("wasmbus.notme.default").is_none(),
+            parser.parse("wasmbus.notme.default").0.is_none(),
             "Shouldn't parse 3 part invalid topic"
         );
 
         assert!(
-            parser.parse("lebus.evt.default").is_none(),
+            parser.parse("lebus.evt.default").0.is_none(),
             "Shouldn't parse an non-matching prefix"
         );
 
         assert!(
-            parser.parse("wasmbus.evt").is_none(),
+            parser.parse("wasmbus.evt").0.is_none(),
             "Shouldn't parse a too short topic"
         );
 
         assert!(
-            parser.parse("BADACCOUNT.wasmbus.evt.default").is_none(),
+            parser.parse("BADACCOUNT.wasmbus.evt.default").0.is_none(),
             "Shouldn't parse invalid account topic"
         );
 
         assert!(
-            parser.parse("wasmbus.notme.default.bar.baz").is_none(),
+            parser.parse("wasmbus.notme.default.bar.baz").0.is_none(),
             "Shouldn't parse long topic"
         );
     }

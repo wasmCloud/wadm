@@ -3,6 +3,9 @@
 //! different credentials
 use wasmcloud_control_interface::{Client, ClientBuilder};
 
+// Copied from https://github.com/wasmCloud/control-interface-client/blob/main/src/broker.rs#L1, not public
+const DEFAULT_TOPIC_PREFIX: &str = "wasmbus.ctl";
+
 #[derive(Debug, Default, Clone)]
 pub struct ControlClientConfig {
     /// The jetstream domain to use for the clients
@@ -30,21 +33,44 @@ impl ControlClientConstructor {
     }
 
     /// Get the client for the given lattice ID
-    pub async fn get_connection(&self, id: &str) -> anyhow::Result<Client> {
+    pub async fn get_connection(
+        &self,
+        id: &str,
+        multitenant_prefix: Option<&str>,
+    ) -> anyhow::Result<Client> {
         let builder = ClientBuilder::new(self.client.clone()).lattice_prefix(id);
         let builder = if let Some(domain) = self.config.js_domain.as_deref() {
             builder.js_domain(domain)
         } else {
             builder
         };
-        let builder = if let Some(prefix) = self.config.topic_prefix.as_deref() {
-            builder.topic_prefix(prefix)
-        } else {
-            builder
-        };
+
+        let builder = builder.topic_prefix(topic_prefix(
+            multitenant_prefix,
+            self.config.topic_prefix.as_deref(),
+        ));
+
         builder
             .build()
             .await
             .map_err(|e| anyhow::anyhow!("Error building client for {id}: {e:?}"))
+    }
+}
+
+/// Returns the topic prefix to use for the given multitenant prefix and topic prefix. The
+/// default prefix is `wasmbus.ctl`.
+///
+/// If running in multitenant mode, we listen to events on *.wasmbus.evt and need to send commands
+/// back to the '*' account. This match takes into account custom prefixes as well to support
+/// advanced use cases.
+///
+/// This function does _not_ take into account whether or not wadm is running in multitenant mode, it's assumed
+/// that passing a Some() value for multitenant_prefix means that wadm is running in multitenant mode.
+fn topic_prefix(multitenant_prefix: Option<&str>, topic_prefix: Option<&str>) -> String {
+    match (multitenant_prefix, topic_prefix) {
+        (Some(mt), Some(prefix)) => format!("{}.{}", mt, prefix),
+        (Some(mt), None) => format!("{}.{DEFAULT_TOPIC_PREFIX}", mt),
+        (None, Some(prefix)) => prefix.to_string(),
+        _ => DEFAULT_TOPIC_PREFIX.to_string(),
     }
 }
