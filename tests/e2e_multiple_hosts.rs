@@ -1,17 +1,14 @@
 #![cfg(feature = "_e2e_tests")]
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
 use futures::FutureExt;
 use wadm::server::{DeployResult, PutResult};
-use wadm::{APP_SPEC_ANNOTATION, MANAGED_BY_ANNOTATION, MANAGED_BY_IDENTIFIER};
-use wasmcloud_control_interface::HostInventory;
 
 mod e2e;
 mod helpers;
 
-use e2e::{assert_status, ClientInfo};
+use e2e::{assert_status, check_actors, check_providers, ClientInfo, ExpectedCount};
 use helpers::{ECHO_ACTOR_ID, HTTP_SERVER_PROVIDER_ID};
 
 const MANIFESTS_PATH: &str = "test/data";
@@ -26,13 +23,40 @@ const KV_COUNTER_ACTOR_ID: &str = "MCFMFDWFHGKELOXPCNCDXKK5OFLHBVEWRAOXR5JSQUD2T
 // get around this we have a top level test that runs everything
 #[cfg(feature = "_e2e_tests")]
 #[tokio::test(flavor = "multi_thread")]
-async fn run_all_tests() {
+async fn run_multiple_host_tests() {
     let root_dir =
         PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("Unable to find repo root"));
     let manifest_dir = root_dir.join(MANIFESTS_PATH);
     let compose_file = root_dir.join(DOCKER_COMPOSE_FILE);
 
-    let client_info = ClientInfo::new(manifest_dir, compose_file).await;
+    let mut client_info = ClientInfo::new(manifest_dir, compose_file).await;
+    client_info.add_ctl_client("default", None).await;
+    client_info.launch_wadm().await;
+
+    // Wait for hosts to start
+    let mut did_start = false;
+    for _ in 0..10 {
+        match client_info.ctl_client("default").get_hosts().await {
+            Ok(hosts) if hosts.len() == 5 => {
+                did_start = true;
+                break;
+            }
+            Ok(hosts) => {
+                eprintln!(
+                    "Waiting for all hosts to be available {}/5 currently available",
+                    hosts.len()
+                );
+            }
+            Err(e) => {
+                eprintln!("Error when fetching hosts: {e}",)
+            }
+        }
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+
+    if !did_start {
+        panic!("Hosts didn't start")
+    }
 
     // NOTE(thomastaylor312): A nice to have here, but what I didn't want to figure out now, would
     // be to catch the panics from tests and label the backtrace with the appropriate information
@@ -79,7 +103,7 @@ async fn test_no_requirements(client_info: &ClientInfo) {
     // NOTE: This runs for a while, but it's because we're waiting for the provider to download,
     // which can take a bit
     assert_status(None, Some(7), || async {
-        let inventory = client_info.get_all_inventory().await?;
+        let inventory = client_info.get_all_inventory("default").await?;
 
         check_actors(
             &inventory,
@@ -93,7 +117,7 @@ async fn test_no_requirements(client_info: &ClientInfo) {
             ExpectedCount::Exactly(1),
         )?;
         let links = client_info
-            .ctl_client
+            .ctl_client("default")
             .query_links()
             .await
             .map_err(|e| anyhow::anyhow!("{e:?}"))?;
@@ -124,7 +148,7 @@ async fn test_no_requirements(client_info: &ClientInfo) {
 
     // assert that no actors or providers with annotations exist
     assert_status(None, None, || async {
-        let inventory = client_info.get_all_inventory().await?;
+        let inventory = client_info.get_all_inventory("default").await?;
 
         check_actors(
             &inventory,
@@ -169,7 +193,7 @@ async fn test_no_requirements(client_info: &ClientInfo) {
 //     // NOTE: This runs for a while, but it's because we're waiting for the provider to download,
 //     // which can take a bit
 //     assert_status(None, Some(7), || async {
-//         let inventory = client_info.get_all_inventory().await?;
+//         let inventory = client_info.get_all_inventory("default").await?;
 
 //         check_actors(
 //             &inventory,
@@ -210,7 +234,7 @@ async fn test_spread_all_hosts(client_info: &ClientInfo) {
     );
 
     assert_status(None, Some(7), || async {
-        let inventory = client_info.get_all_inventory().await?;
+        let inventory = client_info.get_all_inventory("default").await?;
 
         check_actors(
             &inventory,
@@ -249,7 +273,7 @@ async fn test_complex_app(client_info: &ClientInfo) {
     );
 
     assert_status(None, Some(7), || async {
-        let inventory = client_info.get_all_inventory().await?;
+        let inventory = client_info.get_all_inventory("default").await?;
 
         check_actors(
             &inventory,
@@ -269,7 +293,7 @@ async fn test_complex_app(client_info: &ClientInfo) {
         )?;
 
         let links = client_info
-            .ctl_client
+            .ctl_client("default")
             .query_links()
             .await
             .map_err(|e| anyhow::anyhow!("{e:?}"))?;
@@ -354,7 +378,7 @@ async fn test_stop_host_rebalance(client_info: &ClientInfo) {
 
     // Make sure everything deploys first
     assert_status(None, Some(7), || async {
-        let inventory = client_info.get_all_inventory().await?;
+        let inventory = client_info.get_all_inventory("default").await?;
 
         check_actors(
             &inventory,
@@ -370,7 +394,7 @@ async fn test_stop_host_rebalance(client_info: &ClientInfo) {
     // Now get the inventory and figure out which host is running the most actors of the spread and
     // stop that one
     let host_to_stop = client_info
-        .get_all_inventory()
+        .get_all_inventory("default")
         .await
         .expect("Unable to fetch inventory")
         .into_iter()
@@ -391,7 +415,7 @@ async fn test_stop_host_rebalance(client_info: &ClientInfo) {
         .unwrap();
 
     client_info
-        .ctl_client
+        .ctl_client("default")
         .stop_host(&host_to_stop, None)
         .await
         .expect("Should have stopped host");
@@ -402,7 +426,7 @@ async fn test_stop_host_rebalance(client_info: &ClientInfo) {
 
     // Now wait for us to get to 5 again
     assert_status(None, Some(7), || async {
-        let inventory = client_info.get_all_inventory().await?;
+        let inventory = client_info.get_all_inventory("default").await?;
 
         check_actors(
             &inventory,
@@ -417,91 +441,3 @@ async fn test_stop_host_rebalance(client_info: &ClientInfo) {
 }
 
 // NOTE(thomastaylor312): Future tests could include actually making sure the app works as expected
-
-fn check_actors(
-    inventory: &HashMap<String, HostInventory>,
-    image_ref: &str,
-    manifest_name: &str,
-    expected_count: usize,
-) -> anyhow::Result<()> {
-    let all_actors = inventory
-        .values()
-        .flat_map(|inv| &inv.actors)
-        .filter_map(|actor| {
-            (actor.image_ref.as_deref().unwrap_or_default() == image_ref)
-                .then_some(&actor.instances)
-        })
-        .flatten();
-    let actor_count = all_actors
-        .filter(|actor| {
-            actor
-                .annotations
-                .as_ref()
-                .and_then(|annotations| {
-                    annotations
-                        .get(APP_SPEC_ANNOTATION)
-                        .map(|val| val == manifest_name)
-                })
-                .unwrap_or(false)
-        })
-        .count();
-    if actor_count != expected_count {
-        anyhow::bail!(
-            "Should have had {expected_count} actors managed by wadm running, found {actor_count}"
-        )
-    }
-    Ok(())
-}
-
-// I could use the Ordering enum here, but I feel like that would be more confusing to follow along
-enum ExpectedCount {
-    AtLeast(usize),
-    Exactly(usize),
-}
-
-fn check_providers(
-    inventory: &HashMap<String, HostInventory>,
-    image_ref: &str,
-    expected_count: ExpectedCount,
-) -> anyhow::Result<()> {
-    let provider_count = inventory
-        .values()
-        .flat_map(|inv| &inv.providers)
-        .filter(|provider| {
-            // You can only have 1 provider per host and that could be created by any manifest,
-            // so we can just check the image ref and that it is managed by wadm
-            provider
-                .image_ref
-                .as_deref()
-                .map(|image| image == image_ref)
-                .unwrap_or(false)
-                && provider
-                    .annotations
-                    .as_ref()
-                    .and_then(|annotations| {
-                        annotations
-                            .get(MANAGED_BY_ANNOTATION)
-                            .map(|val| val == MANAGED_BY_IDENTIFIER)
-                    })
-                    .unwrap_or(false)
-        })
-        .count();
-
-    match expected_count {
-        ExpectedCount::AtLeast(expected_count) => {
-            if provider_count < expected_count {
-                anyhow::bail!(
-                    "Should have had at least {expected_count} providers managed by wadm running, found {provider_count}"
-                )
-            }
-        }
-        ExpectedCount::Exactly(expected_count) => {
-            if provider_count != expected_count {
-                anyhow::bail!(
-                    "Should have had {expected_count} providers managed by wadm running, found {provider_count}"
-                )
-            }
-        }
-    }
-    Ok(())
-}

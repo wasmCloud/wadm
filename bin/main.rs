@@ -5,6 +5,7 @@ use std::time::Duration;
 use async_nats::jetstream::{stream::Stream, Context};
 use clap::Parser;
 use tokio::sync::Semaphore;
+use tracing::log::debug;
 
 use wadm::{
     consumers::{
@@ -211,6 +212,7 @@ async fn main() -> anyhow::Result<()> {
     .await?;
 
     let event_stream_topics = if args.multitenant {
+        debug!("Running in multitenant mode");
         vec![DEFAULT_MULTITENANT_EVENTS_TOPIC.to_owned()]
     } else {
         vec![DEFAULT_EVENTS_TOPIC.to_owned()]
