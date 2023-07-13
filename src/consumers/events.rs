@@ -37,11 +37,16 @@ impl EventConsumer {
         stream: JsStream,
         topic: &str,
         lattice_id: &str,
+        multitenant_prefix: Option<&str>,
     ) -> Result<EventConsumer, NatsError> {
         if !topic.contains(lattice_id) {
             return Err(format!("Topic {topic} does not match for lattice ID {lattice_id}").into());
         }
-        let consumer_name = format!("{EVENTS_CONSUMER_PREFIX}_{lattice_id}");
+        let consumer_name = if let Some(prefix) = multitenant_prefix {
+            format!("{EVENTS_CONSUMER_PREFIX}-{lattice_id}_{prefix}")
+        } else {
+            format!("{EVENTS_CONSUMER_PREFIX}-{lattice_id}")
+        };
         let consumer = stream
             .get_or_create_consumer(
                 &consumer_name,
@@ -142,7 +147,8 @@ impl CreateConsumer for EventConsumer {
         stream: async_nats::jetstream::stream::Stream,
         topic: &str,
         lattice_id: &str,
+        multitenant_prefix: Option<&str>,
     ) -> Result<Self::Output, NatsError> {
-        EventConsumer::new(stream, topic, lattice_id).await
+        EventConsumer::new(stream, topic, lattice_id, multitenant_prefix).await
     }
 }

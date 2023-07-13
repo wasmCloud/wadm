@@ -61,7 +61,11 @@ where
 
                     // Make sure the mirror consumer is up and running. This operation returns early
                     // if it is already running
-                    if let Err(e) = self.mirror.monitor_lattice(&msg.subject, lattice_id).await {
+                    if let Err(e) = self
+                        .mirror
+                        .monitor_lattice(&msg.subject, lattice_id, multitenant_prefix)
+                        .await
+                    {
                         // If we can't set up the mirror, we can't proceed, so exit early
                         error!(error = %e, %lattice_id, "Couldn't add mirror consumer. Will retry on next heartbeat");
                         continue;
@@ -85,7 +89,7 @@ where
                             }
                         };
                         self.command_manager
-                            .add_for_lattice(&command_topic, lattice_id, worker)
+                            .add_for_lattice(&command_topic, lattice_id, multitenant_prefix, worker)
                             .await
                             .unwrap_or_else(|e| {
                                 error!(error = %e, %lattice_id, "Couldn't add command consumer. Will retry on next heartbeat");
@@ -105,7 +109,7 @@ where
                             }
                         };
                         self.event_manager
-                            .add_for_lattice(&events_topic, lattice_id, worker)
+                            .add_for_lattice(&events_topic, lattice_id, multitenant_prefix, worker)
                             .await
                             .unwrap_or_else(|e| {
                                 error!(error = %e, %lattice_id, "Couldn't add event consumer. Will retry on next heartbeat");

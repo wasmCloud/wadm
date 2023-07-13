@@ -159,5 +159,6 @@ pub trait CreateConsumer {
         stream: async_nats::jetstream::stream::Stream,
         topic: &str,
         lattice_id: &str,
+        multitenant_prefix: Option<&str>,
     ) -> Result<Self::Output, NatsError>;
 }

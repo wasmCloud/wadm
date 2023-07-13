@@ -139,19 +139,22 @@ impl<C> ConsumerManager<C> {
                         return None;
                     }
                 };
+
                 // TODO: This is somewhat brittle as we could change naming schemes, but it is
                 // good enough for now. We are just taking the name (which should be of the
-                // format `<consumer_prefix>_<lattice_id>`), but this makes sure we are always
-                // getting the last thing in case of other underscores
-                let lattice_id = match info.name.split('_').last() {
-                    Some(id) => id,
-                    None => return None,
+                // format `<consumer_prefix>-<lattice_prefix>_<multitenant_prefix>`), but this makes sure
+                // we are always getting the last thing in case of other underscores
+                // 
+                // When NATS 2.10 is out, store this as metadata on the stream.
+                let (lattice_id, multitenant_prefix) = match extract_lattice_and_multitenant(&info.name) {
+                    (Some(id), prefix) => (id, prefix),
+                    (None, _) => return None,
                 };
                 // NOTE(thomastaylor312): It might be nicer for logs if we add an extra param for a
                 // friendly consumer manager name
                 trace!(%lattice_id, subject = %info.config.filter_subject, "Adding consumer for lattice");
 
-                let worker = match worker_generator.create(lattice_id, None).await {
+                let worker = match worker_generator.create(&lattice_id, multitenant_prefix.as_deref()).await {
                     Ok(w) => w,
                     Err(e) => {
                         error!(error = %e, %lattice_id, "Unable to add consumer for lattice. Error when generating worker");
@@ -159,7 +162,7 @@ impl<C> ConsumerManager<C> {
                     }
                 };
 
-                match manager.spawn_handler(&info.config.filter_subject, lattice_id, worker).await {
+                match manager.spawn_handler(&info.config.filter_subject, &lattice_id, multitenant_prefix.as_deref(), worker).await {
                     Ok(handle) => Some((info.config.filter_subject.to_owned(), handle)),
                     Err(e) => {
                         error!(error = %e, %lattice_id, "Unable to add consumer for lattice");
@@ -183,6 +186,7 @@ impl<C> ConsumerManager<C> {
         &self,
         topic: &str,
         lattice_id: &str,
+        multitenant_prefix: Option<&str>,
         worker: W,
     ) -> Result<(), async_nats::Error>
     where
@@ -195,7 +199,9 @@ impl<C> ConsumerManager<C> {
     {
         if !self.has_consumer(topic).await {
             trace!("Adding new consumer");
-            let handle = self.spawn_handler(topic, lattice_id, worker).await?;
+            let handle = self
+                .spawn_handler(topic, lattice_id, multitenant_prefix, worker)
+                .await?;
             let mut handles = self.handles.write().await;
             handles.insert(topic.to_owned(), handle);
         }
@@ -206,6 +212,7 @@ impl<C> ConsumerManager<C> {
         &self,
         topic: &str,
         lattice_id: &str,
+        multitenant_prefix: Option<&str>,
         worker: W,
     ) -> Result<JoinHandle<WorkResult<()>>, async_nats::Error>
     where
@@ -216,7 +223,8 @@ impl<C> ConsumerManager<C> {
             + Unpin
             + 'static,
     {
-        let consumer = C::create(self.stream.clone(), topic, lattice_id).await?;
+        let consumer =
+            C::create(self.stream.clone(), topic, lattice_id, multitenant_prefix).await?;
         let permits = self.permits.clone();
         Ok(tokio::spawn(work_fn(consumer, permits, worker).instrument(
             tracing::info_span!("consumer_worker", %topic, worker_type = %std::any::type_name::<W>()),
@@ -274,5 +282,51 @@ where
             Err(e) => error!(error = ?e, "Got error from worker"),
             _ => (),
         }
+    }
+}
+
+/// Extracts the lattice ID and multitenant prefix from a consumer name in the form of either:
+/// 1. <consumer_prefix>-<lattice_prefix>_<multitenant_prefix>
+/// 2. <consumer_prefix>-<lattice_prefix>
+fn extract_lattice_and_multitenant(consumer_name: &str) -> (Option<String>, Option<String>) {
+    let mut parts = consumer_name.split('-');
+
+    // Ignore the consumer prefix
+    let _consumer_prefix = parts.next();
+
+    // Split the remainder into lattice and multitenant prefix
+    let remainder = parts.collect::<Vec<&str>>().join("-");
+    let mut lattice_and_multitenant = remainder.split('_');
+    let lattice_id = lattice_and_multitenant.next().map(|l| l.to_owned());
+    let multitenant_prefix = lattice_and_multitenant.next().map(|p| p.to_owned());
+
+    (lattice_id, multitenant_prefix)
+}
+
+#[cfg(test)]
+mod test {
+    use super::extract_lattice_and_multitenant;
+
+    #[test]
+    fn can_extract_lattice_and_multitenant() {
+        let default = "wadm_commands-default";
+        let with_multi = "wadm_events-default_AAAAAACOUNT";
+        let with_dashes = "wadm_mirror-550e8400-e29b-41d4-a716-446655440000_AAAAAACOUNT";
+
+        assert_eq!(
+            extract_lattice_and_multitenant(default),
+            (Some("default".to_owned()), None)
+        );
+        assert_eq!(
+            extract_lattice_and_multitenant(with_multi),
+            (Some("default".to_owned()), Some("AAAAAACOUNT".to_owned()))
+        );
+        assert_eq!(
+            extract_lattice_and_multitenant(with_dashes),
+            (
+                Some("550e8400-e29b-41d4-a716-446655440000".to_owned()),
+                Some("AAAAAACOUNT".to_owned())
+            )
+        );
     }
 }
