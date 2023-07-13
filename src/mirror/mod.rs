@@ -38,14 +38,24 @@ impl Mirror {
     }
 
     #[instrument(level = "debug", skip(self))]
-    pub async fn monitor_lattice(&self, subject: &str, lattice_id: &str) -> Result<(), NatsError> {
+    pub async fn monitor_lattice(
+        &self,
+        subject: &str,
+        lattice_id: &str,
+        multitenant_prefix: Option<&str>,
+    ) -> Result<(), NatsError> {
         if let Some(handle) = self.handles.read().await.get(lattice_id) {
             if !handle.is_finished() {
                 return Ok(());
             }
             warn!("Handle was marked as completed. Starting monitor again");
         }
-        let consumer_name = format!("wadm_mirror_{lattice_id}");
+        let consumer_name = if let Some(prefix) = multitenant_prefix {
+            format!("wadm_mirror-{lattice_id}_{prefix}")
+        } else {
+            format!("wadm_mirror-{lattice_id}")
+        };
+
         trace!("Creating mirror consumer for lattice");
         let consumer = self
             .stream

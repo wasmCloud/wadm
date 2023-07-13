@@ -32,6 +32,7 @@ use connections::{ControlClientConfig, ControlClientConstructor};
 const EVENT_STREAM_NAME: &str = "wadm_events";
 const COMMAND_STREAM_NAME: &str = "wadm_commands";
 const MIRROR_STREAM_NAME: &str = "wadm_mirror";
+const MULTITENANT_MIRROR_STREAM_NAME: &str = "wadm_multitenant_mirror";
 const NOTIFY_STREAM_NAME: &str = "wadm_notify";
 
 #[derive(Parser, Debug)]
@@ -211,16 +212,19 @@ async fn main() -> anyhow::Result<()> {
     )
     .await?;
 
-    let event_stream_topics = if args.multitenant {
+    let (event_stream_topics, mirror_stream) = if args.multitenant {
         debug!("Running in multitenant mode");
-        vec![DEFAULT_MULTITENANT_EVENTS_TOPIC.to_owned()]
+        (
+            vec![DEFAULT_MULTITENANT_EVENTS_TOPIC.to_owned()],
+            MULTITENANT_MIRROR_STREAM_NAME,
+        )
     } else {
-        vec![DEFAULT_EVENTS_TOPIC.to_owned()]
+        (vec![DEFAULT_EVENTS_TOPIC.to_owned()], MIRROR_STREAM_NAME)
     };
 
     let mirror_stream = nats::ensure_stream(
         &context,
-        MIRROR_STREAM_NAME.to_owned(),
+        mirror_stream.to_owned(),
         event_stream_topics.clone(),
         Some("A stream that publishes all events to the same stream".to_string()),
     )

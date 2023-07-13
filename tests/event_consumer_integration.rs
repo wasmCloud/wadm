@@ -68,7 +68,7 @@ async fn get_event_consumer(nats_url: String) -> EventConsumer {
             .await
             .expect("Should be able to create test stream")
     };
-    EventConsumer::new(stream, WASMBUS_EVENT_TOPIC, "default")
+    EventConsumer::new(stream, WASMBUS_EVENT_TOPIC, "default", None)
         .await
         .expect("Unable to setup stream")
 }
