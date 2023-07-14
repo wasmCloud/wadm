@@ -78,7 +78,7 @@ impl Stream for EventConsumer {
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         match self.stream.try_poll_next_unpin(cx) {
             Poll::Ready(None) => Poll::Ready(None),
-            Poll::Ready(Some(Err(e))) => Poll::Ready(Some(Err(e))),
+            Poll::Ready(Some(Err(e))) => Poll::Ready(Some(Err(Box::new(e)))),
             Poll::Ready(Some(Ok(msg))) => {
                 // Parse as a cloud event, skipping if we can't do it (and looping around to try
                 // the next poll)

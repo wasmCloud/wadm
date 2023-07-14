@@ -116,6 +116,7 @@ async fn test_event_stream() -> Result<()> {
             provider.public_key
         );
     } else {
+        println!("EVT: {:?}", evt);
         panic!("Event wasn't an provider started event");
     }
     evt.ack().await.expect("Should be able to ack event");
@@ -307,6 +308,11 @@ async fn wait_for_event(
         Event::HostHeartbeat(_)
             | Event::ProviderHealthCheckPassed(_)
             | Event::ProviderHealthCheckFailed(_)
+            // NOTE(brooksmtownsend): Ignoring the plural actor event for now as this test
+            // is more for the event stream than scalers. When we use plural events to
+            // synthesize lattice state, this should be changed to the singular event
+            | Event::ActorsStarted(_)
+            | Event::ActorsStopped(_)
     ) {
         evt.ack().await.expect("Should be able to ack message");
         // Just a copy paste here so we don't have to deal with async recursion
