@@ -59,7 +59,8 @@ tracing-subscriber = { version = "0.3.7", features = [
     "json",
 ], optional = true }
 uuid = "1"
-wasmbus-rpc = "0.13"
+# wasmbus-rpc = "0.13"
+wasmbus-rpc = { version = "0.13", git = "https://github.com/vados-cosmonic/weld", branch = "chore/update-nkeys-and-related-deps" }
 # wasmcloud-control-interface = "0.27"
 wasmcloud-control-interface  = { version = "0.27", git = "https://github.com/wasmCloud/control-interface-client", branch = "bump/v0.27.0" }
 semver = { version = "1.0.16", features = ["serde"] }
