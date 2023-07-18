@@ -14,6 +14,8 @@ const DOCKER_COMPOSE_FILE: &str = "test/docker-compose-e2e-multitenant.yaml";
 
 const MESSAGE_PUB_ACTOR_ID: &str = "MC3QONHYH3FY4KYFCOSVJWIDJG4WA2PVD6FHKR7FFT457GVUTZJYR2TJ";
 const NATS_PROVIDER_ID: &str = "VADNMSIML2XGO2X4TPIONTIC55R2UUQGPPDZPAVSC2QD7E76CR77SPW7";
+const ACCOUNT_EAST: &str = "Axxx";
+const ACCOUNT_WEST: &str = "Ayyy";
 const LATTICE_EAST: &str = "wasmcloud-east";
 const LATTICE_WEST: &str = "wasmcloud-west";
 
@@ -52,7 +54,7 @@ async fn run_multitenant_tests() {
 
 async fn test_basic_separation(client_info: &ClientInfo) -> anyhow::Result<()> {
     let resp = client_info
-        .put_manifest_from_file("simple.yaml", Some(LATTICE_EAST))
+        .put_manifest_from_file("simple.yaml", Some(ACCOUNT_EAST), Some(LATTICE_EAST))
         .await;
     assert_ne!(
         resp.result,
@@ -61,7 +63,7 @@ async fn test_basic_separation(client_info: &ClientInfo) -> anyhow::Result<()> {
     );
 
     let resp = client_info
-        .put_manifest_from_file("simple2.yaml", Some(LATTICE_WEST))
+        .put_manifest_from_file("simple2.yaml", Some(ACCOUNT_WEST), Some(LATTICE_WEST))
         .await;
     assert_ne!(
         resp.result,
@@ -72,7 +74,7 @@ async fn test_basic_separation(client_info: &ClientInfo) -> anyhow::Result<()> {
     eprintln!("Deploying manifests to east and west");
 
     let resp = client_info
-        .deploy_manifest("echo-simple", Some(LATTICE_EAST), None)
+        .deploy_manifest("echo-simple", Some(ACCOUNT_EAST), Some(LATTICE_EAST), None)
         .await;
     assert_ne!(
         resp.result,
@@ -81,7 +83,12 @@ async fn test_basic_separation(client_info: &ClientInfo) -> anyhow::Result<()> {
     );
 
     let resp = client_info
-        .deploy_manifest("messaging-simple", Some(LATTICE_WEST), None)
+        .deploy_manifest(
+            "messaging-simple",
+            Some(ACCOUNT_WEST),
+            Some(LATTICE_WEST),
+            None,
+        )
         .await;
     assert_ne!(
         resp.result,
@@ -250,7 +257,7 @@ async fn test_basic_separation(client_info: &ClientInfo) -> anyhow::Result<()> {
     // Undeploy manifests
     eprintln!("Undeploying manifest from east and west");
     let resp = client_info
-        .undeploy_manifest("echo-simple", Some(LATTICE_EAST))
+        .undeploy_manifest("echo-simple", Some(ACCOUNT_EAST), Some(LATTICE_EAST))
         .await;
     assert_ne!(
         resp.result,
@@ -259,7 +266,7 @@ async fn test_basic_separation(client_info: &ClientInfo) -> anyhow::Result<()> {
     );
 
     let resp = client_info
-        .undeploy_manifest("messaging-simple", Some(LATTICE_WEST))
+        .undeploy_manifest("messaging-simple", Some(ACCOUNT_WEST), Some(LATTICE_WEST))
         .await;
     assert_ne!(
         resp.result,
