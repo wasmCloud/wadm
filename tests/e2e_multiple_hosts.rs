@@ -84,7 +84,7 @@ async fn run_multiple_host_tests() {
 // other tests run
 async fn test_no_requirements(client_info: &ClientInfo) {
     let resp = client_info
-        .put_manifest_from_file("simple.yaml", None)
+        .put_manifest_from_file("simple.yaml", None, None)
         .await;
 
     assert_ne!(
@@ -93,7 +93,9 @@ async fn test_no_requirements(client_info: &ClientInfo) {
         "Shouldn't have errored when creating manifest: {resp:?}"
     );
 
-    let resp = client_info.deploy_manifest("echo-simple", None, None).await;
+    let resp = client_info
+        .deploy_manifest("echo-simple", None, None, None)
+        .await;
     assert_ne!(
         resp.result,
         DeployResult::Error,
@@ -138,7 +140,9 @@ async fn test_no_requirements(client_info: &ClientInfo) {
     .await;
 
     // Undeploy manifest
-    let resp = client_info.undeploy_manifest("echo-simple", None).await;
+    let resp = client_info
+        .undeploy_manifest("echo-simple", None, None)
+        .await;
 
     assert_ne!(
         resp.result,
@@ -214,7 +218,7 @@ async fn test_no_requirements(client_info: &ClientInfo) {
 
 async fn test_spread_all_hosts(client_info: &ClientInfo) {
     let resp = client_info
-        .put_manifest_from_file("all_hosts.yaml", None)
+        .put_manifest_from_file("all_hosts.yaml", None, None)
         .await;
 
     assert_ne!(
@@ -225,7 +229,7 @@ async fn test_spread_all_hosts(client_info: &ClientInfo) {
 
     // Deploy manifest
     let resp = client_info
-        .deploy_manifest("echo-all-hosts", None, None)
+        .deploy_manifest("echo-all-hosts", None, None, None)
         .await;
     assert_ne!(
         resp.result,
@@ -255,7 +259,7 @@ async fn test_spread_all_hosts(client_info: &ClientInfo) {
 
 async fn test_complex_app(client_info: &ClientInfo) {
     let resp = client_info
-        .put_manifest_from_file("complex.yaml", None)
+        .put_manifest_from_file("complex.yaml", None, None)
         .await;
 
     assert_ne!(
@@ -265,7 +269,9 @@ async fn test_complex_app(client_info: &ClientInfo) {
     );
 
     // Deploy manifest
-    let resp = client_info.deploy_manifest("complex", None, None).await;
+    let resp = client_info
+        .deploy_manifest("complex", None, None, None)
+        .await;
     assert_ne!(
         resp.result,
         DeployResult::Error,
@@ -359,7 +365,7 @@ async fn test_complex_app(client_info: &ClientInfo) {
 // This test should be run after other tests have finished since we are stopping one of the hosts
 async fn test_stop_host_rebalance(client_info: &ClientInfo) {
     let resp = client_info
-        .put_manifest_from_file("host_stop.yaml", None)
+        .put_manifest_from_file("host_stop.yaml", None, None)
         .await;
 
     assert_ne!(
@@ -369,7 +375,9 @@ async fn test_stop_host_rebalance(client_info: &ClientInfo) {
     );
 
     // Deploy manifest
-    let resp = client_info.deploy_manifest("host-stop", None, None).await;
+    let resp = client_info
+        .deploy_manifest("host-stop", None, None, None)
+        .await;
     assert_ne!(
         resp.result,
         DeployResult::Error,

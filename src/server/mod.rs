@@ -90,7 +90,7 @@ impl<P: Publisher> Server<P> {
     #[instrument(level = "info", skip_all)]
     pub async fn serve(mut self) -> anyhow::Result<()> {
         while let Some(msg) = self.subscriber.next().await {
-            if !msg.subject.starts_with(&self.prefix) {
+            if !msg.subject.starts_with(&self.prefix) && !self.multitenant {
                 warn!(subject = %msg.subject, "Received message on an invalid subject");
                 continue;
             }
@@ -250,7 +250,7 @@ impl<P: Publisher> Server<P> {
             anyhow::bail!("Found extra components of subject")
         }
         Ok(ParsedSubject {
-            account_id: account_id,
+            account_id,
             lattice_id,
             category,
             operation,

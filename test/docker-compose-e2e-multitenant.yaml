@@ -21,6 +21,8 @@ services:
     depends_on:
       - nats-core
     image: nats:2.9.16-alpine
+    ports:
+      - "127.0.0.1:4223:4222"
     command: ["-js", "-a", "0.0.0.0", "-c", "/nats/config/nats-leaf-a.conf"]
     volumes:
       - ./nats/:/nats/config
@@ -28,6 +30,8 @@ services:
     depends_on:
       - nats-core
     image: nats:2.9.16-alpine
+    ports:
+      - "127.0.0.1:4224:4222"
     command: ["-js", "-a", "0.0.0.0", "-c", "/nats/config/nats-leaf-b.conf"]
     volumes:
       - ./nats/:/nats/config

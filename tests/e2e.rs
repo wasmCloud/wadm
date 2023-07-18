@@ -189,10 +189,12 @@ impl ClientInfo {
     pub async fn put_manifest(
         &self,
         manifest: &Manifest,
+        account_id: Option<&str>,
         lattice_id: Option<&str>,
     ) -> PutModelResponse {
         self.put_manifest_raw(
             serde_yaml::to_string(manifest).unwrap().into_bytes(),
+            account_id,
             lattice_id,
         )
         .await
@@ -202,17 +204,35 @@ impl ClientInfo {
     pub async fn put_manifest_from_file(
         &self,
         file_name: &str,
+        account_id: Option<&str>,
         lattice_id: Option<&str>,
     ) -> PutModelResponse {
-        self.put_manifest_raw(self.load_raw_manifest(file_name).await, lattice_id)
-            .await
+        self.put_manifest_raw(
+            self.load_raw_manifest(file_name).await,
+            account_id,
+            lattice_id,
+        )
+        .await
     }
 
-    async fn put_manifest_raw(&self, data: Vec<u8>, lattice_id: Option<&str>) -> PutModelResponse {
-        let subject = format!(
-            "wadm.api.{}.model.put",
-            lattice_id.unwrap_or(DEFAULT_LATTICE_ID)
-        );
+    async fn put_manifest_raw(
+        &self,
+        data: Vec<u8>,
+        account_id: Option<&str>,
+        lattice_id: Option<&str>,
+    ) -> PutModelResponse {
+        let subject = if let Some(account) = account_id {
+            format!(
+                "{}.wadm.api.{}.model.put",
+                account,
+                lattice_id.unwrap_or(DEFAULT_LATTICE_ID)
+            )
+        } else {
+            format!(
+                "wadm.api.{}.model.put",
+                lattice_id.unwrap_or(DEFAULT_LATTICE_ID)
+            )
+        };
         let msg = self
             .client
             .request(subject, data.into())
@@ -225,13 +245,22 @@ impl ClientInfo {
     pub async fn deploy_manifest(
         &self,
         name: &str,
+        account_id: Option<&str>,
         lattice_id: Option<&str>,
         version: Option<&str>,
     ) -> DeployModelResponse {
-        let subject = format!(
-            "wadm.api.{}.model.deploy.{name}",
-            lattice_id.unwrap_or(DEFAULT_LATTICE_ID)
-        );
+        let subject = if let Some(account) = account_id {
+            format!(
+                "{}.wadm.api.{}.model.deploy.{name}",
+                account,
+                lattice_id.unwrap_or(DEFAULT_LATTICE_ID)
+            )
+        } else {
+            format!(
+                "wadm.api.{}.model.deploy.{name}",
+                lattice_id.unwrap_or(DEFAULT_LATTICE_ID)
+            )
+        };
         let data = serde_json::to_vec(&DeployModelRequest {
             version: version.map(|s| s.to_owned()),
         })
@@ -248,12 +277,21 @@ impl ClientInfo {
     pub async fn undeploy_manifest(
         &self,
         name: &str,
+        account_id: Option<&str>,
         lattice_id: Option<&str>,
     ) -> DeployModelResponse {
-        let subject = format!(
-            "wadm.api.{}.model.undeploy.{name}",
-            lattice_id.unwrap_or(DEFAULT_LATTICE_ID)
-        );
+        let subject = if let Some(account) = account_id {
+            format!(
+                "{}.wadm.api.{}.model.undeploy.{name}",
+                account,
+                lattice_id.unwrap_or(DEFAULT_LATTICE_ID)
+            )
+        } else {
+            format!(
+                "wadm.api.{}.model.undeploy.{name}",
+                lattice_id.unwrap_or(DEFAULT_LATTICE_ID)
+            )
+        };
         let data = serde_json::to_vec(&UndeployModelRequest {
             non_destructive: false,
         })
