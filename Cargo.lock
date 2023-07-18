@@ -3117,7 +3117,8 @@ dependencies = [
 [[package]]
 name = "wasmbus-macros"
 version = "0.1.11"
-source = "git+https://github.com/vados-cosmonic/weld?branch=chore/update-nkeys-and-related-deps#993028a2574e1053b1a169556c3474d1b9b014e8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a29134584a9233fe941de00a84ef60006954c48f0b80fca29db54fbb799ac817"
 dependencies = [
  "proc-macro-error",
  "proc-macro2",
@@ -3127,8 +3128,9 @@ dependencies = [
 
 [[package]]
 name = "wasmbus-rpc"
-version = "0.13.0"
-source = "git+https://github.com/vados-cosmonic/weld?branch=chore/update-nkeys-and-related-deps#993028a2574e1053b1a169556c3474d1b9b014e8"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2da4e25698e9e15af56e9bb510d233495c4ec9c6bbbf13d046205190dd4ab935"
 dependencies = [
  "async-nats",
  "async-trait",
@@ -3226,7 +3228,8 @@ dependencies = [
 [[package]]
 name = "weld-codegen"
 version = "0.7.0"
-source = "git+https://github.com/vados-cosmonic/weld?branch=chore/update-nkeys-and-related-deps#993028a2574e1053b1a169556c3474d1b9b014e8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "66385fd8affabb09b678d2f826c78d995789cdb2fbb2dd02e6010dffe298797e"
 dependencies = [
  "Inflector",
  "anyhow",

@@ -139,6 +139,7 @@ where
         client: P,
         stream: JsStream,
         lattice_id: &str,
+        multitenant_prefix: Option<&str>,
         state_store: StateStore,
         manifest_store: KvStore,
         publisher: CommandPublisher<P>,
@@ -171,10 +172,10 @@ where
         // Get current scalers set up
         let manifest_store = crate::server::ModelStorage::new(manifest_store);
         let futs = manifest_store
-            .list(lattice_id)
+            .list(multitenant_prefix, lattice_id)
             .await?
             .into_iter()
-            .map(|summary| manifest_store.get(lattice_id, summary.name));
+            .map(|summary| manifest_store.get(multitenant_prefix, lattice_id, summary.name));
         let all_manifests = futures::future::join_all(futs)
             .await
             .into_iter()

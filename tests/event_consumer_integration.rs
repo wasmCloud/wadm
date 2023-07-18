@@ -91,7 +91,7 @@ async fn test_event_stream() -> Result<()> {
     // NOTE: the first heartbeat doesn't come for 30s so we are ignoring it for now
 
     // Start an actor
-    helpers::run_wash_command(["ctl", "start", "actor", ECHO_REFERENCE]).await;
+    helpers::run_wash_command(["start", "actor", ECHO_REFERENCE]).await;
 
     let mut evt = wait_for_event(&mut stream, DEFAULT_TIMEOUT_DURATION).await;
     if let Event::ActorStarted(actor) = evt.as_ref() {
@@ -106,7 +106,7 @@ async fn test_event_stream() -> Result<()> {
     evt.ack().await.expect("Should be able to ack event");
 
     // Start a provider
-    helpers::run_wash_command(["ctl", "start", "provider", HTTP_SERVER_REFERENCE]).await;
+    helpers::run_wash_command(["start", "provider", HTTP_SERVER_REFERENCE]).await;
 
     let mut evt = wait_for_event(&mut stream, DEFAULT_TIMEOUT_DURATION).await;
     if let Event::ProviderStarted(provider) = evt.as_ref() {
@@ -253,7 +253,7 @@ async fn test_nack_and_rereceive() -> Result<()> {
     let mut stream = get_event_consumer(config.nats_url()).await;
 
     // Start an actor
-    helpers::run_wash_command(["ctl", "start", "actor", ECHO_REFERENCE]).await;
+    helpers::run_wash_command(["start", "actor", ECHO_REFERENCE]).await;
 
     // Get the event and then nack it
     let mut evt = wait_for_event(&mut stream, DEFAULT_TIMEOUT_DURATION).await;
