@@ -89,6 +89,7 @@ async fn setup_server(id: String) -> TestServer {
         store,
         client.clone(),
         Some(&id),
+        false,
         ManifestNotifier::new(&prefix, client.clone()),
     )
     .await

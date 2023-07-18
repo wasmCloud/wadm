@@ -26,6 +26,7 @@ pub struct Server<P> {
     handler: Handler<P>,
     subscriber: Subscriber,
     prefix: String,
+    multitenant: bool,
 }
 
 impl<P: Publisher> Server<P> {
@@ -39,6 +40,7 @@ impl<P: Publisher> Server<P> {
         store: Store,
         client: Client,
         topic_prefix: Option<&str>,
+        multitenant: bool,
         notifier: ManifestNotifier<P>,
     ) -> anyhow::Result<Server<P>> {
         // Trim off any spaces or trailing/preceding dots
@@ -51,7 +53,13 @@ impl<P: Publisher> Server<P> {
             anyhow::bail!("Given prefix was empty")
         }
 
-        let topic = format!("{prefix}.>");
+        let topic_prefix = if multitenant {
+            format!("*.{prefix}")
+        } else {
+            prefix.clone()
+        };
+
+        let topic = format!("{topic_prefix}.>");
         info!(%topic, "Creating API subscriber");
         // NOTE(thomastaylor312): Technically there is a condition where two people try to send an
         // update to the same manifest. We are protected against this overwriting each other (we
@@ -71,6 +79,7 @@ impl<P: Publisher> Server<P> {
             },
             subscriber,
             prefix,
+            multitenant,
         })
     }
 
@@ -103,54 +112,87 @@ impl<P: Publisher> Server<P> {
 
             match parsed {
                 ParsedSubject {
+                    account_id,
                     lattice_id,
                     category: "model",
                     operation: "list",
                     object_name: None,
-                } => self.handler.list_models(msg, lattice_id).await,
+                } => self.handler.list_models(msg, account_id, lattice_id).await,
                 ParsedSubject {
+                    account_id,
                     lattice_id,
                     category: "model",
                     operation: "get",
                     object_name: Some(name),
-                } => self.handler.get_model(msg, lattice_id, name).await,
+                } => {
+                    self.handler
+                        .get_model(msg, account_id, lattice_id, name)
+                        .await
+                }
                 ParsedSubject {
+                    account_id,
                     lattice_id,
                     category: "model",
                     operation: "put",
                     object_name: None,
-                } => self.handler.put_model(msg, lattice_id).await,
+                } => self.handler.put_model(msg, account_id, lattice_id).await,
                 ParsedSubject {
+                    account_id,
                     lattice_id,
                     category: "model",
                     operation: "del",
                     object_name: Some(name),
-                } => self.handler.delete_model(msg, lattice_id, name).await,
+                } => {
+                    self.handler
+                        .delete_model(msg, account_id, lattice_id, name)
+                        .await
+                }
                 ParsedSubject {
+                    account_id,
                     lattice_id,
                     category: "model",
                     operation: "versions",
                     object_name: Some(name),
-                } => self.handler.list_versions(msg, lattice_id, name).await,
+                } => {
+                    self.handler
+                        .list_versions(msg, account_id, lattice_id, name)
+                        .await
+                }
                 ParsedSubject {
+                    account_id,
                     lattice_id,
                     category: "model",
                     operation: "deploy",
                     object_name: Some(name),
-                } => self.handler.deploy_model(msg, lattice_id, name).await,
+                } => {
+                    self.handler
+                        .deploy_model(msg, account_id, lattice_id, name)
+                        .await
+                }
                 ParsedSubject {
+                    account_id,
                     lattice_id,
                     category: "model",
                     operation: "undeploy",
                     object_name: Some(name),
-                } => self.handler.undeploy_model(msg, lattice_id, name).await,
+                } => {
+                    self.handler
+                        .undeploy_model(msg, account_id, lattice_id, name)
+                        .await
+                }
                 ParsedSubject {
+                    account_id,
                     lattice_id,
                     category: "model",
                     operation: "status",
                     object_name: Some(name),
-                } => self.handler.model_status(msg, lattice_id, name).await,
+                } => {
+                    self.handler
+                        .model_status(msg, account_id, lattice_id, name)
+                        .await
+                }
                 ParsedSubject {
+                    account_id: _,
                     lattice_id: _,
                     category: "model",
                     operation: "history",
@@ -174,12 +216,24 @@ impl<P: Publisher> Server<P> {
 
     fn parse_subject<'a>(&self, subject: &'a str) -> anyhow::Result<ParsedSubject<'a>> {
         // Topic structure: wadm.api.{lattice-id}.{category}.{operation}.{object}
-        // First, clean off the prefix and then split and iterate
+        // Multitenant topic structure: {account-id}.wadm.api.{lattice-id}.{category}.{operation}.{object}
+        // First, clean off the account if multitenant, then prefix and then split and iterate
+        let (account_id, subject) = if self.multitenant {
+            if let Some((account_id, rest)) = subject.split_once('.') {
+                (Some(account_id), rest)
+            } else {
+                anyhow::bail!("Expected to find account ID in multitenant subject")
+            }
+        } else {
+            (None, subject)
+        };
+
         let mut trimmed = subject
             .trim_start_matches(&self.prefix)
             .trim_start_matches('.')
             .split('.')
             .fuse();
+
         let lattice_id = trimmed
             .next()
             .ok_or_else(|| anyhow::anyhow!("Expected to find lattice ID"))?;
@@ -196,6 +250,7 @@ impl<P: Publisher> Server<P> {
             anyhow::bail!("Found extra components of subject")
         }
         Ok(ParsedSubject {
+            account_id: account_id,
             lattice_id,
             category,
             operation,
@@ -205,6 +260,7 @@ impl<P: Publisher> Server<P> {
 }
 
 struct ParsedSubject<'a> {
+    account_id: Option<&'a str>,
     lattice_id: &'a str,
     category: &'a str,
     operation: &'a str,

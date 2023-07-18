@@ -291,6 +291,7 @@ async fn main() -> anyhow::Result<()> {
         manifest_storage,
         client,
         Some(&args.api_prefix),
+        args.multitenant,
         ManifestNotifier::new(wadm_event_prefix, context),
     )
     .await?;
@@ -363,6 +364,7 @@ where
                     self.publisher.clone(),
                     self.notify_stream.clone(),
                     lattice_id,
+                    multitenant_prefix,
                     self.state_store.clone(),
                     self.manifest_store.clone(),
                     publisher.clone(),
