@@ -277,7 +277,9 @@ async fn test_basic_separation(client_info: &ClientInfo) -> anyhow::Result<()> {
     // assert that no actors or providers with annotations exist
     assert_status(None, None, || async {
         let east_inventory = client_info.get_all_inventory(LATTICE_EAST).await?;
+        println!("east inventory: {:?}", east_inventory);
         let west_inventory = client_info.get_all_inventory(LATTICE_WEST).await?;
+        println!("west inventory: {:?}", west_inventory);
 
         eprintln!("Ensuring resources stopped in east");
         check_actors(
