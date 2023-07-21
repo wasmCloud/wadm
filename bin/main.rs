@@ -29,11 +29,11 @@ mod observer;
 
 use connections::{ControlClientConfig, ControlClientConstructor};
 
-const EVENT_STREAM_NAME: &str = "wadm_events";
-const COMMAND_STREAM_NAME: &str = "wadm_commands";
-const MIRROR_STREAM_NAME: &str = "wadm_mirror";
-const MULTITENANT_MIRROR_STREAM_NAME: &str = "wadm_multitenant_mirror";
-const NOTIFY_STREAM_NAME: &str = "wadm_notify";
+const EVENT_STREAM_NAME: &str = "events";
+const COMMAND_STREAM_NAME: &str = "commands";
+const MIRROR_STREAM_NAME: &str = "mirror";
+const MULTITENANT_MIRROR_STREAM_NAME: &str = "multitenant_mirror";
+const NOTIFY_STREAM_NAME: &str = "notify";
 
 #[derive(Parser, Debug)]
 #[command(name = clap::crate_name!(), version = clap::crate_version!(), about = "wasmCloud Application Deployment Manager", long_about = None)]
@@ -141,6 +141,15 @@ struct Args {
     )]
     api_prefix: String,
 
+    /// The stream prefix to prepend for each stream. This is an advanced setting that should only be used if you
+    /// know what you are doing
+    #[arg(
+        long = "stream-prefix",
+        env = "WADM_STREAM_PREFIX",
+        default_value = "wadm"
+    )]
+    stream_prefix: String,
+
     /// Name of the bucket used for storage of manifests
     #[arg(
         long = "manifest-bucket-name",
@@ -193,9 +202,11 @@ async fn main() -> anyhow::Result<()> {
 
     let manifest_storage = nats::ensure_kv_bucket(&context, args.manifest_bucket, 1).await?;
 
+    let stream_prefix = args.stream_prefix;
+
     let event_stream = nats::ensure_stream(
         &context,
-        EVENT_STREAM_NAME.to_owned(),
+        format!("{stream_prefix}_{EVENT_STREAM_NAME}"),
         vec![DEFAULT_WADM_EVENTS_TOPIC.to_owned()],
         Some(
             "A stream that stores all events coming in on the wasmbus.evt topics in a cluster"
@@ -206,7 +217,7 @@ async fn main() -> anyhow::Result<()> {
 
     let command_stream = nats::ensure_stream(
         &context,
-        COMMAND_STREAM_NAME.to_owned(),
+        format!("{stream_prefix}_{COMMAND_STREAM_NAME}"),
         vec![DEFAULT_COMMANDS_TOPIC.to_owned()],
         Some("A stream that stores all commands for wadm".to_string()),
     )
@@ -224,7 +235,7 @@ async fn main() -> anyhow::Result<()> {
 
     let mirror_stream = nats::ensure_stream(
         &context,
-        mirror_stream.to_owned(),
+        format!("{stream_prefix}_{mirror_stream}"),
         event_stream_topics.clone(),
         Some("A stream that publishes all events to the same stream".to_string()),
     )
@@ -232,7 +243,7 @@ async fn main() -> anyhow::Result<()> {
 
     let notify_stream = nats::ensure_notify_stream(
         &context,
-        NOTIFY_STREAM_NAME.to_owned(),
+        format!("{stream_prefix}_{NOTIFY_STREAM_NAME}"),
         vec![format!("{WADM_NOTIFY_PREFIX}.*")],
     )
     .await?;
