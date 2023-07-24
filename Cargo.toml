@@ -70,3 +70,6 @@ serial_test = "1"
 name = "wadm"
 path = "bin/main.rs"
 required-features = ["cli"]
+
+[patch.crates-io]
+async-nats = { git = "https://github.com/brooksmtownsend/nats.rs", branch = "fix/jetstream-domain-purge", version = "0.30" }

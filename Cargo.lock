@@ -130,8 +130,7 @@ checksum = "ca6c635b3aa665c649ad1415f1573c85957dfa47690ec27aebe7ec17efe3c643"
 [[package]]
 name = "async-nats"
 version = "0.30.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "94e3e851ddf3b62be8a8085e1e453968df9cdbf990a37bbb589b5b4f587c68d7"
+source = "git+https://github.com/brooksmtownsend/nats.rs?branch=fix/jetstream-domain-purge#ba8643cf2583a5776d6b2009fc3366cd9a67f48f"
 dependencies = [
  "base64 0.21.2",
  "bytes",

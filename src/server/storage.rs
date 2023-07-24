@@ -74,7 +74,7 @@ impl ModelStorage {
         let key = model_key(account_id, lattice_id, model.name());
         trace!(%key, "Storing manifest at key");
         let data = serde_json::to_vec(&model).map_err(anyhow::Error::from)?;
-        if let Some(revision) = current_revision {
+        if let Some(revision) = current_revision.filter(|r| r > &0) {
             self.store
                 .update(&key, data.into(), revision)
                 .await
