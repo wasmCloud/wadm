@@ -111,6 +111,7 @@ impl<C> ConsumerManager<C> {
         permit_pool: Arc<Semaphore>,
         stream: NatsStream,
         worker_generator: F,
+        multitenant: bool,
     ) -> ConsumerManager<C>
     where
         W: Worker + Send + Sync + 'static,
@@ -150,6 +151,13 @@ impl<C> ConsumerManager<C> {
                     (Some(id), prefix) => (id, prefix),
                     (None, _) => return None,
                 };
+
+                // Don't create multitenant consumers if running in single tenant mode, and vice versa
+                if multitenant_prefix.is_some() != multitenant {
+                    trace!(%lattice_id, "Skipping consumer for lattice because multitenant doesn't match");
+                    return None;
+                }
+
                 // NOTE(thomastaylor312): It might be nicer for logs if we add an extra param for a
                 // friendly consumer manager name
                 trace!(%lattice_id, subject = %info.config.filter_subject, "Adding consumer for lattice");
