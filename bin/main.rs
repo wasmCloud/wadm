@@ -250,6 +250,7 @@ async fn main() -> anyhow::Result<()> {
         permit_pool.clone(),
         event_stream,
         event_worker_creator.clone(),
+        args.multitenant,
     )
     .await;
 
@@ -260,6 +261,7 @@ async fn main() -> anyhow::Result<()> {
         permit_pool.clone(),
         command_stream,
         command_worker_creator.clone(),
+        args.multitenant,
     )
     .await;
 

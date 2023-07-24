@@ -1241,6 +1241,8 @@ mod test {
             (
                 host1_id.to_string(),
                 HostInventory {
+                    friendly_name: "my-host-1".to_string(),
+                    issuer: "my-issuer-1".to_string(),
                     actors: vec![
                         ActorDescription {
                             id: actor1.public_key.to_string(),
@@ -1306,6 +1308,8 @@ mod test {
             (
                 host2_id.to_string(),
                 HostInventory {
+                    friendly_name: "my-host-2".to_string(),
+                    issuer: "my-issuer-1".to_string(),
                     actors: vec![
                         ActorDescription {
                             id: actor1.public_key.to_string(),
@@ -1545,6 +1549,8 @@ mod test {
             (
                 host1_id.to_string(),
                 HostInventory {
+                    friendly_name: "my-host-3".to_string(),
+                    issuer: "my-issuer-2".to_string(),
                     actors: vec![ActorDescription {
                         id: actor2.public_key.to_string(),
                         image_ref: None,
@@ -1572,6 +1578,8 @@ mod test {
             (
                 host2_id.to_string(),
                 HostInventory {
+                    friendly_name: "my-host-4".to_string(),
+                    issuer: "my-issuer-2".to_string(),
                     actors: vec![ActorDescription {
                         id: actor2.public_key.to_string(),
                         image_ref: None,
@@ -1757,6 +1765,8 @@ mod test {
         *inventory.write().await = HashMap::from_iter([(
             host_id.to_string(),
             HostInventory {
+                friendly_name: "my-host-5".to_string(),
+                issuer: "my-issuer-3".to_string(),
                 actors: vec![
                     ActorDescription {
                         id: actor1_id.to_string(),
@@ -2021,6 +2031,8 @@ mod test {
         *inventory.write().await = HashMap::from_iter([(
             host_id.to_string(),
             HostInventory {
+                friendly_name: "my-host-6".to_string(),
+                issuer: "my-issuer-4".to_string(),
                 actors: vec![],
                 labels: HashMap::new(),
                 host_id: host_id.to_string(),
@@ -2137,6 +2149,8 @@ mod test {
         *inventory.write().await = HashMap::from_iter([(
             host_id.to_string(),
             HostInventory {
+                friendly_name: "my-host-7".to_string(),
+                issuer: "my-issuer-5".to_string(),
                 actors: vec![ActorDescription {
                     id: "jabba".to_string(),
                     image_ref: None,
