@@ -266,7 +266,7 @@ pub struct Spread {
     pub name: String,
     /// An arbitrary map of labels to match on for scaling requirements
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
-    pub requirements: BTreeMap<String, String>,
+    pub requirements: BTreeMap<String, serde_json::Value>,
     /// An optional weight for this spread. Higher weights are given more precedence
     #[serde(skip_serializing_if = "Option::is_none")]
     pub weight: Option<usize>,
@@ -434,6 +434,64 @@ mod test {
     }
 
     #[test]
+    fn test_requirements_type_parsing() {
+        let manifest = deserialize_yaml("./test/data/non-string-requirements.yaml")
+            .expect("Should be able to parse");
+
+        let props: Vec<TraitProperty> = manifest.spec.components[0]
+            .traits
+            .as_ref()
+            .unwrap()
+            .iter()
+            .map(|t| t.properties.clone())
+            .collect();
+
+        assert_eq!(props.len(), 1);
+
+        if let TraitProperty::SpreadScaler(SpreadScalerProperty { replicas, spread }) =
+            props[0].clone()
+        {
+            assert_eq!(replicas, 5);
+            // Note here, I'm explicitly taking the parsed value, calling to_string(), comparing to a
+            // string, since this is what scalers will likely do for comparing to host labels.
+            assert!(spread[0]
+                .requirements
+                .get("number")
+                .unwrap()
+                .to_string()
+                .eq("5"),);
+            assert!(spread[1]
+                .requirements
+                .get("number")
+                .unwrap()
+                .to_string()
+                .eq("3.14"));
+            assert!(spread[2]
+                .requirements
+                .get("boolean")
+                .unwrap()
+                .to_string()
+                .eq("true"),);
+            assert!(spread[3]
+                .requirements
+                .get("string")
+                .unwrap()
+                .to_string()
+                .trim_matches('\"')
+                .eq(&"sup".to_string()),);
+            assert!(spread[4]
+                .requirements
+                .get("string")
+                .unwrap()
+                .to_string()
+                .trim_matches('\"')
+                .eq("sup"),);
+        } else {
+            panic!("Expected spreadscaler property")
+        }
+    }
+
+    #[test]
     fn test_trait_matching() {
         let manifest = deserialize_yaml("./oam/simple2.yaml").expect("Should be able to parse");
         let traits = manifest
@@ -466,13 +524,13 @@ mod test {
         let mut spread_vec: Vec<Spread> = Vec::new();
         let spread_item = Spread {
             name: "eastcoast".to_string(),
-            requirements: BTreeMap::from([("zone".to_string(), "us-east-1".to_string())]),
+            requirements: BTreeMap::from([("zone".to_string(), "us-east-1".to_string().into())]),
             weight: Some(80),
         };
         spread_vec.push(spread_item);
         let spread_item = Spread {
             name: "westcoast".to_string(),
-            requirements: BTreeMap::from([("zone".to_string(), "us-west-1".to_string())]),
+            requirements: BTreeMap::from([("zone".to_string(), "us-west-1".to_string().into())]),
             weight: Some(20),
         };
         spread_vec.push(spread_item);
@@ -517,7 +575,7 @@ mod test {
         let mut spread_vec: Vec<Spread> = Vec::new();
         let spread_item = Spread {
             name: "haslights".to_string(),
-            requirements: BTreeMap::from([("zone".to_string(), "enabled".to_string())]),
+            requirements: BTreeMap::from([("zone".to_string(), "enabled".to_string().into())]),
             weight: Some(DEFAULT_SPREAD_WEIGHT),
         };
         spread_vec.push(spread_item);

@@ -1,0 +1,36 @@
+# This manifest is used to test that we can parse requirements as strings
+# no matter the corresponding simple data type. We do not support complex
+# data types like lists or maps on the host, so it's not enforced here.
+apiVersion: core.oam.dev/v1beta1
+kind: Application
+metadata:
+  name: complex
+  annotations:
+    version: v0.0.1
+    description: "This is my app"
+spec:
+  components:
+    - name: echo
+      type: actor
+      properties:
+        image: wasmcloud.azurecr.io/echo:0.3.8
+      traits:
+        - type: spreadscaler
+          properties:
+            replicas: 5
+            spread:
+              - name: numba
+                requirements:
+                  number: 5
+              - name: mmmdelicious
+                requirements:
+                  number: 3.14
+              - name: boolin
+                requirements:
+                  boolean: true
+              - name: stringy
+                requirements:
+                  string: sup
+              - name: stringyquote
+                requirements:
+                  string: "sup"

@@ -299,17 +299,31 @@ fn spreadscaler_annotations(spread_name: &str, scaler_id: &str) -> HashMap<Strin
 }
 
 /// Helper function that computes a list of eligible hosts to match with a spread
-fn eligible_hosts<'a>(
+pub(crate) fn eligible_hosts<'a>(
     all_hosts: &'a HashMap<String, Host>,
     spread: &Spread,
 ) -> HashMap<&'a String, &'a Host> {
     all_hosts
         .iter()
         .filter(|(_id, host)| {
-            spread
-                .requirements
-                .iter()
-                .all(|(key, value)| host.labels.get(key).map(|v| v.eq(value)).unwrap_or(false))
+            spread.requirements.iter().all(|(key, value)| {
+                use serde_json::Value::*;
+                // This more complicated match is because String values should be destructured,
+                // while the number/boolean can just be converted directly. Other types like
+                // arrays or objects are not supported as spread matchers
+                let str_value = match value {
+                    String(s) => s.to_string(),
+                    Number(_) | Bool(_) => value.to_string(),
+                    _ => {
+                        warn!("Unsupported value type for spread requirement. Ignoring");
+                        return false;
+                    }
+                };
+                host.labels
+                    .get(key)
+                    .map(|v| v.eq(&str_value))
+                    .unwrap_or(false)
+            })
         })
         .map(|(id, host)| (id, host))
         .collect()
@@ -381,7 +395,7 @@ mod test {
     };
 
     use anyhow::Result;
-    use chrono::Utc;
+    use chrono::{DateTime, Utc};
 
     use crate::{
         commands::{Command, StartActor},
@@ -674,19 +688,25 @@ mod test {
             spread: vec![
                 Spread {
                     name: "RunInFakeCloud".to_string(),
-                    requirements: BTreeMap::from_iter([("cloud".to_string(), "fake".to_string())]),
+                    requirements: BTreeMap::from_iter([(
+                        "cloud".to_string(),
+                        "fake".to_string().into(),
+                    )]),
                     weight: Some(50), // 206
                 },
                 Spread {
                     name: "RunInRealCloud".to_string(),
-                    requirements: BTreeMap::from_iter([("cloud".to_string(), "real".to_string())]),
+                    requirements: BTreeMap::from_iter([(
+                        "cloud".to_string(),
+                        "real".to_string().into(),
+                    )]),
                     weight: Some(25), // 103
                 },
                 Spread {
                     name: "RunInPurgatoryCloud".to_string(),
                     requirements: BTreeMap::from_iter([(
                         "cloud".to_string(),
-                        "purgatory".to_string(),
+                        "purgatory".to_string().into(),
                     )]),
                     weight: Some(25), // 103
                 },
@@ -700,7 +720,7 @@ mod test {
                     name: "CrossRegionCustom".to_string(),
                     requirements: BTreeMap::from_iter([(
                         "region".to_string(),
-                        "us-brooks-1".to_string(),
+                        "us-brooks-1".to_string().into(),
                     )]),
                     weight: Some(33), // 3
                 },
@@ -708,7 +728,7 @@ mod test {
                     name: "CrossRegionReal".to_string(),
                     requirements: BTreeMap::from_iter([(
                         "region".to_string(),
-                        "us-midwest-4".to_string(),
+                        "us-midwest-4".to_string().into(),
                     )]),
                     weight: Some(33), // 3
                 },
@@ -716,7 +736,7 @@ mod test {
                     name: "RunOnEdge".to_string(),
                     requirements: BTreeMap::from_iter([(
                         "location".to_string(),
-                        "edge".to_string(),
+                        "edge".to_string().into(),
                     )]),
                     weight: Some(33), // 3
                 },
@@ -961,14 +981,17 @@ mod test {
             spread: vec![
                 Spread {
                     name: "SimpleOne".to_string(),
-                    requirements: BTreeMap::from_iter([("region".to_string(), "east".to_string())]),
+                    requirements: BTreeMap::from_iter([(
+                        "region".to_string(),
+                        "east".to_string().into(),
+                    )]),
                     weight: Some(75),
                 },
                 Spread {
                     name: "SimpleTwo".to_string(),
                     requirements: BTreeMap::from_iter([(
                         "resilient".to_string(),
-                        "true".to_string(),
+                        "true".to_string().into(),
                     )]),
                     weight: Some(25),
                 },
@@ -1224,7 +1247,7 @@ mod test {
                     name: "CrossRegionCustom".to_string(),
                     requirements: BTreeMap::from_iter([(
                         "region".to_string(),
-                        "us-brooks-1".to_string(),
+                        "us-brooks-1".to_string().into(),
                     )]),
                     weight: Some(33), // 3
                 },
@@ -1232,7 +1255,7 @@ mod test {
                     name: "CrossRegionReal".to_string(),
                     requirements: BTreeMap::from_iter([(
                         "region".to_string(),
-                        "us-midwest-4".to_string(),
+                        "us-midwest-4".to_string().into(),
                     )]),
                     weight: Some(33), // 3
                 },
@@ -1240,7 +1263,7 @@ mod test {
                     name: "RunOnEdge".to_string(),
                     requirements: BTreeMap::from_iter([(
                         "location".to_string(),
-                        "edge".to_string(),
+                        "edge".to_string().into(),
                     )]),
                     weight: Some(33), // 3
                 },
@@ -1472,5 +1495,64 @@ mod test {
         }
 
         Ok(())
+    }
+
+    #[test]
+    fn can_match_non_string_requirements() {
+        let spread_bool = Spread {
+            name: "one".to_string(),
+            requirements: BTreeMap::from_iter([("one".to_string(), serde_json::Value::Bool(true))]),
+            weight: None,
+        };
+        let spread_num = Spread {
+            name: "two".to_string(),
+            requirements: BTreeMap::from_iter([(
+                "two".to_string(),
+                serde_json::Value::Number(serde_json::Number::from_f64(3.14).unwrap()),
+            )]),
+            weight: None,
+        };
+        let mut all_hosts = HashMap::new();
+        all_hosts.insert(
+            "NASDASD".to_string(),
+            Host {
+                actors: HashMap::new(),
+                friendly_name: "hey".to_string(),
+                labels: HashMap::from_iter([("one".to_string(), "true".to_string())]),
+                annotations: HashMap::new(),
+                providers: HashSet::new(),
+                uptime_seconds: 0,
+                version: None,
+                id: "NASDASD".to_string(),
+                last_seen: DateTime::default(),
+            },
+        );
+        all_hosts.insert(
+            "NASDASDFFF".to_string(),
+            Host {
+                actors: HashMap::new(),
+                friendly_name: "myfriend".to_string(),
+                labels: HashMap::from_iter([("two".to_string(), "3.14".to_string())]),
+                annotations: HashMap::new(),
+                providers: HashSet::new(),
+                uptime_seconds: 0,
+                version: None,
+                id: "NASDASDFFF".to_string(),
+                last_seen: DateTime::default(),
+            },
+        );
+        let hosts = eligible_hosts(&all_hosts, &spread_bool);
+
+        assert_eq!(hosts.len(), 1);
+        let host = hosts.get(&"NASDASD".to_string());
+        assert!(host.is_some());
+        assert_eq!(host.unwrap().friendly_name, "hey".to_string());
+
+        let hosts = eligible_hosts(&all_hosts, &spread_num);
+
+        assert_eq!(hosts.len(), 1);
+        let host = hosts.get(&"NASDASDFFF".to_string());
+        assert!(host.is_some());
+        assert_eq!(host.unwrap().friendly_name, "myfriend".to_string());
     }
 }

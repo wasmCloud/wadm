@@ -389,12 +389,18 @@ mod test {
             spread: vec![
                 Spread {
                     name: "SimpleOne".to_string(),
-                    requirements: BTreeMap::from_iter([("cloud".to_string(), "fake".to_string())]),
+                    requirements: BTreeMap::from_iter([(
+                        "cloud".to_string(),
+                        "fake".to_string().into(),
+                    )]),
                     weight: Some(100),
                 },
                 Spread {
                     name: "SimpleTwo".to_string(),
-                    requirements: BTreeMap::from_iter([("cloud".to_string(), "real".to_string())]),
+                    requirements: BTreeMap::from_iter([(
+                        "cloud".to_string(),
+                        "real".to_string().into(),
+                    )]),
                     weight: Some(100),
                 },
             ],
@@ -498,14 +504,17 @@ mod test {
             spread: vec![
                 Spread {
                     name: "ComplexOne".to_string(),
-                    requirements: BTreeMap::from_iter([("cloud".to_string(), "fake".to_string())]),
+                    requirements: BTreeMap::from_iter([(
+                        "cloud".to_string(),
+                        "fake".to_string().into(),
+                    )]),
                     weight: Some(1),
                 },
                 Spread {
                     name: "ComplexTwo".to_string(),
                     requirements: BTreeMap::from_iter([(
                         "region".to_string(),
-                        "us-yourhouse-1".to_string(),
+                        "us-yourhouse-1".to_string().into(),
                     )]),
                     weight: Some(2),
                 },
@@ -825,12 +834,18 @@ mod test {
             spread: vec![
                 Spread {
                     name: "SimpleOne".to_string(),
-                    requirements: BTreeMap::from_iter([("cloud".to_string(), "fake".to_string())]),
+                    requirements: BTreeMap::from_iter([(
+                        "cloud".to_string(),
+                        "fake".to_string().into(),
+                    )]),
                     weight: Some(100),
                 },
                 Spread {
                     name: "SimpleTwo".to_string(),
-                    requirements: BTreeMap::from_iter([("cloud".to_string(), "real".to_string())]),
+                    requirements: BTreeMap::from_iter([(
+                        "cloud".to_string(),
+                        "real".to_string().into(),
+                    )]),
                     weight: Some(100),
                 },
             ],
@@ -967,12 +982,18 @@ mod test {
             spread: vec![
                 Spread {
                     name: "SimpleOne".to_string(),
-                    requirements: BTreeMap::from_iter([("cloud".to_string(), "fake".to_string())]),
+                    requirements: BTreeMap::from_iter([(
+                        "cloud".to_string(),
+                        "fake".to_string().into(),
+                    )]),
                     weight: Some(100),
                 },
                 Spread {
                     name: "SimpleTwo".to_string(),
-                    requirements: BTreeMap::from_iter([("cloud".to_string(), "real".to_string())]),
+                    requirements: BTreeMap::from_iter([(
+                        "cloud".to_string(),
+                        "real".to_string().into(),
+                    )]),
                     weight: Some(100),
                 },
             ],
@@ -1040,7 +1061,10 @@ mod test {
             replicas: 1,
             spread: vec![Spread {
                 name: "SimpleOne".to_string(),
-                requirements: BTreeMap::from_iter([("cloud".to_string(), "fake".to_string())]),
+                requirements: BTreeMap::from_iter([(
+                    "cloud".to_string(),
+                    "fake".to_string().into(),
+                )]),
                 weight: Some(100),
             }],
         };
