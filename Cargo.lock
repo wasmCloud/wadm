@@ -2984,7 +2984,7 @@ checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 
 [[package]]
 name = "wadm"
-version = "0.5.0-alpha.1"
+version = "0.5.0-alpha.2"
 dependencies = [
  "anyhow",
  "async-nats 0.31.0",
@@ -3199,9 +3199,9 @@ dependencies = [
 
 [[package]]
 name = "wasmcloud-control-interface"
-version = "0.28.0"
+version = "0.28.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "942b23887d80660323eff38acc580f22fc54340d8022352984d9ce4d0aedb937"
+checksum = "37be05dfc4e1c528be5b9bdf7d0934182abe4a25424fcca0ba7afdb3f2b432e7"
 dependencies = [
  "async-nats 0.31.0",
  "bytes",

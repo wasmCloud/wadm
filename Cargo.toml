@@ -1,7 +1,7 @@
 [package]
 name = "wadm"
 description = "wasmCloud Application Deployment Manager: A tool for running Wasm applications in wasmCloud"
-version = "0.5.0-alpha.1"
+version = "0.5.0-alpha.2"
 edition = "2021"
 authors = ["wasmCloud Team"]
 keywords = ["webassembly", "wasmcloud", "wadm"]
@@ -60,7 +60,7 @@ tracing-subscriber = { version = "0.3.7", features = [
 ], optional = true }
 uuid = "1"
 wasmbus-rpc = "0.14"
-wasmcloud-control-interface = "0.28"
+wasmcloud-control-interface = "0.28.1"
 semver = { version = "1.0.16", features = ["serde"] }
 
 [dev-dependencies]
