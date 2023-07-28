@@ -267,12 +267,13 @@ where
     C: Stream<Item = Result<ScopedMessage<W::Message>, async_nats::Error>> + Unpin,
 {
     loop {
+        // Get next value from stream, returning error if the consumer stopped
+        let res = consumer.next().await.ok_or(WorkError::ConsumerStopped)?;
+
         // Grab a permit to do some work. This will only return errors if the pool is closed
         trace!("Getting work permit");
         let _permit = permits.acquire().await?;
         trace!("Received work permit, attempting to pull from consumer");
-        // Get next value from stream, returning error if the consumer stopped
-        let res = consumer.next().await.ok_or(WorkError::ConsumerStopped)?;
         let res = match res {
             Ok(msg) => {
                 trace!(message = ?msg, "Got message from consumer");
