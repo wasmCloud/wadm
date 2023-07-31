@@ -72,13 +72,8 @@ struct Args {
 
     /// (Advanced) Tweak the maximum number of jobs to run for handling events and commands. Be
     /// careful how you use this as it can affect performance
-    #[arg(
-        short = 'j',
-        long = "max-jobs",
-        default_value = "256",
-        env = "WADM_MAX_JOBS"
-    )]
-    max_jobs: usize,
+    #[arg(short = 'j', long = "max-jobs", env = "WADM_MAX_JOBS")]
+    max_jobs: Option<usize>,
 
     /// The URL of the nats server you want to connect to
     #[arg(
@@ -193,6 +188,8 @@ async fn main() -> anyhow::Result<()> {
 
     let manifest_storage = nats::ensure_kv_bucket(&context, args.manifest_bucket, 1).await?;
 
+    debug!("Ensuring event stream");
+
     let event_stream = nats::ensure_stream(
         &context,
         EVENT_STREAM_NAME.to_owned(),
@@ -203,6 +200,8 @@ async fn main() -> anyhow::Result<()> {
         ),
     )
     .await?;
+
+    debug!("Ensuring command stream");
 
     let command_stream = nats::ensure_stream(
         &context,
@@ -222,6 +221,8 @@ async fn main() -> anyhow::Result<()> {
         (vec![DEFAULT_EVENTS_TOPIC.to_owned()], MIRROR_STREAM_NAME)
     };
 
+    debug!("Ensuring mirror stream");
+
     let mirror_stream = nats::ensure_stream(
         &context,
         mirror_stream.to_owned(),
@@ -230,6 +231,8 @@ async fn main() -> anyhow::Result<()> {
     )
     .await?;
 
+    debug!("Ensuring notify stream");
+
     let notify_stream = nats::ensure_notify_stream(
         &context,
         NOTIFY_STREAM_NAME.to_owned(),
@@ -237,7 +240,11 @@ async fn main() -> anyhow::Result<()> {
     )
     .await?;
 
-    let permit_pool = Arc::new(Semaphore::new(args.max_jobs));
+    debug!("Creating event consumer manager");
+
+    let permit_pool = Arc::new(Semaphore::new(
+        args.max_jobs.unwrap_or(Semaphore::MAX_PERMITS),
+    ));
     let event_worker_creator = EventWorkerCreator {
         state_store: state_storage.clone(),
         manifest_store: manifest_storage.clone(),
@@ -253,6 +260,8 @@ async fn main() -> anyhow::Result<()> {
         args.multitenant,
     )
     .await;
+
+    debug!("Creating command consumer manager");
 
     let command_worker_creator = CommandWorkerCreator {
         pool: connection_pool,
@@ -278,6 +287,8 @@ async fn main() -> anyhow::Result<()> {
 
     let wadm_event_prefix = DEFAULT_WADM_EVENTS_TOPIC.trim_matches(trimmer);
 
+    debug!("Creating lattice observer");
+
     let observer = observer::Observer {
         parser: LatticeIdParser::new("wasmbus", args.multitenant),
         command_manager: commands_manager,
@@ -288,6 +299,8 @@ async fn main() -> anyhow::Result<()> {
         command_worker_creator,
         event_worker_creator,
     };
+
+    debug!("Subscribing to API topic");
 
     let server = Server::new(
         manifest_storage,
