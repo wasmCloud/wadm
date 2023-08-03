@@ -2,7 +2,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use async_nats::jetstream::{stream::Stream, Context};
+use async_nats::jetstream::{
+    stream::{RetentionPolicy, Stream},
+    Context,
+};
 use clap::Parser;
 use tokio::sync::Semaphore;
 use tracing::log::debug;
@@ -17,9 +20,9 @@ use wadm::{
     scaler::manager::{ScalerManager, WADM_NOTIFY_PREFIX},
     server::{ManifestNotifier, Server, DEFAULT_WADM_TOPIC_PREFIX},
     storage::{nats_kv::NatsKvStore, reaper::Reaper},
-    workers::{CommandPublisher, CommandWorker, EventWorker},
+    workers::{CommandPublisher, CommandWorker, EventWorker, StatusPublisher},
     DEFAULT_COMMANDS_TOPIC, DEFAULT_EVENTS_TOPIC, DEFAULT_MULTITENANT_EVENTS_TOPIC,
-    DEFAULT_WADM_EVENTS_TOPIC,
+    DEFAULT_STATUS_TOPIC, DEFAULT_WADM_EVENTS_TOPIC,
 };
 
 mod connections;
@@ -31,6 +34,7 @@ use connections::{ControlClientConfig, ControlClientConstructor};
 
 const EVENT_STREAM_NAME: &str = "wadm_events";
 const COMMAND_STREAM_NAME: &str = "wadm_commands";
+const STATUS_STREAM_NAME: &str = "wadm_status";
 const MIRROR_STREAM_NAME: &str = "wadm_mirror";
 const MULTITENANT_MIRROR_STREAM_NAME: &str = "wadm_multitenant_mirror";
 const NOTIFY_STREAM_NAME: &str = "wadm_notify";
@@ -198,6 +202,9 @@ async fn main() -> anyhow::Result<()> {
             "A stream that stores all events coming in on the wasmbus.evt topics in a cluster"
                 .to_string(),
         ),
+        RetentionPolicy::WorkQueue,
+        None,
+        None,
     )
     .await?;
 
@@ -208,6 +215,20 @@ async fn main() -> anyhow::Result<()> {
         COMMAND_STREAM_NAME.to_owned(),
         vec![DEFAULT_COMMANDS_TOPIC.to_owned()],
         Some("A stream that stores all commands for wadm".to_string()),
+        RetentionPolicy::WorkQueue,
+        None,
+        None,
+    )
+    .await?;
+
+    let status_stream = nats::ensure_stream(
+        &context,
+        STATUS_STREAM_NAME.to_owned(),
+        vec![DEFAULT_STATUS_TOPIC.to_owned()],
+        Some("A stream that stores all status updates for wadm applications".to_string()),
+        RetentionPolicy::Limits,
+        Some(std::time::Duration::from_nanos(0)),
+        Some(10),
     )
     .await?;
 
@@ -228,6 +249,9 @@ async fn main() -> anyhow::Result<()> {
         mirror_stream.to_owned(),
         event_stream_topics.clone(),
         Some("A stream that publishes all events to the same stream".to_string()),
+        RetentionPolicy::WorkQueue,
+        None,
+        None,
     )
     .await?;
 
@@ -307,6 +331,7 @@ async fn main() -> anyhow::Result<()> {
         client,
         Some(&args.api_prefix),
         args.multitenant,
+        status_stream,
         ManifestNotifier::new(wadm_event_prefix, context),
     )
     .await?;
@@ -371,9 +396,13 @@ where
             .await
         {
             Ok(client) => {
-                let publisher = CommandPublisher::new(
+                let command_publisher = CommandPublisher::new(
                     self.publisher.clone(),
                     &format!("{}.{lattice_id}", self.command_topic_prefix),
+                );
+                let status_publisher = StatusPublisher::new(
+                    self.publisher.clone(),
+                    &format!("wadm.status.{lattice_id}"),
                 );
                 let manager = ScalerManager::new(
                     self.publisher.clone(),
@@ -382,14 +411,15 @@ where
                     multitenant_prefix,
                     self.state_store.clone(),
                     self.manifest_store.clone(),
-                    publisher.clone(),
+                    command_publisher.clone(),
                     client.clone(),
                 )
                 .await?;
                 Ok(EventWorker::new(
                     self.state_store.clone(),
                     client,
-                    publisher,
+                    command_publisher,
+                    status_publisher,
                     manager,
                 ))
             }

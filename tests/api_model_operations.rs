@@ -1,6 +1,6 @@
 use std::{collections::HashMap, time::Duration};
 
-use async_nats::Subscriber;
+use async_nats::{jetstream, Subscriber};
 use futures::StreamExt;
 use serde::de::DeserializeOwned;
 use wadm::{
@@ -84,12 +84,38 @@ async fn setup_server(id: String) -> TestServer {
         .expect("Should be able to connect to NATS");
     let store = helpers::create_test_store_with_client(client.clone(), id.clone()).await;
 
+    let context = jetstream::new(client.clone());
+    let status_stream = context
+        .get_or_create_stream(async_nats::jetstream::stream::Config {
+            name: "wadm_status".to_string(),
+            description: Some(
+                "A stream that stores all status updates for wadm applications".to_string(),
+            ),
+            num_replicas: 1,
+            retention: async_nats::jetstream::stream::RetentionPolicy::Limits,
+            subjects: vec!["wadm.status.*.*".to_string()],
+            max_messages_per_subject: 10,
+            max_age: std::time::Duration::from_nanos(0),
+            storage: async_nats::jetstream::stream::StorageType::File,
+            allow_rollup: false,
+            ..Default::default()
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("{e:?}"))
+        .expect("Should be able to set up status stream for tests");
+
+    status_stream
+        .purge()
+        .await
+        .expect("Should be able to purge status stream for tests");
+
     let prefix = format!("testing.{id}");
     let server = Server::new(
         store,
         client.clone(),
         Some(&id),
         false,
+        status_stream,
         ManifestNotifier::new(&prefix, client.clone()),
     )
     .await

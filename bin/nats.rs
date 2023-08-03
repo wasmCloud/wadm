@@ -1,11 +1,12 @@
 use std::path::PathBuf;
+use std::time::Duration;
 
 use anyhow::{anyhow, Result};
 use async_nats::{
     jetstream::{
         self,
         kv::{Config as KvConfig, Store},
-        stream::{Config as StreamConfig, Stream},
+        stream::{Config as StreamConfig, RetentionPolicy, Stream},
         Context,
     },
     Client, ConnectOptions,
@@ -110,15 +111,19 @@ pub async fn ensure_stream(
     name: String,
     subjects: Vec<String>,
     description: Option<String>,
+    retention: RetentionPolicy,
+    max_age: Option<Duration>,
+    max_messages_per_subject: Option<i64>,
 ) -> Result<Stream> {
     context
         .get_or_create_stream(StreamConfig {
             name,
             description,
             num_replicas: 1,
-            retention: async_nats::jetstream::stream::RetentionPolicy::WorkQueue,
+            retention,
             subjects,
-            max_age: DEFAULT_EXPIRY_TIME,
+            max_messages_per_subject: max_messages_per_subject.unwrap_or(0),
+            max_age: max_age.unwrap_or(DEFAULT_EXPIRY_TIME),
             storage: async_nats::jetstream::stream::StorageType::File,
             allow_rollup: false,
             ..Default::default()

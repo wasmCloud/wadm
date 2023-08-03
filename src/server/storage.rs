@@ -125,6 +125,7 @@ impl ModelStorage {
                         // TODO(thomastaylor312): Actually fetch the status info from the stored
                         // manifest once we figure it out
                         status: StatusType::default(),
+                        status_message: None,
                     }))
                 }
             });

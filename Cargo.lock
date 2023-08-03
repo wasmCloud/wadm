@@ -2990,6 +2990,7 @@ dependencies = [
  "async-nats 0.31.0",
  "async-trait",
  "atty",
+ "base64 0.21.2",
  "bytes",
  "chrono",
  "clap",

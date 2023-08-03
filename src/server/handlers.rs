@@ -1,6 +1,7 @@
-use async_nats::{Client, Message};
+use async_nats::{jetstream::stream::Stream, Client, Message};
+use base64::{engine::general_purpose::STANDARD as B64decoder, Engine};
 use serde_json::json;
-use tracing::{debug, error, instrument, trace};
+use tracing::{debug, error, instrument, log::warn, trace};
 
 use crate::{
     model::{
@@ -8,6 +9,7 @@ use crate::{
         LATEST_VERSION,
     },
     publisher::Publisher,
+    server::StatusType,
 };
 
 use super::{
@@ -21,6 +23,7 @@ pub(crate) struct Handler<P> {
     pub(crate) store: ModelStorage,
     pub(crate) client: Client,
     pub(crate) notifier: ManifestNotifier<P>,
+    pub(crate) status_stream: Stream,
 }
 
 impl<P: Publisher> Handler<P> {
@@ -75,7 +78,18 @@ impl<P: Publisher> Handler<P> {
             }
         }
 
-        let manifest_name = manifest.metadata.name.clone();
+        let manifest_name = manifest.metadata.name.trim().to_string();
+        if manifest_name.contains(' ') || manifest_name.contains('.') {
+            self.send_error(
+                msg.reply,
+                format!(
+                    "Manifest name {} contains invalid characters. Manifest names can only contain alphanumeric characters, dashes, and underscores.",
+                    manifest_name
+                ),
+            )
+            .await;
+            return;
+        }
 
         let (mut current_manifests, current_revision) =
             match self.store.get(account_id, lattice_id, &manifest_name).await {
@@ -226,7 +240,7 @@ impl<P: Publisher> Handler<P> {
 
     #[instrument(level = "debug", skip(self, msg))]
     pub async fn list_models(&self, msg: Message, account_id: Option<&str>, lattice_id: &str) {
-        let data = match self.store.list(account_id, lattice_id).await {
+        let mut data = match self.store.list(account_id, lattice_id).await {
             Ok(d) => d,
             Err(e) => {
                 error!(error = %e, "Unable to fetch data");
@@ -235,6 +249,18 @@ impl<P: Publisher> Handler<P> {
                 return;
             }
         };
+
+        for model in &mut data {
+            if let Some(status) = self.get_manifest_status(lattice_id, &model.name).await {
+                model.status = status.status_type;
+                model.status_message = Some(status.message);
+            } else {
+                warn!("Could not fetch status for model, assuming undeployed");
+                model.status = StatusType::Undeployed;
+                model.status_message = None;
+            }
+        }
+
         // NOTE: We _just_ deserialized this from the store above and then manually constructed it,
         // so we should be just fine. Just in case though, we unwrap to default
         self.send_reply(msg.reply, serde_json::to_vec(&data).unwrap_or_default())
@@ -613,6 +639,7 @@ impl<P: Publisher> Handler<P> {
 
         let reply = if manifests.undeploy() {
             trace!("Manifest undeployed. Storing updated manifest");
+
             self.store
                 .set(account_id, lattice_id, manifests, Some(current_revision))
                 .await
@@ -698,20 +725,14 @@ impl<P: Publisher> Handler<P> {
         };
 
         let current = manifests.get_current();
+
         let status = Status {
             version: current.version().to_owned(),
-            info: StatusInfo {
-                status_type: manifests
-                    .status()
-                    .iter()
-                    .map(|comp| comp.info.status_type)
-                    .sum(),
-                message: manifests
-                    .status_message()
-                    .map(|s| s.to_owned())
-                    .unwrap_or_default(),
-            },
-            components: manifests.status().to_vec(),
+            info: self
+                .get_manifest_status(lattice_id, name)
+                .await
+                .unwrap_or_default(),
+            components: vec![],
         };
 
         self.send_reply(
@@ -760,5 +781,21 @@ impl<P: Publisher> Handler<P> {
         }))
         .unwrap_or_default();
         self.send_reply(reply, response).await;
+    }
+
+    async fn get_manifest_status(&self, lattice_id: &str, name: &str) -> Option<StatusInfo> {
+        match self
+            .status_stream
+            .get_last_raw_message_by_subject(&format!("wadm.status.{lattice_id}.{name}",))
+            .await
+            .map(|raw| {
+                B64decoder
+                    .decode(raw.payload)
+                    .map(|b| serde_json::from_slice::<StatusInfo>(&b))
+            }) {
+            Ok(Ok(Ok(status))) => Some(status),
+            // Model status doesn't exist or is invalid, assuming undeployed
+            _ => None,
+        }
     }
 }

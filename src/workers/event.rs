@@ -11,7 +11,8 @@ use crate::consumers::{
 };
 use crate::events::*;
 use crate::publisher::Publisher;
-use crate::scaler::manager::ScalerManager;
+use crate::scaler::manager::{ScalerList, ScalerManager};
+use crate::server::StatusInfo;
 use crate::storage::{Actor, Host, Provider, ProviderStatus, Store, WadmActorInstance};
 use crate::APP_SPEC_ANNOTATION;
 
@@ -20,7 +21,8 @@ use super::event_helpers::*;
 pub struct EventWorker<StateStore, C: Clone, P: Clone> {
     store: StateStore,
     ctl_client: C,
-    publisher: CommandPublisher<P>,
+    command_publisher: CommandPublisher<P>,
+    status_publisher: StatusPublisher<P>,
     scalers: ScalerManager<StateStore, P, C>,
 }
 
@@ -34,13 +36,15 @@ where
     pub fn new(
         store: StateStore,
         ctl_client: C,
-        publisher: CommandPublisher<P>,
+        command_publisher: CommandPublisher<P>,
+        status_publisher: StatusPublisher<P>,
         manager: ScalerManager<StateStore, P, C>,
     ) -> EventWorker<StateStore, C, P> {
         EventWorker {
             store,
             ctl_client,
-            publisher,
+            command_publisher,
+            status_publisher,
             scalers: manager,
         }
     }
@@ -709,8 +713,22 @@ where
 
         trace!(?commands, "Publishing commands");
 
+        let status = if commands.is_empty() {
+            scaler_status(&scalers).await
+        } else {
+            StatusInfo::compensating("Model deployed, running initial compensating commands")
+        };
+
+        if let Err(e) = self
+            .status_publisher
+            .publish_status(data.manifest.metadata.name.as_ref(), status)
+            .await
+        {
+            warn!(error = ?e, "Failed to set status to compensating");
+        };
+
         // Now handle the result from reconciliation
-        self.publisher.publish_commands(commands).await?;
+        self.command_publisher.publish_commands(commands).await?;
 
         res
     }
@@ -732,7 +750,17 @@ where
 
         trace!(?commands, "Publishing commands");
 
-        self.publisher.publish_commands(commands).await?;
+        if commands.is_empty() {
+            if let Err(e) = self
+                .status_publisher
+                .publish_status(name, scaler_status(&scalers).await)
+                .await
+            {
+                warn!(error = ?e, "Failed to set status for scaler");
+            };
+        }
+
+        self.command_publisher.publish_commands(commands).await?;
 
         res
     }
@@ -741,17 +769,44 @@ where
     async fn run_all_scalers(&self, event: &Event) -> anyhow::Result<()> {
         let scalers = self.scalers.get_all_scalers().await;
 
-        let (commands, res) = get_commands_and_result(
-            scalers
-                .values()
-                .flatten()
-                .map(|scaler| scaler.handle_event(event)),
-            "Errors occurred while handling event with all scalers",
-        )
-        .await;
+        let futs = scalers.iter().map(|(name, scalers)| async {
+            let (cmds, res) = get_commands_and_result(
+                scalers.iter().map(|scaler| scaler.handle_event(event)),
+                "Errors occurred while handling event with all scalers",
+            )
+            .await;
+
+            let status = if cmds.is_empty() {
+                scaler_status(scalers).await
+            } else {
+                StatusInfo::compensating(
+                    "Event modified scaler {name} state, running compensating commands.",
+                )
+            };
+            if let Err(e) = self.status_publisher.publish_status(name, status).await {
+                warn!(error = ?e, "Failed to set status for scaler");
+            };
+
+            (cmds, res)
+        });
+
+        // Resolve futures, computing commands for scalers, publishing statuses, and combining any errors
+        let (commands, res) = futures::future::join_all(futs).await.into_iter().fold(
+            (vec![], Ok(())),
+            |(mut cmds, res), (mut new_cmds, new_res)| {
+                cmds.append(&mut new_cmds);
+                let res = match (res, new_res) {
+                    (Ok(_), Ok(_)) => Ok(()),
+                    (Ok(_), Err(e)) | (Err(e), Ok(_)) => Err(e),
+                    (Err(e), Err(e2)) => Err(e.context(e2)),
+                };
+                (cmds, res)
+            },
+        );
 
         trace!(?commands, "Publishing commands");
-        self.publisher.publish_commands(commands).await?;
+        self.command_publisher.publish_commands(commands).await?;
+
         res
     }
 }
@@ -845,8 +900,18 @@ where
                 .map(|_| None),
             Event::ManifestUnpublished(data) => {
                 debug!("Handling unpublished manifest");
+
                 match self.scalers.remove_scalers(&data.name).await {
-                    Some(Ok(_)) => Ok(None),
+                    Some(Ok(_)) => {
+                        if let Err(e) = self
+                            .status_publisher
+                            .publish_status(&data.name, StatusInfo::undeployed("Model undeployed"))
+                            .await
+                        {
+                            warn!(error = ?e, "Failed to set status to undeployed");
+                        }
+                        Ok(None)
+                    }
                     Some(Err(e)) => Err(e),
                     None => Ok(None),
                 }
@@ -902,6 +967,27 @@ where
     )
 }
 
+/// Helper function to get the status of all scalers
+async fn scaler_status(scalers: &ScalerList) -> StatusInfo {
+    let futs = scalers.iter().map(|s| s.status());
+    let status = futures::future::join_all(futs).await;
+    StatusInfo {
+        status_type: status.iter().map(|s| s.status_type).sum(),
+        message: status
+            .into_iter()
+            .filter_map(|s| {
+                let message = s.message.trim();
+                if message.is_empty() {
+                    None
+                } else {
+                    Some(message.to_owned())
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", "),
+    }
+}
+
 fn map_to_result(errors: Vec<anyhow::Error>, error_message: &str) -> Result<()> {
     if errors.is_empty() {
         Ok(())
@@ -945,10 +1031,12 @@ mod test {
         let lattice_id = "all_state";
 
         let command_publisher = CommandPublisher::new(NoopPublisher, "doesntmatter");
+        let status_publisher = StatusPublisher::new(NoopPublisher, "doesntmatter");
         let worker = EventWorker::new(
             store.clone(),
             lattice_source.clone(),
             command_publisher.clone(),
+            status_publisher.clone(),
             ScalerManager::test_new(
                 NoopPublisher,
                 lattice_id,
@@ -1743,10 +1831,12 @@ mod test {
             ..Default::default()
         };
         let command_publisher = CommandPublisher::new(NoopPublisher, "doesntmatter");
+        let status_publisher = StatusPublisher::new(NoopPublisher, "doesntmatter");
         let worker = EventWorker::new(
             store.clone(),
             lattice_source.clone(),
             command_publisher.clone(),
+            status_publisher.clone(),
             ScalerManager::test_new(
                 NoopPublisher,
                 lattice_id,
@@ -1895,10 +1985,12 @@ mod test {
         let lattice_source = TestLatticeSource::default();
         let lattice_id = "provider_status";
         let command_publisher = CommandPublisher::new(NoopPublisher, "doesntmatter");
+        let status_publisher = StatusPublisher::new(NoopPublisher, "doesntmatter");
         let worker = EventWorker::new(
             store.clone(),
             lattice_source.clone(),
             command_publisher.clone(),
+            status_publisher.clone(),
             ScalerManager::test_new(
                 NoopPublisher,
                 lattice_id,
@@ -2009,10 +2101,12 @@ mod test {
         let lattice_id = "provider_contract_id";
 
         let command_publisher = CommandPublisher::new(NoopPublisher, "doesntmatter");
+        let status_publisher = StatusPublisher::new(NoopPublisher, "doesntmatter");
         let worker = EventWorker::new(
             store.clone(),
             lattice_source.clone(),
             command_publisher.clone(),
+            status_publisher.clone(),
             ScalerManager::test_new(
                 NoopPublisher,
                 lattice_id,
@@ -2110,10 +2204,12 @@ mod test {
         let lattice_id = "update_data";
 
         let command_publisher = CommandPublisher::new(NoopPublisher, "doesntmatter");
+        let status_publisher = StatusPublisher::new(NoopPublisher, "doesntmatter");
         let worker = EventWorker::new(
             store.clone(),
             lattice_source.clone(),
             command_publisher.clone(),
+            status_publisher.clone(),
             ScalerManager::test_new(
                 NoopPublisher,
                 lattice_id,
