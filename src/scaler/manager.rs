@@ -114,7 +114,7 @@ pub struct ScalerManager<StateStore, P: Clone, L: Clone> {
     subject: String,
     lattice_id: String,
     state_store: StateStore,
-    publisher: CommandPublisher<P>,
+    command_publisher: CommandPublisher<P>,
     link_getter: L,
 }
 
@@ -135,6 +135,7 @@ where
     /// Creates a new ScalerManager configured to notify messages to `wadm.notify.{lattice_id}`
     /// using the given jetstream client. Also creates an ephemeral consumer for notifications on
     /// the given stream
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         client: P,
         stream: JsStream,
@@ -142,7 +143,7 @@ where
         multitenant_prefix: Option<&str>,
         state_store: StateStore,
         manifest_store: KvStore,
-        publisher: CommandPublisher<P>,
+        command_publisher: CommandPublisher<P>,
         link_getter: L,
     ) -> Result<ScalerManager<StateStore, P, L>> {
         // Create the consumer first so that we can make sure we don't miss anything during the
@@ -208,7 +209,7 @@ where
             subject,
             lattice_id: lattice_id.to_owned(),
             state_store,
-            publisher,
+            command_publisher,
             link_getter,
         };
         let cloned = manager.clone();
@@ -224,7 +225,7 @@ where
         client: P,
         lattice_id: &str,
         state_store: StateStore,
-        publisher: CommandPublisher<P>,
+        command_publisher: CommandPublisher<P>,
         link_getter: L,
     ) -> ScalerManager<StateStore, P, L> {
         ScalerManager {
@@ -234,7 +235,7 @@ where
             subject: format!("{WADM_NOTIFY_PREFIX}.{lattice_id}"),
             lattice_id: lattice_id.to_owned(),
             state_store,
-            publisher,
+            command_publisher,
             link_getter,
         }
     }
@@ -319,6 +320,7 @@ where
             Some(Err(e)) => return Some(Err(e)),
             None => return None,
         };
+
         // SAFETY: This is entirely data in our control and should be safe to unwrap
         if let Err(e) = self
             .client
@@ -356,7 +358,7 @@ where
                 Err(e) => return Some(Err(e)),
             };
         trace!(?commands, "Publishing cleanup commands");
-        if let Err(e) = self.publisher.publish_commands(commands).await {
+        if let Err(e) = self.command_publisher.publish_commands(commands).await {
             error!(error = %e, "Unable to publish cleanup commands");
             self.scalers.write().await.insert(name.to_owned(), scalers);
             return Some(Err(e));

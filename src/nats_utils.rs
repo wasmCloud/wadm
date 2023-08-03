@@ -41,7 +41,7 @@ impl LatticeIdParser {
                     && evt == EVENT_SUBJECT
                     && account_id.starts_with('A') =>
             {
-                (Some(lattice_id), Some(&account_id))
+                (Some(lattice_id), Some(account_id))
             }
             _ => (None, None),
         }

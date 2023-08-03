@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use anyhow::Result;
 use async_trait::async_trait;
-use tokio::sync::OnceCell;
+use tokio::sync::{OnceCell, RwLock};
 use tracing::{instrument, trace};
 
 use crate::{
@@ -10,6 +10,7 @@ use crate::{
     events::{Event, LinkdefDeleted, ProviderHealthCheckPassed, ProviderHealthCheckStatus},
     model::TraitProperty,
     scaler::Scaler,
+    server::StatusInfo,
     storage::{Actor, Provider, ReadStore},
     workers::LinkSource,
     DEFAULT_LINK_NAME,
@@ -45,6 +46,7 @@ pub struct LinkScaler<S, L> {
     provider_id: OnceCell<String>,
     ctl_client: L,
     id: String,
+    status: RwLock<StatusInfo>,
 }
 
 #[async_trait]
@@ -55,6 +57,10 @@ where
 {
     fn id(&self) -> &str {
         &self.id
+    }
+
+    async fn status(&self) -> StatusInfo {
+        self.status.read().await.to_owned()
     }
 
     async fn update_config(&mut self, _config: TraitProperty) -> Result<Vec<Command>> {
@@ -146,6 +152,7 @@ where
             // };
 
             let commands = if !exists {
+                *self.status.write().await = StatusInfo::compensating("Creating link definition");
                 vec![Command::PutLinkdef(PutLinkdef {
                     actor_id: actor_id.to_owned(),
                     provider_id: provider_id.to_owned(),
@@ -155,11 +162,16 @@ where
                     model_name: self.config.model_name.to_owned(),
                 })]
             } else {
+                *self.status.write().await = StatusInfo::ready("");
                 Vec::with_capacity(0)
             };
             Ok(commands)
         } else {
             trace!("Actor ID and provider ID are not initialized, skipping linkdef creation");
+            *self.status.write().await = StatusInfo::compensating(&format!(
+                "Linkdef pending, waiting for {} and {} to start",
+                self.config.actor_reference, self.config.provider_reference
+            ));
             Ok(Vec::new())
         }
     }
@@ -215,6 +227,7 @@ impl<S: ReadStore + Send + Sync, L: LinkSource> LinkScaler<S, L> {
             },
             ctl_client,
             id,
+            status: RwLock::new(StatusInfo::compensating("Initializing")),
         }
     }
 

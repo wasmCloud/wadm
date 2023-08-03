@@ -2,10 +2,11 @@ use std::{cmp::Ordering, collections::HashMap};
 
 use anyhow::Result;
 use async_trait::async_trait;
-use tokio::sync::OnceCell;
+use tokio::sync::{OnceCell, RwLock};
 use tracing::{instrument, trace, warn};
 
 use crate::events::HostHeartbeat;
+use crate::server::StatusInfo;
 use crate::{
     commands::{Command, StartActor, StopActor},
     events::{Event, HostStarted, HostStopped},
@@ -47,12 +48,17 @@ pub struct ActorSpreadScaler<S> {
     actor_id: OnceCell<String>,
     store: S,
     id: String,
+    status: RwLock<StatusInfo>,
 }
 
 #[async_trait]
 impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
     fn id(&self) -> &str {
         &self.id
+    }
+
+    async fn status(&self) -> StatusInfo {
+        self.status.read().await.to_owned()
     }
 
     async fn update_config(&mut self, config: TraitProperty) -> Result<Vec<Command>> {
@@ -122,6 +128,8 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
         };
 
         let actor_id = actor.as_ref().map(|actor| actor.id.as_str());
+
+        let mut spread_status = vec![];
 
         // NOTE(brooksmtownsend) it's easier to assign one host per list of requirements than
         // balance within those requirements. Users should be specific with their requirements
@@ -211,14 +219,28 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
                     }
                 } else {
                     // No hosts were eligible, so we can't attempt to add or remove actors
-                    // We will want to return an error to indicate an unsatisfied Scaler here, eventually
-                    trace!("Found no eligible hosts");
+                    trace!(?spread.name, "Found no eligible hosts for spread");
+                    spread_status.push(StatusInfo::failed(&format!("Could not satisfy spread {} for {}, 0/1 eligible hosts found.", spread.name, self.config.actor_reference)));
                     None
                 }
             })
             .flatten()
             .collect::<Vec<Command>>();
         trace!(?commands, "Calculated commands for actor scaler");
+
+        let status = if spread_status.is_empty() {
+            StatusInfo::ready("")
+        } else {
+            StatusInfo::failed(
+                &spread_status
+                    .into_iter()
+                    .map(|s| s.message)
+                    .collect::<Vec<String>>()
+                    .join(" "),
+            )
+        };
+        trace!(?status, "Updating scaler status");
+        *self.status.write().await = status;
 
         Ok(commands)
     }
@@ -235,6 +257,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
             spread_requirements,
             actor_id: self.actor_id.clone(),
             id: self.id.clone(),
+            status: RwLock::new(StatusInfo::compensating("Cleaning up")),
         };
 
         cleanerupper.reconcile().await
@@ -263,6 +286,7 @@ impl<S: ReadStore + Send + Sync> ActorSpreadScaler<S> {
                 model_name,
             },
             id,
+            status: RwLock::new(StatusInfo::compensating("Initializing")),
         }
     }
 
@@ -398,7 +422,7 @@ mod test {
         },
         storage::{Actor, Host, Store, WadmActorInstance},
         test_util::{NoopPublisher, TestLatticeSource, TestStore},
-        workers::{CommandPublisher, EventWorker},
+        workers::{CommandPublisher, EventWorker, StatusPublisher},
     };
 
     const MODEL_NAME: &str = "spreadscaler_test";
@@ -1204,10 +1228,12 @@ mod test {
 
         let lattice_source = TestLatticeSource::default();
         let command_publisher = CommandPublisher::new(NoopPublisher, "doesntmatter");
+        let status_publisher = StatusPublisher::new(NoopPublisher, "doesntmatter");
         let worker = EventWorker::new(
             store.clone(),
             lattice_source.clone(),
             command_publisher.clone(),
+            status_publisher.clone(),
             ScalerManager::test_new(
                 NoopPublisher,
                 lattice_id,

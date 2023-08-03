@@ -8,6 +8,7 @@ use crate::{
     events::Event,
     model::TraitProperty,
     scaler::Scaler,
+    server::StatusInfo,
     storage::{Actor, Host, ReadStore},
 };
 
@@ -37,12 +38,17 @@ struct SimpleActorScaler<S> {
     pub config: SimpleScalerConfig,
     store: S,
     id: String,
+    status: StatusInfo,
 }
 
 #[async_trait]
 impl<S: ReadStore + Send + Sync + Clone> Scaler for SimpleActorScaler<S> {
     fn id(&self) -> &str {
         &self.id
+    }
+
+    async fn status(&self) -> StatusInfo {
+        self.status.clone()
     }
 
     async fn update_config(&mut self, config: TraitProperty) -> Result<Vec<Command>> {
@@ -79,6 +85,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for SimpleActorScaler<S> {
             config,
             store: self.store.clone(),
             id: self.id.clone(),
+            status: StatusInfo::compensating("Cleaning up"),
         };
 
         cleanerupper.compute_actor_commands(&self.store).await
@@ -105,6 +112,7 @@ impl<S: ReadStore + Send + Sync> SimpleActorScaler<S> {
                 model_name,
             },
             id,
+            status: StatusInfo::compensating("Initializing simplescaler"),
         }
     }
 
@@ -219,7 +227,7 @@ mod test {
         events::{ActorClaims, ActorStarted, Event, HostStarted},
         scaler::{manager::ScalerManager, simplescaler::SimpleActorScaler, Scaler},
         test_util::{NoopPublisher, TestLatticeSource, TestStore},
-        workers::{CommandPublisher, EventWorker},
+        workers::{CommandPublisher, EventWorker, StatusPublisher},
     };
 
     #[tokio::test]
@@ -259,10 +267,12 @@ mod test {
         let store = Arc::new(TestStore::default());
         let lattice_source = TestLatticeSource::default();
         let command_publisher = CommandPublisher::new(NoopPublisher, "doesntmatter");
+        let status_publisher = StatusPublisher::new(NoopPublisher, "doesntmatter");
         let worker = EventWorker::new(
             store.clone(),
             lattice_source.clone(),
             command_publisher.clone(),
+            status_publisher.clone(),
             ScalerManager::test_new(
                 NoopPublisher,
                 lattice_id,
@@ -330,10 +340,12 @@ mod test {
         let store = Arc::new(TestStore::default());
         let lattice_source = TestLatticeSource::default();
         let command_publisher = CommandPublisher::new(NoopPublisher, "doesntmatter");
+        let status_publisher = StatusPublisher::new(NoopPublisher, "doesntmatter");
         let worker = EventWorker::new(
             store.clone(),
             lattice_source.clone(),
             command_publisher.clone(),
+            status_publisher.clone(),
             ScalerManager::test_new(
                 NoopPublisher,
                 lattice_id,

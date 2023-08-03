@@ -97,6 +97,7 @@ stream-cleanup: ## Purges all streams that wadm creates
 	$(NATS) stream purge wadm_events --force
 	$(NATS) stream purge wadm_notify --force
 	$(NATS) stream purge wadm_mirror --force
+	$(NATS) stream purge wadm_status --force
 	$(NATS) stream purge KV_wadm_state --force
 	$(NATS) stream purge KV_wadm_manifests --force
 
