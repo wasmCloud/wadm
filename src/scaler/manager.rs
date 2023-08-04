@@ -248,15 +248,7 @@ where
     /// used to set this model to backoff mode
     #[instrument(level = "trace", skip_all, fields(name = %manifest.metadata.name, lattice_id = %self.lattice_id))]
     pub async fn add_scalers<'a>(&'a self, manifest: &'a Manifest) -> Result<Scalers> {
-        let scalers = components_to_scalers(
-            &manifest.spec.components,
-            &self.state_store,
-            &self.lattice_id,
-            &self.client,
-            &manifest.metadata.name,
-            &self.subject,
-            &self.link_getter,
-        );
+        let scalers = self.scalers_for_manifest(manifest);
         self.add_raw_scalers(&manifest.metadata.name, scalers).await;
         let notification = serde_json::to_vec(&Notifications::CreateScalers(manifest.to_owned()))?;
         self.client
@@ -268,6 +260,18 @@ where
         self.get_scalers(&manifest.metadata.name)
             .await
             .ok_or_else(|| anyhow::anyhow!("Data error: scalers no longer exist after creation"))
+    }
+
+    pub fn scalers_for_manifest<'a>(&'a self, manifest: &'a Manifest) -> ScalerList {
+        components_to_scalers(
+            &manifest.spec.components,
+            &self.state_store,
+            &self.lattice_id,
+            &self.client,
+            &manifest.metadata.name,
+            &self.subject,
+            &self.link_getter,
+        )
     }
 
     /// Gets the scalers for the given model name, returning None if they don't exist.

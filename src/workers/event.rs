@@ -701,15 +701,11 @@ where
             .scalers
             .remove_raw_scalers(&data.manifest.metadata.name)
             .await;
-        let scalers = self.scalers.add_scalers(&data.manifest).await?;
+        let scalers = self.scalers.scalers_for_manifest(&data.manifest);
 
         if let Some(old_scalers) = old_scalers {
-            // TODO(#143): The updated_components here give us a perfect opportunity to do a comparison
-            // for updating actor / provider versions. A naive implementation could just cleanup all of the
-            // old scalers, but this would definitely create churn (e.g. new scaler asks for 5 replicas, old enforced 4).
-
-            // The more correct way to handle this would be to compare the old/new scalers and only cleanup
-            // the old components that changed meaniningfully, e.g. a new image reference or new link configuration
+            // This relies on the idea that an ID is a unique identifier for a scaler, and any
+            // change in the ID is indicative of the fact that the scaler is outdated and should be cleaned up.
             let (_updated_component, outdated_component): (ScalerList, ScalerList) = old_scalers
                 .into_iter()
                 .partition(|old| scalers.iter().any(|new| new.id() == old.id()));
@@ -736,6 +732,9 @@ where
         // they are backoff wrapped), and then return an error indicating failure so the event is
         // redelivered. When it is, the ones that succeeded will be in backoff mode and the ones
         // that failed will be retried.
+
+        // TODO: inefficient to compute scalers twice, consider refactoring
+        let scalers = self.scalers.add_scalers(&data.manifest).await?;
 
         let (commands, res) = get_commands_and_result(
             scalers.iter().map(|s| s.reconcile()),
