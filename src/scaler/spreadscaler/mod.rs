@@ -274,7 +274,8 @@ impl<S: ReadStore + Send + Sync> ActorSpreadScaler<S> {
         spread_config: SpreadScalerProperty,
         component_name: &str,
     ) -> Self {
-        let id = format!("{ACTOR_SPREAD_SCALER_TYPE}-{model_name}-{component_name}");
+        let id =
+            format!("{ACTOR_SPREAD_SCALER_TYPE}-{model_name}-{component_name}-{actor_reference}");
         Self {
             store,
             spread_requirements: compute_spread(&spread_config),

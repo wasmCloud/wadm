@@ -282,8 +282,8 @@ impl<S: ReadStore + Send + Sync> ProviderSpreadScaler<S> {
     /// Construct a new ProviderSpreadScaler with specified configuration values
     pub fn new(store: S, config: ProviderSpreadConfig, component_name: &str) -> Self {
         let id = format!(
-            "{PROVIDER_SPREAD_SCALER_TYPE}-{}-{component_name}-{}",
-            config.model_name, config.provider_link_name,
+            "{PROVIDER_SPREAD_SCALER_TYPE}-{}-{component_name}-{}-{}",
+            config.model_name, config.provider_reference, config.provider_link_name,
         );
         Self {
             store,
