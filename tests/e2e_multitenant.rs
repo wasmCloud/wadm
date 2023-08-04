@@ -1,13 +1,15 @@
 #![cfg(feature = "_e2e_tests")]
 use std::path::PathBuf;
 
-use wadm::server::{DeployResult, PutResult};
+use wadm::server::{DeployResult, PutResult, StatusType};
 
 mod e2e;
 mod helpers;
 
 use e2e::{assert_status, check_actors, check_providers, ClientInfo, ExpectedCount};
 use helpers::{ECHO_ACTOR_ID, HTTP_SERVER_PROVIDER_ID};
+
+use crate::e2e::get_manifest_status;
 
 const MANIFESTS_PATH: &str = "test/data";
 const DOCKER_COMPOSE_FILE: &str = "test/docker-compose-e2e-multitenant.yaml";
@@ -53,6 +55,11 @@ async fn run_multitenant_tests() {
 }
 
 async fn test_basic_separation(client_info: &ClientInfo) -> anyhow::Result<()> {
+    let stream = client_info.get_status_stream().await;
+    stream
+        .purge()
+        .await
+        .expect("shouldn't have errored purging stream");
     let resp = client_info
         .put_manifest_from_file("simple.yaml", Some(ACCOUNT_EAST), Some(LATTICE_EAST))
         .await;
@@ -95,6 +102,26 @@ async fn test_basic_separation(client_info: &ClientInfo) -> anyhow::Result<()> {
         DeployResult::Error,
         "Shouldn't have errored when deploying manifest: {resp:?}"
     );
+
+    // Once manifest is deployed, first status should be compensating
+    for i in 0..5 {
+        match (
+            get_manifest_status(&stream, LATTICE_EAST, "echo-simple").await,
+            get_manifest_status(&stream, LATTICE_WEST, "messaging-simple").await,
+        ) {
+            (Some(east_status), Some(messaging_status)) => {
+                assert_eq!(east_status.status_type, StatusType::Compensating);
+                assert_eq!(messaging_status.status_type, StatusType::Compensating);
+                break;
+            }
+            _ => {
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            }
+        }
+        if i == 4 {
+            panic!("Should have gotten compensating status for both manifests");
+        }
+    }
 
     // NOTE: This runs for a while, but it's because we're waiting for the provider to download,
     // which can take a bit
@@ -250,6 +277,19 @@ async fn test_basic_separation(client_info: &ClientInfo) -> anyhow::Result<()> {
             )
         }
 
+        match (
+            get_manifest_status(&stream, LATTICE_EAST, "echo-simple").await,
+            get_manifest_status(&stream, LATTICE_WEST, "messaging-simple").await,
+        ) {
+            (Some(east_status), Some(messaging_status)) => {
+                assert_eq!(east_status.status_type, StatusType::Ready);
+                assert_eq!(messaging_status.status_type, StatusType::Ready);
+            }
+            _ => {
+                panic!("Expected both echo and messaging applications to be ready")
+            }
+        }
+
         Ok(())
     })
     .await;
@@ -311,6 +351,19 @@ async fn test_basic_separation(client_info: &ClientInfo) -> anyhow::Result<()> {
             "wasmcloud.azurecr.io/nats_messaging:0.17.2",
             ExpectedCount::Exactly(0),
         )?;
+
+        match (
+            get_manifest_status(&stream, LATTICE_EAST, "echo-simple").await,
+            get_manifest_status(&stream, LATTICE_WEST, "messaging-simple").await,
+        ) {
+            (Some(east_status), Some(messaging_status)) => {
+                assert_eq!(east_status.status_type, StatusType::Undeployed);
+                assert_eq!(messaging_status.status_type, StatusType::Undeployed);
+            }
+            _ => {
+                panic!("Expected both echo and messaging applications to be undeployed")
+            }
+        }
 
         Ok(())
     })

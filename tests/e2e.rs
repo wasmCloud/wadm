@@ -1,4 +1,5 @@
 #![cfg(feature = "_e2e_tests")]
+use base64::{engine::general_purpose::STANDARD as B64decoder, Engine};
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
@@ -6,7 +7,10 @@ use std::{
     time::Duration,
 };
 
-use async_nats::Client;
+use async_nats::{
+    jetstream::{self, stream::Stream},
+    Client,
+};
 use futures::Future;
 use tokio::{
     process::{Child, Command},
@@ -14,7 +18,9 @@ use tokio::{
 };
 use wadm::{
     model::Manifest,
-    server::{DeployModelRequest, DeployModelResponse, PutModelResponse, UndeployModelRequest},
+    server::{
+        DeployModelRequest, DeployModelResponse, PutModelResponse, StatusInfo, UndeployModelRequest,
+    },
     APP_SPEC_ANNOTATION, MANAGED_BY_ANNOTATION, MANAGED_BY_IDENTIFIER,
 };
 use wasmcloud_control_interface::HostInventory;
@@ -304,6 +310,29 @@ impl ClientInfo {
         serde_json::from_slice(&msg.payload).expect("Unable to decode undeploy model response")
     }
 
+    pub async fn get_status_stream(&self) -> Stream {
+        let context = jetstream::new(self.client.clone());
+
+        context
+            .get_or_create_stream(async_nats::jetstream::stream::Config {
+                name: "wadm_status".to_string(),
+                description: Some(
+                    "A stream that stores all status updates for wadm applications".to_string(),
+                ),
+                num_replicas: 1,
+                retention: async_nats::jetstream::stream::RetentionPolicy::Limits,
+                subjects: vec!["wadm.status.*.*".to_string()],
+                max_messages_per_subject: 10,
+                max_age: std::time::Duration::from_nanos(0),
+                storage: async_nats::jetstream::stream::StorageType::File,
+                allow_rollup: false,
+                ..Default::default()
+            })
+            .await
+            .map_err(|e| anyhow::anyhow!("{e:?}"))
+            .expect("Should be able to set up status stream for tests")
+    }
+
     /********************* HELPER FUNCTIONS *********************/
 
     /// Returns all host inventories in a hashmap keyed by host ID. This returns a result so it can
@@ -478,4 +507,23 @@ pub fn check_providers(
         }
     }
     Ok(())
+}
+
+pub(crate) async fn get_manifest_status(
+    stream: &Stream,
+    lattice_id: &str,
+    name: &str,
+) -> Option<StatusInfo> {
+    match stream
+        .get_last_raw_message_by_subject(&format!("wadm.status.{lattice_id}.{name}",))
+        .await
+        .map(|raw| {
+            B64decoder
+                .decode(raw.payload)
+                .map(|b| serde_json::from_slice::<StatusInfo>(&b))
+        }) {
+        Ok(Ok(Ok(status))) => Some(status),
+        // Model status doesn't exist or is invalid, assuming undeployed
+        _ => None,
+    }
 }
