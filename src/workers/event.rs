@@ -697,7 +697,39 @@ where
     ) -> anyhow::Result<()> {
         debug!(name = %data.manifest.metadata.name, "Handling published manifest");
 
+        let old_scalers = self
+            .scalers
+            .remove_raw_scalers(&data.manifest.metadata.name)
+            .await;
         let scalers = self.scalers.add_scalers(&data.manifest).await?;
+
+        if let Some(old_scalers) = old_scalers {
+            // TODO(#143): The updated_components here give us a perfect opportunity to do a comparison
+            // for updating actor / provider versions. A naive implementation could just cleanup all of the
+            // old scalers, but this would definitely create churn (e.g. new scaler asks for 5 replicas, old enforced 4).
+
+            // The more correct way to handle this would be to compare the old/new scalers and only cleanup
+            // the old components that changed meaniningfully, e.g. a new image reference or new link configuration
+            let (_updated_component, outdated_component): (ScalerList, ScalerList) = old_scalers
+                .into_iter()
+                .partition(|old| scalers.iter().any(|new| new.id() == old.id()));
+
+            // Clean up any resources from scalers that no longer exist
+            let futs = outdated_component
+                .iter()
+                .map(|s| async { s.cleanup().await });
+            let commands = futures::future::join_all(futs)
+                .await
+                .into_iter()
+                .filter_map(|res: Result<Vec<Command>>| res.ok())
+                .flatten()
+                .collect::<Vec<Command>>();
+
+            // Now handle the result from cleaning up old scalers
+            if let Err(e) = self.command_publisher.publish_commands(commands).await {
+                warn!(error = ?e, "Failed to publish cleanup commands from old application, some resources may be left behind");
+            };
+        }
 
         // Get the results of the first reconcilation pass before we store the scalers. Publish the
         // commands for the ones that succeeded (as those scalers will have entered backoff mode if
@@ -779,9 +811,10 @@ where
             let status = if cmds.is_empty() {
                 scaler_status(scalers).await
             } else {
-                StatusInfo::compensating(
-                    "Event modified scaler {name} state, running compensating commands.",
-                )
+                StatusInfo::compensating(&format!(
+                    "Event modified scaler {} state, running compensating commands.",
+                    name.to_owned()
+                ))
             };
             if let Err(e) = self.status_publisher.publish_status(name, status).await {
                 warn!(error = ?e, "Failed to set status for scaler");

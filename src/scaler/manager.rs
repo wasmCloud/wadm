@@ -343,10 +343,17 @@ where
         self.scalers.write().await.insert(name.to_owned(), scalers);
     }
 
+    /// A function that removes the scalers without any of the publishing
+    /// CAUTION: This function does not do any cleanup, so it should only be used in scenarios
+    /// where you are prepared to handle that yourself.
+    pub(crate) async fn remove_raw_scalers(&self, name: &str) -> Option<ScalerList> {
+        self.scalers.write().await.remove(name)
+    }
+
     /// Does everything except sending the notification
     #[instrument(level = "debug", skip(self), fields(lattice_id = %self.lattice_id))]
     async fn remove_scalers_internal(&self, name: &str) -> Option<Result<ScalerList>> {
-        let scalers = self.scalers.write().await.remove(name)?;
+        let scalers = self.remove_raw_scalers(name).await?;
         let commands =
             match futures::future::join_all(scalers.iter().map(|scaler| scaler.cleanup()))
                 .await
@@ -361,9 +368,10 @@ where
         if let Err(e) = self.command_publisher.publish_commands(commands).await {
             error!(error = %e, "Unable to publish cleanup commands");
             self.scalers.write().await.insert(name.to_owned(), scalers);
-            return Some(Err(e));
+            Some(Err(e))
+        } else {
+            Some(Ok(scalers))
         }
-        Some(Ok(scalers))
     }
 
     #[instrument(level = "debug", skip_all, fields(lattice_id = %self.lattice_id))]
