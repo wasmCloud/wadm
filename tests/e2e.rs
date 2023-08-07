@@ -1,5 +1,4 @@
 #![cfg(feature = "_e2e_tests")]
-use base64::{engine::general_purpose::STANDARD as B64decoder, Engine};
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
@@ -515,14 +514,11 @@ pub async fn get_manifest_status(
     name: &str,
 ) -> Option<StatusInfo> {
     match stream
-        .get_last_raw_message_by_subject(&format!("wadm.status.{lattice_id}.{name}",))
+        .direct_get_last_for_subject(&format!("wadm.status.{lattice_id}.{name}",))
         .await
-        .map(|raw| {
-            B64decoder
-                .decode(raw.payload)
-                .map(|b| serde_json::from_slice::<StatusInfo>(&b))
-        }) {
-        Ok(Ok(Ok(status))) => Some(status),
+        .map(|msg| serde_json::from_slice::<StatusInfo>(&msg.payload))
+    {
+        Ok(Ok(status)) => Some(status),
         // Model status doesn't exist or is invalid, assuming undeployed
         _ => None,
     }
