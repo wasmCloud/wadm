@@ -225,6 +225,9 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
                             .collect::<Vec<Command>>();
 
                         if commands.len() < num_to_start {
+                            // NOTE(brooksmtownsend): We're reporting status for the entire spreadscaler here, not just this individual
+                            // command, so we want to consider the providers that are already running for the spread over the 
+                            // total expected count.
                             let msg = format!("Could not satisfy spread {} for {}, {}/{} eligible hosts found.", spread.name, self.config.provider_reference, running_for_spread.len(), count);
                             spread_status.push(StatusInfo::failed(&msg));
                         }
@@ -268,7 +271,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
             spread_requirements,
             provider_id: self.provider_id.clone(),
             id: self.id.clone(),
-            status: RwLock::new(StatusInfo::compensating("Cleaning up")),
+            status: RwLock::new(StatusInfo::compensating("")),
         };
 
         cleanerupper.reconcile().await
@@ -288,7 +291,7 @@ impl<S: ReadStore + Send + Sync> ProviderSpreadScaler<S> {
             provider_id: OnceCell::new(),
             config,
             id,
-            status: RwLock::new(StatusInfo::compensating("Initializing")),
+            status: RwLock::new(StatusInfo::compensating("")),
         }
     }
 

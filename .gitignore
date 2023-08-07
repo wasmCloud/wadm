@@ -1,2 +1,4 @@
 /target
 test/e2e_log/
+
+*.dump

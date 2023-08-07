@@ -85,7 +85,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for SimpleActorScaler<S> {
             config,
             store: self.store.clone(),
             id: self.id.clone(),
-            status: StatusInfo::compensating("Cleaning up"),
+            status: StatusInfo::compensating(""),
         };
 
         cleanerupper.compute_actor_commands(&self.store).await
@@ -112,7 +112,7 @@ impl<S: ReadStore + Send + Sync> SimpleActorScaler<S> {
                 model_name,
             },
             id,
-            status: StatusInfo::compensating("Initializing simplescaler"),
+            status: StatusInfo::compensating(""),
         }
     }
 

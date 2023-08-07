@@ -1,12 +1,11 @@
 use std::path::PathBuf;
-use std::time::Duration;
 
 use anyhow::{anyhow, Result};
 use async_nats::{
     jetstream::{
         self,
         kv::{Config as KvConfig, Store},
-        stream::{Config as StreamConfig, RetentionPolicy, Stream},
+        stream::{Config as StreamConfig, Stream},
         Context,
     },
     Client, ConnectOptions,
@@ -111,21 +110,41 @@ pub async fn ensure_stream(
     name: String,
     subjects: Vec<String>,
     description: Option<String>,
-    retention: RetentionPolicy,
-    max_age: Option<Duration>,
-    max_messages_per_subject: Option<i64>,
 ) -> Result<Stream> {
     context
         .get_or_create_stream(StreamConfig {
             name,
             description,
             num_replicas: 1,
-            retention,
+            retention: async_nats::jetstream::stream::RetentionPolicy::WorkQueue,
             subjects,
-            max_messages_per_subject: max_messages_per_subject.unwrap_or(0),
-            max_age: max_age.unwrap_or(DEFAULT_EXPIRY_TIME),
+            max_age: DEFAULT_EXPIRY_TIME,
             storage: async_nats::jetstream::stream::StorageType::File,
             allow_rollup: false,
+            ..Default::default()
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("{e:?}"))
+}
+
+pub async fn ensure_status_stream(
+    context: &Context,
+    name: String,
+    subjects: Vec<String>,
+) -> Result<Stream> {
+    context
+        .get_or_create_stream(StreamConfig {
+            name,
+            description: Some(
+                "A stream that stores all status updates for wadm applications".into(),
+            ),
+            num_replicas: 1,
+            allow_direct: true,
+            retention: async_nats::jetstream::stream::RetentionPolicy::Limits,
+            max_messages_per_subject: 10,
+            subjects,
+            max_age: std::time::Duration::from_nanos(0),
+            storage: async_nats::jetstream::stream::StorageType::File,
             ..Default::default()
         })
         .await

@@ -724,7 +724,7 @@ where
             .publish_status(data.manifest.metadata.name.as_ref(), status)
             .await
         {
-            warn!(error = ?e, "Failed to set status to compensating");
+            warn!("Failed to set manifest status: {e:}");
         };
 
         // Now handle the result from reconciliation

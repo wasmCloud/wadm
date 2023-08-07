@@ -104,7 +104,7 @@ async fn start_wash_instance(cfg: &TestWashConfig) -> Result<CleanupGuard> {
         .to_string();
 
     // Build args
-    let mut args: Vec<&str> = Vec::from(["up", "-d", "--nats-port", &nats_port]);
+    let mut args: Vec<&str> = Vec::from(["up", "-d", "--disable-wadm", "--nats-port", &nats_port]);
     if cfg.nats_connect_only {
         args.push("--nats-connect-only");
     }
@@ -124,6 +124,7 @@ async fn start_wash_instance(cfg: &TestWashConfig) -> Result<CleanupGuard> {
     };
 
     let output = cmd.status().await.expect("Unable to run detached wash up");
+
     assert!(output.success(), "Error trying to start host",);
 
     // Make sure we can connect to washboard
