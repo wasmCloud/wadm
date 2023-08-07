@@ -100,16 +100,16 @@ impl LinkSource for wasmcloud_control_interface::Client {
 pub struct StatusPublisher<Pub> {
     publisher: Pub,
     // Topic prefix, e.g. wadm.status.default
-    topic: String,
+    topic_prefix: String,
 }
 
 impl<Pub> StatusPublisher<Pub> {
     /// Creates an new status publisher configured with the given publisher that will send to the
-    /// specified topic
-    pub fn new(publisher: Pub, topic: &str) -> StatusPublisher<Pub> {
+    /// manifest status topic using the given prefix
+    pub fn new(publisher: Pub, topic_prefix: &str) -> StatusPublisher<Pub> {
         StatusPublisher {
             publisher,
-            topic: topic.to_owned(),
+            topic_prefix: topic_prefix.to_owned(),
         }
     }
 }
@@ -120,7 +120,7 @@ impl<Pub: Publisher> StatusPublisher<Pub> {
         self.publisher
             .publish(
                 serde_json::to_vec(&status)?,
-                Some(&format!("{}.{name}", self.topic)),
+                Some(&format!("{}.{name}", self.topic_prefix)),
             )
             .await
     }

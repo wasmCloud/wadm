@@ -1,6 +1,8 @@
 use async_nats::{jetstream::stream::Stream, Client, Message};
 use base64::{engine::general_purpose::STANDARD as B64decoder, Engine};
+use regex::Regex;
 use serde_json::json;
+use tokio::sync::OnceCell;
 use tracing::{debug, error, instrument, log::warn, trace};
 
 use crate::{
@@ -18,6 +20,8 @@ use super::{
     GetModelResponse, GetResult, ManifestNotifier, PutModelResponse, PutResult, Status, StatusInfo,
     StatusResponse, StatusResult, UndeployModelRequest, VersionInfo, VersionResponse,
 };
+
+static MANIFEST_NAME_REGEX: OnceCell<Regex> = OnceCell::const_new();
 
 pub(crate) struct Handler<P> {
     pub(crate) store: ModelStorage,
@@ -79,7 +83,12 @@ impl<P: Publisher> Handler<P> {
         }
 
         let manifest_name = manifest.metadata.name.trim().to_string();
-        if manifest_name.contains(' ') || manifest_name.contains('.') {
+        if !MANIFEST_NAME_REGEX
+            // SAFETY: We know this is valid Regex
+            .get_or_init(|| async { Regex::new(r"^[-\w]+$").unwrap() })
+            .await
+            .is_match(&manifest_name)
+        {
             self.send_error(
                 msg.reply,
                 format!(
@@ -784,6 +793,8 @@ impl<P: Publisher> Handler<P> {
     }
 
     async fn get_manifest_status(&self, lattice_id: &str, name: &str) -> Option<StatusInfo> {
+        // NOTE(brooksmtownsend): We're getting the last raw message instead of direct get here
+        // to ensure we fetch the latest message from the cluster leader.
         match self
             .status_stream
             .get_last_raw_message_by_subject(&format!("wadm.status.{lattice_id}.{name}",))
@@ -797,5 +808,32 @@ impl<P: Publisher> Handler<P> {
             // Model status doesn't exist or is invalid, assuming undeployed
             _ => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    #[tokio::test]
+    async fn manifest_name_regex_works() {
+        let regex = super::MANIFEST_NAME_REGEX
+            .get_or_init(|| async { regex::Regex::new(r"^[-\w]+$").unwrap() })
+            .await;
+
+        // Acceptable manifest names
+        let word = "mymanifest";
+        let word_with_dash = "my-manifest";
+        let word_with_underscore = "my_manifest";
+        let word_with_numbers = "mymanifest-v2-v3-final";
+
+        assert!(regex.is_match(word));
+        assert!(regex.is_match(word_with_dash));
+        assert!(regex.is_match(word_with_underscore));
+        assert!(regex.is_match(word_with_numbers));
+
+        // Not acceptable manifest names
+        let word_with_period = "my.manifest";
+        let word_with_space = "my manifest";
+        assert!(!regex.is_match(word_with_period));
+        assert!(!regex.is_match(word_with_space));
     }
 }

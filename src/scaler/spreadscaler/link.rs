@@ -7,7 +7,9 @@ use tracing::{instrument, trace};
 
 use crate::{
     commands::{Command, DeleteLinkdef, PutLinkdef},
-    events::{Event, LinkdefDeleted, ProviderHealthCheckPassed, ProviderHealthCheckStatus},
+    events::{
+        Event, LinkdefDeleted, LinkdefSet, ProviderHealthCheckPassed, ProviderHealthCheckStatus,
+    },
     model::TraitProperty,
     scaler::Scaler,
     server::StatusInfo,
@@ -94,6 +96,7 @@ where
                 self.reconcile().await
             }
             Event::LinkdefDeleted(LinkdefDeleted { linkdef })
+            | Event::LinkdefSet(LinkdefSet { linkdef })
                 if linkdef.contract_id == self.config.provider_contract_id
                     && linkdef.actor_id == self.actor_id().await.unwrap_or_default()
                     && linkdef.provider_id == self.provider_id().await.unwrap_or_default()
@@ -152,7 +155,9 @@ where
             // };
 
             let commands = if !exists {
-                *self.status.write().await = StatusInfo::compensating("Creating link definition");
+                *self.status.write().await = StatusInfo::compensating(&format!(
+                    "Putting link definition between {actor_id} and {provider_id}"
+                ));
                 vec![Command::PutLinkdef(PutLinkdef {
                     actor_id: actor_id.to_owned(),
                     provider_id: provider_id.to_owned(),
@@ -227,7 +232,7 @@ impl<S: ReadStore + Send + Sync, L: LinkSource> LinkScaler<S, L> {
             },
             ctl_client,
             id,
-            status: RwLock::new(StatusInfo::compensating("Initializing")),
+            status: RwLock::new(StatusInfo::compensating("")),
         }
     }
 

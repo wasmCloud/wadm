@@ -509,7 +509,7 @@ pub fn check_providers(
     Ok(())
 }
 
-pub(crate) async fn get_manifest_status(
+pub async fn get_manifest_status(
     stream: &Stream,
     lattice_id: &str,
     name: &str,

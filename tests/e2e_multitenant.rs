@@ -282,6 +282,8 @@ async fn test_basic_separation(client_info: &ClientInfo) -> anyhow::Result<()> {
             get_manifest_status(&stream, LATTICE_WEST, "messaging-simple").await,
         ) {
             (Some(east_status), Some(messaging_status)) => {
+                println!("East status {east_status:?}");
+                println!("West status {messaging_status:?}");
                 assert_eq!(east_status.status_type, StatusType::Ready);
                 assert_eq!(messaging_status.status_type, StatusType::Ready);
             }
@@ -357,6 +359,8 @@ async fn test_basic_separation(client_info: &ClientInfo) -> anyhow::Result<()> {
             get_manifest_status(&stream, LATTICE_WEST, "messaging-simple").await,
         ) {
             (Some(east_status), Some(messaging_status)) => {
+                println!("East status {east_status:?}");
+                println!("West status {messaging_status:?}");
                 assert_eq!(east_status.status_type, StatusType::Undeployed);
                 assert_eq!(messaging_status.status_type, StatusType::Undeployed);
             }

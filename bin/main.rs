@@ -2,10 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use async_nats::jetstream::{
-    stream::{RetentionPolicy, Stream},
-    Context,
-};
+use async_nats::jetstream::{stream::Stream, Context};
 use clap::Parser;
 use tokio::sync::Semaphore;
 use tracing::log::debug;
@@ -202,9 +199,6 @@ async fn main() -> anyhow::Result<()> {
             "A stream that stores all events coming in on the wasmbus.evt topics in a cluster"
                 .to_string(),
         ),
-        RetentionPolicy::WorkQueue,
-        None,
-        None,
     )
     .await?;
 
@@ -215,20 +209,13 @@ async fn main() -> anyhow::Result<()> {
         COMMAND_STREAM_NAME.to_owned(),
         vec![DEFAULT_COMMANDS_TOPIC.to_owned()],
         Some("A stream that stores all commands for wadm".to_string()),
-        RetentionPolicy::WorkQueue,
-        None,
-        None,
     )
     .await?;
 
-    let status_stream = nats::ensure_stream(
+    let status_stream = nats::ensure_status_stream(
         &context,
         STATUS_STREAM_NAME.to_owned(),
         vec![DEFAULT_STATUS_TOPIC.to_owned()],
-        Some("A stream that stores all status updates for wadm applications".to_string()),
-        RetentionPolicy::Limits,
-        Some(std::time::Duration::from_nanos(0)),
-        Some(10),
     )
     .await?;
 
@@ -249,9 +236,6 @@ async fn main() -> anyhow::Result<()> {
         mirror_stream.to_owned(),
         event_stream_topics.clone(),
         Some("A stream that publishes all events to the same stream".to_string()),
-        RetentionPolicy::WorkQueue,
-        None,
-        None,
     )
     .await?;
 

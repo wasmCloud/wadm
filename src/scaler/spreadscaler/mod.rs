@@ -257,7 +257,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
             spread_requirements,
             actor_id: self.actor_id.clone(),
             id: self.id.clone(),
-            status: RwLock::new(StatusInfo::compensating("Cleaning up")),
+            status: RwLock::new(StatusInfo::compensating("")),
         };
 
         cleanerupper.reconcile().await
@@ -286,7 +286,7 @@ impl<S: ReadStore + Send + Sync> ActorSpreadScaler<S> {
                 model_name,
             },
             id,
-            status: RwLock::new(StatusInfo::compensating("Initializing")),
+            status: RwLock::new(StatusInfo::compensating("")),
         }
     }
 
