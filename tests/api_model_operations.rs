@@ -824,7 +824,6 @@ async fn test_delete_deploy() {
 async fn test_status() {
     let test_server = setup_server("status".to_owned()).await;
 
-    // Create a manifest with 2 versions
     let raw = tokio::fs::read("./oam/petclinic.yaml")
         .await
         .expect("Unable to load file");

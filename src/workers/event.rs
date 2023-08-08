@@ -781,15 +781,17 @@ where
 
         trace!(?commands, "Publishing commands");
 
-        if commands.is_empty() {
-            if let Err(e) = self
-                .status_publisher
-                .publish_status(name, scaler_status(&scalers).await)
-                .await
-            {
-                warn!(error = ?e, "Failed to set status for scaler");
-            };
-        }
+        let status = if commands.is_empty() {
+            scaler_status(&scalers).await
+        } else {
+            StatusInfo::compensating(&format!(
+                "Event modified scaler {} state, running compensating commands.",
+                name.to_owned()
+            ))
+        };
+        if let Err(e) = self.status_publisher.publish_status(name, status).await {
+            warn!(error = ?e, "Failed to set status for scaler");
+        };
 
         self.command_publisher.publish_commands(commands).await?;
 
@@ -937,7 +939,7 @@ where
                     Some(Ok(_)) => {
                         if let Err(e) = self
                             .status_publisher
-                            .publish_status(&data.name, StatusInfo::undeployed("Model undeployed"))
+                            .publish_status(&data.name, StatusInfo::undeployed(""))
                             .await
                         {
                             warn!(error = ?e, "Failed to set status to undeployed");

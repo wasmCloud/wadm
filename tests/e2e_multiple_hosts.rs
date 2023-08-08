@@ -179,6 +179,7 @@ async fn test_no_requirements(client_info: &ClientInfo) {
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         if let Some(status) = get_manifest_status(&stream, "default", "echo-simple").await {
             assert_eq!(status.status_type, StatusType::Undeployed);
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             break;
         }
     }
@@ -202,6 +203,7 @@ async fn test_no_requirements(client_info: &ClientInfo) {
         let status = get_manifest_status(&stream, "default", "echo-simple")
             .await
             .unwrap();
+
         assert_eq!(status.status_type, StatusType::Undeployed);
 
         Ok(())
