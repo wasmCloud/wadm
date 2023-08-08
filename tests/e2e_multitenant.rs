@@ -316,6 +316,25 @@ async fn test_basic_separation(client_info: &ClientInfo) -> anyhow::Result<()> {
         "Shouldn't have errored when undeploying manifest: {resp:?}"
     );
 
+    // Give wadm a literal second to process the manifest_unpublished event and update the status
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+    match (
+        get_manifest_status(&stream, LATTICE_EAST, "echo-simple").await,
+        get_manifest_status(&stream, LATTICE_WEST, "messaging-simple").await,
+    ) {
+        (Some(east_status), Some(messaging_status)) => {
+            println!("East status {east_status:?}");
+            println!("West status {messaging_status:?}");
+            assert_eq!(east_status.status_type, StatusType::Undeployed);
+            assert_eq!(messaging_status.status_type, StatusType::Undeployed);
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        }
+        _ => {
+            panic!("Expected both echo and messaging applications to be undeployed")
+        }
+    }
+
     // assert that no actors or providers with annotations exist
     assert_status(None, None, || async {
         let east_inventory = client_info.get_all_inventory(LATTICE_EAST).await?;
@@ -353,21 +372,6 @@ async fn test_basic_separation(client_info: &ClientInfo) -> anyhow::Result<()> {
             "wasmcloud.azurecr.io/nats_messaging:0.17.2",
             ExpectedCount::Exactly(0),
         )?;
-
-        match (
-            get_manifest_status(&stream, LATTICE_EAST, "echo-simple").await,
-            get_manifest_status(&stream, LATTICE_WEST, "messaging-simple").await,
-        ) {
-            (Some(east_status), Some(messaging_status)) => {
-                println!("East status {east_status:?}");
-                println!("West status {messaging_status:?}");
-                assert_eq!(east_status.status_type, StatusType::Undeployed);
-                assert_eq!(messaging_status.status_type, StatusType::Undeployed);
-            }
-            _ => {
-                panic!("Expected both echo and messaging applications to be undeployed")
-            }
-        }
 
         Ok(())
     })
