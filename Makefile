@@ -92,13 +92,14 @@ endif
 # Cleanup #
 ###########
 
-stream-cleanup: ## Purges all streams that wadm creates
-	$(NATS) stream purge wadm_commands --force
-	$(NATS) stream purge wadm_events --force
-	$(NATS) stream purge wadm_notify --force
-	$(NATS) stream purge wadm_mirror --force
-	$(NATS) stream purge wadm_status --force
-	$(NATS) stream purge KV_wadm_state --force
-	$(NATS) stream purge KV_wadm_manifests --force
+stream-cleanup: ## Removes all streams that wadm creates
+	-$(NATS) stream del wadm_commands --force
+	-$(NATS) stream del wadm_events --force
+	-$(NATS) stream del wadm_notify --force
+	-$(NATS) stream del wadm_mirror --force
+	-$(NATS) stream del wadm_multitenant_mirror --force
+	-$(NATS) stream del wadm_status --force
+	-$(NATS) stream del KV_wadm_state --force
+	-$(NATS) stream del KV_wadm_manifests --force
 
 .PHONY: check-cargo-clippy lint build build-watch test stream-cleanup clean test-e2e test 
