@@ -62,6 +62,7 @@ where
     }
 
     async fn status(&self) -> StatusInfo {
+        let _ = self.reconcile().await;
         self.status.read().await.to_owned()
     }
 

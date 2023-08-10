@@ -742,14 +742,13 @@ where
         )
         .await;
 
-        trace!(?commands, "Publishing commands");
-
         let status = if commands.is_empty() {
             scaler_status(&scalers).await
         } else {
             StatusInfo::compensating("Model deployed, running initial compensating commands")
         };
 
+        trace!(?status, "Setting status");
         if let Err(e) = self
             .status_publisher
             .publish_status(data.manifest.metadata.name.as_ref(), status)
@@ -759,6 +758,7 @@ where
         };
 
         // Now handle the result from reconciliation
+        trace!(?commands, "Publishing commands");
         self.command_publisher.publish_commands(commands).await?;
 
         res
@@ -779,20 +779,20 @@ where
         )
         .await;
 
-        trace!(?commands, "Publishing commands");
-
         let status = if commands.is_empty() {
             scaler_status(&scalers).await
         } else {
             StatusInfo::compensating(&format!(
-                "Event modified scaler {} state, running compensating commands.",
-                name.to_owned()
+                "Event modified scaler \"{}\" state, running compensating commands",
+                name.to_owned(),
             ))
         };
+        trace!(?status, "Setting status");
         if let Err(e) = self.status_publisher.publish_status(name, status).await {
             warn!(error = ?e, "Failed to set status for scaler");
         };
 
+        trace!(?commands, "Publishing commands");
         self.command_publisher.publish_commands(commands).await?;
 
         res
@@ -803,25 +803,27 @@ where
         let scalers = self.scalers.get_all_scalers().await;
 
         let futs = scalers.iter().map(|(name, scalers)| async {
-            let (cmds, res) = get_commands_and_result(
+            let (commands, res) = get_commands_and_result(
                 scalers.iter().map(|scaler| scaler.handle_event(event)),
                 "Errors occurred while handling event with all scalers",
             )
             .await;
 
-            let status = if cmds.is_empty() {
+            let status = if commands.is_empty() {
                 scaler_status(scalers).await
             } else {
                 StatusInfo::compensating(&format!(
-                    "Event modified scaler {} state, running compensating commands.",
-                    name.to_owned()
+                    "Event modified scaler \"{}\" state, running compensating commands",
+                    name.to_owned(),
                 ))
             };
+
+            trace!(?status, "Setting status");
             if let Err(e) = self.status_publisher.publish_status(name, status).await {
                 warn!(error = ?e, "Failed to set status for scaler");
             };
 
-            (cmds, res)
+            (commands, res)
         });
 
         // Resolve futures, computing commands for scalers, publishing statuses, and combining any errors
@@ -944,9 +946,12 @@ where
                         {
                             warn!(error = ?e, "Failed to set status to undeployed");
                         }
-                        Ok(None)
+                        return message.ack().await.map_err(WorkError::from);
                     }
-                    Some(Err(e)) => Err(e),
+                    Some(Err(e)) => {
+                        message.nack().await;
+                        return Err(WorkError::Other(e.into()));
+                    }
                     None => Ok(None),
                 }
             }

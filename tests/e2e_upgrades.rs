@@ -11,7 +11,7 @@ mod helpers;
 use e2e::{assert_status, check_actors, check_providers, ClientInfo, ExpectedCount};
 use helpers::{ECHO_ACTOR_ID, HTTP_SERVER_PROVIDER_ID};
 
-use crate::e2e::get_manifest_status;
+use crate::e2e::check_status;
 
 const MANIFESTS_PATH: &str = "test/data";
 const DOCKER_COMPOSE_FILE: &str = "test/docker-compose-e2e-upgrade.yaml";
@@ -37,6 +37,7 @@ async fn run_upgrade_tests() {
     for _ in 0..10 {
         match client_info.ctl_client("default").get_hosts().await {
             Ok(hosts) if hosts.len() == 1 => {
+                eprintln!("Host {}/1 currently available", hosts.len());
                 did_start = true;
                 break;
             }
@@ -86,14 +87,9 @@ async fn test_upgrade(client_info: &ClientInfo) {
     );
 
     // Once manifest is deployed, first status should be compensating
-    for _ in 0..5 {
-        if let Some(status) = get_manifest_status(&stream, "default", "updateapp").await {
-            assert_eq!(status.status_type, StatusType::Compensating);
-            break;
-        } else {
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        }
-    }
+    check_status(&stream, "default", "updateapp", StatusType::Compensating)
+        .await
+        .unwrap();
 
     assert_status(None, Some(7), || async {
         let inventory = client_info.get_all_inventory("default").await?;
@@ -132,6 +128,8 @@ async fn test_upgrade(client_info: &ClientInfo) {
             .await
             .map_err(|e| anyhow::anyhow!("{e:?}"))?;
 
+        println!("Links: {:?}", links);
+
         if !links.links.iter().any(|ld| {
             ld.actor_id == ECHO_ACTOR_ID
                 && ld.provider_id == HTTP_SERVER_PROVIDER_ID
@@ -143,7 +141,7 @@ async fn test_upgrade(client_info: &ClientInfo) {
                     .expect("Linkdef values should have an address")
         }) {
             anyhow::bail!(
-                "Link between echo actor and http provider should exist: {:#?}",
+                "Link between echo actor and http provider should exist on port 8080: {:#?}",
                 links
             )
         }
@@ -164,12 +162,9 @@ async fn test_upgrade(client_info: &ClientInfo) {
             )
         }
 
-        // SAFETY: we already know some status existed when we checked for compensating. If there's no status now, it means
-        // we borked our stream and this _should_ fail
-        let status = get_manifest_status(&stream, "default", "updateapp")
+        check_status(&stream, "default", "updateapp", StatusType::Ready)
             .await
             .unwrap();
-        assert_eq!(status.status_type, StatusType::Ready);
 
         Ok(())
     })
@@ -196,14 +191,9 @@ async fn test_upgrade(client_info: &ClientInfo) {
     );
 
     // Once manifest is updated, status should be compensating
-    for _ in 0..5 {
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        if let Some(status) = get_manifest_status(&stream, "default", "updateapp").await {
-            assert_eq!(status.status_type, StatusType::Compensating);
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-            break;
-        }
-    }
+    check_status(&stream, "default", "updateapp", StatusType::Compensating)
+        .await
+        .unwrap();
 
     assert_status(None, None, || async {
         let inventory = client_info.get_all_inventory("default").await?;
@@ -259,7 +249,7 @@ async fn test_upgrade(client_info: &ClientInfo) {
                     .expect("Linkdef values should have an address")
         }) {
             anyhow::bail!(
-                "Link between echo actor and http provider should exist: {:#?}",
+                "Link between echo actor and http provider should exist on port 8082: {:#?}",
                 links
             )
         }
@@ -275,11 +265,9 @@ async fn test_upgrade(client_info: &ClientInfo) {
             )
         }
 
-        let status = get_manifest_status(&stream, "default", "updateapp")
+        check_status(&stream, "default", "updateapp", StatusType::Ready)
             .await
             .unwrap();
-
-        assert_eq!(status.status_type, StatusType::Ready);
 
         Ok(())
     })

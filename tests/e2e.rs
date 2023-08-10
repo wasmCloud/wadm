@@ -19,7 +19,8 @@ use tokio::{
 use wadm::{
     model::Manifest,
     server::{
-        DeployModelRequest, DeployModelResponse, PutModelResponse, StatusInfo, UndeployModelRequest,
+        DeployModelRequest, DeployModelResponse, PutModelResponse, StatusInfo, StatusType,
+        UndeployModelRequest,
     },
     APP_SPEC_ANNOTATION, MANAGED_BY_ANNOTATION, MANAGED_BY_IDENTIFIER,
 };
@@ -460,6 +461,30 @@ pub enum ExpectedCount {
     #[allow(dead_code)]
     AtLeast(usize),
     Exactly(usize),
+}
+
+pub async fn check_status(
+    stream: &Stream,
+    lattice_id: &str,
+    manifest_name: &str,
+    expected_status: StatusType,
+) -> anyhow::Result<()> {
+    for i in 0..5 {
+        let status = get_manifest_status(stream, lattice_id, manifest_name).await;
+        match status.as_ref() {
+            Some(status) if status.status_type == expected_status => break,
+            _ if i < 4 => tokio::time::sleep(std::time::Duration::from_secs(1)).await,
+            Some(status) => {
+                anyhow::bail!(
+                    "Expected {manifest_name} to have status {expected_status:?}, found {status:?}"
+                )
+            }
+            None => anyhow::bail!(
+                "Expected {manifest_name} to have status {expected_status:?}, found no status"
+            ),
+        }
+    }
+    Ok(())
 }
 
 pub fn check_providers(

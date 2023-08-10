@@ -9,7 +9,7 @@ mod helpers;
 use e2e::{assert_status, check_actors, check_providers, ClientInfo, ExpectedCount};
 use helpers::{ECHO_ACTOR_ID, HTTP_SERVER_PROVIDER_ID};
 
-use crate::e2e::get_manifest_status;
+use crate::e2e::check_status;
 
 const MANIFESTS_PATH: &str = "test/data";
 const DOCKER_COMPOSE_FILE: &str = "test/docker-compose-e2e-multitenant.yaml";
@@ -104,24 +104,22 @@ async fn test_basic_separation(client_info: &ClientInfo) -> anyhow::Result<()> {
     );
 
     // Once manifest is deployed, first status should be compensating
-    for i in 0..5 {
-        match (
-            get_manifest_status(&stream, LATTICE_EAST, "echo-simple").await,
-            get_manifest_status(&stream, LATTICE_WEST, "messaging-simple").await,
-        ) {
-            (Some(east_status), Some(messaging_status)) => {
-                assert_eq!(east_status.status_type, StatusType::Compensating);
-                assert_eq!(messaging_status.status_type, StatusType::Compensating);
-                break;
-            }
-            _ => {
-                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-            }
-        }
-        if i == 4 {
-            panic!("Should have gotten compensating status for both manifests");
-        }
-    }
+    check_status(
+        &stream,
+        LATTICE_EAST,
+        "echo-simple",
+        StatusType::Compensating,
+    )
+    .await
+    .unwrap();
+    check_status(
+        &stream,
+        LATTICE_WEST,
+        "messaging-simple",
+        StatusType::Compensating,
+    )
+    .await
+    .unwrap();
 
     // NOTE: This runs for a while, but it's because we're waiting for the provider to download,
     // which can take a bit
@@ -190,7 +188,7 @@ async fn test_basic_separation(client_info: &ClientInfo) -> anyhow::Result<()> {
                 && ld.contract_id == "wasmcloud:httpserver"
         }) {
             anyhow::bail!(
-                "Link between echo actor and http provider should exist: {:#?}",
+                "Link between messaging actor and http provider should exist: {:#?}",
                 links
             )
         }
@@ -200,7 +198,7 @@ async fn test_basic_separation(client_info: &ClientInfo) -> anyhow::Result<()> {
                 && ld.contract_id == "wasmcloud:messaging"
         }) {
             anyhow::bail!(
-                "Link between echo actor and http provider should exist: {:#?}",
+                "Link between messaging actor and nats provider should exist: {:#?}",
                 links
             )
         }
@@ -277,20 +275,12 @@ async fn test_basic_separation(client_info: &ClientInfo) -> anyhow::Result<()> {
             )
         }
 
-        match (
-            get_manifest_status(&stream, LATTICE_EAST, "echo-simple").await,
-            get_manifest_status(&stream, LATTICE_WEST, "messaging-simple").await,
-        ) {
-            (Some(east_status), Some(messaging_status)) => {
-                println!("East status {east_status:?}");
-                println!("West status {messaging_status:?}");
-                assert_eq!(east_status.status_type, StatusType::Ready);
-                assert_eq!(messaging_status.status_type, StatusType::Ready);
-            }
-            _ => {
-                panic!("Expected both echo and messaging applications to be ready")
-            }
-        }
+        check_status(&stream, LATTICE_EAST, "echo-simple", StatusType::Ready)
+            .await
+            .unwrap();
+        check_status(&stream, LATTICE_WEST, "messaging-simple", StatusType::Ready)
+            .await
+            .unwrap();
 
         Ok(())
     })
@@ -316,24 +306,17 @@ async fn test_basic_separation(client_info: &ClientInfo) -> anyhow::Result<()> {
         "Shouldn't have errored when undeploying manifest: {resp:?}"
     );
 
-    // Give wadm a literal second to process the manifest_unpublished event and update the status
-    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-
-    match (
-        get_manifest_status(&stream, LATTICE_EAST, "echo-simple").await,
-        get_manifest_status(&stream, LATTICE_WEST, "messaging-simple").await,
-    ) {
-        (Some(east_status), Some(messaging_status)) => {
-            println!("East status {east_status:?}");
-            println!("West status {messaging_status:?}");
-            assert_eq!(east_status.status_type, StatusType::Undeployed);
-            assert_eq!(messaging_status.status_type, StatusType::Undeployed);
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        }
-        _ => {
-            panic!("Expected both echo and messaging applications to be undeployed")
-        }
-    }
+    check_status(&stream, LATTICE_EAST, "echo-simple", StatusType::Undeployed)
+        .await
+        .unwrap();
+    check_status(
+        &stream,
+        LATTICE_WEST,
+        "messaging-simple",
+        StatusType::Undeployed,
+    )
+    .await
+    .unwrap();
 
     // assert that no actors or providers with annotations exist
     assert_status(None, None, || async {
