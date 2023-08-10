@@ -1,0 +1,71 @@
+# This is an application for use in the update test suite. It contains
+# 1. An actor component that is up to date and shouldn't change (xkcd)
+# 2. An actor component that is out of date and should be updated (echo)
+#    - This component also has an out of date trait that should be updated (linkdef)
+# 3. An actor component that is no longer needed and should be deleted (kvcounter)
+# 4. A provider component that is out of date and should be updated (httpserver)
+# 5. A provider component that is no longer needed and should be deleted (redis)
+apiVersion: core.oam.dev/v1beta1
+kind: Application
+metadata:
+  name: updateapp
+  annotations:
+    version: v0.0.1
+    description: "According to all known laws of aviation"
+spec:
+  components:
+    # Latest, no modifications needed, actor component
+    - name: xkcd
+      type: actor
+      properties:
+        image: wasmcloud.azurecr.io/xkcd:0.1.1
+      traits:
+        - type: spreadscaler
+          properties:
+            replicas: 5
+        - type: linkdef
+          properties:
+            target: httpserver
+            values:
+              address: 0.0.0.0:8081
+    # Old actor component
+    - name: echo
+      type: actor
+      properties:
+        image: wasmcloud.azurecr.io/echo:0.3.4
+      traits:
+        - type: spreadscaler
+          properties:
+            replicas: 3
+        # Old linkdef trait
+        - type: linkdef
+          properties:
+            target: httpserver
+            values:
+              address: 0.0.0.0:8080
+    # No longer needed actor component
+    - name: kvcounter
+      type: actor
+      properties:
+        image: wasmcloud.azurecr.io/kvcounter:0.4.0
+      traits:
+        - type: spreadscaler
+          properties:
+            replicas: 3
+        - type: linkdef
+          properties:
+            target: redis
+            values:
+              URL: redis://127.0.0.1:6379
+    # Old provider component
+    - name: httpserver
+      type: capability
+      properties:
+        contract: wasmcloud:httpserver
+        image: wasmcloud.azurecr.io/httpserver:0.17.0
+    # No longer needed provider component
+    - name: redis
+      type: capability
+      properties:
+        contract: wasmcloud:keyvalue
+        image: wasmcloud.azurecr.io/kvredis:0.22.0

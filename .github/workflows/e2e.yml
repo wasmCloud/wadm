@@ -12,7 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        e2e_test: [e2e_multiple_hosts, e2e_multitenant]
+        e2e_test: [e2e_multiple_hosts, e2e_multitenant, e2e_upgrades]
 
     steps:
       - uses: actions/checkout@v2
