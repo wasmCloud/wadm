@@ -88,6 +88,15 @@ else
 	exit 1
 endif
 
+test-individual-e2e:: ## Runs an individual e2e test based on the WADM_E2E_TEST env var
+ifeq ($(shell nc -czt -w1 127.0.0.1 4222 || echo fail),fail)
+	@$(MAKE) build
+	RUST_BACKTRACE=1 $(CARGO) test --test $(WADM_E2E_TEST) --features _e2e_tests --  --nocapture 
+else
+	@echo "WARN: Not running e2e tests. NATS must not be currently running"
+	exit 1
+endif
+
 ###########
 # Cleanup #
 ###########
