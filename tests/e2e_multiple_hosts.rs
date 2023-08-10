@@ -11,7 +11,7 @@ mod helpers;
 use e2e::{assert_status, check_actors, check_providers, ClientInfo, ExpectedCount};
 use helpers::{ECHO_ACTOR_ID, HTTP_SERVER_PROVIDER_ID};
 
-use crate::e2e::get_manifest_status;
+use crate::e2e::check_status;
 
 const MANIFESTS_PATH: &str = "test/data";
 const DOCKER_COMPOSE_FILE: &str = "test/docker-compose-e2e.yaml";
@@ -40,6 +40,7 @@ async fn run_multiple_host_tests() {
     for _ in 0..10 {
         match client_info.ctl_client("default").get_hosts().await {
             Ok(hosts) if hosts.len() == 5 => {
+                eprintln!("Hosts {}/5 currently available", hosts.len());
                 did_start = true;
                 break;
             }
@@ -110,14 +111,9 @@ async fn test_no_requirements(client_info: &ClientInfo) {
     );
 
     // Once manifest is deployed, first status should be compensating
-    for _ in 0..5 {
-        if let Some(status) = get_manifest_status(&stream, "default", "echo-simple").await {
-            assert_eq!(status.status_type, StatusType::Compensating);
-            break;
-        } else {
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        }
-    }
+    check_status(&stream, "default", "echo-simple", StatusType::Compensating)
+        .await
+        .unwrap();
 
     // NOTE: This runs for a while, but it's because we're waiting for the provider to download,
     // which can take a bit
@@ -152,12 +148,9 @@ async fn test_no_requirements(client_info: &ClientInfo) {
             )
         }
 
-        // SAFETY: we already know some status existed when we checked for compensating. If there's no status now, it means
-        // we borked our stream and this _should_ fail
-        let status = get_manifest_status(&stream, "default", "echo-simple")
+        check_status(&stream, "default", "echo-simple", StatusType::Ready)
             .await
             .unwrap();
-        assert_eq!(status.status_type, StatusType::Ready);
 
         Ok(())
     })
@@ -175,14 +168,9 @@ async fn test_no_requirements(client_info: &ClientInfo) {
     );
 
     // Once manifest is undeployed, status should be undeployed
-    for _ in 0..5 {
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        if let Some(status) = get_manifest_status(&stream, "default", "echo-simple").await {
-            assert_eq!(status.status_type, StatusType::Undeployed);
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-            break;
-        }
-    }
+    check_status(&stream, "default", "echo-simple", StatusType::Undeployed)
+        .await
+        .unwrap();
 
     // assert that no actors or providers with annotations exist
     assert_status(None, None, || async {
@@ -200,11 +188,9 @@ async fn test_no_requirements(client_info: &ClientInfo) {
             ExpectedCount::Exactly(0),
         )?;
 
-        let status = get_manifest_status(&stream, "default", "echo-simple")
+        check_status(&stream, "default", "echo-simple", StatusType::Undeployed)
             .await
             .unwrap();
-
-        assert_eq!(status.status_type, StatusType::Undeployed);
 
         Ok(())
     })

@@ -187,7 +187,7 @@ pub struct TraitStatus {
 }
 
 /// Common high-level status information
-#[derive(Debug, Serialize, Deserialize, Default, Clone)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone, Eq, PartialEq)]
 pub struct StatusInfo {
     #[serde(rename = "type")]
     pub status_type: StatusType,
