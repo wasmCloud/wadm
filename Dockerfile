@@ -1,6 +1,6 @@
 FROM debian:bullseye-slim AS base
 
-RUN update-ca-certificates
+RUN DEBIAN_FRONTEND=noninteractive apt-get update && apt-get install -y ca-certificates
 
 FROM base AS base-amd64
 ARG BIN_AMD64
