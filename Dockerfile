@@ -1,5 +1,7 @@
 FROM debian:bullseye-slim AS base
 
+RUN update-ca-certificates
+
 FROM base AS base-amd64
 ARG BIN_AMD64
 ARG BIN=$BIN_AMD64
