@@ -1,11 +1,15 @@
 use async_nats::{Client, Message};
+use jsonschema::{Draft, JSONSchema};
 use serde_json::json;
+use std::collections::HashSet;
+use std::fs::File;
+use std::io::BufReader;
 use tracing::{debug, error, instrument, trace};
 
 use crate::{
     model::{
-        internal::StoredManifest, CapabilityConfig, CapabilityProperties, Properties,
-        LATEST_VERSION,
+        internal::StoredManifest, ActorProperties, CapabilityConfig, CapabilityProperties,
+        LinkdefProperty, Manifest, Properties, Trait, TraitProperty, LATEST_VERSION,
     },
     publisher::Publisher,
 };
@@ -50,31 +54,6 @@ impl<P: Publisher> Handler<P> {
             return;
         }
 
-        // For all components that have JSON config, validate that it can serialize. We need this so
-        // it doesn't trigger an error when sending a command down the line
-        for component in manifest.spec.components.iter() {
-            if let Properties::Capability {
-                properties:
-                    CapabilityProperties {
-                        config: Some(CapabilityConfig::Json(data)),
-                        ..
-                    },
-            } = &component.properties
-            {
-                if let Err(e) = serde_json::to_string(data) {
-                    self.send_error(
-                        msg.reply,
-                        format!(
-                            "Unable to serialize JSON config data for component {}: {e:?}",
-                            component.name,
-                        ),
-                    )
-                    .await;
-                    return;
-                }
-            }
-        }
-
         let manifest_name = manifest.metadata.name.clone();
 
         let (mut current_manifests, current_revision) =
@@ -88,6 +67,12 @@ impl<P: Publisher> Handler<P> {
                     return;
                 }
             };
+
+        if let Some(error_message) = validate_manifest(manifest.clone(), current_manifests.clone())
+        {
+            self.send_error(msg.reply, error_message).await;
+            return;
+        }
 
         let mut resp = PutModelResponse {
             // If we successfully insert, the given manifest version will be the new current version
@@ -760,5 +745,160 @@ impl<P: Publisher> Handler<P> {
         }))
         .unwrap_or_default();
         self.send_reply(reply, response).await;
+    }
+}
+
+pub async fn open_schema_file() -> anyhow::Result<BufReader<File>> {
+    let schema_file = File::open("./oam/oam.schema.json")?;
+    Ok(BufReader::new(schema_file))
+}
+
+// Manifest validation
+pub(crate) fn validate_manifest(
+    manifest: Manifest,
+    current_manifests: StoredManifest,
+) -> Option<String> {
+    // let reader = open_schema_file().await.unwrap();
+    // let json_schema = serde_json::from_reader(reader).unwrap();
+    // let json_instance = serde_json::to_value(manifest.clone()).unwrap();
+    // let compiled_schema = JSONSchema::options()
+    //     .with_draft(Draft::Draft7)
+    //     .compile(&json_schema)
+    //     .expect("A valid schema");
+    // let validation_result = compiled_schema.validate(&json_instance);
+    // if let Err(errors) = validation_result {
+    //     for error in errors {
+    //         println!("Validation error: {}", error);
+    //         println!("Instance path: {}", error.instance_path);
+    //     }
+    //     return Some("Validation error".to_string());
+    // }
+
+    let latest_manifest = current_manifests.get_current();
+    let existing_linkdefs = latest_manifest.get_linkdef_map();
+
+    let mut component_details: HashSet<String> = HashSet::new();
+    let mut link_name_set: HashSet<String> = HashSet::new();
+
+    for component in manifest.spec.components.iter() {
+        // Component name validation : each component (actors or providers) should have a unique name
+        if !component_details.insert(component.name.clone()) {
+            return Some(format!(
+                "Duplicate component name in manifest: {}",
+                component.name
+            ));
+        }
+
+        // Provider validation :
+        // Provider config should be serializable [For all components that have JSON config, validate that it can serialize.
+        // We need this so it doesn't trigger an error when sending a command down the line]
+        // Providers should have a unique image ref and link name
+        if let Properties::Capability {
+            properties:
+                CapabilityProperties {
+                    image: image_name,
+                    link_name: Some(link),
+                    config: Some(CapabilityConfig::Json(data)),
+                    ..
+                },
+        } = &component.properties
+        {
+            if let Err(e) = serde_json::to_string(data) {
+                return Some(format!(
+                    "Unable to serialize JSON config data for component {}: {e:?}",
+                    component.name
+                ));
+            }
+
+            if !component_details.insert(image_name.to_string()) {
+                return Some(format!(
+                    "Duplicate image reference in manifest: {}",
+                    image_name
+                ));
+            }
+
+            if !link_name_set.insert(link.to_string()) {
+                return Some(format!("Duplicate link name in manifest: {}", image_name));
+            }
+        }
+
+        // Actor validation : Actors should have a unique name and reference
+        if let Properties::Actor {
+            properties: ActorProperties { image: image_name },
+        } = &component.properties
+        {
+            if !component_details.insert(image_name.to_string()) {
+                return Some(format!(
+                    "Duplicate image reference in manifest: {}",
+                    image_name
+                ));
+            }
+        }
+
+        // Linkdef validation : A linkdef from a component should have a unique target and reference
+        let mut linkdef_set: HashSet<String> = HashSet::new();
+        if let Some(traits_vec) = &component.traits {
+            for trait_item in traits_vec.iter() {
+                if let Trait {
+                    // TODO : add trait type validation after custom types are done. See TraitProperty enum.
+                    properties:
+                        TraitProperty::Linkdef(LinkdefProperty {
+                            target: target_name,
+                            values: linkdef_values,
+                        }),
+                    ..
+                } = &trait_item
+                {
+                    if !linkdef_set.insert(target_name.to_string()) {
+                        return Some(format!(
+                            "Duplicate target for linkdef in manifest: {}",
+                            target_name
+                        ));
+                    }
+
+                    if !existing_linkdefs.is_empty()
+                        && linkdef_values.is_some()
+                        && !(existing_linkdefs
+                            .get(&(component.name.clone(), target_name.to_string()))
+                            .map(|x| x.to_owned())
+                            .eq(linkdef_values)
+                            || existing_linkdefs
+                                .get(&(target_name.to_string(), component.name.clone()))
+                                .map(|x| x.to_owned())
+                                .eq(linkdef_values))
+                    {
+                        return Some(format!(
+                            "Component {} and target {} have different linkdef values from earlier version of manifest",
+                            component.name, target_name
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+mod test {
+    use std::io::BufReader;
+    use std::path::Path;
+
+    use super::*;
+    use anyhow::Result;
+    use serde_yaml;
+
+    pub(crate) fn deserialize_yaml(filepath: impl AsRef<Path>) -> Result<Manifest> {
+        let file = std::fs::File::open(filepath)?;
+        let reader = BufReader::new(file);
+        let yaml_string: Manifest = serde_yaml::from_reader(reader)?;
+        Ok(yaml_string)
+    }
+
+    #[test]
+    fn test_manifest_validation() {
+        let manifest = deserialize_yaml("./oam/simple1.yaml").expect("Should be able to parse");
+
+        assert!(validate_manifest(manifest, StoredManifest::default()).is_none());
     }
 }

@@ -11,14 +11,7 @@ repository = "https://github.com/wasmcloud/wadm"
 
 [features]
 default = []
-cli = [
-    "clap",
-    "tracing-opentelemetry",
-    "tracing-subscriber",
-    "opentelemetry",
-    "opentelemetry-otlp",
-    "atty",
-]
+cli = ["clap", "tracing-opentelemetry", "tracing-subscriber", "opentelemetry", "opentelemetry-otlp", "atty"]
 # internal feature for e2e tests
 _e2e_tests = []
 
@@ -62,6 +55,7 @@ uuid = "1"
 wasmbus-rpc = "0.14"
 wasmcloud-control-interface = "0.28.1"
 semver = { version = "1.0.16", features = ["serde"] }
+jsonschema = "0.17.1"
 
 [dev-dependencies]
 serial_test = "1"
