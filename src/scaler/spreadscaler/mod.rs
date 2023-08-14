@@ -317,7 +317,10 @@ impl<S: ReadStore + Send + Sync> ActorSpreadScaler<S> {
 }
 
 /// Helper function to create a predictable annotations map for a spread
-fn spreadscaler_annotations(spread_name: &str, scaler_id: &str) -> HashMap<String, String> {
+pub(crate) fn spreadscaler_annotations(
+    spread_name: &str,
+    scaler_id: &str,
+) -> HashMap<String, String> {
     HashMap::from_iter([
         (SCALER_KEY.to_string(), scaler_id.to_string()),
         (SPREAD_KEY.to_string(), spread_name.to_string()),
@@ -325,7 +328,7 @@ fn spreadscaler_annotations(spread_name: &str, scaler_id: &str) -> HashMap<Strin
 }
 
 /// Helper function that computes a list of eligible hosts to match with a spread
-fn eligible_hosts<'a>(
+pub(crate) fn eligible_hosts<'a>(
     all_hosts: &'a HashMap<String, Host>,
     spread: &Spread,
 ) -> HashMap<&'a String, &'a Host> {

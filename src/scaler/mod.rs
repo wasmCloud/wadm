@@ -19,6 +19,7 @@ use crate::{
     server::StatusInfo,
 };
 
+pub mod daemonscaler;
 pub mod manager;
 mod simplescaler;
 pub mod spreadscaler;

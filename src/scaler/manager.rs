@@ -21,8 +21,8 @@ use tracing::{debug, error, instrument, trace, warn};
 use crate::{
     events::Event,
     model::{
-        Component, Manifest, Properties, SpreadScalerProperty, Trait, TraitProperty, LINKDEF_TRAIT,
-        SPREADSCALER_TRAIT,
+        Component, Manifest, Properties, SpreadScalerProperty, Trait, TraitProperty,
+        DAEMONSCALER_TRAIT, LINKDEF_TRAIT, SPREADSCALER_TRAIT,
     },
     publisher::Publisher,
     scaler::{spreadscaler::ActorSpreadScaler, Command, Scaler},
@@ -32,6 +32,7 @@ use crate::{
 };
 
 use super::{
+    daemonscaler::ActorDaemonScaler,
     spreadscaler::{
         link::LinkScaler,
         provider::{ProviderSpreadConfig, ProviderSpreadScaler},
@@ -539,6 +540,22 @@ where
                         (SPREADSCALER_TRAIT, TraitProperty::SpreadScaler(p)) => {
                             Some(Box::new(BackoffAwareScaler::new(
                                 ActorSpreadScaler::new(
+                                    store.clone(),
+                                    props.image.to_owned(),
+                                    lattice_id.to_owned(),
+                                    name.to_owned(),
+                                    p.to_owned(),
+                                    &component.name,
+                                ),
+                                notifier.to_owned(),
+                                notifier_subject,
+                                name,
+                                None,
+                            )) as BoxedScaler)
+                        }
+                        (DAEMONSCALER_TRAIT, TraitProperty::SpreadScaler(p)) => {
+                            Some(Box::new(BackoffAwareScaler::new(
+                                ActorDaemonScaler::new(
                                     store.clone(),
                                     props.image.to_owned(),
                                     lattice_id.to_owned(),
