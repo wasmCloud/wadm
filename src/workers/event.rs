@@ -703,7 +703,7 @@ where
             .await;
         let scalers = self.scalers.scalers_for_manifest(&data.manifest);
 
-        if let Some(old_scalers) = old_scalers {
+        let cleanup_commands = if let Some(old_scalers) = old_scalers {
             // This relies on the idea that an ID is a unique identifier for a scaler, and any
             // change in the ID is indicative of the fact that the scaler is outdated and should be cleaned up.
             let (_updated_component, outdated_component): (ScalerList, ScalerList) = old_scalers
@@ -714,18 +714,15 @@ where
             let futs = outdated_component
                 .iter()
                 .map(|s| async { s.cleanup().await });
-            let commands = futures::future::join_all(futs)
+            futures::future::join_all(futs)
                 .await
                 .into_iter()
                 .filter_map(|res: Result<Vec<Command>>| res.ok())
                 .flatten()
-                .collect::<Vec<Command>>();
-
-            // Now handle the result from cleaning up old scalers
-            if let Err(e) = self.command_publisher.publish_commands(commands).await {
-                warn!(error = ?e, "Failed to publish cleanup commands from old application, some resources may be left behind");
-            };
-        }
+                .collect::<Vec<Command>>()
+        } else {
+            vec![]
+        };
 
         // Get the results of the first reconcilation pass before we store the scalers. Publish the
         // commands for the ones that succeeded (as those scalers will have entered backoff mode if
@@ -757,9 +754,18 @@ where
             warn!("Failed to set manifest status: {e:}");
         };
 
-        // Now handle the result from reconciliation
         trace!(?commands, "Publishing commands");
+        // Handle the result from initial reconciliation
         self.command_publisher.publish_commands(commands).await?;
+
+        // Handle the result from cleaning up old scalers
+        if let Err(e) = self
+            .command_publisher
+            .publish_commands(cleanup_commands)
+            .await
+        {
+            warn!(error = ?e, "Failed to publish cleanup commands from old application, some resources may be left behind");
+        }
 
         res
     }
