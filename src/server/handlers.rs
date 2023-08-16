@@ -1,15 +1,13 @@
+use anyhow::anyhow;
 use async_nats::{Client, Message};
-use jsonschema::{Draft, JSONSchema};
 use serde_json::json;
-use std::collections::HashSet;
-use std::fs::File;
-use std::io::BufReader;
+use std::collections::{HashMap, HashSet};
 use tracing::{debug, error, instrument, trace};
 
 use crate::{
     model::{
-        internal::StoredManifest, ActorProperties, CapabilityConfig, CapabilityProperties,
-        LinkdefProperty, Manifest, Properties, Trait, TraitProperty, LATEST_VERSION,
+        internal::StoredManifest, ActorProperties, CapabilityProperties, LinkdefProperty, Manifest,
+        Properties, Trait, TraitProperty, LATEST_VERSION,
     },
     publisher::Publisher,
 };
@@ -68,9 +66,8 @@ impl<P: Publisher> Handler<P> {
                 }
             };
 
-        if let Some(error_message) = validate_manifest(manifest.clone(), current_manifests.clone())
-        {
-            self.send_error(msg.reply, error_message).await;
+        if let Some(error_message) = validate_manifest(manifest.clone()).err() {
+            self.send_error(msg.reply, error_message.to_string()).await;
             return;
         }
 
@@ -748,47 +745,19 @@ impl<P: Publisher> Handler<P> {
     }
 }
 
-pub async fn open_schema_file() -> anyhow::Result<BufReader<File>> {
-    let schema_file = File::open("./oam/oam.schema.json")?;
-    Ok(BufReader::new(schema_file))
-}
-
 // Manifest validation
-pub(crate) fn validate_manifest(
-    manifest: Manifest,
-    current_manifests: StoredManifest,
-) -> Option<String> {
-    // let reader = open_schema_file().await.unwrap();
-    // let json_schema = serde_json::from_reader(reader).unwrap();
-    // let json_instance = serde_json::to_value(manifest.clone()).unwrap();
-    // let compiled_schema = JSONSchema::options()
-    //     .with_draft(Draft::Draft7)
-    //     .compile(&json_schema)
-    //     .expect("A valid schema");
-    // let validation_result = compiled_schema.validate(&json_instance);
-    // if let Err(errors) = validation_result {
-    //     for error in errors {
-    //         println!("Validation error: {}", error);
-    //         println!("Instance path: {}", error.instance_path);
-    //     }
-    //     return Some("Validation error".to_string());
-    // }
-
-    let latest_manifest = current_manifests.get_current();
-    let existing_linkdefs = latest_manifest.get_linkdef_map();
-
+pub(crate) fn validate_manifest(manifest: Manifest) -> anyhow::Result<()> {
     let mut component_details: HashSet<String> = HashSet::new();
-    let mut link_name_set: HashSet<String> = HashSet::new();
+    let mut linkdef_map: HashMap<String, Vec<String>> = HashMap::new();
 
     for component in manifest.spec.components.iter() {
         // Component name validation : each component (actors or providers) should have a unique name
         if !component_details.insert(component.name.clone()) {
-            return Some(format!(
+            return Err(anyhow!(
                 "Duplicate component name in manifest: {}",
                 component.name
             ));
         }
-
         // Provider validation :
         // Provider config should be serializable [For all components that have JSON config, validate that it can serialize.
         // We need this so it doesn't trigger an error when sending a command down the line]
@@ -798,28 +767,32 @@ pub(crate) fn validate_manifest(
                 CapabilityProperties {
                     image: image_name,
                     link_name: Some(link),
-                    config: Some(CapabilityConfig::Json(data)),
+                    config: capability_config,
                     ..
                 },
         } = &component.properties
         {
-            if let Err(e) = serde_json::to_string(data) {
-                return Some(format!(
-                    "Unable to serialize JSON config data for component {}: {e:?}",
-                    component.name
-                ));
+            if let Some(data) = capability_config {
+                if let Err(e) = serde_json::to_string(data) {
+                    return Err(anyhow!(
+                        "Unable to serialize JSON config data for component {}: {e:?}",
+                        component.name
+                    ));
+                }
             }
 
-            if !component_details.insert(image_name.to_string()) {
-                return Some(format!(
-                    "Duplicate image reference in manifest: {}",
-                    image_name
-                ));
+            if let Some(duplicate_ref) = linkdef_map.get_mut(link) {
+                if duplicate_ref.contains(image_name) {
+                    return Err(anyhow!(
+                        "Duplicate image reference {} to link name {} in manifest",
+                        image_name,
+                        link
+                    ));
+                } else {
+                    duplicate_ref.push(image_name.to_string());
+                }
             }
-
-            if !link_name_set.insert(link.to_string()) {
-                return Some(format!("Duplicate link name in manifest: {}", image_name));
-            }
+            linkdef_map.insert(link.to_string(), vec![image_name.to_string()]);
         }
 
         // Actor validation : Actors should have a unique name and reference
@@ -828,7 +801,7 @@ pub(crate) fn validate_manifest(
         } = &component.properties
         {
             if !component_details.insert(image_name.to_string()) {
-                return Some(format!(
+                return Err(anyhow!(
                     "Duplicate image reference in manifest: {}",
                     image_name
                 ));
@@ -844,39 +817,22 @@ pub(crate) fn validate_manifest(
                     properties:
                         TraitProperty::Linkdef(LinkdefProperty {
                             target: target_name,
-                            values: linkdef_values,
+                            ..
                         }),
                     ..
                 } = &trait_item
                 {
                     if !linkdef_set.insert(target_name.to_string()) {
-                        return Some(format!(
+                        return Err(anyhow!(
                             "Duplicate target for linkdef in manifest: {}",
                             target_name
-                        ));
-                    }
-
-                    if !existing_linkdefs.is_empty()
-                        && linkdef_values.is_some()
-                        && !(existing_linkdefs
-                            .get(&(component.name.clone(), target_name.to_string()))
-                            .map(|x| x.to_owned())
-                            .eq(linkdef_values)
-                            || existing_linkdefs
-                                .get(&(target_name.to_string(), component.name.clone()))
-                                .map(|x| x.to_owned())
-                                .eq(linkdef_values))
-                    {
-                        return Some(format!(
-                            "Component {} and target {} have different linkdef values from earlier version of manifest",
-                            component.name, target_name
                         ));
                     }
                 }
             }
         }
     }
-    None
+    Ok(())
 }
 
 #[cfg(test)]
@@ -897,8 +853,49 @@ mod test {
 
     #[test]
     fn test_manifest_validation() {
-        let manifest = deserialize_yaml("./oam/simple1.yaml").expect("Should be able to parse");
+        let correct_manifest =
+            deserialize_yaml("./oam/simple1.yaml").expect("Should be able to parse");
 
-        assert!(validate_manifest(manifest, StoredManifest::default()).is_none());
+        assert!(validate_manifest(correct_manifest).is_ok());
+
+        let manifest = deserialize_yaml("./test/data/duplicate_component.yaml")
+            .expect("Should be able to parse");
+
+        match validate_manifest(manifest) {
+            Ok(()) => panic!("Should have detected duplicate component"),
+            Err(e) => assert!(e
+                .to_string()
+                .contains("Duplicate component name in manifest")),
+        }
+
+        let manifest = deserialize_yaml("./test/data/duplicate_imageref1.yaml")
+            .expect("Should be able to parse");
+
+        match validate_manifest(manifest) {
+            Ok(()) => panic!("Should have detected duplicate image reference for link name in provider properties"),
+            Err(e) => assert!(e
+                .to_string()
+                .contains("Duplicate image reference")),
+        }
+
+        let manifest = deserialize_yaml("./test/data/duplicate_imageref2.yaml")
+            .expect("Should be able to parse");
+
+        match validate_manifest(manifest) {
+            Ok(()) => panic!("Should have detected duplicate image reference for actor"),
+            Err(e) => assert!(e
+                .to_string()
+                .contains("Duplicate image reference in manifest")),
+        }
+
+        let manifest = deserialize_yaml("./test/data/duplicate_linkdef.yaml")
+            .expect("Should be able to parse");
+
+        match validate_manifest(manifest) {
+            Ok(()) => panic!("Should have detected duplicate linkdef"),
+            Err(e) => assert!(e
+                .to_string()
+                .contains("Duplicate target for linkdef in manifest")),
+        }
     }
 }
