@@ -3,7 +3,6 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 use crate::model::Manifest;
-use crate::server::ComponentStatus;
 
 use super::LATEST_VERSION;
 
@@ -16,11 +15,6 @@ pub(crate) struct StoredManifest {
     manifests: IndexMap<String, Manifest>,
     // Set only if a version is deployed
     deployed_version: Option<String>,
-    // TODO: Figure out which status to store (probably just the status for each component). We can
-    // convert it to the external facing type from the server as needed
-    status: Vec<ComponentStatus>,
-    // An optional top level status message to help with debugging or status for the whole manifest
-    status_message: Option<String>,
 }
 
 impl StoredManifest {
@@ -132,15 +126,5 @@ impl StoredManifest {
     /// Returns the total count of manifests
     pub fn count(&self) -> usize {
         self.manifests.len()
-    }
-
-    /// Returns a reference to the current status message, if any
-    pub fn status_message(&self) -> Option<&str> {
-        self.status_message.as_deref()
-    }
-
-    /// Returns a reference to the current status
-    pub fn status(&self) -> &Vec<ComponentStatus> {
-        &self.status
     }
 }

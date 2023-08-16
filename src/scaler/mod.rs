@@ -16,6 +16,7 @@ use crate::{
     },
     model::TraitProperty,
     publisher::Publisher,
+    server::StatusInfo,
 };
 
 pub mod manager;
@@ -43,6 +44,10 @@ pub trait Scaler {
     /// `$NAME_OF_SCALER_TYPE-$MODEL_NAME-$OCI_REF`. However, the only requirement is that it can
     /// uniquely identify a scaler
     fn id(&self) -> &str;
+
+    /// Determine the status of this scaler according to reconciliation logic. This is the opportunity
+    /// for scalers to indicate that they are unhealthy with a message as to what's missing.
+    async fn status(&self) -> StatusInfo;
 
     /// Provide a scaler with configuration to use internally when computing commands This should
     /// trigger a reconcile with the new configuration.
@@ -215,6 +220,7 @@ where
                     .publish(data, Some(&self.notify_subject))
                     .await?;
             }
+
             self.add_events(expected_events, false).await;
             commands
         };
@@ -299,6 +305,10 @@ where
     fn id(&self) -> &str {
         // Pass through the ID of the wrapped scaler
         self.scaler.id()
+    }
+
+    async fn status(&self) -> StatusInfo {
+        self.scaler.status().await
     }
 
     async fn update_config(&mut self, config: TraitProperty) -> Result<Vec<Command>> {

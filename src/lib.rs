@@ -24,6 +24,8 @@ pub const DEFAULT_EVENTS_TOPIC: &str = "wasmbus.evt.*";
 pub const DEFAULT_MULTITENANT_EVENTS_TOPIC: &str = "*.wasmbus.evt.*";
 /// Default topic to listen to for all commands
 pub const DEFAULT_COMMANDS_TOPIC: &str = "wadm.cmd.*";
+/// Default topic to listen to for all status updates. wadm.status.<lattice_id>.<manifest_name>
+pub const DEFAULT_STATUS_TOPIC: &str = "wadm.status.*.*";
 /// The default listen topic for the merged wadm events stream. This topic is an amalgamation of
 /// wasmbus.evt topics plus the wadm.internal topics
 pub const DEFAULT_WADM_EVENTS_TOPIC: &str = "wadm.evt.*";

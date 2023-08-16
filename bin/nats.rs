@@ -127,6 +127,30 @@ pub async fn ensure_stream(
         .map_err(|e| anyhow::anyhow!("{e:?}"))
 }
 
+pub async fn ensure_status_stream(
+    context: &Context,
+    name: String,
+    subjects: Vec<String>,
+) -> Result<Stream> {
+    context
+        .get_or_create_stream(StreamConfig {
+            name,
+            description: Some(
+                "A stream that stores all status updates for wadm applications".into(),
+            ),
+            num_replicas: 1,
+            allow_direct: true,
+            retention: async_nats::jetstream::stream::RetentionPolicy::Limits,
+            max_messages_per_subject: 10,
+            subjects,
+            max_age: std::time::Duration::from_nanos(0),
+            storage: async_nats::jetstream::stream::StorageType::File,
+            ..Default::default()
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("{e:?}"))
+}
+
 /// A helper that ensures that the notify stream exists
 pub async fn ensure_notify_stream(
     context: &Context,

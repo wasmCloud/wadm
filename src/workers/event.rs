@@ -11,7 +11,8 @@ use crate::consumers::{
 };
 use crate::events::*;
 use crate::publisher::Publisher;
-use crate::scaler::manager::ScalerManager;
+use crate::scaler::manager::{ScalerList, ScalerManager};
+use crate::server::StatusInfo;
 use crate::storage::{Actor, Host, Provider, ProviderStatus, Store, WadmActorInstance};
 use crate::APP_SPEC_ANNOTATION;
 
@@ -20,7 +21,8 @@ use super::event_helpers::*;
 pub struct EventWorker<StateStore, C: Clone, P: Clone> {
     store: StateStore,
     ctl_client: C,
-    publisher: CommandPublisher<P>,
+    command_publisher: CommandPublisher<P>,
+    status_publisher: StatusPublisher<P>,
     scalers: ScalerManager<StateStore, P, C>,
 }
 
@@ -34,13 +36,15 @@ where
     pub fn new(
         store: StateStore,
         ctl_client: C,
-        publisher: CommandPublisher<P>,
+        command_publisher: CommandPublisher<P>,
+        status_publisher: StatusPublisher<P>,
         manager: ScalerManager<StateStore, P, C>,
     ) -> EventWorker<StateStore, C, P> {
         EventWorker {
             store,
             ctl_client,
-            publisher,
+            command_publisher,
+            status_publisher,
             scalers: manager,
         }
     }
@@ -693,7 +697,35 @@ where
     ) -> anyhow::Result<()> {
         debug!(name = %data.manifest.metadata.name, "Handling published manifest");
 
-        let scalers = self.scalers.add_scalers(&data.manifest).await?;
+        let old_scalers = self
+            .scalers
+            .remove_raw_scalers(&data.manifest.metadata.name)
+            .await;
+        let scalers = self.scalers.scalers_for_manifest(&data.manifest);
+
+        if let Some(old_scalers) = old_scalers {
+            // This relies on the idea that an ID is a unique identifier for a scaler, and any
+            // change in the ID is indicative of the fact that the scaler is outdated and should be cleaned up.
+            let (_updated_component, outdated_component): (ScalerList, ScalerList) = old_scalers
+                .into_iter()
+                .partition(|old| scalers.iter().any(|new| new.id() == old.id()));
+
+            // Clean up any resources from scalers that no longer exist
+            let futs = outdated_component
+                .iter()
+                .map(|s| async { s.cleanup().await });
+            let commands = futures::future::join_all(futs)
+                .await
+                .into_iter()
+                .filter_map(|res: Result<Vec<Command>>| res.ok())
+                .flatten()
+                .collect::<Vec<Command>>();
+
+            // Now handle the result from cleaning up old scalers
+            if let Err(e) = self.command_publisher.publish_commands(commands).await {
+                warn!(error = ?e, "Failed to publish cleanup commands from old application, some resources may be left behind");
+            };
+        }
 
         // Get the results of the first reconcilation pass before we store the scalers. Publish the
         // commands for the ones that succeeded (as those scalers will have entered backoff mode if
@@ -701,16 +733,33 @@ where
         // redelivered. When it is, the ones that succeeded will be in backoff mode and the ones
         // that failed will be retried.
 
+        // TODO: inefficient to compute scalers twice, consider refactoring
+        let scalers = self.scalers.add_scalers(&data.manifest).await?;
+
         let (commands, res) = get_commands_and_result(
             scalers.iter().map(|s| s.reconcile()),
             "Errors occurred during initial reconciliation",
         )
         .await;
 
-        trace!(?commands, "Publishing commands");
+        let status = if commands.is_empty() {
+            scaler_status(&scalers).await
+        } else {
+            StatusInfo::compensating("Model deployed, running initial compensating commands")
+        };
+
+        trace!(?status, "Setting status");
+        if let Err(e) = self
+            .status_publisher
+            .publish_status(data.manifest.metadata.name.as_ref(), status)
+            .await
+        {
+            warn!("Failed to set manifest status: {e:}");
+        };
 
         // Now handle the result from reconciliation
-        self.publisher.publish_commands(commands).await?;
+        trace!(?commands, "Publishing commands");
+        self.command_publisher.publish_commands(commands).await?;
 
         res
     }
@@ -730,9 +779,21 @@ where
         )
         .await;
 
-        trace!(?commands, "Publishing commands");
+        let status = if commands.is_empty() {
+            scaler_status(&scalers).await
+        } else {
+            StatusInfo::compensating(&format!(
+                "Event modified scaler \"{}\" state, running compensating commands",
+                name.to_owned(),
+            ))
+        };
+        trace!(?status, "Setting status");
+        if let Err(e) = self.status_publisher.publish_status(name, status).await {
+            warn!(error = ?e, "Failed to set status for scaler");
+        };
 
-        self.publisher.publish_commands(commands).await?;
+        trace!(?commands, "Publishing commands");
+        self.command_publisher.publish_commands(commands).await?;
 
         res
     }
@@ -741,17 +802,47 @@ where
     async fn run_all_scalers(&self, event: &Event) -> anyhow::Result<()> {
         let scalers = self.scalers.get_all_scalers().await;
 
-        let (commands, res) = get_commands_and_result(
-            scalers
-                .values()
-                .flatten()
-                .map(|scaler| scaler.handle_event(event)),
-            "Errors occurred while handling event with all scalers",
-        )
-        .await;
+        let futs = scalers.iter().map(|(name, scalers)| async {
+            let (commands, res) = get_commands_and_result(
+                scalers.iter().map(|scaler| scaler.handle_event(event)),
+                "Errors occurred while handling event with all scalers",
+            )
+            .await;
+
+            let status = if commands.is_empty() {
+                scaler_status(scalers).await
+            } else {
+                StatusInfo::compensating(&format!(
+                    "Event modified scaler \"{}\" state, running compensating commands",
+                    name.to_owned(),
+                ))
+            };
+
+            trace!(?status, "Setting status");
+            if let Err(e) = self.status_publisher.publish_status(name, status).await {
+                warn!(error = ?e, "Failed to set status for scaler");
+            };
+
+            (commands, res)
+        });
+
+        // Resolve futures, computing commands for scalers, publishing statuses, and combining any errors
+        let (commands, res) = futures::future::join_all(futs).await.into_iter().fold(
+            (vec![], Ok(())),
+            |(mut cmds, res), (mut new_cmds, new_res)| {
+                cmds.append(&mut new_cmds);
+                let res = match (res, new_res) {
+                    (Ok(_), Ok(_)) => Ok(()),
+                    (Ok(_), Err(e)) | (Err(e), Ok(_)) => Err(e),
+                    (Err(e), Err(e2)) => Err(e.context(e2)),
+                };
+                (cmds, res)
+            },
+        );
 
         trace!(?commands, "Publishing commands");
-        self.publisher.publish_commands(commands).await?;
+        self.command_publisher.publish_commands(commands).await?;
+
         res
     }
 }
@@ -845,9 +936,22 @@ where
                 .map(|_| None),
             Event::ManifestUnpublished(data) => {
                 debug!("Handling unpublished manifest");
+
                 match self.scalers.remove_scalers(&data.name).await {
-                    Some(Ok(_)) => Ok(None),
-                    Some(Err(e)) => Err(e),
+                    Some(Ok(_)) => {
+                        if let Err(e) = self
+                            .status_publisher
+                            .publish_status(&data.name, StatusInfo::undeployed(""))
+                            .await
+                        {
+                            warn!(error = ?e, "Failed to set status to undeployed");
+                        }
+                        return message.ack().await.map_err(WorkError::from);
+                    }
+                    Some(Err(e)) => {
+                        message.nack().await;
+                        return Err(WorkError::Other(e.into()));
+                    }
                     None => Ok(None),
                 }
             }
@@ -902,6 +1006,27 @@ where
     )
 }
 
+/// Helper function to get the status of all scalers
+async fn scaler_status(scalers: &ScalerList) -> StatusInfo {
+    let futs = scalers.iter().map(|s| s.status());
+    let status = futures::future::join_all(futs).await;
+    StatusInfo {
+        status_type: status.iter().map(|s| s.status_type).sum(),
+        message: status
+            .into_iter()
+            .filter_map(|s| {
+                let message = s.message.trim();
+                if message.is_empty() {
+                    None
+                } else {
+                    Some(message.to_owned())
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", "),
+    }
+}
+
 fn map_to_result(errors: Vec<anyhow::Error>, error_message: &str) -> Result<()> {
     if errors.is_empty() {
         Ok(())
@@ -945,10 +1070,12 @@ mod test {
         let lattice_id = "all_state";
 
         let command_publisher = CommandPublisher::new(NoopPublisher, "doesntmatter");
+        let status_publisher = StatusPublisher::new(NoopPublisher, "doesntmatter");
         let worker = EventWorker::new(
             store.clone(),
             lattice_source.clone(),
             command_publisher.clone(),
+            status_publisher.clone(),
             ScalerManager::test_new(
                 NoopPublisher,
                 lattice_id,
@@ -1743,10 +1870,12 @@ mod test {
             ..Default::default()
         };
         let command_publisher = CommandPublisher::new(NoopPublisher, "doesntmatter");
+        let status_publisher = StatusPublisher::new(NoopPublisher, "doesntmatter");
         let worker = EventWorker::new(
             store.clone(),
             lattice_source.clone(),
             command_publisher.clone(),
+            status_publisher.clone(),
             ScalerManager::test_new(
                 NoopPublisher,
                 lattice_id,
@@ -1895,10 +2024,12 @@ mod test {
         let lattice_source = TestLatticeSource::default();
         let lattice_id = "provider_status";
         let command_publisher = CommandPublisher::new(NoopPublisher, "doesntmatter");
+        let status_publisher = StatusPublisher::new(NoopPublisher, "doesntmatter");
         let worker = EventWorker::new(
             store.clone(),
             lattice_source.clone(),
             command_publisher.clone(),
+            status_publisher.clone(),
             ScalerManager::test_new(
                 NoopPublisher,
                 lattice_id,
@@ -2009,10 +2140,12 @@ mod test {
         let lattice_id = "provider_contract_id";
 
         let command_publisher = CommandPublisher::new(NoopPublisher, "doesntmatter");
+        let status_publisher = StatusPublisher::new(NoopPublisher, "doesntmatter");
         let worker = EventWorker::new(
             store.clone(),
             lattice_source.clone(),
             command_publisher.clone(),
+            status_publisher.clone(),
             ScalerManager::test_new(
                 NoopPublisher,
                 lattice_id,
@@ -2110,10 +2243,12 @@ mod test {
         let lattice_id = "update_data";
 
         let command_publisher = CommandPublisher::new(NoopPublisher, "doesntmatter");
+        let status_publisher = StatusPublisher::new(NoopPublisher, "doesntmatter");
         let worker = EventWorker::new(
             store.clone(),
             lattice_source.clone(),
             command_publisher.clone(),
+            status_publisher.clone(),
             ScalerManager::test_new(
                 NoopPublisher,
                 lattice_id,

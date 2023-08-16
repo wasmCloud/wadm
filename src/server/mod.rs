@@ -1,4 +1,7 @@
-use async_nats::{jetstream::kv::Store, Client, Subscriber};
+use async_nats::{
+    jetstream::{kv::Store, stream::Stream},
+    Client, Subscriber,
+};
 use futures::StreamExt;
 use tracing::{info, instrument, warn};
 
@@ -41,6 +44,7 @@ impl<P: Publisher> Server<P> {
         client: Client,
         topic_prefix: Option<&str>,
         multitenant: bool,
+        status_stream: Stream,
         notifier: ManifestNotifier<P>,
     ) -> anyhow::Result<Server<P>> {
         // Trim off any spaces or trailing/preceding dots
@@ -76,6 +80,7 @@ impl<P: Publisher> Server<P> {
                 store: ModelStorage::new(store),
                 client,
                 notifier,
+                status_stream,
             },
             subscriber,
             prefix,
@@ -247,7 +252,7 @@ impl<P: Publisher> Server<P> {
         let object_name = trimmed.next();
         // Catch malformed long subjects
         if trimmed.next().is_some() {
-            anyhow::bail!("Found extra components of subject")
+            anyhow::bail!("Found extra components of subject, ensure your manifest name consists of only alphanumeric characters, dashes, and underscores.")
         }
         Ok(ParsedSubject {
             account_id,

@@ -59,6 +59,7 @@ pub struct ModelSummary {
     pub description: Option<String>,
     pub deployed_version: Option<String>,
     pub status: StatusType,
+    pub status_message: Option<String>,
 }
 
 /// The response to a versions request
@@ -186,12 +187,42 @@ pub struct TraitStatus {
 }
 
 /// Common high-level status information
-#[derive(Debug, Serialize, Deserialize, Default, Clone)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone, Eq, PartialEq)]
 pub struct StatusInfo {
     #[serde(rename = "type")]
     pub status_type: StatusType,
     #[serde(skip_serializing_if = "String::is_empty", default)]
     pub message: String,
+}
+
+impl StatusInfo {
+    pub fn undeployed(message: &str) -> Self {
+        StatusInfo {
+            status_type: StatusType::Undeployed,
+            message: message.to_owned(),
+        }
+    }
+
+    pub fn ready(message: &str) -> Self {
+        StatusInfo {
+            status_type: StatusType::Ready,
+            message: message.to_owned(),
+        }
+    }
+
+    pub fn failed(message: &str) -> Self {
+        StatusInfo {
+            status_type: StatusType::Failed,
+            message: message.to_owned(),
+        }
+    }
+
+    pub fn compensating(message: &str) -> Self {
+        StatusInfo {
+            status_type: StatusType::Compensating,
+            message: message.to_owned(),
+        }
+    }
 }
 
 /// All possible status types

@@ -9,9 +9,13 @@ jobs:
   test:
     name: e2e
     runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        e2e_test: [e2e_multiple_hosts, e2e_multitenant, e2e_upgrades]
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
 
       - name: Install latest Rust stable toolchain
         uses: actions-rs/toolchain@v1
@@ -25,17 +29,19 @@ jobs:
         with:
           key: "ubuntu-22.04-rust-cache"
 
-      # Run all tests
-      - name: Run tests
+      # Run e2e tests in a matrix for efficiency
+      - name: Run tests ${{ matrix.e2e_test }}
         id: test
-        run: make test-e2e
-    
+        env:
+          WADM_E2E_TEST: ${{ matrix.e2e_test }}
+        run: make test-individual-e2e
+
       # if the previous step fails, upload logs
       - name: Upload logs for debugging
         uses: actions/upload-artifact@v2
         if: ${{ failure() && steps.test.outcome == 'failure' }}
         with:
-          name: e2e-logs
+          name: e2e-logs-${{ matrix.e2e_test }}
           path: ./test/e2e_log/*
           # Be nice and only retain the logs for 7 days
           retention-days: 7

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use tracing::{instrument, warn};
 use wasmcloud_control_interface::{HostInventory, LinkDefinition};
 
-use crate::{commands::Command, publisher::Publisher, APP_SPEC_ANNOTATION};
+use crate::{commands::Command, publisher::Publisher, server::StatusInfo, APP_SPEC_ANNOTATION};
 
 /// A subset of needed claims to help populate state
 #[derive(Debug, Clone)]
@@ -92,6 +92,37 @@ impl LinkSource for wasmcloud_control_interface::Client {
             .await
             .map(|resp| resp.links)
             .map_err(|e| anyhow::anyhow!("{e:?}"))
+    }
+}
+
+/// A struct for publishing status updates
+#[derive(Clone)]
+pub struct StatusPublisher<Pub> {
+    publisher: Pub,
+    // Topic prefix, e.g. wadm.status.default
+    topic_prefix: String,
+}
+
+impl<Pub> StatusPublisher<Pub> {
+    /// Creates an new status publisher configured with the given publisher that will send to the
+    /// manifest status topic using the given prefix
+    pub fn new(publisher: Pub, topic_prefix: &str) -> StatusPublisher<Pub> {
+        StatusPublisher {
+            publisher,
+            topic_prefix: topic_prefix.to_owned(),
+        }
+    }
+}
+
+impl<Pub: Publisher> StatusPublisher<Pub> {
+    #[instrument(level = "trace", skip(self))]
+    pub async fn publish_status(&self, name: &str, status: StatusInfo) -> anyhow::Result<()> {
+        self.publisher
+            .publish(
+                serde_json::to_vec(&status)?,
+                Some(&format!("{}.{name}", self.topic_prefix)),
+            )
+            .await
     }
 }
 

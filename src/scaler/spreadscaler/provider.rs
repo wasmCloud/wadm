@@ -2,7 +2,7 @@ use std::{cmp::Ordering, collections::HashMap};
 
 use anyhow::Result;
 use async_trait::async_trait;
-use tokio::sync::OnceCell;
+use tokio::sync::{OnceCell, RwLock};
 use tracing::{instrument, trace};
 
 use crate::{
@@ -13,6 +13,7 @@ use crate::{
         spreadscaler::{compute_spread, eligible_hosts, spreadscaler_annotations},
         Scaler,
     },
+    server::StatusInfo,
     storage::{Host, Provider, ReadStore},
 };
 
@@ -50,12 +51,18 @@ pub struct ProviderSpreadScaler<S: ReadStore + Send + Sync> {
     /// Provider ID, stored in a OnceCell to facilitate more efficient fetches
     provider_id: OnceCell<String>,
     id: String,
+    status: RwLock<StatusInfo>,
 }
 
 #[async_trait]
 impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
     fn id(&self) -> &str {
         &self.id
+    }
+
+    async fn status(&self) -> StatusInfo {
+        let _ = self.reconcile().await;
+        self.status.read().await.to_owned()
     }
 
     #[instrument(level = "debug", skip_all, fields(scaler_id = %self.id))]
@@ -117,7 +124,9 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
         let link_name = &self.config.provider_link_name;
         let provider_ref = &self.config.provider_reference;
 
-        Ok(self
+        let mut spread_status = vec![];
+
+        let commands = self
             .spread_requirements
             .iter()
             .flat_map(|(spread, count)| {
@@ -193,7 +202,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
                         // status accordingly once we have a way to.
 
                         // Take `num_to_start` commands from this iterator
-                        other
+                        let commands = other
                             .into_iter()
                             .filter(|(_host_id, host)| {
                                 !host.providers.contains(&ProviderInfo {
@@ -214,14 +223,41 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
                                 })
                             })
                             .take(num_to_start)
-                            .collect::<Vec<Command>>()
+                            .collect::<Vec<Command>>();
+
+                        if commands.len() < num_to_start {
+                            // NOTE(brooksmtownsend): We're reporting status for the entire spreadscaler here, not just this individual
+                            // command, so we want to consider the providers that are already running for the spread over the 
+                            // total expected count.
+                            let msg = format!("Could not satisfy spread {} for {}, {}/{} eligible hosts found.", spread.name, self.config.provider_reference, running_for_spread.len(), count);
+                            spread_status.push(StatusInfo::failed(&msg));
+                        }
+                        commands
                     }
                     // If we're equal or are greater and have nothing from our spread running, we do
                     // nothing
                     _ => Vec::new(),
                 }
             })
-            .collect::<Vec<Command>>())
+            .collect::<Vec<Command>>();
+
+        trace!(?commands, "Calculated commands for provider scaler");
+
+        let status = if spread_status.is_empty() {
+            StatusInfo::ready("")
+        } else {
+            StatusInfo::failed(
+                &spread_status
+                    .into_iter()
+                    .map(|s| s.message)
+                    .collect::<Vec<String>>()
+                    .join(" "),
+            )
+        };
+        trace!(?status, "Updating scaler status");
+        *self.status.write().await = status;
+
+        Ok(commands)
     }
 
     #[instrument(level = "trace", skip_all, fields(name = %self.config.model_name))]
@@ -236,6 +272,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
             spread_requirements,
             provider_id: self.provider_id.clone(),
             id: self.id.clone(),
+            status: RwLock::new(StatusInfo::compensating("")),
         };
 
         cleanerupper.reconcile().await
@@ -246,8 +283,8 @@ impl<S: ReadStore + Send + Sync> ProviderSpreadScaler<S> {
     /// Construct a new ProviderSpreadScaler with specified configuration values
     pub fn new(store: S, config: ProviderSpreadConfig, component_name: &str) -> Self {
         let id = format!(
-            "{PROVIDER_SPREAD_SCALER_TYPE}-{}-{component_name}-{}",
-            config.model_name, config.provider_link_name,
+            "{PROVIDER_SPREAD_SCALER_TYPE}-{}-{component_name}-{}-{}",
+            config.model_name, config.provider_reference, config.provider_link_name,
         );
         Self {
             store,
@@ -255,6 +292,7 @@ impl<S: ReadStore + Send + Sync> ProviderSpreadScaler<S> {
             provider_id: OnceCell::new(),
             config,
             id,
+            status: RwLock::new(StatusInfo::compensating("")),
         }
     }
 

@@ -160,7 +160,6 @@ Reference](https://wasmcloud.dev/reference/wadm).
 As this is a new project there are some things we know are missing or buggy. A non-exhaustive list
 of these can be found below:
 
-- Currently the API does not update with the status of each scaler and reconcile action
 - It is _technically_ possible as things stand right now for a race condition with manifests when a
   manifest is updated/created and deleted simultaneously. In this case, one of the operations will
   win and you will end up with a manifest that still exists after you delete it or a manifest that

@@ -3,13 +3,15 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use futures::FutureExt;
-use wadm::server::{DeployResult, PutResult};
+use wadm::server::{DeployResult, PutResult, StatusType};
 
 mod e2e;
 mod helpers;
 
 use e2e::{assert_status, check_actors, check_providers, ClientInfo, ExpectedCount};
 use helpers::{ECHO_ACTOR_ID, HTTP_SERVER_PROVIDER_ID};
+
+use crate::e2e::check_status;
 
 const MANIFESTS_PATH: &str = "test/data";
 const DOCKER_COMPOSE_FILE: &str = "test/docker-compose-e2e.yaml";
@@ -38,6 +40,7 @@ async fn run_multiple_host_tests() {
     for _ in 0..10 {
         match client_info.ctl_client("default").get_hosts().await {
             Ok(hosts) if hosts.len() == 5 => {
+                eprintln!("Hosts {}/5 currently available", hosts.len());
                 did_start = true;
                 break;
             }
@@ -83,6 +86,11 @@ async fn run_multiple_host_tests() {
 // This test does a basic check that all things exist in isolation and should be run first before
 // other tests run
 async fn test_no_requirements(client_info: &ClientInfo) {
+    let stream = client_info.get_status_stream().await;
+    stream
+        .purge()
+        .await
+        .expect("shouldn't have errored purging stream");
     let resp = client_info
         .put_manifest_from_file("simple.yaml", None, None)
         .await;
@@ -101,6 +109,11 @@ async fn test_no_requirements(client_info: &ClientInfo) {
         DeployResult::Error,
         "Shouldn't have errored when deploying manifest: {resp:?}"
     );
+
+    // Once manifest is deployed, first status should be compensating
+    check_status(&stream, "default", "echo-simple", StatusType::Compensating)
+        .await
+        .unwrap();
 
     // NOTE: This runs for a while, but it's because we're waiting for the provider to download,
     // which can take a bit
@@ -135,6 +148,10 @@ async fn test_no_requirements(client_info: &ClientInfo) {
             )
         }
 
+        check_status(&stream, "default", "echo-simple", StatusType::Ready)
+            .await
+            .unwrap();
+
         Ok(())
     })
     .await;
@@ -149,6 +166,11 @@ async fn test_no_requirements(client_info: &ClientInfo) {
         DeployResult::Error,
         "Shouldn't have errored when undeploying manifest: {resp:?}"
     );
+
+    // Once manifest is undeployed, status should be undeployed
+    check_status(&stream, "default", "echo-simple", StatusType::Undeployed)
+        .await
+        .unwrap();
 
     // assert that no actors or providers with annotations exist
     assert_status(None, None, || async {
@@ -165,6 +187,10 @@ async fn test_no_requirements(client_info: &ClientInfo) {
             "wasmcloud.azurecr.io/httpserver:0.17.0",
             ExpectedCount::Exactly(0),
         )?;
+
+        check_status(&stream, "default", "echo-simple", StatusType::Undeployed)
+            .await
+            .unwrap();
 
         Ok(())
     })

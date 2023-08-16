@@ -1,4 +1,5 @@
 #![cfg(feature = "_e2e_tests")]
+use base64::{engine::general_purpose::STANDARD as B64decoder, Engine};
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
@@ -6,7 +7,10 @@ use std::{
     time::Duration,
 };
 
-use async_nats::Client;
+use async_nats::{
+    jetstream::{self, stream::Stream},
+    Client,
+};
 use futures::Future;
 use tokio::{
     process::{Child, Command},
@@ -14,7 +18,10 @@ use tokio::{
 };
 use wadm::{
     model::Manifest,
-    server::{DeployModelRequest, DeployModelResponse, PutModelResponse, UndeployModelRequest},
+    server::{
+        DeployModelRequest, DeployModelResponse, PutModelResponse, StatusInfo, StatusType,
+        UndeployModelRequest,
+    },
     APP_SPEC_ANNOTATION, MANAGED_BY_ANNOTATION, MANAGED_BY_IDENTIFIER,
 };
 use wasmcloud_control_interface::HostInventory;
@@ -304,6 +311,29 @@ impl ClientInfo {
         serde_json::from_slice(&msg.payload).expect("Unable to decode undeploy model response")
     }
 
+    pub async fn get_status_stream(&self) -> Stream {
+        let context = jetstream::new(self.client.clone());
+
+        context
+            .get_or_create_stream(async_nats::jetstream::stream::Config {
+                name: "wadm_status".to_string(),
+                description: Some(
+                    "A stream that stores all status updates for wadm applications".to_string(),
+                ),
+                num_replicas: 1,
+                retention: async_nats::jetstream::stream::RetentionPolicy::Limits,
+                subjects: vec!["wadm.status.*.*".to_string()],
+                max_messages_per_subject: 10,
+                max_age: std::time::Duration::from_nanos(0),
+                storage: async_nats::jetstream::stream::StorageType::File,
+                allow_rollup: false,
+                ..Default::default()
+            })
+            .await
+            .map_err(|e| anyhow::anyhow!("{e:?}"))
+            .expect("Should be able to set up status stream for tests")
+    }
+
     /********************* HELPER FUNCTIONS *********************/
 
     /// Returns all host inventories in a hashmap keyed by host ID. This returns a result so it can
@@ -433,6 +463,30 @@ pub enum ExpectedCount {
     Exactly(usize),
 }
 
+pub async fn check_status(
+    stream: &Stream,
+    lattice_id: &str,
+    manifest_name: &str,
+    expected_status: StatusType,
+) -> anyhow::Result<()> {
+    for i in 0..5 {
+        let status = get_manifest_status(stream, lattice_id, manifest_name).await;
+        match status.as_ref() {
+            Some(status) if status.status_type == expected_status => break,
+            _ if i < 4 => tokio::time::sleep(std::time::Duration::from_secs(1)).await,
+            Some(status) => {
+                anyhow::bail!(
+                    "Expected {manifest_name} to have status {expected_status:?}, found {status:?}"
+                )
+            }
+            None => anyhow::bail!(
+                "Expected {manifest_name} to have status {expected_status:?}, found no status"
+            ),
+        }
+    }
+    Ok(())
+}
+
 pub fn check_providers(
     inventory: &HashMap<String, HostInventory>,
     image_ref: &str,
@@ -478,4 +532,25 @@ pub fn check_providers(
         }
     }
     Ok(())
+}
+
+pub async fn get_manifest_status(
+    stream: &Stream,
+    lattice_id: &str,
+    name: &str,
+) -> Option<StatusInfo> {
+    // NOTE(brooksmtownsend): We're getting the last raw message instead of direct get here
+    // to ensure we fetch the latest message from the cluster leader.
+    match stream
+        .get_last_raw_message_by_subject(&format!("wadm.status.{lattice_id}.{name}",))
+        .await
+        .map(|raw| {
+            B64decoder
+                .decode(raw.payload)
+                .map(|b| serde_json::from_slice::<StatusInfo>(&b))
+        }) {
+        Ok(Ok(Ok(status))) => Some(status),
+        // Model status doesn't exist or is invalid, assuming undeployed
+        _ => None,
+    }
 }

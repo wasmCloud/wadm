@@ -1,8 +1,11 @@
 use anyhow::anyhow;
-use async_nats::{Client, Message};
-use serde_json::json;
 use std::collections::{HashMap, HashSet};
-use tracing::{debug, error, instrument, trace};
+use async_nats::{jetstream::stream::Stream, Client, Message};
+use base64::{engine::general_purpose::STANDARD as B64decoder, Engine};
+use regex::Regex;
+use serde_json::json;
+use tokio::sync::OnceCell;
+use tracing::{debug, error, instrument, log::warn, trace};
 
 use crate::{
     model::{
@@ -10,6 +13,7 @@ use crate::{
         Properties, Trait, TraitProperty, LATEST_VERSION,
     },
     publisher::Publisher,
+    server::StatusType,
 };
 
 use super::{
@@ -19,10 +23,13 @@ use super::{
     StatusResponse, StatusResult, UndeployModelRequest, VersionInfo, VersionResponse,
 };
 
+static MANIFEST_NAME_REGEX: OnceCell<Regex> = OnceCell::const_new();
+
 pub(crate) struct Handler<P> {
     pub(crate) store: ModelStorage,
     pub(crate) client: Client,
     pub(crate) notifier: ManifestNotifier<P>,
+    pub(crate) status_stream: Stream,
 }
 
 impl<P: Publisher> Handler<P> {
@@ -52,7 +59,48 @@ impl<P: Publisher> Handler<P> {
             return;
         }
 
-        let manifest_name = manifest.metadata.name.clone();
+        // For all components that have JSON config, validate that it can serialize. We need this so
+        // it doesn't trigger an error when sending a command down the line
+        for component in manifest.spec.components.iter() {
+            if let Properties::Capability {
+                properties:
+                    CapabilityProperties {
+                        config: Some(CapabilityConfig::Json(data)),
+                        ..
+                    },
+            } = &component.properties
+            {
+                if let Err(e) = serde_json::to_string(data) {
+                    self.send_error(
+                        msg.reply,
+                        format!(
+                            "Unable to serialize JSON config data for component {}: {e:?}",
+                            component.name,
+                        ),
+                    )
+                    .await;
+                    return;
+                }
+            }
+        }
+
+        let manifest_name = manifest.metadata.name.trim().to_string();
+        if !MANIFEST_NAME_REGEX
+            // SAFETY: We know this is valid Regex
+            .get_or_init(|| async { Regex::new(r"^[-\w]+$").unwrap() })
+            .await
+            .is_match(&manifest_name)
+        {
+            self.send_error(
+                msg.reply,
+                format!(
+                    "Manifest name {} contains invalid characters. Manifest names can only contain alphanumeric characters, dashes, and underscores.",
+                    manifest_name
+                ),
+            )
+            .await;
+            return;
+        }
 
         let (mut current_manifests, current_revision) =
             match self.store.get(account_id, lattice_id, &manifest_name).await {
@@ -208,7 +256,7 @@ impl<P: Publisher> Handler<P> {
 
     #[instrument(level = "debug", skip(self, msg))]
     pub async fn list_models(&self, msg: Message, account_id: Option<&str>, lattice_id: &str) {
-        let data = match self.store.list(account_id, lattice_id).await {
+        let mut data = match self.store.list(account_id, lattice_id).await {
             Ok(d) => d,
             Err(e) => {
                 error!(error = %e, "Unable to fetch data");
@@ -217,6 +265,18 @@ impl<P: Publisher> Handler<P> {
                 return;
             }
         };
+
+        for model in &mut data {
+            if let Some(status) = self.get_manifest_status(lattice_id, &model.name).await {
+                model.status = status.status_type;
+                model.status_message = Some(status.message);
+            } else {
+                warn!("Could not fetch status for model, assuming undeployed");
+                model.status = StatusType::Undeployed;
+                model.status_message = None;
+            }
+        }
+
         // NOTE: We _just_ deserialized this from the store above and then manually constructed it,
         // so we should be just fine. Just in case though, we unwrap to default
         self.send_reply(msg.reply, serde_json::to_vec(&data).unwrap_or_default())
@@ -595,6 +655,7 @@ impl<P: Publisher> Handler<P> {
 
         let reply = if manifests.undeploy() {
             trace!("Manifest undeployed. Storing updated manifest");
+
             self.store
                 .set(account_id, lattice_id, manifests, Some(current_revision))
                 .await
@@ -680,20 +741,14 @@ impl<P: Publisher> Handler<P> {
         };
 
         let current = manifests.get_current();
+
         let status = Status {
             version: current.version().to_owned(),
-            info: StatusInfo {
-                status_type: manifests
-                    .status()
-                    .iter()
-                    .map(|comp| comp.info.status_type)
-                    .sum(),
-                message: manifests
-                    .status_message()
-                    .map(|s| s.to_owned())
-                    .unwrap_or_default(),
-            },
-            components: manifests.status().to_vec(),
+            info: self
+                .get_manifest_status(lattice_id, name)
+                .await
+                .unwrap_or_default(),
+            components: vec![],
         };
 
         self.send_reply(
@@ -742,6 +797,51 @@ impl<P: Publisher> Handler<P> {
         }))
         .unwrap_or_default();
         self.send_reply(reply, response).await;
+    }
+
+    async fn get_manifest_status(&self, lattice_id: &str, name: &str) -> Option<StatusInfo> {
+        // NOTE(brooksmtownsend): We're getting the last raw message instead of direct get here
+        // to ensure we fetch the latest message from the cluster leader.
+        match self
+            .status_stream
+            .get_last_raw_message_by_subject(&format!("wadm.status.{lattice_id}.{name}",))
+            .await
+            .map(|raw| {
+                B64decoder
+                    .decode(raw.payload)
+                    .map(|b| serde_json::from_slice::<StatusInfo>(&b))
+            }) {
+            Ok(Ok(Ok(status))) => Some(status),
+            // Model status doesn't exist or is invalid, assuming undeployed
+            _ => None,
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    #[tokio::test]
+    async fn manifest_name_regex_works() {
+        let regex = super::MANIFEST_NAME_REGEX
+            .get_or_init(|| async { regex::Regex::new(r"^[-\w]+$").unwrap() })
+            .await;
+
+        // Acceptable manifest names
+        let word = "mymanifest";
+        let word_with_dash = "my-manifest";
+        let word_with_underscore = "my_manifest";
+        let word_with_numbers = "mymanifest-v2-v3-final";
+
+        assert!(regex.is_match(word));
+        assert!(regex.is_match(word_with_dash));
+        assert!(regex.is_match(word_with_underscore));
+        assert!(regex.is_match(word_with_numbers));
+
+        // Not acceptable manifest names
+        let word_with_period = "my.manifest";
+        let word_with_space = "my manifest";
+        assert!(!regex.is_match(word_with_period));
+        assert!(!regex.is_match(word_with_space));
     }
 }
 

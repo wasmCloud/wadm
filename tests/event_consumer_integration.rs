@@ -123,7 +123,6 @@ async fn test_event_stream() -> Result<()> {
 
     // Create a link
     helpers::run_wash_command([
-        "ctl",
         "link",
         "put",
         ECHO_ACTOR_ID,
@@ -154,7 +153,7 @@ async fn test_event_stream() -> Result<()> {
     evt.ack().await.expect("Should be able to ack event");
 
     // Delete link
-    helpers::run_wash_command(["ctl", "link", "del", ECHO_ACTOR_ID, CONTRACT_ID]).await;
+    helpers::run_wash_command(["link", "del", ECHO_ACTOR_ID, CONTRACT_ID]).await;
 
     let mut evt = wait_for_event(&mut stream, LINK_OPERATION_TIMEOUT_DURATION).await;
     if let Event::LinkdefDeleted(link) = evt.as_ref() {
@@ -175,7 +174,7 @@ async fn test_event_stream() -> Result<()> {
 
     // Stop provider
     let host_id = serde_json::from_slice::<HostResponse>(
-        &helpers::run_wash_command(["ctl", "get", "hosts", "-o", "json"]).await,
+        &helpers::run_wash_command(["get", "hosts", "-o", "json"]).await,
     )
     .unwrap()
     .hosts[0]
@@ -185,7 +184,6 @@ async fn test_event_stream() -> Result<()> {
         .unwrap()
         .to_owned();
     helpers::run_wash_command([
-        "ctl",
         "stop",
         "provider",
         &host_id,
@@ -208,7 +206,7 @@ async fn test_event_stream() -> Result<()> {
     evt.ack().await.expect("Should be able to ack event");
 
     // Stop an actor
-    helpers::run_wash_command(["ctl", "stop", "actor", &host_id, ECHO_ACTOR_ID]).await;
+    helpers::run_wash_command(["stop", "actor", &host_id, ECHO_ACTOR_ID]).await;
 
     let mut evt = wait_for_event(&mut stream, DEFAULT_TIMEOUT_DURATION).await;
     if let Event::ActorStopped(actor) = evt.as_ref() {
@@ -223,7 +221,7 @@ async fn test_event_stream() -> Result<()> {
     evt.ack().await.expect("Should be able to ack event");
 
     // Stop the host
-    helpers::run_wash_command(["ctl", "stop", "host", &host_id]).await;
+    helpers::run_wash_command(["stop", "host", &host_id]).await;
 
     let mut evt = wait_for_event(&mut stream, DEFAULT_TIMEOUT_DURATION).await;
     if let Event::HostStopped(host) = evt.as_ref() {

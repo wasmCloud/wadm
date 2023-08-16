@@ -114,7 +114,7 @@ pub struct ScalerManager<StateStore, P: Clone, L: Clone> {
     subject: String,
     lattice_id: String,
     state_store: StateStore,
-    publisher: CommandPublisher<P>,
+    command_publisher: CommandPublisher<P>,
     link_getter: L,
 }
 
@@ -135,6 +135,7 @@ where
     /// Creates a new ScalerManager configured to notify messages to `wadm.notify.{lattice_id}`
     /// using the given jetstream client. Also creates an ephemeral consumer for notifications on
     /// the given stream
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         client: P,
         stream: JsStream,
@@ -142,7 +143,7 @@ where
         multitenant_prefix: Option<&str>,
         state_store: StateStore,
         manifest_store: KvStore,
-        publisher: CommandPublisher<P>,
+        command_publisher: CommandPublisher<P>,
         link_getter: L,
     ) -> Result<ScalerManager<StateStore, P, L>> {
         // Create the consumer first so that we can make sure we don't miss anything during the
@@ -208,7 +209,7 @@ where
             subject,
             lattice_id: lattice_id.to_owned(),
             state_store,
-            publisher,
+            command_publisher,
             link_getter,
         };
         let cloned = manager.clone();
@@ -224,7 +225,7 @@ where
         client: P,
         lattice_id: &str,
         state_store: StateStore,
-        publisher: CommandPublisher<P>,
+        command_publisher: CommandPublisher<P>,
         link_getter: L,
     ) -> ScalerManager<StateStore, P, L> {
         ScalerManager {
@@ -234,7 +235,7 @@ where
             subject: format!("{WADM_NOTIFY_PREFIX}.{lattice_id}"),
             lattice_id: lattice_id.to_owned(),
             state_store,
-            publisher,
+            command_publisher,
             link_getter,
         }
     }
@@ -247,15 +248,7 @@ where
     /// used to set this model to backoff mode
     #[instrument(level = "trace", skip_all, fields(name = %manifest.metadata.name, lattice_id = %self.lattice_id))]
     pub async fn add_scalers<'a>(&'a self, manifest: &'a Manifest) -> Result<Scalers> {
-        let scalers = components_to_scalers(
-            &manifest.spec.components,
-            &self.state_store,
-            &self.lattice_id,
-            &self.client,
-            &manifest.metadata.name,
-            &self.subject,
-            &self.link_getter,
-        );
+        let scalers = self.scalers_for_manifest(manifest);
         self.add_raw_scalers(&manifest.metadata.name, scalers).await;
         let notification = serde_json::to_vec(&Notifications::CreateScalers(manifest.to_owned()))?;
         self.client
@@ -267,6 +260,18 @@ where
         self.get_scalers(&manifest.metadata.name)
             .await
             .ok_or_else(|| anyhow::anyhow!("Data error: scalers no longer exist after creation"))
+    }
+
+    pub fn scalers_for_manifest<'a>(&'a self, manifest: &'a Manifest) -> ScalerList {
+        components_to_scalers(
+            &manifest.spec.components,
+            &self.state_store,
+            &self.lattice_id,
+            &self.client,
+            &manifest.metadata.name,
+            &self.subject,
+            &self.link_getter,
+        )
     }
 
     /// Gets the scalers for the given model name, returning None if they don't exist.
@@ -319,6 +324,7 @@ where
             Some(Err(e)) => return Some(Err(e)),
             None => return None,
         };
+
         // SAFETY: This is entirely data in our control and should be safe to unwrap
         if let Err(e) = self
             .client
@@ -341,10 +347,17 @@ where
         self.scalers.write().await.insert(name.to_owned(), scalers);
     }
 
+    /// A function that removes the scalers without any of the publishing
+    /// CAUTION: This function does not do any cleanup, so it should only be used in scenarios
+    /// where you are prepared to handle that yourself.
+    pub(crate) async fn remove_raw_scalers(&self, name: &str) -> Option<ScalerList> {
+        self.scalers.write().await.remove(name)
+    }
+
     /// Does everything except sending the notification
     #[instrument(level = "debug", skip(self), fields(lattice_id = %self.lattice_id))]
     async fn remove_scalers_internal(&self, name: &str) -> Option<Result<ScalerList>> {
-        let scalers = self.scalers.write().await.remove(name)?;
+        let scalers = self.remove_raw_scalers(name).await?;
         let commands =
             match futures::future::join_all(scalers.iter().map(|scaler| scaler.cleanup()))
                 .await
@@ -356,12 +369,13 @@ where
                 Err(e) => return Some(Err(e)),
             };
         trace!(?commands, "Publishing cleanup commands");
-        if let Err(e) = self.publisher.publish_commands(commands).await {
+        if let Err(e) = self.command_publisher.publish_commands(commands).await {
             error!(error = %e, "Unable to publish cleanup commands");
             self.scalers.write().await.insert(name.to_owned(), scalers);
-            return Some(Err(e));
+            Some(Err(e))
+        } else {
+            Some(Ok(scalers))
         }
-        Some(Ok(scalers))
     }
 
     #[instrument(level = "debug", skip_all, fields(lattice_id = %self.lattice_id))]

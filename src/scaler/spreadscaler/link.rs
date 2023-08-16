@@ -2,14 +2,17 @@ use std::collections::HashMap;
 
 use anyhow::Result;
 use async_trait::async_trait;
-use tokio::sync::OnceCell;
+use tokio::sync::{OnceCell, RwLock};
 use tracing::{instrument, trace};
 
 use crate::{
     commands::{Command, DeleteLinkdef, PutLinkdef},
-    events::{Event, LinkdefDeleted, ProviderHealthCheckPassed, ProviderHealthCheckStatus},
+    events::{
+        Event, LinkdefDeleted, LinkdefSet, ProviderHealthCheckPassed, ProviderHealthCheckStatus,
+    },
     model::TraitProperty,
     scaler::Scaler,
+    server::StatusInfo,
     storage::{Actor, Provider, ReadStore},
     workers::LinkSource,
     DEFAULT_LINK_NAME,
@@ -45,6 +48,7 @@ pub struct LinkScaler<S, L> {
     provider_id: OnceCell<String>,
     ctl_client: L,
     id: String,
+    status: RwLock<StatusInfo>,
 }
 
 #[async_trait]
@@ -55,6 +59,11 @@ where
 {
     fn id(&self) -> &str {
         &self.id
+    }
+
+    async fn status(&self) -> StatusInfo {
+        let _ = self.reconcile().await;
+        self.status.read().await.to_owned()
     }
 
     async fn update_config(&mut self, _config: TraitProperty) -> Result<Vec<Command>> {
@@ -88,6 +97,7 @@ where
                 self.reconcile().await
             }
             Event::LinkdefDeleted(LinkdefDeleted { linkdef })
+            | Event::LinkdefSet(LinkdefSet { linkdef })
                 if linkdef.contract_id == self.config.provider_contract_id
                     && linkdef.actor_id == self.actor_id().await.unwrap_or_default()
                     && linkdef.provider_id == self.provider_id().await.unwrap_or_default()
@@ -146,6 +156,9 @@ where
             // };
 
             let commands = if !exists {
+                *self.status.write().await = StatusInfo::compensating(&format!(
+                    "Putting link definition between {actor_id} and {provider_id}"
+                ));
                 vec![Command::PutLinkdef(PutLinkdef {
                     actor_id: actor_id.to_owned(),
                     provider_id: provider_id.to_owned(),
@@ -155,11 +168,16 @@ where
                     model_name: self.config.model_name.to_owned(),
                 })]
             } else {
+                *self.status.write().await = StatusInfo::ready("");
                 Vec::with_capacity(0)
             };
             Ok(commands)
         } else {
             trace!("Actor ID and provider ID are not initialized, skipping linkdef creation");
+            *self.status.write().await = StatusInfo::compensating(&format!(
+                "Linkdef pending, waiting for {} and {} to start",
+                self.config.actor_reference, self.config.provider_reference
+            ));
             Ok(Vec::new())
         }
     }
@@ -215,6 +233,7 @@ impl<S: ReadStore + Send + Sync, L: LinkSource> LinkScaler<S, L> {
             },
             ctl_client,
             id,
+            status: RwLock::new(StatusInfo::compensating("")),
         }
     }
 

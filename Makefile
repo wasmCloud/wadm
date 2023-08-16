@@ -83,6 +83,16 @@ ifeq ($(shell nc -czt -w1 127.0.0.1 4222 || echo fail),fail)
 	@$(MAKE) build
 	RUST_BACKTRACE=1 $(CARGO) test --test e2e_multitenant --features _e2e_tests --  --nocapture 
 	RUST_BACKTRACE=1 $(CARGO) test --test e2e_multiple_hosts --features _e2e_tests --  --nocapture 
+	RUST_BACKTRACE=1 $(CARGO) test --test e2e_upgrades --features _e2e_tests --  --nocapture 
+else
+	@echo "WARN: Not running e2e tests. NATS must not be currently running"
+	exit 1
+endif
+
+test-individual-e2e:: ## Runs an individual e2e test based on the WADM_E2E_TEST env var
+ifeq ($(shell nc -czt -w1 127.0.0.1 4222 || echo fail),fail)
+	@$(MAKE) build
+	RUST_BACKTRACE=1 $(CARGO) test --test $(WADM_E2E_TEST) --features _e2e_tests --  --nocapture 
 else
 	@echo "WARN: Not running e2e tests. NATS must not be currently running"
 	exit 1
@@ -92,12 +102,14 @@ endif
 # Cleanup #
 ###########
 
-stream-cleanup: ## Purges all streams that wadm creates
-	$(NATS) stream purge wadm_commands --force
-	$(NATS) stream purge wadm_events --force
-	$(NATS) stream purge wadm_notify --force
-	$(NATS) stream purge wadm_mirror --force
-	$(NATS) stream purge KV_wadm_state --force
-	$(NATS) stream purge KV_wadm_manifests --force
+stream-cleanup: ## Removes all streams that wadm creates
+	-$(NATS) stream del wadm_commands --force
+	-$(NATS) stream del wadm_events --force
+	-$(NATS) stream del wadm_notify --force
+	-$(NATS) stream del wadm_mirror --force
+	-$(NATS) stream del wadm_multitenant_mirror --force
+	-$(NATS) stream del wadm_status --force
+	-$(NATS) stream del KV_wadm_state --force
+	-$(NATS) stream del KV_wadm_manifests --force
 
 .PHONY: check-cargo-clippy lint build build-watch test stream-cleanup clean test-e2e test 
