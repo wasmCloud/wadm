@@ -1,9 +1,9 @@
 use anyhow::anyhow;
-use std::collections::{HashMap, HashSet};
 use async_nats::{jetstream::stream::Stream, Client, Message};
 use base64::{engine::general_purpose::STANDARD as B64decoder, Engine};
 use regex::Regex;
 use serde_json::json;
+use std::collections::{HashMap, HashSet};
 use tokio::sync::OnceCell;
 use tracing::{debug, error, instrument, log::warn, trace};
 
@@ -57,31 +57,6 @@ impl<P: Publisher> Handler<P> {
             )
             .await;
             return;
-        }
-
-        // For all components that have JSON config, validate that it can serialize. We need this so
-        // it doesn't trigger an error when sending a command down the line
-        for component in manifest.spec.components.iter() {
-            if let Properties::Capability {
-                properties:
-                    CapabilityProperties {
-                        config: Some(CapabilityConfig::Json(data)),
-                        ..
-                    },
-            } = &component.properties
-            {
-                if let Err(e) = serde_json::to_string(data) {
-                    self.send_error(
-                        msg.reply,
-                        format!(
-                            "Unable to serialize JSON config data for component {}: {e:?}",
-                            component.name,
-                        ),
-                    )
-                    .await;
-                    return;
-                }
-            }
         }
 
         let manifest_name = manifest.metadata.name.trim().to_string();
@@ -818,33 +793,6 @@ impl<P: Publisher> Handler<P> {
     }
 }
 
-#[cfg(test)]
-mod test {
-    #[tokio::test]
-    async fn manifest_name_regex_works() {
-        let regex = super::MANIFEST_NAME_REGEX
-            .get_or_init(|| async { regex::Regex::new(r"^[-\w]+$").unwrap() })
-            .await;
-
-        // Acceptable manifest names
-        let word = "mymanifest";
-        let word_with_dash = "my-manifest";
-        let word_with_underscore = "my_manifest";
-        let word_with_numbers = "mymanifest-v2-v3-final";
-
-        assert!(regex.is_match(word));
-        assert!(regex.is_match(word_with_dash));
-        assert!(regex.is_match(word_with_underscore));
-        assert!(regex.is_match(word_with_numbers));
-
-        // Not acceptable manifest names
-        let word_with_period = "my.manifest";
-        let word_with_space = "my manifest";
-        assert!(!regex.is_match(word_with_period));
-        assert!(!regex.is_match(word_with_space));
-    }
-}
-
 // Manifest validation
 pub(crate) fn validate_manifest(manifest: Manifest) -> anyhow::Result<()> {
     let mut component_details: HashSet<String> = HashSet::new();
@@ -997,5 +945,29 @@ mod test {
                 .to_string()
                 .contains("Duplicate target for linkdef in manifest")),
         }
+    }
+
+    #[tokio::test]
+    async fn manifest_name_regex_works() {
+        let regex = super::MANIFEST_NAME_REGEX
+            .get_or_init(|| async { regex::Regex::new(r"^[-\w]+$").unwrap() })
+            .await;
+
+        // Acceptable manifest names
+        let word = "mymanifest";
+        let word_with_dash = "my-manifest";
+        let word_with_underscore = "my_manifest";
+        let word_with_numbers = "mymanifest-v2-v3-final";
+
+        assert!(regex.is_match(word));
+        assert!(regex.is_match(word_with_dash));
+        assert!(regex.is_match(word_with_underscore));
+        assert!(regex.is_match(word_with_numbers));
+
+        // Not acceptable manifest names
+        let word_with_period = "my.manifest";
+        let word_with_space = "my manifest";
+        assert!(!regex.is_match(word_with_period));
+        assert!(!regex.is_match(word_with_space));
     }
 }
