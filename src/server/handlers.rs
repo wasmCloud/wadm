@@ -796,6 +796,8 @@ impl<P: Publisher> Handler<P> {
 // Manifest validation
 pub(crate) fn validate_manifest(manifest: Manifest) -> anyhow::Result<()> {
     let mut component_details: HashSet<String> = HashSet::new();
+
+    // Map of link names to a vector of provider references with that link name
     let mut linkdef_map: HashMap<String, Vec<String>> = HashMap::new();
 
     for component in manifest.spec.components.iter() {

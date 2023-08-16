@@ -61,33 +61,6 @@ impl Manifest {
             .get(DESCRIPTION_ANNOTATION_KEY)
             .map(|v| v.as_str())
     }
-
-    /// Return a list of the linkdefs in the manifests
-    pub fn get_linkdef_map(&self) -> HashMap<(String, String), HashMap<String, String>> {
-        // Map of the type Component Name -> Target : linkdef values
-        let mut linkdef_map: HashMap<(String, String), HashMap<String, String>> = HashMap::new();
-        for component in &self.spec.components {
-            if let Some(traits_vec) = &component.traits {
-                for trait_item in traits_vec.iter() {
-                    if let Trait {
-                        properties:
-                            TraitProperty::Linkdef(LinkdefProperty {
-                                target: target_name,
-                                values: Some(linkdef_values),
-                            }),
-                        ..
-                    } = &trait_item
-                    {
-                        linkdef_map.insert(
-                            (component.name.to_string(), target_name.to_string()),
-                            linkdef_values.clone(),
-                        );
-                    }
-                }
-            }
-        }
-        linkdef_map
-    }
 }
 
 /// The metadata describing the manifest
