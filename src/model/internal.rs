@@ -8,7 +8,7 @@ use super::LATEST_VERSION;
 
 /// This struct represents a single manfiest, with its version history. Internally these are stored
 /// as an indexmap keyed by version name
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub(crate) struct StoredManifest {
     // Ordering matters for how we store a manifest, so we need to use an index map to preserve
     // insertion order _and_ have quick access to specific versions

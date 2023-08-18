@@ -1,14 +1,16 @@
+use anyhow::anyhow;
 use async_nats::{jetstream::stream::Stream, Client, Message};
 use base64::{engine::general_purpose::STANDARD as B64decoder, Engine};
 use regex::Regex;
 use serde_json::json;
+use std::collections::{HashMap, HashSet};
 use tokio::sync::OnceCell;
 use tracing::{debug, error, instrument, log::warn, trace};
 
 use crate::{
     model::{
-        internal::StoredManifest, CapabilityConfig, CapabilityProperties, Properties,
-        LATEST_VERSION,
+        internal::StoredManifest, ActorProperties, CapabilityProperties, LinkdefProperty, Manifest,
+        Properties, Trait, TraitProperty, LATEST_VERSION,
     },
     publisher::Publisher,
     server::StatusType,
@@ -57,31 +59,6 @@ impl<P: Publisher> Handler<P> {
             return;
         }
 
-        // For all components that have JSON config, validate that it can serialize. We need this so
-        // it doesn't trigger an error when sending a command down the line
-        for component in manifest.spec.components.iter() {
-            if let Properties::Capability {
-                properties:
-                    CapabilityProperties {
-                        config: Some(CapabilityConfig::Json(data)),
-                        ..
-                    },
-            } = &component.properties
-            {
-                if let Err(e) = serde_json::to_string(data) {
-                    self.send_error(
-                        msg.reply,
-                        format!(
-                            "Unable to serialize JSON config data for component {}: {e:?}",
-                            component.name,
-                        ),
-                    )
-                    .await;
-                    return;
-                }
-            }
-        }
-
         let manifest_name = manifest.metadata.name.trim().to_string();
         if !MANIFEST_NAME_REGEX
             // SAFETY: We know this is valid Regex
@@ -111,6 +88,11 @@ impl<P: Publisher> Handler<P> {
                     return;
                 }
             };
+
+        if let Some(error_message) = validate_manifest(manifest.clone()).err() {
+            self.send_error(msg.reply, error_message.to_string()).await;
+            return;
+        }
 
         let mut resp = PutModelResponse {
             // If we successfully insert, the given manifest version will be the new current version
@@ -811,8 +793,162 @@ impl<P: Publisher> Handler<P> {
     }
 }
 
+// Manifest validation
+pub(crate) fn validate_manifest(manifest: Manifest) -> anyhow::Result<()> {
+    let mut component_details: HashSet<String> = HashSet::new();
+
+    // Map of link names to a vector of provider references with that link name
+    let mut linkdef_map: HashMap<String, Vec<String>> = HashMap::new();
+
+    for component in manifest.spec.components.iter() {
+        // Component name validation : each component (actors or providers) should have a unique name
+        if !component_details.insert(component.name.clone()) {
+            return Err(anyhow!(
+                "Duplicate component name in manifest: {}",
+                component.name
+            ));
+        }
+        // Provider validation :
+        // Provider config should be serializable [For all components that have JSON config, validate that it can serialize.
+        // We need this so it doesn't trigger an error when sending a command down the line]
+        // Providers should have a unique image ref and link name
+        if let Properties::Capability {
+            properties:
+                CapabilityProperties {
+                    image: image_name,
+                    link_name: Some(link),
+                    config: capability_config,
+                    ..
+                },
+        } = &component.properties
+        {
+            if let Some(data) = capability_config {
+                if let Err(e) = serde_json::to_string(data) {
+                    return Err(anyhow!(
+                        "Unable to serialize JSON config data for component {}: {e:?}",
+                        component.name
+                    ));
+                }
+            }
+
+            if let Some(duplicate_ref) = linkdef_map.get_mut(link) {
+                if duplicate_ref.contains(image_name) {
+                    return Err(anyhow!(
+                        "Duplicate image reference {} to link name {} in manifest",
+                        image_name,
+                        link
+                    ));
+                } else {
+                    duplicate_ref.push(image_name.to_string());
+                }
+            }
+            linkdef_map.insert(link.to_string(), vec![image_name.to_string()]);
+        }
+
+        // Actor validation : Actors should have a unique name and reference
+        if let Properties::Actor {
+            properties: ActorProperties { image: image_name },
+        } = &component.properties
+        {
+            if !component_details.insert(image_name.to_string()) {
+                return Err(anyhow!(
+                    "Duplicate image reference in manifest: {}",
+                    image_name
+                ));
+            }
+        }
+
+        // Linkdef validation : A linkdef from a component should have a unique target and reference
+        let mut linkdef_set: HashSet<String> = HashSet::new();
+        if let Some(traits_vec) = &component.traits {
+            for trait_item in traits_vec.iter() {
+                if let Trait {
+                    // TODO : add trait type validation after custom types are done. See TraitProperty enum.
+                    properties:
+                        TraitProperty::Linkdef(LinkdefProperty {
+                            target: target_name,
+                            ..
+                        }),
+                    ..
+                } = &trait_item
+                {
+                    if !linkdef_set.insert(target_name.to_string()) {
+                        return Err(anyhow!(
+                            "Duplicate target for linkdef in manifest: {}",
+                            target_name
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod test {
+    use std::io::BufReader;
+    use std::path::Path;
+
+    use super::*;
+    use anyhow::Result;
+    use serde_yaml;
+
+    pub(crate) fn deserialize_yaml(filepath: impl AsRef<Path>) -> Result<Manifest> {
+        let file = std::fs::File::open(filepath)?;
+        let reader = BufReader::new(file);
+        let yaml_string: Manifest = serde_yaml::from_reader(reader)?;
+        Ok(yaml_string)
+    }
+
+    #[test]
+    fn test_manifest_validation() {
+        let correct_manifest =
+            deserialize_yaml("./oam/simple1.yaml").expect("Should be able to parse");
+
+        assert!(validate_manifest(correct_manifest).is_ok());
+
+        let manifest = deserialize_yaml("./test/data/duplicate_component.yaml")
+            .expect("Should be able to parse");
+
+        match validate_manifest(manifest) {
+            Ok(()) => panic!("Should have detected duplicate component"),
+            Err(e) => assert!(e
+                .to_string()
+                .contains("Duplicate component name in manifest")),
+        }
+
+        let manifest = deserialize_yaml("./test/data/duplicate_imageref1.yaml")
+            .expect("Should be able to parse");
+
+        match validate_manifest(manifest) {
+            Ok(()) => panic!("Should have detected duplicate image reference for link name in provider properties"),
+            Err(e) => assert!(e
+                .to_string()
+                .contains("Duplicate image reference")),
+        }
+
+        let manifest = deserialize_yaml("./test/data/duplicate_imageref2.yaml")
+            .expect("Should be able to parse");
+
+        match validate_manifest(manifest) {
+            Ok(()) => panic!("Should have detected duplicate image reference for actor"),
+            Err(e) => assert!(e
+                .to_string()
+                .contains("Duplicate image reference in manifest")),
+        }
+
+        let manifest = deserialize_yaml("./test/data/duplicate_linkdef.yaml")
+            .expect("Should be able to parse");
+
+        match validate_manifest(manifest) {
+            Ok(()) => panic!("Should have detected duplicate linkdef"),
+            Err(e) => assert!(e
+                .to_string()
+                .contains("Duplicate target for linkdef in manifest")),
+        }
+    }
+
     #[tokio::test]
     async fn manifest_name_regex_works() {
         let regex = super::MANIFEST_NAME_REGEX
