@@ -1169,7 +1169,7 @@ mod test {
                 capabilites: vec!["empire:command".into()],
                 issuer: "Sheev Palpatine".into(),
                 name: "Grand Moff Tarkin".into(),
-                version: "0.1.0".into(),
+                version: Some("0.1.0".into()),
                 ..Default::default()
             },
             image_ref: "coruscant.galactic.empire/tarkin:0.1.0".into(),
@@ -1185,7 +1185,7 @@ mod test {
                 capabilites: vec!["empire:command".into(), "force_user:sith".into()],
                 issuer: "Sheev Palpatine".into(),
                 name: "Darth Vader".into(),
-                version: "0.1.0".into(),
+                version: Some("0.1.0".into()),
                 ..Default::default()
             },
             image_ref: "coruscant.galactic.empire/vader:0.1.0".into(),

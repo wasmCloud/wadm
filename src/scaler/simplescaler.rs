@@ -470,9 +470,9 @@ mod test {
             issuer: "AASDASDIAMAREALISSUER".to_string(),
             name: "real actor".to_string(),
             not_before_human: "N/A".to_string(),
-            revision: 1,
+            revision: Some(1),
             tags: None,
-            version: "v0.1.0".to_string(),
+            version: Some("v0.1.0".to_string()),
         }
     }
 }
