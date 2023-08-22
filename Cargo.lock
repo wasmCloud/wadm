@@ -2984,7 +2984,7 @@ checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 
 [[package]]
 name = "wadm"
-version = "0.5.0-rc.1"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "async-nats 0.31.0",
