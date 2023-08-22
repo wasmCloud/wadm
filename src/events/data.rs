@@ -66,11 +66,11 @@ pub struct ActorClaims {
     pub issuer: String,
     pub name: String,
     pub not_before_human: String,
-    pub revision: usize,
+    pub revision: Option<usize>,
     // NOTE: This doesn't need a custom deserialize because unlike provider claims, these come out
     // in an array
     pub tags: Option<Vec<String>>,
-    pub version: String,
+    pub version: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, Eq, PartialEq, Clone)]
