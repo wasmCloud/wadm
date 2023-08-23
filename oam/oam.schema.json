@@ -11,10 +11,7 @@
         },
         "kind": {
             "type": "string",
-            "description": "The entity type being described in the manifest",
-            "enum!!": [
-                "Application"
-            ]
+            "description": "The entity type being described in the manifest"
         },
         "metadata": {
             "type": "object",
@@ -34,7 +31,7 @@
                             "type": "string"
                         }
                     },
-                    "additionalProperties!!": {
+                    "additionalProperties": {
                         "type": "string"
                     }
                 }
