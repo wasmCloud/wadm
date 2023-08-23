@@ -4,7 +4,11 @@ use base64::{engine::general_purpose::STANDARD as B64decoder, Engine};
 use jsonschema::{Draft, JSONSchema};
 use regex::Regex;
 use serde_json::json;
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    fs::File,
+    io::BufReader,
+};
 use tokio::sync::OnceCell;
 use tracing::{debug, error, instrument, log::warn, trace};
 
@@ -847,6 +851,27 @@ pub(crate) async fn validate_manifest(manifest: Manifest) -> anyhow::Result<()> 
 
     let mut name_registry: HashSet<String> = HashSet::new();
     let mut required_capability_components: HashSet<String> = HashSet::new();
+    let schema_file = File::open("./oam/oam.schema.json")?;
+    let reader = BufReader::new(schema_file);
+    let json_schema = serde_json::from_reader(reader).unwrap();
+    let json_instance = serde_json::to_value(manifest.clone()).unwrap();
+
+    let compiled_schema = JSONSchema::options()
+        .with_draft(Draft::Draft7)
+        .compile(&json_schema)
+        .expect("A valid schema");
+
+    let validation_result = compiled_schema.validate(&json_instance);
+    if let Err(errors) = validation_result {
+        let mut error_message = String::new();
+        for error in errors {
+            error_message.push_str(&format!(
+                "Validation error instance: {} \n Instance path: {}",
+                error.instance, error.instance_path
+            ));
+        }
+        return Err(anyhow!("Validation Error : {}", error_message));
+    }
 
     let mut linkdef_map: HashMap<String, Vec<String>> = HashMap::new();
 
