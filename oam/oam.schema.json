@@ -1,0 +1,359 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "$id": "http://oam.dev/v1/oam.application_configuration.schema.json",
+    "title": "Manifest",
+    "description": "A JSON Schema to validate manifests",
+    "type": "object",
+    "properties": {
+        "apiVersion": {
+            "type": "string",
+            "description": "The specific version of the Open Application Model specification in use"
+        },
+        "kind": {
+            "type": "string",
+            "description": "The entity type being described in the manifest",
+            "enum!!": [
+                "Application"
+            ]
+        },
+        "metadata": {
+            "type": "object",
+            "description": "Application configuration metadata.",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "annotations": {
+                    "type": "object",
+                    "description": "A set of string key/value pairs used as arbitrary annotations on this application configuration.",
+                    "properties": {
+                        "version": {
+                            "type": "string"
+                        },
+                        "description": {
+                            "type": "string"
+                        }
+                    },
+                    "additionalProperties!!": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "spec": {
+            "type": "object",
+            "description": "Configuration attributes for various items in the lattice",
+            "$ref": "#/definitions/manifestSpec"
+        }
+    },
+    "required": [
+        "apiVersion",
+        "kind",
+        "metadata",
+        "spec"
+    ],
+    "additionalProperties": false,
+    "definitions": {
+        "manifestSpec": {
+            "type": "object",
+            "properties": {
+                "variables": {
+                    "type": "array",
+                    "description": "Variables that can be referenced in parameter values and properties.",
+                    "items": {
+                        "$ref": "#/definitions/opconfigVariable"
+                    }
+                },
+                "scopes": {
+                    "type": "array",
+                    "description": "Application scope definitions.",
+                    "items": {
+                        "$ref": "#/definitions/applicationScope"
+                    }
+                },
+                "components": {
+                    "type": "array",
+                    "description": "Component instance definitions.",
+                    "items": {
+                        "type": "object",
+                        "anyOf": [
+                            {
+                                "$ref": "#/definitions/actorInstance"
+                            },
+                            {
+                                "$ref": "#/definitions/providerInstance"
+                            }
+                        ]
+                    }
+                }
+            },
+            "required": [
+                "components"
+            ],
+            "additionalProperties": false
+        },
+        "opconfigVariable": {
+            "type": "object",
+            "description": "The Variables section defines variables that may be used elsewhere in the application configuration. The variable section provides a way for an application operator to specify common values that can be substituted into multiple other locations in this configuration (using the [fromVariable(VARNAME)] syntax).",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "The parameter's name. Must be unique per configuration.",
+                    "$comment": "Some systems have upper bounds for name length. Do we limit here?",
+                    "maxLength": 128
+                },
+                "value": {
+                    "type": "string",
+                    "description": "The scalar value."
+                }
+            },
+            "required": [
+                "name",
+                "value"
+            ],
+            "additionalProperties": false
+        },
+        "applicationScope": {
+            "type": "object",
+            "description": "The scope section defines application scopes that will be created with this application configuration.",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "The name of the application scope. Must be unique to the deployment environment."
+                },
+                "type": {
+                    "type": "string",
+                    "description": "The fully-qualified GROUP/VERSION.KIND name of the application scope."
+                },
+                "properties": {
+                    "type": "object",
+                    "description": "The properties attached to this scope.",
+                    "$ref": "#/definitions/propertiesObject"
+                }
+            },
+            "required": [
+                "name",
+                "type"
+            ],
+            "additionalProperties": false
+        },
+        "actorInstance": {
+            "type": "object",
+            "description": "This section defines the instances of actors to create with this application configuration.",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "The name of the actor to create an instance of."
+                },
+                "type": {
+                    "description": "The type of instance : actor.",
+                    "const": "actor"
+                },
+                "properties": {
+                    "type": "object",
+                    "description": "Overrides of parameters that are exposed by the application scope type defined in 'type'.",
+                    "$ref": "#/definitions/actorProperties"
+                },
+                "traits": {
+                    "type": "array",
+                    "description": "Specifies the traits to attach to this component instance.",
+                    "items": {
+                        "$ref": "#/definitions/trait"
+                    }
+                }
+            },
+            "required": [
+                "name",
+                "type",
+                "properties"
+            ],
+            "additionalProperties": true
+        },
+        "providerInstance": {
+            "type": "object",
+            "description": "This section defines the instances of providers to create with this application configuration.",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "The name of the provider to create an instance of."
+                },
+                "type": {
+                    "description": "The type of instance : capability.",
+                    "const": "capability"
+                },
+                "properties": {
+                    "type": "object",
+                    "description": "Overrides of parameters that are exposed by the application scope type defined in 'type'.",
+                    "$ref": "#/definitions/providerProperties"
+                },
+                "traits": {
+                    "type": "array",
+                    "description": "Specifies the traits to attach to this component instance.",
+                    "items": {
+                        "$ref": "#/definitions/trait"
+                    }
+                }
+            },
+            "required": [
+                "name",
+                "type",
+                "properties"
+            ],
+            "additionalProperties": true
+        },
+        "actorProperties": {
+            "type": "object",
+            "description": "Values supplied to parameters that are used to override the parameters exposed by other types.",
+            "properties": {
+                "image": {
+                    "type": "string",
+                    "description": "The image reference to use for the actor.",
+                    "$comment": "Some systems have upper bounds for name length. Do we limit here?",
+                    "maxLength": 128
+                }
+            },
+            "required": [
+                "image"
+            ],
+            "additionalProperties": false
+        },
+        "providerProperties": {
+            "type": "object",
+            "description": "Values supplied to parameters that are used to override the parameters exposed by other types.",
+            "properties": {
+                "image": {
+                    "type": "string",
+                    "description": "The image reference to use for the provider.",
+                    "$comment": "Some systems have upper bounds for name length. Do we limit here?",
+                    "maxLength": 128
+                },
+                "contract": {
+                    "type": "string",
+                    "description": "The contract ID for this provider.",
+                    "maxLength": 128
+                },
+                "link_name": {
+                    "type": "string",
+                    "description": "The linkname to be used for this capability.",
+                    "maxLength": 128
+                },
+                "config": {
+                    "anyOf": [
+                        {
+                            "type": [
+                                "number",
+                                "string",
+                                "null",
+                                "boolean",
+                                "integer"
+                            ],
+                            "$comment": "Format of serde_json Value type"
+                        },
+                        {
+                            "type": "string"
+                        }
+                    ]
+                }
+            },
+            "required": [
+                "image",
+                "contract"
+            ],
+            "additionalProperties": false
+        },
+        "trait": {
+            "type": "object",
+            "description": "The trait section defines traits that will be used in a component instance.",
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "description": "The trait type for the instance, whether spreadscaler or linkdef"
+                },
+                "properties": {
+                    "type": "object",
+                    "description": "Overrides of parameters that are exposed by the trait type defined in 'type'.",
+                    "anyOf": [
+                        {
+                            "$ref": "#/definitions/linkdefProperties"
+                        },
+                        {
+                            "$ref": "#/definitions/spreadscalerProperties"
+                        }
+                    ]
+                }
+            },
+            "required": [
+                "type",
+                "properties"
+            ],
+            "additionalProperties": false
+        },
+        "linkdefProperties": {
+            "type": "object",
+            "description": "A properties object (for trait configuration) is an object whose structure is determined by the trait property schema. It may be a simple value, or it may be a complex object.",
+            "properties": {
+                "target": {
+                    "type": "string"
+                },
+                "values": {
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                }
+            },
+            "required": [
+                "target"
+            ]
+        },
+        "spreadscalerProperties": {
+            "type": "object",
+            "description": "A properties object (for spreadscaler configuration) is an object whose structure is determined by the spreadscaler property schema. It may be a simple value, or it may be a complex object.",
+            "properties": {
+                "replicas": {
+                    "type": "integer"
+                },
+                "spread": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "description": "A spread object for spreading replicas.",
+                        "properties": {
+                            "name": {
+                                "type": "string"
+                            },
+                            "reqirements": {
+                                "additionalProperties": {
+                                    "type": "string"
+                                }
+                            },
+                            "weight": {
+                                "type": "integer"
+                            }
+                        },
+                        "required": [
+                            "name",
+                            "requirements"
+                        ]
+                    }
+                }
+            },
+            "required": [
+                "replicas",
+                "spread"
+            ]
+        },
+        "propertiesObject": {
+            "anyOf": [
+                {
+                    "type": "object",
+                    "description": "A properties object (for trait and scope configuration) is an object whose structure is determined by the trait or scope property schema. It may be a simple value, or it may be a complex object.",
+                    "additionalProperties": true
+                },
+                {
+                    "type": "string",
+                    "description": "A properties object (for trait and scope configuration) is an object whose structure is determined by the trait or scope property schema. It may be a simple value, or it may be a complex object."
+                }
+            ]
+        }
+    }
+}
