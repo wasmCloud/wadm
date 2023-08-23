@@ -57,6 +57,7 @@ wasmcloud-control-interface = "0.28.1"
 semver = { version = "1.0.16", features = ["serde"] }
 regex = "1.9.3"
 base64 = "0.21.2"
+jsonschema = "0.17"
 
 [dev-dependencies]
 serial_test = "1"
