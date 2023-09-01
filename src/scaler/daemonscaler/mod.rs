@@ -17,7 +17,7 @@ use crate::{
     storage::{Actor, Host, ReadStore},
 };
 
-// pub mod provider;
+pub mod provider;
 
 // Annotation constants
 pub const ACTOR_DAEMON_SCALER_TYPE: &str = "actordaemonscaler";
@@ -181,27 +181,20 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorDaemonScaler<S> {
                         actors_per_host
                             .iter()
                             .filter_map(|(host_id, current_count)| {
-                                println!(
-                                    "Calculated running actors, reconciling with expected count"
-                                );
                                 // Here we'll generate commands for the proper host depending on where they are running
                                 match current_count.cmp(&self.config.spread_config.replicas) {
                                     Ordering::Equal => None,
                                     // Start actors to reach desired replicas
-                                    Ordering::Less => {
-                                        // Right now just start on the first available host. We can be smarter about it later
-                                        Some(Command::StartActor(StartActor {
-                                            reference: self.config.actor_reference.to_owned(),
-                                            host_id: host_id.to_string(),
-                                            count: self.config.spread_config.replicas
-                                                - current_count,
-                                            model_name: self.config.model_name.to_owned(),
-                                            annotations: spreadscaler_annotations(
-                                                &spread.name,
-                                                self.id(),
-                                            ),
-                                        }))
-                                    }
+                                    Ordering::Less => Some(Command::StartActor(StartActor {
+                                        reference: self.config.actor_reference.to_owned(),
+                                        host_id: host_id.to_string(),
+                                        count: self.config.spread_config.replicas - current_count,
+                                        model_name: self.config.model_name.to_owned(),
+                                        annotations: spreadscaler_annotations(
+                                            &spread.name,
+                                            self.id(),
+                                        ),
+                                    })),
                                     // Stop actors to reach desired replicas
                                     Ordering::Greater => Some(Command::StopActor(StopActor {
                                         actor_id: actor_id.unwrap_or_default().to_owned(),
@@ -708,10 +701,10 @@ mod test {
         for cmd in cmds.iter() {
             match cmd {
                 Command::StartActor(start) => {
-                    if start.host_id == host_id_one.to_string() {
+                    if start.host_id == *host_id_one {
                         assert_eq!(start.count, 411);
                         assert_eq!(start.reference, echo_ref);
-                    } else if start.host_id == host_id_two.to_string() {
+                    } else if start.host_id == *host_id_two {
                         assert_eq!(start.count, 309);
                         assert_eq!(start.reference, echo_ref);
                     } else {

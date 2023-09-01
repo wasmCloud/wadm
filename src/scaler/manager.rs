@@ -32,7 +32,7 @@ use crate::{
 };
 
 use super::{
-    daemonscaler::ActorDaemonScaler,
+    daemonscaler::{provider::ProviderDaemonScaler, ActorDaemonScaler},
     spreadscaler::{
         link::LinkScaler,
         provider::{ProviderSpreadConfig, ProviderSpreadScaler},
@@ -632,6 +632,33 @@ where
                                     Some(Duration::from_secs(60)),
                                 )) as BoxedScaler)
                             }
+                            (DAEMONSCALER_TRAIT, TraitProperty::SpreadScaler(p)) => {
+                                Some(Box::new(BackoffAwareScaler::new(
+                                    ProviderDaemonScaler::new(
+                                        store.clone(),
+                                        ProviderSpreadConfig {
+                                            lattice_id: lattice_id.to_owned(),
+                                            provider_reference: props.image.to_owned(),
+                                            spread_config: p.to_owned(),
+                                            provider_contract_id: props.contract.to_owned(),
+                                            provider_link_name: props
+                                                .link_name
+                                                .as_deref()
+                                                .unwrap_or(DEFAULT_LINK_NAME)
+                                                .to_owned(),
+                                            model_name: name.to_owned(),
+                                            provider_config: props.config.to_owned(),
+                                        },
+                                        &component.name,
+                                    ),
+                                    notifier.to_owned(),
+                                    notifier_subject,
+                                    name,
+                                    // Providers are a bit longer because it can take a bit to download
+                                    Some(Duration::from_secs(60)),
+                                )) as BoxedScaler)
+                            }
+
                             _ => None,
                         }
                     }))
