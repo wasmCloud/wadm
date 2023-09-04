@@ -127,11 +127,8 @@ async fn start_wash_instance(cfg: &TestWashConfig) -> Result<CleanupGuard> {
 
     assert!(output.success(), "Error trying to start host",);
 
-    // Make sure we can connect to washboard
-    wait_for_server(&cfg.washboard_url()).await;
-
     // Give the host just a bit more time to get totally ready
-    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
 
     Ok(guard)
 }
