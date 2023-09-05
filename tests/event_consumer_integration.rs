@@ -89,9 +89,13 @@ async fn test_event_stream() -> Result<()> {
     let mut stream = get_event_consumer(config.nats_url()).await;
 
     // NOTE: the first heartbeat doesn't come for 30s so we are ignoring it for now
+    let ctl_port = config
+        .nats_port
+        .unwrap_or(crate::helpers::DEFAULT_NATS_PORT)
+        .to_string();
 
     // Start an actor
-    helpers::run_wash_command(["start", "actor", ECHO_REFERENCE]).await;
+    helpers::run_wash_command(["start", "actor", ECHO_REFERENCE, "--ctl-port", &ctl_port]).await;
 
     let mut evt = wait_for_event(&mut stream, DEFAULT_TIMEOUT_DURATION).await;
     if let Event::ActorStarted(actor) = evt.as_ref() {
@@ -106,7 +110,14 @@ async fn test_event_stream() -> Result<()> {
     evt.ack().await.expect("Should be able to ack event");
 
     // Start a provider
-    helpers::run_wash_command(["start", "provider", HTTP_SERVER_REFERENCE]).await;
+    helpers::run_wash_command([
+        "start",
+        "provider",
+        HTTP_SERVER_REFERENCE,
+        "--ctl-port",
+        &ctl_port,
+    ])
+    .await;
 
     let mut evt = wait_for_event(&mut stream, DEFAULT_TIMEOUT_DURATION).await;
     if let Event::ProviderStarted(provider) = evt.as_ref() {
@@ -128,6 +139,8 @@ async fn test_event_stream() -> Result<()> {
         ECHO_ACTOR_ID,
         HTTP_SERVER_PROVIDER_ID,
         CONTRACT_ID,
+        "--ctl-port",
+        &ctl_port,
     ])
     .await;
 
@@ -153,7 +166,15 @@ async fn test_event_stream() -> Result<()> {
     evt.ack().await.expect("Should be able to ack event");
 
     // Delete link
-    helpers::run_wash_command(["link", "del", ECHO_ACTOR_ID, CONTRACT_ID]).await;
+    helpers::run_wash_command([
+        "link",
+        "del",
+        ECHO_ACTOR_ID,
+        CONTRACT_ID,
+        "--ctl-port",
+        &ctl_port,
+    ])
+    .await;
 
     let mut evt = wait_for_event(&mut stream, LINK_OPERATION_TIMEOUT_DURATION).await;
     if let Event::LinkdefDeleted(link) = evt.as_ref() {
@@ -174,7 +195,7 @@ async fn test_event_stream() -> Result<()> {
 
     // Stop provider
     let host_id = serde_json::from_slice::<HostResponse>(
-        &helpers::run_wash_command(["get", "hosts", "-o", "json"]).await,
+        &helpers::run_wash_command(["get", "hosts", "-o", "json", "--ctl-port", &ctl_port]).await,
     )
     .unwrap()
     .hosts[0]
@@ -190,6 +211,8 @@ async fn test_event_stream() -> Result<()> {
         HTTP_SERVER_PROVIDER_ID,
         LINK_NAME,
         CONTRACT_ID,
+        "--ctl-port",
+        &ctl_port,
     ])
     .await;
 
@@ -206,7 +229,15 @@ async fn test_event_stream() -> Result<()> {
     evt.ack().await.expect("Should be able to ack event");
 
     // Stop an actor
-    helpers::run_wash_command(["stop", "actor", &host_id, ECHO_ACTOR_ID]).await;
+    helpers::run_wash_command([
+        "stop",
+        "actor",
+        &host_id,
+        ECHO_ACTOR_ID,
+        "--ctl-port",
+        &ctl_port,
+    ])
+    .await;
 
     let mut evt = wait_for_event(&mut stream, DEFAULT_TIMEOUT_DURATION).await;
     if let Event::ActorStopped(actor) = evt.as_ref() {
@@ -221,7 +252,7 @@ async fn test_event_stream() -> Result<()> {
     evt.ack().await.expect("Should be able to ack event");
 
     // Stop the host
-    helpers::run_wash_command(["stop", "host", &host_id]).await;
+    helpers::run_wash_command(["stop", "host", &host_id, "--ctl-port", &ctl_port]).await;
 
     let mut evt = wait_for_event(&mut stream, DEFAULT_TIMEOUT_DURATION).await;
     if let Event::HostStopped(host) = evt.as_ref() {
@@ -250,8 +281,12 @@ async fn test_nack_and_rereceive() -> Result<()> {
 
     let mut stream = get_event_consumer(config.nats_url()).await;
 
+    let ctl_port = config
+        .nats_port
+        .unwrap_or(crate::helpers::DEFAULT_NATS_PORT)
+        .to_string();
     // Start an actor
-    helpers::run_wash_command(["start", "actor", ECHO_REFERENCE]).await;
+    helpers::run_wash_command(["start", "actor", ECHO_REFERENCE, "--ctl-port", &ctl_port]).await;
 
     // Get the event and then nack it
     let mut evt = wait_for_event(&mut stream, DEFAULT_TIMEOUT_DURATION).await;
