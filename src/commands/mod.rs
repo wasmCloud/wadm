@@ -8,10 +8,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    events::{
-        ActorClaims, ActorsStartFailed, ActorsStarted, ActorsStopped, Event, Linkdef, LinkdefSet,
-        ProviderClaims, ProviderStartFailed, ProviderStarted,
-    },
+    events::{Event, Linkdef, LinkdefSet, ProviderClaims, ProviderStartFailed, ProviderStarted},
     model::CapabilityConfig,
     workers::insert_managed_annotations,
 };
@@ -29,8 +26,6 @@ macro_rules! from_impl {
 /// All possible compensatory commands for a lattice
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum Command {
-    StartActor(StartActor),
-    StopActor(StopActor),
     ScaleActor(ScaleActor),
     StartProvider(StartProvider),
     StopProvider(StopProvider),
@@ -49,56 +44,6 @@ impl Command {
     /// - The second element in the tuple corresponds to an optional "failure" event that a host could output if processing fails
     pub fn corresponding_event(&self, model_name: &str) -> Option<(Event, Option<Event>)> {
         match self {
-            Command::StartActor(StartActor {
-                annotations,
-                reference,
-                host_id,
-                count,
-                ..
-            }) => {
-                let mut annotations = annotations.to_owned();
-                insert_managed_annotations(&mut annotations, model_name);
-                Some((
-                    Event::ActorsStarted(ActorsStarted {
-                        annotations: annotations.to_owned(),
-                        image_ref: reference.to_owned(),
-                        host_id: host_id.to_owned(),
-                        count: *count,
-                        // We do not know the public key or claims from the command
-                        public_key: String::with_capacity(0),
-                        claims: ActorClaims::default(),
-                    }),
-                    Some(Event::ActorsStartFailed(ActorsStartFailed {
-                        annotations,
-                        image_ref: reference.to_owned(),
-                        host_id: host_id.to_owned(),
-                        error: String::with_capacity(0),
-                        // We do not know the public key from the command
-                        public_key: String::with_capacity(0),
-                    })),
-                ))
-            }
-            Command::StopActor(StopActor {
-                annotations,
-                actor_id,
-                host_id,
-                count,
-                ..
-            }) => {
-                let mut annotations = annotations.to_owned();
-                insert_managed_annotations(&mut annotations, model_name);
-                Some((
-                    Event::ActorsStopped(ActorsStopped {
-                        annotations: annotations.to_owned(),
-                        public_key: actor_id.to_owned(),
-                        host_id: host_id.to_owned(),
-                        count: *count,
-                        // We don't know if there are additional instances, so can't consider remaining
-                        remaining: 0,
-                    }),
-                    None,
-                ))
-            }
             Command::StartProvider(StartProvider {
                 annotations,
                 reference,
@@ -161,60 +106,6 @@ impl Command {
             Command::ScaleActor(_) => None,
             _ => None,
         }
-    }
-}
-
-/// Struct for the StartActor command
-#[derive(Clone, Debug, Serialize, Deserialize, Default, Eq)]
-pub struct StartActor {
-    /// The OCI or bindle reference to start
-    pub reference: String,
-    /// The host id on which to start the actor(s)
-    pub host_id: String,
-    /// Number of actors to start
-    pub count: usize,
-    /// The name of the model/manifest that generated this command
-    pub model_name: String,
-    /// Additional annotations to attach on this command
-    pub annotations: BTreeMap<String, String>,
-}
-
-from_impl!(StartActor);
-
-impl PartialEq for StartActor {
-    fn eq(&self, other: &Self) -> bool {
-        self.reference == other.reference
-            && self.host_id == other.host_id
-            && self.count == other.count
-            && self.model_name == other.model_name
-            && self.annotations == other.annotations
-    }
-}
-
-/// Struct for the StopActor command
-#[derive(Clone, Debug, Serialize, Deserialize, Default, Eq)]
-pub struct StopActor {
-    /// The ID of the actor to stop
-    pub actor_id: String,
-    /// The host id on which to stop the actors
-    pub host_id: String,
-    /// The number of actors to stop
-    pub count: usize,
-    /// The name of the model/manifest that generated this command
-    pub model_name: String,
-    /// Additional annotations to attach on this command
-    pub annotations: BTreeMap<String, String>,
-}
-
-from_impl!(StopActor);
-
-impl PartialEq for StopActor {
-    fn eq(&self, other: &Self) -> bool {
-        self.actor_id == other.actor_id
-            && self.host_id == other.host_id
-            && self.count == other.count
-            && self.model_name == other.model_name
-            && self.annotations == other.annotations
     }
 }
 

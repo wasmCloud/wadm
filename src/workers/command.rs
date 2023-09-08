@@ -31,34 +31,6 @@ impl Worker for CommandWorker {
     #[instrument(level = "trace", skip_all)]
     async fn do_work(&self, mut message: ScopedMessage<Self::Message>) -> WorkResult<()> {
         let res = match message.as_ref() {
-            Command::StartActor(actor) => {
-                trace!(command = ?actor, "Handling start actor command");
-                // Order here is intentional to prevent scalers from overwriting managed annotations
-                let mut annotations = actor.annotations.clone();
-                insert_managed_annotations(&mut annotations, &actor.model_name);
-                self.client
-                    .start_actor(
-                        &actor.host_id,
-                        &actor.reference,
-                        actor.count as u16,
-                        Some(annotations.into_iter().collect()),
-                    )
-                    .await
-            }
-            Command::StopActor(actor) => {
-                trace!(command = ?actor, "Handling stop actor command");
-                // Order here is intentional to prevent scalers from overwriting managed annotations
-                let mut annotations = actor.annotations.clone();
-                insert_managed_annotations(&mut annotations, &actor.model_name);
-                self.client
-                    .stop_actor(
-                        &actor.host_id,
-                        &actor.actor_id,
-                        actor.count as u16,
-                        Some(annotations.into_iter().collect()),
-                    )
-                    .await
-            }
             Command::ScaleActor(actor) => {
                 trace!(command = ?actor, "Handling scale actor command");
                 // Order here is intentional to prevent scalers from overwriting managed annotations
