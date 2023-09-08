@@ -45,7 +45,8 @@ async fn test_commands() {
 
     // Start an actor
     wrapper
-        .publish_command(StartActor {
+        .publish_command(ScaleActor {
+            actor_id: Some(ECHO_ACTOR_ID.to_string()),
             reference: "wasmcloud.azurecr.io/echo:0.3.4".to_string(),
             host_id: host_id.clone(),
             count: 2,
@@ -261,9 +262,10 @@ async fn test_commands() {
 
     // Stop the actor
     wrapper
-        .publish_command(StopActor {
-            actor_id: ECHO_ACTOR_ID.to_owned(),
-            count: 2,
+        .publish_command(ScaleActor {
+            actor_id: Some(ECHO_ACTOR_ID.to_owned()),
+            reference: "wasmcloud.azurecr.io/echo:0.3.4".to_string(),
+            count: 0,
             host_id: host_id.clone(),
             model_name: "fake".into(),
             annotations: BTreeMap::new(),
@@ -323,7 +325,8 @@ async fn test_annotation_stop() {
 
     // Start an actor
     wrapper
-        .publish_command(StartActor {
+        .publish_command(ScaleActor {
+            actor_id: Some(ECHO_ACTOR_ID.to_string()),
             reference: "wasmcloud.azurecr.io/echo:0.3.4".to_string(),
             host_id: host_id.clone(),
             count: 2,
@@ -376,9 +379,10 @@ async fn test_annotation_stop() {
 
     // Stop the actor
     wrapper
-        .publish_command(StopActor {
-            actor_id: ECHO_ACTOR_ID.to_owned(),
-            count: 2,
+        .publish_command(ScaleActor {
+            actor_id: Some(ECHO_ACTOR_ID.to_owned()),
+            reference: "wasmcloud.azurecr.io/echo:0.3.4".to_string(),
+            count: 0,
             host_id: host_id.clone(),
             model_name: "fake".into(),
             annotations: BTreeMap::new(),
