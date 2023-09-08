@@ -9,7 +9,7 @@ use tracing::{instrument, trace, warn};
 use crate::events::HostHeartbeat;
 use crate::server::StatusInfo;
 use crate::{
-    commands::{Command, StartActor, StopActor},
+    commands::{Command, ScaleActor},
     events::{Event, HostStarted, HostStopped},
     model::{Spread, SpreadScalerProperty, TraitProperty, DEFAULT_SPREAD_WEIGHT},
     scaler::Scaler,
@@ -129,7 +129,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
             None
         };
 
-        let actor_id = actor.as_ref().map(|actor| actor.id.as_str());
+        let actor_id = actor.as_ref().map(|actor| actor.id.to_owned());
 
         let mut spread_status = vec![];
 
@@ -180,35 +180,35 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
                         // Start actors to reach desired replicas
                         Ordering::Less =>{
                             // Right now just start on the first available host. We can be smarter about it later
-                            Some(vec![Command::StartActor(StartActor {
+                            Some(vec![Command::ScaleActor(ScaleActor {
+                                actor_id: actor_id.to_owned(),
                                 reference: self.config.actor_reference.to_owned(),
                                 // SAFETY: We already checked that the list of hosts is not empty, so we can unwrap here
                                 host_id: eligible_hosts.keys().next().unwrap().to_string(),
-                                count: count - current_count,
+                                count: *count,
                                 model_name: self.config.model_name.to_owned(),
                                 annotations: spreadscaler_annotations(&spread.name, self.id()),
                             })])
                         }
                         // Stop actors to reach desired replicas
                         Ordering::Greater => {
+                            // Actors across all available hosts that exceed our desired number
                             let count_to_stop = current_count - count;
                             let (_, commands) = running_actors_per_host.into_iter().fold((0usize, Vec::new()), |(mut current_stopped, mut commands), (host_id, instance_count)| {
                                 let remaining_to_stop = count_to_stop - current_stopped;
-                                let stop = if instance_count >= remaining_to_stop {
-                                    remaining_to_stop
-                                } else {
-                                    instance_count
-                                };
+                                // Desired count on the host, subtracting the number we need to stop
+                                // from the total number of instances on the host, down to 0.
+                                let count = instance_count.saturating_sub(remaining_to_stop);
                                 // If there aren't any on here then we don't need a command to stop
-                                if stop > 0 {
-                                    current_stopped += stop;
-                                    commands.push(Command::StopActor(StopActor {
-                                        // We shouldn't ever get a stop actor command if this is the first actor
-                                        // to be started. In the o ff chance we do, this command will result in
-                                        // nothing due to the empty id
-                                        actor_id: actor_id.unwrap_or_default().to_owned(),
+                                if instance_count > 0 {
+                                    // Keep track of how many we've stopped, which will be the smaller of the current
+                                    // instance count or the number we need to stop
+                                    current_stopped += std::cmp::min(instance_count, remaining_to_stop);
+                                    commands.push(Command::ScaleActor(ScaleActor {
+                                        actor_id: actor_id.to_owned(),
+                                        reference: self.config.actor_reference.to_owned(),
                                         host_id: host_id.to_owned(),
-                                        count: stop,
+                                        count,
                                         model_name: self.config.model_name.to_owned(),
                                         annotations: spreadscaler_annotations(&spread.name, self.id()),
                                     }));
@@ -431,7 +431,7 @@ mod test {
     use chrono::Utc;
 
     use crate::{
-        commands::{Command, StartActor},
+        commands::Command,
         consumers::{manager::Worker, ScopedMessage},
         events::{
             ActorsStopped, Event, Linkdef, LinkdefDeleted, LinkdefSet, ProviderClaims,
@@ -669,21 +669,24 @@ mod test {
 
         let cmds = spreadscaler.reconcile().await?;
         assert_eq!(cmds.len(), 3);
-        assert!(cmds.contains(&Command::StartActor(StartActor {
+        assert!(cmds.contains(&Command::ScaleActor(ScaleActor {
+            actor_id: None,
             reference: actor_reference.to_string(),
             host_id: host_id.to_string(),
             count: 10,
             model_name: MODEL_NAME.to_string(),
             annotations: spreadscaler_annotations("ComplexOne", spreadscaler.id())
         })));
-        assert!(cmds.contains(&Command::StartActor(StartActor {
+        assert!(cmds.contains(&Command::ScaleActor(ScaleActor {
+            actor_id: None,
             reference: actor_reference.to_string(),
             host_id: host_id.to_string(),
             count: 8,
             model_name: MODEL_NAME.to_string(),
             annotations: spreadscaler_annotations("ComplexThree", spreadscaler.id())
         })));
-        assert!(cmds.contains(&Command::StartActor(StartActor {
+        assert!(cmds.contains(&Command::ScaleActor(ScaleActor {
+            actor_id: None,
             reference: actor_reference.to_string(),
             host_id: host_id.to_string(),
             count: 85,
@@ -944,42 +947,52 @@ mod test {
 
         // STATE SETUP END
 
-        let cmds = echo_spreadscaler.reconcile().await?;
+        let mut cmds = echo_spreadscaler.reconcile().await?;
         assert_eq!(cmds.len(), 2);
+        cmds.sort_by(|a, b| match (a, b) {
+            (Command::ScaleActor(a), Command::ScaleActor(b)) => a.host_id.cmp(&b.host_id),
+            _ => panic!("Unexpected commands in spreadscaler list"),
+        });
 
-        for cmd in cmds.iter() {
-            match cmd {
-                Command::StartActor(start) => {
-                    assert_eq!(start.host_id, host_id_one.to_string());
-                    assert_eq!(start.count, 205);
-                    assert_eq!(start.reference, echo_ref);
-                }
-                Command::StopActor(stop) => {
-                    assert_eq!(stop.host_id, host_id_three.to_string());
-                    assert_eq!(stop.count, 297);
-                    assert_eq!(stop.actor_id, echo_id);
-                }
-                _ => panic!("Unexpected command in spreadscaler list"),
+        let mut cmds_iter = cmds.iter();
+        match (
+            cmds_iter.next().expect("one scale command"),
+            cmds_iter.next().expect("two scale commands"),
+        ) {
+            (Command::ScaleActor(scale1), Command::ScaleActor(scale2)) => {
+                assert_eq!(scale1.host_id, host_id_one.to_string());
+                assert_eq!(scale1.count, 206);
+                assert_eq!(scale1.reference, echo_ref);
+
+                assert_eq!(scale2.host_id, host_id_three.to_string());
+                assert_eq!(scale2.count, 103);
+                assert_eq!(scale2.actor_id, Some(echo_id.to_string()));
             }
+            _ => panic!("Unexpected commands in spreadscaler list"),
         }
 
-        let cmds = blobby_spreadscaler.reconcile().await?;
+        let mut cmds = blobby_spreadscaler.reconcile().await?;
         assert_eq!(cmds.len(), 2);
+        cmds.sort_by(|a, b| match (a, b) {
+            (Command::ScaleActor(a), Command::ScaleActor(b)) => a.host_id.cmp(&b.host_id),
+            _ => panic!("Unexpected commands in spreadscaler list"),
+        });
 
-        for cmd in cmds.iter() {
-            match cmd {
-                Command::StartActor(start) => {
-                    assert_eq!(start.host_id, host_id_three.to_string());
-                    assert_eq!(start.count, 3);
-                    assert_eq!(start.reference, blobby_ref);
-                }
-                Command::StopActor(stop) => {
-                    assert_eq!(stop.host_id, host_id_two.to_string());
-                    assert_eq!(stop.count, 16);
-                    assert_eq!(stop.actor_id, blobby_id);
-                }
-                _ => panic!("Unexpected command in spreadscaler list"),
+        let mut cmds_iter = cmds.iter();
+        match (
+            cmds_iter.next().expect("one scale command"),
+            cmds_iter.next().expect("two scale commands"),
+        ) {
+            (Command::ScaleActor(scale1), Command::ScaleActor(scale2)) => {
+                assert_eq!(scale1.host_id, host_id_three.to_string());
+                assert_eq!(scale1.count, 3);
+                assert_eq!(scale1.reference, blobby_ref);
+
+                assert_eq!(scale2.host_id, host_id_two.to_string());
+                assert_eq!(scale2.count, 3);
+                assert_eq!(scale2.actor_id, Some(blobby_id.to_string()));
             }
+            _ => panic!("Unexpected commands in spreadscaler list"),
         }
 
         Ok(())
@@ -1071,15 +1084,17 @@ mod test {
         let cmds = spreadscaler.reconcile().await?;
         assert_eq!(cmds.len(), 2);
 
-        // Should be starting 10 total, 5 for each spread to meet the requirements
-        assert!(cmds.contains(&Command::StartActor(StartActor {
+        // Should be enforcing 10 instances per spread
+        assert!(cmds.contains(&Command::ScaleActor(ScaleActor {
+            actor_id: Some("MASDASDASDASDASDADSDDAAASDDD".to_string()),
             reference: actor_reference.to_string(),
             host_id: host_id.to_string(),
-            count: 5,
+            count: 15,
             model_name: MODEL_NAME.to_string(),
             annotations: spreadscaler_annotations("SimpleOne", spreadscaler.id())
         })));
-        assert!(cmds.contains(&Command::StartActor(StartActor {
+        assert!(cmds.contains(&Command::ScaleActor(ScaleActor {
+            actor_id: Some("MASDASDASDASDASDADSDDAAASDDD".to_string()),
             reference: actor_reference.to_string(),
             host_id: host_id.to_string(),
             count: 5,
@@ -1091,8 +1106,8 @@ mod test {
     }
 
     #[tokio::test]
-    async fn calculates_proper_stop_commands() -> Result<()> {
-        let lattice_id = "calculates_proper_stop_commands";
+    async fn calculates_proper_scale_commands() -> Result<()> {
+        let lattice_id = "calculates_proper_scale_commands";
         let actor_reference = "fakecloud.azurecr.io/echo:0.3.4".to_string();
         let actor_id = "MASDASDASDASDASDADSDDAAASDDD".to_string();
         let host_id = "NASDASDIMAREALHOST";
@@ -1189,7 +1204,7 @@ mod test {
         assert_eq!(cmds.len(), 2);
         assert!(
             cmds.iter().any(|command| {
-                if let Command::StopActor(actor) = command {
+                if let Command::ScaleActor(actor) = command {
                     actor.host_id == host_id
                 } else {
                     false
@@ -1199,7 +1214,7 @@ mod test {
         );
         assert!(
             cmds.iter().any(|command| {
-                if let Command::StopActor(actor) = command {
+                if let Command::ScaleActor(actor) = command {
                     actor.host_id == host_id2
                 } else {
                     false
@@ -1212,17 +1227,19 @@ mod test {
         let cmds = spreadscaler.cleanup().await?;
 
         // Should stop 10 on each host
-        assert!(cmds.contains(&Command::StopActor(StopActor {
-            actor_id: actor_id.clone(),
+        assert!(cmds.contains(&Command::ScaleActor(ScaleActor {
+            actor_id: Some(actor_id.clone()),
+            reference: actor_reference.clone(),
             host_id: host_id.to_string(),
-            count: 10,
+            count: 0,
             model_name: MODEL_NAME.to_string(),
             annotations: spreadscaler_annotations("default", spreadscaler.id())
         })));
-        assert!(cmds.contains(&Command::StopActor(StopActor {
-            actor_id: actor_id.clone(),
+        assert!(cmds.contains(&Command::ScaleActor(ScaleActor {
+            actor_id: Some(actor_id.clone()),
+            reference: actor_reference.clone(),
             host_id: host_id2.to_string(),
-            count: 10,
+            count: 0,
             model_name: MODEL_NAME.to_string(),
             annotations: spreadscaler_annotations("default", spreadscaler.id())
         })));
@@ -1444,23 +1461,28 @@ mod test {
             .await?
             .is_empty());
 
-        let cmds = blobby_spreadscaler.reconcile().await?;
+        let mut cmds = blobby_spreadscaler.reconcile().await?;
         assert_eq!(cmds.len(), 2);
+        cmds.sort_by(|a, b| match (a, b) {
+            (Command::ScaleActor(a), Command::ScaleActor(b)) => a.host_id.cmp(&b.host_id),
+            _ => panic!("Unexpected commands in spreadscaler list"),
+        });
 
-        for cmd in cmds.iter() {
-            match cmd {
-                Command::StartActor(start) => {
-                    assert_eq!(start.host_id, host_id_three.to_string());
-                    assert_eq!(start.count, 3);
-                    assert_eq!(start.reference, blobby_ref);
-                }
-                Command::StopActor(stop) => {
-                    assert_eq!(stop.host_id, host_id_two.to_string());
-                    assert_eq!(stop.count, 16);
-                    assert_eq!(stop.actor_id, blobby_id);
-                }
-                _ => panic!("Unexpected command in spreadscaler list"),
+        let mut cmds_iter = cmds.iter();
+        match (
+            cmds_iter.next().expect("one scale command"),
+            cmds_iter.next().expect("two scale commands"),
+        ) {
+            (Command::ScaleActor(scale1), Command::ScaleActor(scale2)) => {
+                assert_eq!(scale1.host_id, host_id_three.to_string());
+                assert_eq!(scale1.count, 3);
+                assert_eq!(scale1.reference, blobby_ref);
+
+                assert_eq!(scale2.host_id, host_id_two.to_string());
+                assert_eq!(scale2.count, 3);
+                assert_eq!(scale2.actor_id, Some(blobby_id.to_string()));
             }
+            _ => panic!("Unexpected commands in spreadscaler list"),
         }
 
         let modifying_event = ActorsStopped {
@@ -1484,21 +1506,26 @@ mod test {
             .handle_event(&Event::ActorsStopped(modifying_event))
             .await?;
         assert_eq!(cmds.len(), 2);
+        cmds.sort_by(|a, b| match (a, b) {
+            (Command::ScaleActor(a), Command::ScaleActor(b)) => a.host_id.cmp(&b.host_id),
+            _ => panic!("Unexpected commands in spreadscaler list"),
+        });
 
-        for cmd in cmds.iter() {
-            match cmd {
-                Command::StartActor(start) => {
-                    assert_eq!(start.host_id, host_id_three.to_string());
-                    assert_eq!(start.count, 3);
-                    assert_eq!(start.reference, blobby_ref);
-                }
-                Command::StopActor(stop) => {
-                    assert_eq!(stop.host_id, host_id_two.to_string());
-                    assert_eq!(stop.count, 15);
-                    assert_eq!(stop.actor_id, blobby_id);
-                }
-                _ => panic!("Unexpected command in spreadscaler list"),
+        let mut cmds_iter = cmds.iter();
+        match (
+            cmds_iter.next().expect("one scale command"),
+            cmds_iter.next().expect("two scale commands"),
+        ) {
+            (Command::ScaleActor(scale1), Command::ScaleActor(scale2)) => {
+                assert_eq!(scale1.host_id, host_id_three.to_string());
+                assert_eq!(scale1.count, 3);
+                assert_eq!(scale1.reference, blobby_ref);
+
+                assert_eq!(scale2.host_id, host_id_two.to_string());
+                assert_eq!(scale2.count, 3);
+                assert_eq!(scale2.actor_id, Some(blobby_id.to_string()));
             }
+            _ => panic!("Unexpected commands in spreadscaler list"),
         }
 
         Ok(())

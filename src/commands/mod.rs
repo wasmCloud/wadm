@@ -31,6 +31,7 @@ macro_rules! from_impl {
 pub enum Command {
     StartActor(StartActor),
     StopActor(StopActor),
+    ScaleActor(ScaleActor),
     StartProvider(StartProvider),
     StopProvider(StopProvider),
     PutLinkdef(PutLinkdef),
@@ -153,6 +154,11 @@ impl Command {
                 }),
                 None,
             )),
+            // NOTE: this is explicitly added as a reminder that scaling an actor
+            // doesn't have an exact corresponding event, but we're not really worried about that
+            // because scale is idempotent. So, in the worst case, we issue multiple commands which
+            // would result in the same state as if we issued one command.
+            Command::ScaleActor(_) => None,
             _ => None,
         }
     }
@@ -203,6 +209,36 @@ pub struct StopActor {
 from_impl!(StopActor);
 
 impl PartialEq for StopActor {
+    fn eq(&self, other: &Self) -> bool {
+        self.actor_id == other.actor_id
+            && self.host_id == other.host_id
+            && self.count == other.count
+            && self.model_name == other.model_name
+            && self.annotations == other.annotations
+    }
+}
+
+/// Struct for the ScaleActor command
+#[derive(Clone, Debug, Serialize, Deserialize, Default, Eq)]
+pub struct ScaleActor {
+    /// The ID of the actor to scale. This is optional as if the actor hasn't started yet
+    /// then wadm scalers will not know the ID.
+    pub actor_id: Option<String>,
+    /// The host id on which to scale the actors
+    pub host_id: String,
+    /// The number of actors to scale to
+    pub count: usize,
+    /// The OCI or bindle reference to scale
+    pub reference: String,
+    /// The name of the model/manifest that generated this command
+    pub model_name: String,
+    /// Additional annotations to attach on this command
+    pub annotations: HashMap<String, String>,
+}
+
+from_impl!(ScaleActor);
+
+impl PartialEq for ScaleActor {
     fn eq(&self, other: &Self) -> bool {
         self.actor_id == other.actor_id
             && self.host_id == other.host_id
