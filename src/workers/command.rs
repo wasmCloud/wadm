@@ -59,6 +59,25 @@ impl Worker for CommandWorker {
                     )
                     .await
             }
+            Command::ScaleActor(actor) => {
+                trace!(command = ?actor, "Handling scale actor command");
+                // Order here is intentional to prevent scalers from overwriting managed annotations
+                let mut annotations = actor.annotations.clone();
+                insert_managed_annotations(&mut annotations, &actor.model_name);
+                self.client
+                    .scale_actor(
+                        &actor.host_id,
+                        &actor.reference,
+                        actor
+                            .actor_id
+                            .as_ref()
+                            .map(|s| s.as_str())
+                            .unwrap_or_default(),
+                        actor.count as u16,
+                        Some(annotations),
+                    )
+                    .await
+            }
             Command::StartProvider(prov) => {
                 trace!(command = ?prov, "Handling start provider command");
                 // Order here is intentional to prevent scalers from overwriting managed annotations

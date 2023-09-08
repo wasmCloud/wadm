@@ -10,7 +10,7 @@ use crate::model::Spread;
 use crate::scaler::spreadscaler::{eligible_hosts, spreadscaler_annotations};
 use crate::server::StatusInfo;
 use crate::{
-    commands::{Command, StartActor, StopActor},
+    commands::{Command, ScaleActor},
     events::{Event, HostStarted, HostStopped},
     model::{SpreadScalerProperty, TraitProperty},
     scaler::Scaler,
@@ -134,7 +134,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorDaemonScaler<S> {
             None
         };
 
-        let actor_id = actor.as_ref().map(|actor| actor.id.as_str());
+        let actor_id = actor.as_ref().map(|a| a.id.to_owned());
 
         let mut spread_status = vec![];
 
@@ -184,28 +184,20 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorDaemonScaler<S> {
                                 // Here we'll generate commands for the proper host depending on where they are running
                                 match current_count.cmp(&self.config.spread_config.replicas) {
                                     Ordering::Equal => None,
-                                    // Start actors to reach desired replicas
-                                    Ordering::Less => Some(Command::StartActor(StartActor {
-                                        reference: self.config.actor_reference.to_owned(),
-                                        host_id: host_id.to_string(),
-                                        count: self.config.spread_config.replicas - current_count,
-                                        model_name: self.config.model_name.to_owned(),
-                                        annotations: spreadscaler_annotations(
-                                            &spread.name,
-                                            self.id(),
-                                        ),
-                                    })),
-                                    // Stop actors to reach desired replicas
-                                    Ordering::Greater => Some(Command::StopActor(StopActor {
-                                        actor_id: actor_id.unwrap_or_default().to_owned(),
-                                        host_id: host_id.to_string(),
-                                        count: current_count - self.config.spread_config.replicas,
-                                        model_name: self.config.model_name.to_owned(),
-                                        annotations: spreadscaler_annotations(
-                                            &spread.name,
-                                            self.id(),
-                                        ),
-                                    })),
+                                    // Scale actor can handle both up and down scaling
+                                    Ordering::Less | Ordering::Greater => {
+                                        Some(Command::ScaleActor(ScaleActor {
+                                            reference: self.config.actor_reference.to_owned(),
+                                            actor_id: actor_id.to_owned(),
+                                            host_id: host_id.to_string(),
+                                            count: self.config.spread_config.replicas,
+                                            model_name: self.config.model_name.to_owned(),
+                                            annotations: spreadscaler_annotations(
+                                                &spread.name,
+                                                self.id(),
+                                            ),
+                                        }))
+                                    }
                                 }
                             })
                             .collect::<Vec<Command>>(),
@@ -332,7 +324,7 @@ mod test {
     use wasmcloud_control_interface::HostInventory;
 
     use crate::{
-        commands::{Command, StartActor},
+        commands::Command,
         consumers::{manager::Worker, ScopedMessage},
         events::{
             Event, Linkdef, LinkdefDeleted, LinkdefSet, ProviderClaims, ProviderStarted,
@@ -413,28 +405,32 @@ mod test {
 
         let cmds = daemonscaler.reconcile().await?;
         assert_eq!(cmds.len(), 4);
-        assert!(cmds.contains(&Command::StartActor(StartActor {
+        assert!(cmds.contains(&Command::ScaleActor(ScaleActor {
+            actor_id: None,
             reference: actor_reference.to_string(),
             host_id: host_id.to_string(),
             count: 13,
             model_name: MODEL_NAME.to_string(),
             annotations: spreadscaler_annotations("ComplexOne", daemonscaler.id())
         })));
-        assert!(cmds.contains(&Command::StartActor(StartActor {
+        assert!(cmds.contains(&Command::ScaleActor(ScaleActor {
+            actor_id: None,
             reference: actor_reference.to_string(),
             host_id: host_id.to_string(),
             count: 13,
             model_name: MODEL_NAME.to_string(),
             annotations: spreadscaler_annotations("ComplexTwo", daemonscaler.id())
         })));
-        assert!(cmds.contains(&Command::StartActor(StartActor {
+        assert!(cmds.contains(&Command::ScaleActor(ScaleActor {
+            actor_id: None,
             reference: actor_reference.to_string(),
             host_id: host_id.to_string(),
             count: 13,
             model_name: MODEL_NAME.to_string(),
             annotations: spreadscaler_annotations("ComplexThree", daemonscaler.id())
         })));
-        assert!(cmds.contains(&Command::StartActor(StartActor {
+        assert!(cmds.contains(&Command::ScaleActor(ScaleActor {
+            actor_id: None,
             reference: actor_reference.to_string(),
             host_id: host_id.to_string(),
             count: 13,
@@ -700,39 +696,44 @@ mod test {
 
         for cmd in cmds.iter() {
             match cmd {
-                Command::StartActor(start) => {
-                    if start.host_id == *host_id_one {
-                        assert_eq!(start.count, 411);
-                        assert_eq!(start.reference, echo_ref);
-                    } else if start.host_id == *host_id_two {
-                        assert_eq!(start.count, 309);
-                        assert_eq!(start.reference, echo_ref);
+                Command::ScaleActor(scale) => {
+                    if scale.host_id == *host_id_one {
+                        assert_eq!(scale.count, 412);
+                        assert_eq!(scale.reference, echo_ref);
+                    } else if scale.host_id == *host_id_two {
+                        assert_eq!(scale.count, 412);
+                        assert_eq!(scale.reference, echo_ref);
                     } else {
-                        assert_eq!(start.count, 12);
-                        assert_eq!(start.reference, echo_ref);
+                        assert_eq!(scale.count, 412);
+                        assert_eq!(scale.reference, echo_ref);
                     }
                 }
                 _ => panic!("Unexpected command in daemonscaler list"),
             }
         }
 
-        let cmds = blobby_daemonscaler.reconcile().await?;
+        let mut cmds = blobby_daemonscaler.reconcile().await?;
         assert_eq!(cmds.len(), 2);
+        cmds.sort_by(|a, b| match (a, b) {
+            (Command::ScaleActor(a), Command::ScaleActor(b)) => a.host_id.cmp(&b.host_id),
+            _ => panic!("Unexpected command in daemonscaler list"),
+        });
 
-        for cmd in cmds.iter() {
-            match cmd {
-                Command::StartActor(start) => {
-                    assert_eq!(start.host_id, host_id_three.to_string());
-                    assert_eq!(start.count, 3);
-                    assert_eq!(start.reference, blobby_ref);
-                }
-                Command::StopActor(stop) => {
-                    assert_eq!(stop.host_id, host_id_two.to_string());
-                    assert_eq!(stop.count, 16);
-                    assert_eq!(stop.actor_id, blobby_id);
-                }
-                _ => panic!("Unexpected command in daemonscaler list"),
+        let mut cmds_iter = cmds.iter();
+        match (
+            cmds_iter.next().expect("one command"),
+            cmds_iter.next().expect("two commands"),
+        ) {
+            (Command::ScaleActor(scale1), Command::ScaleActor(scale2)) => {
+                assert_eq!(scale1.host_id, host_id_three.to_string());
+                assert_eq!(scale1.count, 3);
+                assert_eq!(scale1.reference, blobby_ref);
+
+                assert_eq!(scale2.host_id, host_id_two.to_string());
+                assert_eq!(scale2.count, 3);
+                assert_eq!(scale2.actor_id, Some(blobby_id.to_string()));
             }
+            _ => panic!("Unexpected commands in daemonscaler list"),
         }
 
         Ok(())
@@ -970,10 +971,10 @@ mod test {
 
         for cmd in cmds.iter() {
             match cmd {
-                Command::StartActor(start) => {
-                    assert_eq!(start.host_id, host_id_three.to_string());
-                    assert_eq!(start.count, 10);
-                    assert_eq!(start.reference, blobby_ref);
+                Command::ScaleActor(scale) => {
+                    assert_eq!(scale.host_id, host_id_three.to_string());
+                    assert_eq!(scale.count, 10);
+                    assert_eq!(scale.reference, blobby_ref);
                 }
                 _ => panic!("Unexpected command in daemonscaler list"),
             }
