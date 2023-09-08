@@ -21,7 +21,6 @@ use crate::{
 
 pub mod daemonscaler;
 pub mod manager;
-mod simplescaler;
 pub mod spreadscaler;
 
 use manager::Notifications;
