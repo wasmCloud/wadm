@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 
 use anyhow::Result;
 use async_nats::jetstream::kv::{Operation, Store};
@@ -130,11 +130,12 @@ impl ModelStorage {
                 }
             });
 
+        // Flatten, collect, and sort on name
         futures::future::join_all(futs)
             .await
             .into_iter()
             .flatten()
-            .collect()
+            .collect::<Result<Vec<ModelSummary>>>()
     }
 
     /// Deletes the given model from storage. This also removes the model from the list of all
@@ -172,7 +173,7 @@ impl ModelStorage {
         &self,
         account_id: Option<&str>,
         lattice_id: &str,
-    ) -> Result<Option<(HashSet<String>, u64)>> {
+    ) -> Result<Option<(BTreeSet<String>, u64)>> {
         match self
             .store
             .entry(model_set_key(account_id, lattice_id))
@@ -180,7 +181,7 @@ impl ModelStorage {
             .map_err(|e| anyhow::anyhow!("{e:?}"))?
         {
             Some(entry) if !matches!(entry.operation, Operation::Delete | Operation::Purge) => {
-                let models: HashSet<String> =
+                let models: BTreeSet<String> =
                     serde_json::from_slice(&entry.value).map_err(anyhow::Error::from)?;
                 Ok(Some((models, entry.revision)))
             }
@@ -206,7 +207,7 @@ impl ModelStorage {
                         debug!("No models exist in storage for delete, returning early");
                         return Ok(());
                     }
-                    None => (HashSet::new(), 0),
+                    None => (BTreeSet::new(), 0),
                 };
 
             match operation {
