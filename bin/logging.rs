@@ -5,15 +5,11 @@ use opentelemetry::sdk::{
 use opentelemetry_otlp::{Protocol, WithExportConfig};
 use tracing::{Event as TracingEvent, Subscriber};
 use tracing_subscriber::fmt::{
-    format::{Format, Full, Json, Writer},
+    format::{Format, Full, Json, JsonFields, Writer},
     time::SystemTime,
     FmtContext, FormatEvent, FormatFields,
 };
-use tracing_subscriber::{
-    layer::{Layered, SubscriberExt},
-    registry::LookupSpan,
-    EnvFilter, Layer, Registry,
-};
+use tracing_subscriber::{layer::SubscriberExt, registry::LookupSpan, EnvFilter, Layer};
 
 const TRACING_PATH: &str = "/v1/traces";
 
@@ -105,14 +101,23 @@ pub fn configure_tracing(
     }
 }
 
-fn get_log_layer(structured_logging: bool) -> impl Layer<Layered<EnvFilter, Registry>> {
+fn get_log_layer<S: for<'a> tracing_subscriber::registry::LookupSpan<'a>>(
+    structured_logging: bool,
+) -> Box<dyn Layer<S> + Send + Sync + 'static>
+where
+    S: tracing::Subscriber,
+{
     let log_layer = tracing_subscriber::fmt::layer()
         .with_writer(std::io::stderr)
         .with_ansi(atty::is(atty::Stream::Stderr));
     if structured_logging {
-        log_layer.event_format(JsonOrNot::Json(Format::default().json()))
+        Box::new(
+            log_layer
+                .event_format(JsonOrNot::Json(Format::default().json()))
+                .fmt_fields(JsonFields::default()),
+        )
     } else {
-        log_layer.event_format(JsonOrNot::Not(Format::default()))
+        Box::new(log_layer.event_format(JsonOrNot::Not(Format::default())))
     }
 }
 
