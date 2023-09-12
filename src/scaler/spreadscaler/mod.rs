@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, collections::HashMap};
+use std::{cmp::Ordering, cmp::Reverse, collections::HashMap};
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -347,37 +347,42 @@ pub(crate) fn eligible_hosts<'a>(
 /// Given a spread config, return a vector of tuples that represents the spread
 /// and the actual number of actors to start for a specific spread requirement
 fn compute_spread(spread_config: &SpreadScalerProperty) -> Vec<(Spread, usize)> {
-    let replicas = spread_config.replicas;
-    let total_weight = spread_config
-        .spread
+    let requested_replicas = spread_config.replicas;
+    let mut requested_spreads = spread_config.spread.clone();
+    requested_spreads.sort_by_key(|s| Reverse(s.weight.unwrap_or(DEFAULT_SPREAD_WEIGHT)));
+
+    let total_weight = requested_spreads
         .iter()
         .map(|s| s.weight.unwrap_or(DEFAULT_SPREAD_WEIGHT))
         .sum::<usize>();
-    let spreads: Vec<(Spread, usize)> = spread_config
-        .spread
+    let computed_spreads: Vec<(Spread, usize)> = requested_spreads
         .iter()
         .map(|s| {
             (
                 s.to_owned(),
                 // Order is important here since usizes chop off remaining decimals
-                (replicas * s.weight.unwrap_or(DEFAULT_SPREAD_WEIGHT)) / total_weight,
+                (requested_replicas * s.weight.unwrap_or(DEFAULT_SPREAD_WEIGHT)) / total_weight,
             )
         })
         .collect();
 
-    let spreads = if spreads.is_empty() {
-        vec![(Spread::default(), replicas)]
+    let computed_spreads = if computed_spreads.is_empty() {
+        vec![(Spread::default(), requested_replicas)]
     } else {
-        spreads
+        computed_spreads
     };
+
     // Because of math, we may end up rounding a few instances away. Evenly distribute them
     // among the remaining hosts
-    let total_replicas = spreads.iter().map(|(_s, count)| count).sum::<usize>();
-    match total_replicas.cmp(&replicas) {
+    let computed_replicas = computed_spreads
+        .iter()
+        .map(|(_, count)| count)
+        .sum::<usize>();
+    let computed_spreads = match computed_replicas.cmp(&requested_replicas) {
+        // To meet the specified/requested number of replicas, evenly distribute the remaining unassigned replicas among the computed spreads
         Ordering::Less => {
-            // Take the remainder of replicas and evenly distribute among remaining spreads
-            let mut diff = replicas - total_replicas;
-            spreads
+            let mut diff = requested_replicas - computed_replicas;
+            computed_spreads
                 .into_iter()
                 .map(|(spread, count)| {
                     let additional = if diff > 0 {
@@ -394,10 +399,33 @@ fn compute_spread(spread_config: &SpreadScalerProperty) -> Vec<(Spread, usize)> 
         // there was a case that I didn't imagine
         Ordering::Greater => {
             warn!("Requesting more actor instances than were specified");
-            spreads
+            computed_spreads
         }
-        Ordering::Equal => spreads,
+        Ordering::Equal => computed_spreads,
+    };
+
+    // case when spread_config.spread.is_empty() <=> requested_spreads.is_empty()
+    if computed_spreads.len() == 1 {
+        return computed_spreads;
     }
+
+    // spreads are returned in the order that they were declared in the config (ie, not by weight).
+    // this shouldn't matter; however, it is a safe behavior with respect to downstream processing.
+    let requested_spreads_indices: HashMap<String, usize> = spread_config
+        .spread
+        .iter()
+        .enumerate()
+        .map(|(idx, spread)| (spread.name.to_owned(), idx))
+        .collect();
+
+    computed_spreads.iter().fold(
+        vec![(Spread::default(), 0); computed_spreads.len()],
+        |mut output, spread| {
+            let idx = requested_spreads_indices.get(&spread.0.name).unwrap();
+            output[*idx] = spread.to_owned();
+            output
+        },
+    )
 }
 
 #[cfg(test)]
@@ -542,9 +570,8 @@ mod test {
         let simple_replica_only = compute_spread(&simple_spread_replica_only);
         assert_eq!(simple_replica_only.len(), 1);
         assert_eq!(simple_replica_only[0].1, 12);
-        // Ensure we handle an all around complex case
 
-        // Ensure we compute if a weights aren't specified
+        // Ensure we handle an all around complex case
         let complex_spread = SpreadScalerProperty {
             replicas: 103,
             spread: vec![
@@ -555,7 +582,7 @@ mod test {
                     weight: Some(42),
                 },
                 Spread {
-                    // 0 + 1 (remainder trip)
+                    // 0
                     name: "ComplexTwo".to_string(),
                     requirements: BTreeMap::new(),
                     weight: Some(3),
@@ -567,7 +594,7 @@ mod test {
                     weight: Some(37),
                 },
                 Spread {
-                    // 84
+                    // 84 + 1 (remainder trip)
                     name: "ComplexFour".to_string(),
                     requirements: BTreeMap::new(),
                     weight: Some(384),
@@ -576,9 +603,9 @@ mod test {
         };
         let complex_spread_res = compute_spread(&complex_spread);
         assert_eq!(complex_spread_res[0].1, 10);
-        assert_eq!(complex_spread_res[1].1, 1);
+        assert_eq!(complex_spread_res[1].1, 0);
         assert_eq!(complex_spread_res[2].1, 8);
-        assert_eq!(complex_spread_res[3].1, 84);
+        assert_eq!(complex_spread_res[3].1, 85);
 
         Ok(())
     }
@@ -621,7 +648,7 @@ mod test {
                     weight: Some(42),
                 },
                 Spread {
-                    // 0 + 1 (remainder trip)
+                    // 0
                     name: "ComplexTwo".to_string(),
                     requirements: BTreeMap::new(),
                     weight: Some(3),
@@ -633,7 +660,7 @@ mod test {
                     weight: Some(37),
                 },
                 Spread {
-                    // 84
+                    // 84 + 1 (remainder trip)
                     name: "ComplexFour".to_string(),
                     requirements: BTreeMap::new(),
                     weight: Some(384),
@@ -651,20 +678,13 @@ mod test {
         );
 
         let cmds = spreadscaler.reconcile().await?;
-        assert_eq!(cmds.len(), 4);
+        assert_eq!(cmds.len(), 3);
         assert!(cmds.contains(&Command::StartActor(StartActor {
             reference: actor_reference.to_string(),
             host_id: host_id.to_string(),
             count: 10,
             model_name: MODEL_NAME.to_string(),
             annotations: spreadscaler_annotations("ComplexOne", spreadscaler.id())
-        })));
-        assert!(cmds.contains(&Command::StartActor(StartActor {
-            reference: actor_reference.to_string(),
-            host_id: host_id.to_string(),
-            count: 1,
-            model_name: MODEL_NAME.to_string(),
-            annotations: spreadscaler_annotations("ComplexTwo", spreadscaler.id())
         })));
         assert!(cmds.contains(&Command::StartActor(StartActor {
             reference: actor_reference.to_string(),
@@ -676,7 +696,7 @@ mod test {
         assert!(cmds.contains(&Command::StartActor(StartActor {
             reference: actor_reference.to_string(),
             host_id: host_id.to_string(),
-            count: 84,
+            count: 85,
             model_name: MODEL_NAME.to_string(),
             annotations: spreadscaler_annotations("ComplexFour", spreadscaler.id())
         })));
