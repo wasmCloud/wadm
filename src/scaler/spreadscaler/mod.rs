@@ -1,3 +1,4 @@
+use std::ops::IndexMut;
 use std::{cmp::Ordering, cmp::Reverse, collections::HashMap};
 
 use anyhow::Result;
@@ -409,6 +410,12 @@ fn compute_spread(spread_config: &SpreadScalerProperty) -> Vec<(Spread, usize)> 
         return computed_spreads;
     }
 
+    // this is an invariant check; the predicate should never be true.
+    // this check implicitly ensures that the reordering logic below is safe with regards to indexing.
+    if computed_spreads.len() != requested_spreads.len() {
+        panic!("Computed spreads and requested spreads are not the same length. This should not happen");
+    }
+
     // spreads are returned in the order that they were declared in the config (ie, not by weight).
     // this shouldn't matter; however, it is a safe behavior with respect to downstream processing.
     let requested_spreads_indices: HashMap<String, usize> = spread_config
@@ -421,8 +428,15 @@ fn compute_spread(spread_config: &SpreadScalerProperty) -> Vec<(Spread, usize)> 
     computed_spreads.iter().fold(
         vec![(Spread::default(), 0); computed_spreads.len()],
         |mut output, spread| {
-            let idx = requested_spreads_indices.get(&spread.0.name).unwrap();
-            output[*idx] = spread.to_owned();
+            if let Some(idx) = requested_spreads_indices.get(&spread.0.name) {
+                *output.index_mut(*idx) = spread.to_owned()
+            } else {
+                panic!(
+                    "Spread(name={}) was not found in spread_config (by way of requested_spreads_indices). This should not happen",
+                    spread.0.name
+                );
+            }
+
             output
         },
     )
