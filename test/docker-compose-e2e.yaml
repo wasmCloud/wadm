@@ -3,39 +3,35 @@ services:
     image: nats:2.9-alpine
     command: ["-js"]
     ports:
-     - 4222:4222
+      - 4222:4222
   # Have hosts in 3 different "regions"
   wasmcloud_east:
-    image: wasmcloud/wasmcloud_host:0.63.1
-    depends_on: 
+    image: wasmcloud/wasmcloud:0.78.0-rc9
+    depends_on:
       - nats
     deploy:
       replicas: 2
     environment:
       LC_ALL: en_US.UTF-8
       RUST_LOG: debug,hyper=info
-      WASMCLOUD_RPC_HOST: nats
-      WASMCLOUD_CTL_HOST: nats
-      WASMCLOUD_PROV_RPC_HOST: nats
+      NATS_HOST: nats
       WASMCLOUD_CLUSTER_SEED: SCAOGJWX53TGI4233T6GAXWYWBIB5ZDGPTCO6ODJQYELS52YCQCBQSRPA4
       HOST_region: us-brooks-east
   wasmcloud_west:
-    image: wasmcloud/wasmcloud_host:0.63.1
-    depends_on: 
+    image: wasmcloud/wasmcloud:0.78.0-rc9
+    depends_on:
       - nats
     deploy:
       replicas: 2
     environment:
       LC_ALL: en_US.UTF-8
       RUST_LOG: debug,hyper=info
-      WASMCLOUD_RPC_HOST: nats
-      WASMCLOUD_CTL_HOST: nats
-      WASMCLOUD_PROV_RPC_HOST: nats
+      NATS_HOST: nats
       WASMCLOUD_CLUSTER_SEED: SCAOGJWX53TGI4233T6GAXWYWBIB5ZDGPTCO6ODJQYELS52YCQCBQSRPA4
       HOST_region: us-taylor-west
   wasmcloud_moon:
-    image: wasmcloud/wasmcloud_host:0.63.1
-    depends_on: 
+    image: wasmcloud/wasmcloud:0.78.0-rc9
+    depends_on:
       - nats
     deploy:
       replicas: 1
@@ -45,8 +41,6 @@ services:
     environment:
       LC_ALL: en_US.UTF-8
       RUST_LOG: debug,hyper=info
-      WASMCLOUD_RPC_HOST: nats
-      WASMCLOUD_CTL_HOST: nats
-      WASMCLOUD_PROV_RPC_HOST: nats
+      NATS_HOST: nats
       WASMCLOUD_CLUSTER_SEED: SCAOGJWX53TGI4233T6GAXWYWBIB5ZDGPTCO6ODJQYELS52YCQCBQSRPA4
       HOST_region: moon
