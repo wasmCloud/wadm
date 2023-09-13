@@ -1,4 +1,3 @@
-use std::ops::IndexMut;
 use std::{cmp::Ordering, cmp::Reverse, collections::HashMap};
 
 use anyhow::Result;
@@ -405,41 +404,18 @@ fn compute_spread(spread_config: &SpreadScalerProperty) -> Vec<(Spread, usize)> 
         Ordering::Equal => computed_spreads,
     };
 
-    // case when spread_config.spread.is_empty() <=> requested_spreads.is_empty()
-    if computed_spreads.len() == 1 {
+    // If there are no spreads specified, we should only have one (default) spread with the total number of replicas
+    if requested_spreads.is_empty() && computed_spreads.len() == 1 {
         return computed_spreads;
     }
 
-    // this is an invariant check; the predicate should never be true.
-    // this check implicitly ensures that the reordering logic below is safe with regards to indexing.
+    // this is an invariant check; the predicate should not be true.
     if computed_spreads.len() != requested_spreads.len() {
-        panic!("Computed spreads and requested spreads are not the same length. This should not happen");
+        eprintln!("Computed spreads and requested spreads are not the same length. This should not happen.");
     }
 
-    // spreads are returned in the order that they were declared in the config (ie, not by weight).
-    // this shouldn't matter; however, it is a safe behavior with respect to downstream processing.
-    let requested_spreads_indices: HashMap<String, usize> = spread_config
-        .spread
-        .iter()
-        .enumerate()
-        .map(|(idx, spread)| (spread.name.to_owned(), idx))
-        .collect();
-
-    computed_spreads.iter().fold(
-        vec![(Spread::default(), 0); computed_spreads.len()],
-        |mut output, spread| {
-            if let Some(idx) = requested_spreads_indices.get(&spread.0.name) {
-                *output.index_mut(*idx) = spread.to_owned()
-            } else {
-                panic!(
-                    "Spread(name={}) was not found in spread_config (by way of requested_spreads_indices). This should not happen",
-                    spread.0.name
-                );
-            }
-
-            output
-        },
-    )
+    // The output has spreads ordered by weight; we may want to return them per the order in the config file at some point. For now, this will do.
+    computed_spreads
 }
 
 #[cfg(test)]
@@ -530,8 +506,8 @@ mod test {
         };
 
         let multi_spread_even_res = compute_spread(&multi_spread_odd);
-        assert_eq!(multi_spread_even_res[0].1, 3);
-        assert_eq!(multi_spread_even_res[1].1, 4);
+        assert_eq!(multi_spread_even_res[0].1, 4);
+        assert_eq!(multi_spread_even_res[1].1, 3);
 
         // Ensure we spread an odd number with unclean dividing weights
         let multi_spread_odd = SpreadScalerProperty {
@@ -616,10 +592,10 @@ mod test {
             ],
         };
         let complex_spread_res = compute_spread(&complex_spread);
-        assert_eq!(complex_spread_res[0].1, 10);
-        assert_eq!(complex_spread_res[1].1, 0);
+        assert_eq!(complex_spread_res[0].1, 85);
+        assert_eq!(complex_spread_res[1].1, 10);
         assert_eq!(complex_spread_res[2].1, 8);
-        assert_eq!(complex_spread_res[3].1, 85);
+        assert_eq!(complex_spread_res[3].1, 0);
 
         Ok(())
     }
