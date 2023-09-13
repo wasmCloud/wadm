@@ -38,7 +38,7 @@ services:
 
   # Have hosts in two different accounts
   wasmcloud_east:
-    image: wasmcloud/wasmcloud_host:0.63.1
+    image: wasmcloud/wasmcloud:0.78.0-rc9
     depends_on:
       - nats-leaf-a
     deploy:
@@ -46,14 +46,12 @@ services:
     environment:
       LC_ALL: en_US.UTF-8
       RUST_LOG: debug,hyper=info
+      NATS_HOST: nats-leaf-a
       WASMCLOUD_LATTICE_PREFIX: wasmcloud-east
-      WASMCLOUD_RPC_HOST: nats-leaf-a
-      WASMCLOUD_CTL_HOST: nats-leaf-a
-      WASMCLOUD_PROV_RPC_HOST: nats-leaf-a
       WASMCLOUD_CLUSTER_SEED: SCAOGJWX53TGI4233T6GAXWYWBIB5ZDGPTCO6ODJQYELS52YCQCBQSRPA4
       HOST_region: us-brooks-east
   wasmcloud_west:
-    image: wasmcloud/wasmcloud_host:0.63.1
+    image: wasmcloud/wasmcloud:0.78.0-rc9
     depends_on:
       - nats-leaf-b
     deploy:
@@ -62,8 +60,6 @@ services:
       LC_ALL: en_US.UTF-8
       RUST_LOG: debug,hyper=info
       WASMCLOUD_LATTICE_PREFIX: wasmcloud-west
-      WASMCLOUD_RPC_HOST: nats-leaf-b
-      WASMCLOUD_CTL_HOST: nats-leaf-b
-      WASMCLOUD_PROV_RPC_HOST: nats-leaf-b
+      NATS_HOST: nats-leaf-a
       WASMCLOUD_CLUSTER_SEED: SCAOGJWX53TGI4233T6GAXWYWBIB5ZDGPTCO6ODJQYELS52YCQCBQSRPA4
       HOST_region: us-taylor-west
