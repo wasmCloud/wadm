@@ -303,6 +303,11 @@ async fn test_basic_separation(client_info: &ClientInfo) -> anyhow::Result<()> {
     })
     .await;
 
+    eprintln!("Everything good, undeploying manifests");
+
+    // sleep 10 seconds
+    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+
     // Undeploy manifests
     eprintln!("Undeploying manifest from east and west");
     let resp = client_info
