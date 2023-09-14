@@ -1,6 +1,7 @@
 #![cfg(feature = "_e2e_tests")]
 use std::path::PathBuf;
 
+use futures::StreamExt;
 use wadm::server::{DeployResult, PutResult, StatusType};
 
 mod e2e;
@@ -40,6 +41,22 @@ async fn run_multitenant_tests() {
         .add_ctl_client(LATTICE_WEST, Some("Ayyy.wasmbus.ctl"))
         .await;
     client_info.launch_wadm().await;
+
+    // Wait for the first event on both lattice prefixes before we start deploying and checking
+    // statuses. Wadm can absolutely handle hosts starting before you start the wadm process, but the first event
+    // on the lattice will initialize the lattice monitor and for the following test we quickly assert things.
+    let mut east_sub = client_info
+        .client
+        .subscribe(format!("wadm.evt.{LATTICE_EAST}"))
+        .await
+        .expect("Should be able to subscribe to east events");
+    let mut west_sub = client_info
+        .client
+        .subscribe(format!("wadm.evt.{LATTICE_WEST}"))
+        .await
+        .expect("Should be able to subscribe to west events");
+    let _ = east_sub.next().await;
+    let _ = west_sub.next().await;
 
     // NOTE(thomastaylor312): A nice to have here, but what I didn't want to figure out now, would
     // be to catch the panics from tests and label the backtrace with the appropriate information
