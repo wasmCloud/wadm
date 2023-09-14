@@ -2,7 +2,7 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use futures::FutureExt;
+use futures::{FutureExt, StreamExt};
 use wadm::server::{DeployResult, PutResult, StatusType};
 
 mod e2e;
@@ -34,6 +34,16 @@ async fn run_multiple_host_tests() {
     let mut client_info = ClientInfo::new(manifest_dir, compose_file).await;
     client_info.add_ctl_client("default", None).await;
     client_info.launch_wadm().await;
+
+    // Wait for the first event on the lattice prefix before we start deploying and checking
+    // statuses. Wadm can absolutely handle hosts starting before you start the wadm process, but the first event
+    // on the lattice will initialize the lattice monitor and for the following test we quickly assert things.
+    let mut sub = client_info
+        .client
+        .subscribe("wadm.evt.default".to_string())
+        .await
+        .expect("Should be able to subscribe to default events");
+    let _ = sub.next().await;
 
     // Wait for hosts to start
     let mut did_start = false;
