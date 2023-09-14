@@ -207,8 +207,10 @@ where
                 .iter()
                 .filter_map(|cmd| cmd.corresponding_event(model_name));
 
+            self.add_events(expected_events, false).await;
+
             // Only let other scalers know if we generated commands to take
-            if !commands.is_empty() {
+            if !self.expected_events.read().await.is_empty() {
                 trace!("Scaler generated commands, notifying other scalers to register expected events");
                 let data = serde_json::to_vec(&Notifications::RegisterExpectedEvents {
                     name: model_name.to_owned(),
@@ -220,8 +222,6 @@ where
                     .publish(data, Some(&self.notify_subject))
                     .await?;
             }
-
-            self.add_events(expected_events, false).await;
             commands
         };
 
@@ -239,15 +239,7 @@ where
         match self.scaler.reconcile().await {
             // "Back off" scaler with expected corresponding events if the scaler generated commands
             Ok(commands) if !commands.is_empty() => {
-                trace!("Reconcile generated commands, notifying other scalers to register expected events");
-                let data = serde_json::to_vec(&Notifications::RegisterExpectedEvents {
-                    name: self.model_name.to_owned(),
-                    scaler_id: self.scaler.id().to_owned(),
-                    triggering_event: None,
-                })?;
-                self.notifier
-                    .publish(data, Some(&self.notify_subject))
-                    .await?;
+                // Generate expected events
                 self.add_events(
                     commands
                         .iter()
@@ -255,6 +247,20 @@ where
                     true,
                 )
                 .await;
+
+                if !self.expected_events.read().await.is_empty() {
+                    trace!("Reconcile generated expected events, notifying other scalers to register expected events");
+                    let data = serde_json::to_vec(&Notifications::RegisterExpectedEvents {
+                        name: self.model_name.to_owned(),
+                        scaler_id: self.scaler.id().to_owned(),
+                        triggering_event: None,
+                    })?;
+                    self.notifier
+                        .publish(data, Some(&self.notify_subject))
+                        .await?;
+                    return Ok(commands);
+                }
+
                 Ok(commands)
             }
             Ok(commands) => {
