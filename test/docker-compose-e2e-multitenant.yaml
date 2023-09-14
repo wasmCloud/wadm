@@ -60,6 +60,6 @@ services:
       LC_ALL: en_US.UTF-8
       RUST_LOG: debug,hyper=info
       WASMCLOUD_LATTICE_PREFIX: wasmcloud-west
-      NATS_HOST: nats-leaf-a
+      NATS_HOST: nats-leaf-b
       WASMCLOUD_CLUSTER_SEED: SCAOGJWX53TGI4233T6GAXWYWBIB5ZDGPTCO6ODJQYELS52YCQCBQSRPA4
       HOST_region: us-taylor-west
