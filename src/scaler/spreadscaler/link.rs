@@ -15,7 +15,7 @@ use crate::{
     server::StatusInfo,
     storage::{Actor, Provider, ReadStore},
     workers::LinkSource,
-    DEFAULT_LINK_NAME,
+    APP_SPEC_ANNOTATION, DEFAULT_LINK_NAME,
 };
 
 pub const LINK_SCALER_TYPE: &str = "linkdefscaler";
@@ -75,23 +75,25 @@ where
     #[instrument(level = "trace", skip_all, fields(scaler_id = %self.id))]
     async fn handle_event(&self, event: &Event) -> Result<Vec<Command>> {
         match event {
-            // We can only publish links once we know actor and provider IDs,
-            // so we should pay attention to the Started events if we don't know them yet
+            // Trigger linkdef creation if this actor starts and belongs to this model
             Event::ActorsStarted(actor_started)
-                if !self.actor_id.initialized()
-                    && actor_started.image_ref == self.config.actor_reference =>
+                if actor_started.image_ref == self.config.actor_reference
+                    && actor_started
+                        .annotations
+                        .get(APP_SPEC_ANNOTATION)
+                        .is_some_and(|v| v == &self.config.model_name) =>
             {
                 self.reconcile().await
             }
             Event::ProviderHealthCheckPassed(ProviderHealthCheckPassed { data, .. })
             | Event::ProviderHealthCheckStatus(ProviderHealthCheckStatus { data, .. })
-                if self
-                    .provider_id()
-                    .await
-                    .map(|id| id == data.public_key)
-                    .unwrap_or(false)
-                    && data.contract_id == self.config.provider_contract_id
-                    && data.link_name == self.config.provider_link_name =>
+                if data.contract_id == self.config.provider_contract_id
+                    && data.link_name == self.config.provider_link_name
+                    && self
+                        .provider_id()
+                        .await
+                        .map(|id| id == data.public_key)
+                        .unwrap_or(false) =>
             {
                 // Wait until we know the provider is healthy before we link. This also avoids the race condition
                 self.reconcile().await
@@ -99,9 +101,9 @@ where
             Event::LinkdefDeleted(LinkdefDeleted { linkdef })
             | Event::LinkdefSet(LinkdefSet { linkdef })
                 if linkdef.contract_id == self.config.provider_contract_id
-                    && linkdef.actor_id == self.actor_id().await.unwrap_or_default()
+                    && linkdef.link_name == self.config.provider_link_name
                     && linkdef.provider_id == self.provider_id().await.unwrap_or_default()
-                    && linkdef.link_name == self.config.provider_link_name =>
+                    && linkdef.actor_id == self.actor_id().await.unwrap_or_default() =>
             {
                 self.reconcile().await
             }
@@ -285,12 +287,16 @@ impl<S: ReadStore + Send + Sync, L: LinkSource> LinkScaler<S, L> {
 
 #[cfg(test)]
 mod test {
+    use std::{collections::HashSet, sync::Arc};
+
+    use chrono::Utc;
     use wasmcloud_control_interface::LinkDefinition;
 
     use super::*;
 
     use crate::{
-        storage::Store,
+        events::{ActorClaims, ActorsStarted, Linkdef, ProviderHealthCheckInfo, ProviderInfo},
+        storage::{Host, Store},
         test_util::{TestLatticeSource, TestStore},
     };
 
@@ -420,5 +426,145 @@ mod test {
             0,
             "Scaler shouldn't have returned any commands"
         );
+    }
+
+    #[tokio::test]
+    async fn can_put_linkdef_from_triggering_events() {
+        let lattice_id = "can_put_linkdef_from_triggering_events";
+        let echo_ref = "fakecloud.azurecr.io/echo:0.3.4".to_string();
+        let echo_id = "MASDASDIAMAREALACTORECHO";
+        let httpserver_ref = "fakecloud.azurecr.io/httpserver:0.5.2".to_string();
+
+        let host_id_one = "NASDASDIMAREALHOSTONE";
+
+        let store = Arc::new(TestStore::default());
+
+        // STATE SETUP BEGIN
+
+        store
+            .store(
+                lattice_id,
+                host_id_one.to_string(),
+                Host {
+                    // actors: HashMap::new(),
+                    actors: HashMap::from_iter([(echo_id.to_string(), 1)]),
+                    friendly_name: "hey".to_string(),
+                    labels: HashMap::from_iter([
+                        ("cloud".to_string(), "fake".to_string()),
+                        ("region".to_string(), "us-brooks-1".to_string()),
+                    ]),
+                    annotations: HashMap::new(),
+                    providers: HashSet::from_iter([ProviderInfo {
+                        contract_id: "wasmcloud:httpserver".to_string(),
+                        link_name: "default".to_string(),
+                        public_key: "VASDASD".to_string(),
+                        annotations: HashMap::from_iter([(
+                            APP_SPEC_ANNOTATION.to_string(),
+                            "foobar".to_string(),
+                        )]),
+                    }]),
+                    uptime_seconds: 123,
+                    version: None,
+                    id: host_id_one.to_string(),
+                    last_seen: Utc::now(),
+                },
+            )
+            .await
+            .expect("should be able to store a host");
+
+        store
+            .store(
+                lattice_id,
+                "VASDASD".to_string(),
+                Provider {
+                    id: "VASDASD".to_string(),
+                    reference: httpserver_ref.to_string(),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("should be able to store provider");
+
+        // STATE SETUP END
+
+        let link_scaler = LinkScaler::new(
+            store.clone(),
+            echo_ref.to_string(),
+            httpserver_ref.to_string(),
+            "wasmcloud:httpserver".to_string(),
+            Some("default".to_string()),
+            lattice_id.to_string(),
+            "foobar".to_string(),
+            None,
+            TestLatticeSource::default(),
+        );
+
+        let commands = link_scaler
+            .reconcile()
+            .await
+            .expect("link scaler to handle reconcile");
+        assert!(commands.is_empty());
+
+        // Actor starts, put into state and then handle event
+        store
+            .store(
+                lattice_id,
+                echo_id.to_string(),
+                Actor {
+                    id: echo_id.to_string(),
+                    reference: echo_ref.to_string(),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("should be able to store actor");
+
+        let commands = link_scaler
+            .handle_event(&Event::ActorsStarted(ActorsStarted {
+                annotations: HashMap::from_iter([(
+                    APP_SPEC_ANNOTATION.to_string(),
+                    "foobar".to_string(),
+                )]),
+                claims: ActorClaims::default(),
+                image_ref: echo_ref,
+                count: 1,
+                public_key: echo_id.to_string(),
+                host_id: host_id_one.to_string(),
+            }))
+            .await
+            .expect("should be able to handle actors started event");
+
+        assert_eq!(commands.len(), 1);
+
+        let commands = link_scaler
+            .handle_event(&Event::LinkdefSet(LinkdefSet {
+                linkdef: Linkdef {
+                    // NOTE: contract, link, and provider id matches but the actor is different
+                    actor_id: "nm0001772".to_string(),
+                    contract_id: "wasmcloud:httpserver".to_string(),
+                    id: "YOUNEEDTOHAVETHISBEUNIQUEBECAUSE".to_string(),
+                    link_name: "default".to_string(),
+                    provider_id: "VASDASD".to_string(),
+                    values: HashMap::new(),
+                },
+            }))
+            .await
+            .expect("");
+        assert!(commands.is_empty());
+
+        let commands = link_scaler
+            .handle_event(&Event::ProviderHealthCheckPassed(
+                ProviderHealthCheckPassed {
+                    data: ProviderHealthCheckInfo {
+                        link_name: "default".to_string(),
+                        public_key: "VASDASD".to_string(),
+                        contract_id: "wasmcloud:httpserver".to_string(),
+                    },
+                    host_id: host_id_one.to_string(),
+                },
+            ))
+            .await
+            .expect("should be able to handle provider health check");
+        assert_eq!(commands.len(), 1);
     }
 }
