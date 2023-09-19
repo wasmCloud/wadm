@@ -24,6 +24,8 @@ pub const VERSION_ANNOTATION_KEY: &str = "version";
 pub const DESCRIPTION_ANNOTATION_KEY: &str = "description";
 /// The identifier for the builtin spreadscaler trait type
 pub const SPREADSCALER_TRAIT: &str = "spreadscaler";
+/// The identifier for the builtin daemonscaler trait type
+pub const DAEMONSCALER_TRAIT: &str = "daemonscaler";
 /// The identifier for the builtin linkdef trait type
 pub const LINKDEF_TRAIT: &str = "linkdef";
 /// The string used for indicating a latest version. It is explicitly forbidden to use as a version
@@ -204,6 +206,13 @@ impl Trait {
     pub fn new_spreadscaler(props: SpreadScalerProperty) -> Trait {
         Trait {
             trait_type: SPREADSCALER_TRAIT.to_owned(),
+            properties: TraitProperty::SpreadScaler(props),
+        }
+    }
+
+    pub fn new_daemonscaler(props: SpreadScalerProperty) -> Trait {
+        Trait {
+            trait_type: DAEMONSCALER_TRAIT.to_owned(),
             properties: TraitProperty::SpreadScaler(props),
         }
     }

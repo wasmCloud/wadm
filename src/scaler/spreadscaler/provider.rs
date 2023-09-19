@@ -132,7 +132,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
             .flat_map(|(spread, count)| {
                 let eligible_hosts = eligible_hosts(&hosts, spread);
                 let eligible_count = eligible_hosts.len();
-                // Partition hosts into ones running this provider (no matter what is running it, and others
+                // Partition hosts into ones running this provider (no matter what is running it), and others
                 let (running, other): (HashMap<&String, &Host>, HashMap<&String, &Host>) =
                     eligible_hosts.into_iter().partition(|(_host_id, host)| {
                         host.providers
@@ -145,8 +145,10 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
                     });
                 // Get the count of all running providers
                 let current_running = running.len();
-                // Now get only the hosts running a provider we own
-                let running_for_spread = running.into_iter().filter(|(_host_id, host)| {
+                // NOTE(#120): Now partition providers into ones running for this spread, and ones running for
+                // either other spreads or no spread at all. Hosts cannot run multiple providers with the same
+                // link name and contract id, so wadm currently will allow these to count up to the total.
+                let (running_for_spread, running_for_other): (HashMap<&String, &Host>, HashMap<&String, &Host>) = running.into_iter().partition(|(_host_id, host)| {
                     host.providers
                         .get(&ProviderInfo {
                             contract_id: contract_id.to_string(),
@@ -166,12 +168,8 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
                                 }
                                 has_annotation
                             })
-                        })
-                        .unwrap_or_else(|| {
-                            trace!(%provider_id, "Couldn't find matching provider in host provider list");
-                            false
-                        })
-                }).collect::<HashMap<_, _>>();
+                        }).unwrap_or(false)
+                });
                 trace!(current_for_spread = %running_for_spread.len(), %current_running, expected = %count, eligible_hosts = %eligible_count, %provider_id, "Calculated running providers, reconciling with expected count");
                 match current_running.cmp(count) {
                     // We can only stop providers that we own, so if we have more than we need, we
@@ -195,11 +193,10 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
                             .collect::<Vec<Command>>()
                     }
                     Ordering::Less => {
-                        let num_to_start = count - current_running;
-
-                        // NOTE(brooksmtownsend): It's possible that this does not fully satisfy
-                        // the requirements if we are unable to form enough start commands. Update
-                        // status accordingly once we have a way to.
+                        // NOTE(#120): Providers running for other spreads or for no spreads can count for up to the total
+                        // number of providers to satisfy a spread. We do not count them above because we don't want to
+                        // end up in an infinite loop of stopping other managed providers.
+                        let num_to_start = count.saturating_sub(current_running).saturating_sub(running_for_other.len());
 
                         // Take `num_to_start` commands from this iterator
                         let commands = other

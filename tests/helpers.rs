@@ -16,8 +16,7 @@ use tokio::process::Command;
 use anyhow::Result;
 use wadm::consumers::{CommandConsumer, ScopedMessage};
 
-const DEFAULT_WASMCLOUD_PORT: u16 = 4000;
-const DEFAULT_NATS_PORT: u16 = 4222;
+pub const DEFAULT_NATS_PORT: u16 = 4222;
 pub const ECHO_ACTOR_ID: &str = "MBCFOPM6JW2APJLXJD3Z5O4CN7CPYJ2B4FTKLJUR5YR5MITIU7HD3WD5";
 pub const HTTP_SERVER_PROVIDER_ID: &str =
     "VAG3QITQQ2ODAOWB5TTQSDJ53XK3SHBEIFNK4AYJ5RKAX2UNSCAPHA5M";
@@ -63,30 +62,17 @@ pub struct TestWashConfig {
 
     /// Only connect to pre-existing NATS instance
     pub nats_connect_only: bool,
-
-    /// Port on which to run wasmCloud (via `wash up`)
-    pub wasmcloud_port: Option<u16>,
 }
 
 impl TestWashConfig {
     /// Build a test wash configuration with randomized ports
     pub async fn random() -> Result<TestWashConfig> {
         let nats_port = Some(get_random_tcp_port());
-        let wasmcloud_port = Some(get_random_tcp_port());
 
         Ok(TestWashConfig {
             nats_port,
-            wasmcloud_port,
             ..TestWashConfig::default()
         })
-    }
-
-    /// Get the washboard URL for this config
-    pub fn washboard_url(&self) -> String {
-        format!(
-            "localhost:{}",
-            self.wasmcloud_port.unwrap_or(DEFAULT_WASMCLOUD_PORT)
-        )
     }
 
     /// Get the NATS URL for this config
@@ -98,13 +84,22 @@ impl TestWashConfig {
 /// Start a local wash instance
 async fn start_wash_instance(cfg: &TestWashConfig) -> Result<CleanupGuard> {
     let nats_port = cfg.nats_port.unwrap_or(DEFAULT_NATS_PORT).to_string();
-    let wasmcloud_port = cfg
-        .wasmcloud_port
-        .unwrap_or(DEFAULT_WASMCLOUD_PORT)
-        .to_string();
+    let wash_host_key = nkeys::KeyPair::new_server();
+
+    let seed = wash_host_key.seed().expect("seed to exist").to_string();
 
     // Build args
-    let mut args: Vec<&str> = Vec::from(["up", "-d", "--disable-wadm", "--nats-port", &nats_port]);
+    let mut args: Vec<&str> = Vec::from([
+        "up",
+        "-d",
+        "--disable-wadm",
+        "--nats-port",
+        &nats_port,
+        "--host-seed",
+        &seed,
+        "--wasmcloud-version",
+        "v0.78.0-rc3",
+    ]);
     if cfg.nats_connect_only {
         args.push("--nats-connect-only");
     }
@@ -112,8 +107,6 @@ async fn start_wash_instance(cfg: &TestWashConfig) -> Result<CleanupGuard> {
     // Build the command
     let mut cmd = Command::new("wash");
     cmd.args(&args)
-        .env("WASMCLOUD_PORT", &wasmcloud_port)
-        .env("WASMCLOUD_DASHBOARD_PORT", &wasmcloud_port)
         .stderr(std::process::Stdio::null())
         .stdout(std::process::Stdio::null());
 
@@ -124,35 +117,45 @@ async fn start_wash_instance(cfg: &TestWashConfig) -> Result<CleanupGuard> {
     };
 
     let output = cmd.status().await.expect("Unable to run detached wash up");
-
     assert!(output.success(), "Error trying to start host",);
 
-    // Make sure we can connect to washboard
-    wait_for_server(&cfg.washboard_url()).await;
-
-    // Give the host just a bit more time to get totally ready
-    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    // Run wash get inventory keypair.public_key() --nats-port {nats_port}
+    // and retry 5 times, sleeping for a second between tries, to ensure
+    // the host launched
+    let mut retries = 5;
+    while retries > 0 {
+        let output = Command::new("wash")
+            .args([
+                "get",
+                "inventory",
+                &wash_host_key.public_key(),
+                "--ctl-port",
+                &nats_port,
+            ])
+            .output()
+            .await
+            .expect("Unable to run wash command");
+        if output.status.success() {
+            break;
+        }
+        retries -= 1;
+        if retries == 0 {
+            panic!("Failed to launch host");
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
 
     Ok(guard)
 }
 
 /// Set up and run a wash instance that can be used for a test
 pub async fn setup_test_wash(cfg: &TestWashConfig) -> CleanupGuard {
-    match tokio::net::TcpStream::connect(cfg.washboard_url()).await {
-        // NOTE: DO NOT use unwrap_or here. Otherwise we allocate a cleanup guard that then gets
-        // dropped, which runs `wash down`
-        #[allow(clippy::unnecessary_lazy_evaluations)]
-        Err(_) => start_wash_instance(cfg)
-            .await
-            .unwrap_or_else(|_| CleanupGuard {
-                child: None,
-                already_running: false,
-            }),
-        Ok(_) => CleanupGuard {
+    start_wash_instance(cfg)
+        .await
+        .unwrap_or_else(|_| CleanupGuard {
             child: None,
-            already_running: true,
-        },
-    }
+            already_running: false,
+        })
 }
 
 pub async fn wait_for_server(url: &str) {
