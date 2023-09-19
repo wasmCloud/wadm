@@ -104,7 +104,11 @@ impl<P: Publisher> Handler<P> {
             },
             name: manifest_name.clone(),
             total_versions: 0,
-            message: "Successfully put manifest".to_owned(),
+            message: format!(
+                "Successfully put manifest {} {}",
+                manifest_name,
+                manifest.version()
+            ),
         };
 
         if !current_manifests.add_version(manifest) {
@@ -199,7 +203,7 @@ impl<P: Publisher> Handler<P> {
                     GetModelResponse {
                         manifest: Some(current.to_owned()),
                         result: GetResult::Success,
-                        message: format!("Fetched model {name} with version {version}"),
+                        message: format!("Successfully fetched model {name} {version}"),
                     }
                 } else {
                     self.send_reply(
@@ -220,7 +224,7 @@ impl<P: Publisher> Handler<P> {
             None => GetModelResponse {
                 manifest: Some(manifests.get_current().to_owned()),
                 result: GetResult::Success,
-                message: format!("Fetched model {name}"),
+                message: format!("Successfully fetched model {name}"),
             },
         };
         // NOTE: We _just_ deserialized this from the store above, so we should be just fine. but
@@ -272,7 +276,7 @@ impl<P: Publisher> Handler<P> {
         let data: VersionResponse = match self.store.get(account_id, lattice_id, name).await {
             Ok(Some((manifest, _))) => VersionResponse {
                 result: GetResult::Success,
-                message: "Successfully fetched versions".to_string(),
+                message: format!("Successfully fetched versions for model {name}"),
                 versions: manifest
                     .all_versions()
                     .into_iter()
@@ -333,7 +337,7 @@ impl<P: Publisher> Handler<P> {
                 Ok(_) => {
                     DeleteModelResponse {
                         result: DeleteResult::Deleted,
-                        message: "All models deleted".to_string(),
+                        message: format!("Successfully deleted model {}", name),
                         // By default if it is all gone, we definitely undeployed things
                         undeploy: true,
                     }
@@ -370,7 +374,10 @@ impl<P: Publisher> Handler<P> {
                             .await
                             .map(|_| DeleteModelResponse {
                                 result: DeleteResult::Deleted,
-                                message: format!("Model version {} deleted", req.version),
+                                message: format!(
+                                    "Successfully deleted version {} of model {}",
+                                    req.version, name
+                                ),
                                 undeploy,
                             })
                             .unwrap_or_else(|e| {
@@ -388,7 +395,10 @@ impl<P: Publisher> Handler<P> {
                             .await
                             .map(|_| DeleteModelResponse {
                                 result: DeleteResult::Deleted,
-                                message: "Last model version deleted".to_string(),
+                                message: format!(
+                                    "Successfully deleted last version of model {}",
+                                    name
+                                ),
                                 // By default if it is all gone, we definitely undeployed things
                                 undeploy: true,
                             })
@@ -537,7 +547,11 @@ impl<P: Publisher> Handler<P> {
             .await
             .map(|_| DeployModelResponse {
                 result: DeployResult::Acknowledged,
-                message: "Deployed model".to_string(),
+                message: format!(
+                    "Successfully deployed model {} {}",
+                    name,
+                    manifest.version()
+                ),
             })
             .unwrap_or_else(|e| {
                 error!(error = %e, "Unable to store updated data");
@@ -636,7 +650,7 @@ impl<P: Publisher> Handler<P> {
                 .await
                 .map(|_| DeployModelResponse {
                     result: DeployResult::Acknowledged,
-                    message: "Undeployed model".to_string(),
+                    message: format!("Successfully undeployed model {}", name),
                 })
                 .unwrap_or_else(|e| {
                     error!(error = %e, "Unable to store updated data");
@@ -649,7 +663,7 @@ impl<P: Publisher> Handler<P> {
             trace!("Manifest was already undeployed");
             DeployModelResponse {
                 result: DeployResult::Acknowledged,
-                message: "Undeployed model".to_string(),
+                message: format!("Model {} was already undeployed", name),
             }
         };
         // We always want to resend in an undeploy in case things failed last time
@@ -732,7 +746,7 @@ impl<P: Publisher> Handler<P> {
             // case we unwrap to nothing
             serde_json::to_vec(&StatusResponse {
                 result: StatusResult::Ok,
-                message: "Successfully fetched status".to_string(),
+                message: format!("Successfully fetched status for model {}", name),
                 status: Some(status),
             })
             .unwrap_or_default(),
