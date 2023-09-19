@@ -696,7 +696,9 @@ mod test {
 
         for cmd in cmds.iter() {
             match cmd {
-                Command::ScaleActor(scale) => {
+                Command::ScaleActor(scale) =>
+                {
+                    #[allow(clippy::if_same_then_else)]
                     if scale.host_id == *host_id_one {
                         assert_eq!(scale.count, 412);
                         assert_eq!(scale.reference, echo_ref);
@@ -780,6 +782,7 @@ mod test {
                 lattice_id,
                 store.clone(),
                 command_publisher,
+                status_publisher.clone(),
                 lattice_source,
             )
             .await,

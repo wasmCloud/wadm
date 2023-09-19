@@ -24,7 +24,7 @@ use wadm::{
     },
     APP_SPEC_ANNOTATION, MANAGED_BY_ANNOTATION, MANAGED_BY_IDENTIFIER,
 };
-use wasmcloud_control_interface::HostInventory;
+use wasmcloud_control_interface::{kv::DirectKvStore, HostInventory};
 
 const LOG_DIR: &str = "test/e2e_log";
 const DEFAULT_LATTICE_ID: &str = "default";
@@ -38,8 +38,9 @@ pub const DEFAULT_MAX_TRIES: usize = 3;
 /// interacting with wadm. On drop, it will cleanup all resources that it created
 pub struct ClientInfo {
     pub client: Client,
-    // Map of lattice prefix to control client
-    ctl_clients: HashMap<String, wasmcloud_control_interface::Client>,
+    // Map of lattice prefix to control client. Note that this is a direct kv store client here so
+    // we don't have flaky tests by waiting for the local cache to update
+    ctl_clients: HashMap<String, wasmcloud_control_interface::Client<DirectKvStore>>,
     manifest_dir: PathBuf,
     compose_file: PathBuf,
     commands: Vec<Child>,
@@ -108,13 +109,25 @@ impl ClientInfo {
         }
     }
 
-    pub fn ctl_client(&self, lattice_prefix: &str) -> &wasmcloud_control_interface::Client {
+    pub fn ctl_client(
+        &self,
+        lattice_prefix: &str,
+    ) -> &wasmcloud_control_interface::Client<DirectKvStore> {
         self.ctl_clients
             .get(lattice_prefix)
             .expect("Should have ctl client for specified lattice")
     }
 
     pub async fn add_ctl_client(&mut self, lattice_prefix: &str, topic_prefix: Option<&str>) {
+        // Now that the control clients only use buckets, we need to make sure those buckets exist
+        // before we try to create the client
+        jetstream::new(self.client.clone())
+            .create_key_value(async_nats::jetstream::kv::Config {
+                bucket: format!("LATTICEDATA_{}", lattice_prefix),
+                ..Default::default()
+            })
+            .await
+            .expect("Unable to ensure existence of KV bucket for lattice metadata");
         let builder = wasmcloud_control_interface::ClientBuilder::new(self.client.clone())
             .lattice_prefix(lattice_prefix);
 
@@ -165,7 +178,7 @@ impl ClientInfo {
                 .kill_on_drop(true)
                 .env(
                     "RUST_LOG",
-                    "info,wadm=debug,wadm::scaler=trace,wadm::workers::event=trace",
+                    "info,wadm=debug,wadm::scaler=trace,wadm::workers::event=trace,wasmcloud_control_interface=trace",
                 )
                 .spawn()
                 .expect("Unable to spawn wadm binary");
@@ -468,11 +481,11 @@ pub async fn check_status(
     manifest_name: &str,
     expected_status: StatusType,
 ) -> anyhow::Result<()> {
-    for i in 0..5 {
+    for i in 0..30 {
         let status = get_manifest_status(stream, lattice_id, manifest_name).await;
         match status.as_ref() {
             Some(status) if status.status_type == expected_status => break,
-            _ if i < 4 => tokio::time::sleep(std::time::Duration::from_secs(1)).await,
+            _ if i < 29 => tokio::time::sleep(std::time::Duration::from_secs(1)).await,
             Some(status) => {
                 anyhow::bail!(
                     "Expected {manifest_name} to have status {expected_status:?}, found {status:?}"

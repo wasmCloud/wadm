@@ -26,8 +26,9 @@ use crate::{
     },
     publisher::Publisher,
     scaler::{spreadscaler::ActorSpreadScaler, Command, Scaler},
+    server::StatusInfo,
     storage::ReadStore,
-    workers::{CommandPublisher, LinkSource},
+    workers::{CommandPublisher, LinkSource, StatusPublisher},
     DEFAULT_LINK_NAME,
 };
 
@@ -116,6 +117,7 @@ pub struct ScalerManager<StateStore, P: Clone, L: Clone> {
     lattice_id: String,
     state_store: StateStore,
     command_publisher: CommandPublisher<P>,
+    status_publisher: StatusPublisher<P>,
     link_getter: L,
 }
 
@@ -145,6 +147,7 @@ where
         state_store: StateStore,
         manifest_store: KvStore,
         command_publisher: CommandPublisher<P>,
+        status_publisher: StatusPublisher<P>,
         link_getter: L,
     ) -> Result<ScalerManager<StateStore, P, L>> {
         // Create the consumer first so that we can make sure we don't miss anything during the
@@ -211,6 +214,7 @@ where
             lattice_id: lattice_id.to_owned(),
             state_store,
             command_publisher,
+            status_publisher,
             link_getter,
         };
         let cloned = manager.clone();
@@ -227,6 +231,7 @@ where
         lattice_id: &str,
         state_store: StateStore,
         command_publisher: CommandPublisher<P>,
+        status_publisher: StatusPublisher<P>,
         link_getter: L,
     ) -> ScalerManager<StateStore, P, L> {
         ScalerManager {
@@ -237,6 +242,7 @@ where
             lattice_id: lattice_id.to_owned(),
             state_store,
             command_publisher,
+            status_publisher,
             link_getter,
         }
     }
@@ -325,7 +331,10 @@ where
     pub async fn remove_scalers(&self, name: &str) -> Option<Result<()>> {
         let scalers = match self.remove_scalers_internal(name).await {
             Some(Ok(s)) => s,
-            Some(Err(e)) => return Some(Err(e)),
+            Some(Err(e)) => {
+                warn!(err = ?e, "Error when running cleanup steps for scalers. Operation will be retried");
+                return Some(Err(e));
+            }
             None => return None,
         };
 
@@ -362,16 +371,22 @@ where
     #[instrument(level = "debug", skip(self), fields(lattice_id = %self.lattice_id))]
     async fn remove_scalers_internal(&self, name: &str) -> Option<Result<ScalerList>> {
         let scalers = self.remove_raw_scalers(name).await?;
-        let commands =
-            match futures::future::join_all(scalers.iter().map(|scaler| scaler.cleanup()))
-                .await
-                .into_iter()
-                .collect::<Result<Vec<Vec<Command>>, anyhow::Error>>()
-                .map(|all| all.into_iter().flatten().collect::<Vec<Command>>())
-            {
-                Ok(c) => c,
-                Err(e) => return Some(Err(e)),
-            };
+        let commands = match futures::future::join_all(
+            scalers.iter().map(|scaler| scaler.cleanup()),
+        )
+        .await
+        .into_iter()
+        .collect::<Result<Vec<Vec<Command>>, anyhow::Error>>()
+        .map(|all| all.into_iter().flatten().collect::<Vec<Command>>())
+        {
+            Ok(c) => c,
+            Err(e) => {
+                warn!(err = ?e, "Error when running cleanup steps for scalers. Operation will be retried");
+                // Put the scalers back into the map so we can run cleanup again on retry
+                self.scalers.write().await.insert(name.to_owned(), scalers);
+                return Some(Err(e));
+            }
+        };
         trace!(?commands, "Publishing cleanup commands");
         if let Err(e) = self.command_publisher.publish_commands(commands).await {
             error!(error = %e, "Unable to publish cleanup commands");
@@ -416,8 +431,22 @@ where
                                 Notifications::DeleteScalers(name) => {
                                     trace!(%name, "Removing scalers for manifest");
                                     match self.remove_scalers_internal(&name).await {
-                                        Some(Ok(_)) => {
-                                            trace!(%name, "Successfully removed scalers for manifest")
+                                        Some(Ok(_)) | None => {
+                                            trace!(%name, "Removed manifests or manifests were already removed");
+                                            // NOTE(thomastaylor312): We publish the undeployed
+                                            // status here after we remove scalers. All wadm
+                                            // instances will receive this event (even the one that
+                                            // initially deleted it) and so it made more sense to
+                                            // publish the status here so we don't get any stray
+                                            // reconciling status messages from a wadm instance that
+                                            // hasn't deleted the scaler yet
+                                            if let Err(e) = self
+                                                .status_publisher
+                                                .publish_status(&name, StatusInfo::undeployed(""))
+                                                .await
+                                            {
+                                                warn!(error = ?e, "Failed to set status to undeployed");
+                                            }
                                         }
                                         Some(Err(e)) => {
                                             error!(error = %e, %name, "Error when running cleanup steps for scalers. Nacking notification");
@@ -426,9 +455,6 @@ where
                                                 // We continue here so we don't fall through to the ack
                                                 continue;
                                             }
-                                        }
-                                        None => {
-                                            debug!(%name, "Scalers don't exist or were already deleted");
                                         }
                                     }
                                     // NOTE(thomastaylor312): We could find that this strategy actually

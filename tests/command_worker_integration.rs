@@ -146,7 +146,7 @@ async fn test_commands() {
     assert_eq!(
         inventory[0].image_ref.as_deref().unwrap(),
         "wasmcloud.azurecr.io/httpserver:0.17.0",
-        "Should have started the correct actor"
+        "Should have started the correct provider"
     );
     assert_eq!(
         inventory[0]
@@ -190,7 +190,7 @@ async fn test_commands() {
     wait_for_event(&mut sub, "linkdef_set").await;
 
     // Get the current actors and make sure stuff was started
-    let inventory = ctl_client.query_links().await.unwrap().links;
+    let inventory = ctl_client.query_links().await.unwrap();
     // We could have more than one link due to local testing, so search for the proper link
     inventory
         .into_iter()
@@ -221,7 +221,7 @@ async fn test_commands() {
     wait_for_event(&mut sub, "linkdef_deleted").await;
 
     // Get the current actors and make sure stuff was started
-    let inventory = ctl_client.query_links().await.unwrap().links;
+    let inventory = ctl_client.query_links().await.unwrap();
     // We could have more than one link due to local testing, so search for the proper link
     assert!(
         !inventory.into_iter().any(|ld| {
