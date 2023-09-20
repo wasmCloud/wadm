@@ -838,13 +838,13 @@ pub(crate) async fn validate_manifest(manifest: Manifest) -> anyhow::Result<()> 
         let mut error_message = String::new();
         for error in errors {
             error_message.push_str(&format!(
-                "Validation error instance: {} \n Instance path: {}",
+                "Validation error in object: {} \nObject path: {}",
                 // Error instance in the JSON instance and its corresponding path in that file
                 error.instance,
                 error.instance_path
             ));
         }
-        return Err(anyhow!("Validation Error : {}", error_message));
+        return Err(anyhow!("Validation Error : \n{}", error_message));
     }
 
     // Map of link names to a vector of provider references with that link name
@@ -973,6 +973,19 @@ mod test {
             deserialize_yaml("./oam/simple1.yaml").expect("Should be able to parse");
 
         assert!(validate_manifest(correct_manifest).await.is_ok());
+
+        let manifest = deserialize_yaml("./test/data/incorrect_component.yaml")
+            .expect("Should be able to parse");
+
+        match validate_manifest(manifest).await {
+            Ok(()) => panic!("Should have detected incorrect component"),
+            Err(e) => {
+                assert!(e
+                    .to_string()
+                    // The 0th component in the spec list is incorrect and should be detected (indexing starts from 0)
+                    .contains("Object path: /spec/components/0"))
+            }
+        }
 
         let manifest = deserialize_yaml("./test/data/duplicate_component.yaml")
             .expect("Should be able to parse");
