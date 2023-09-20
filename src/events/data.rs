@@ -1,5 +1,5 @@
 use core::hash::{Hash, Hasher};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use serde::{Deserialize, Serialize};
 
@@ -12,7 +12,7 @@ pub struct ProviderInfo {
     // TODO: Should we actually parse the nkey?
     pub public_key: String,
     #[serde(default)]
-    pub annotations: HashMap<String, String>,
+    pub annotations: BTreeMap<String, String>,
 }
 
 impl PartialEq for ProviderInfo {

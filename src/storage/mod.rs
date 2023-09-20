@@ -6,7 +6,7 @@ pub mod nats_kv;
 pub mod reaper;
 mod state;
 
-pub use state::{Actor, Host, Provider, ProviderStatus, WadmActorInstance};
+pub use state::{Actor, Host, Provider, ProviderStatus, WadmActorInfo};
 
 /// A trait that must be implemented with a unique identifier for the given type. This is used in
 /// the construction of keys for a store

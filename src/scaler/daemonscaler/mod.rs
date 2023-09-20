@@ -158,18 +158,18 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorDaemonScaler<S> {
                                     actor.instances.get(&id.to_string()).map(|instances| {
                                         instances
                                             .iter()
-                                            .filter(|instance| {
+                                            .filter_map(|info| {
                                                 spreadscaler_annotations(&spread.name, self.id())
                                                     .iter()
                                                     .all(|(key, value)| {
-                                                        instance
-                                                            .annotations
+                                                        info.annotations
                                                             .get(key)
                                                             .map(|v| v == value)
                                                             .unwrap_or(false)
                                                     })
+                                                    .then_some(info.count)
                                             })
-                                            .count()
+                                            .sum()
                                     })
                                 })
                                 .unwrap_or(0);
@@ -341,7 +341,7 @@ mod test {
         model::{Spread, SpreadScalerProperty},
         scaler::{daemonscaler::ActorDaemonScaler, manager::ScalerManager, Scaler},
         server::StatusType,
-        storage::{Actor, Host, Store, WadmActorInstance},
+        storage::{Actor, Host, Store, WadmActorInfo},
         test_util::{NoopPublisher, TestLatticeSource, TestStore},
         workers::{CommandPublisher, EventWorker, StatusPublisher},
     };
@@ -365,7 +365,7 @@ mod test {
                     actors: HashMap::new(),
                     friendly_name: "hey".to_string(),
                     labels: HashMap::new(),
-                    annotations: HashMap::new(),
+                    annotations: BTreeMap::new(),
                     providers: HashSet::new(),
                     uptime_seconds: 123,
                     version: None,
@@ -547,8 +547,8 @@ mod test {
                         (
                             host_id_one.to_string(),
                             // One instance on this host
-                            HashSet::from_iter([WadmActorInstance {
-                                instance_id: "1".to_string(),
+                            HashSet::from_iter([WadmActorInfo {
+                                count: 1,
                                 annotations: spreadscaler_annotations(
                                     "RunInFakeCloud",
                                     echo_daemonscaler.id(),
@@ -558,24 +558,24 @@ mod test {
                         (
                             host_id_two.to_string(),
                             // 103 instances on this host
-                            HashSet::from_iter((2..105).map(|n| WadmActorInstance {
-                                instance_id: format!("{n}"),
+                            HashSet::from_iter([WadmActorInfo {
+                                count: 103,
                                 annotations: spreadscaler_annotations(
                                     "RunInRealCloud",
                                     echo_daemonscaler.id(),
                                 ),
-                            })),
+                            }]),
                         ),
                         (
                             host_id_three.to_string(),
                             // 400 instances on this host
-                            HashSet::from_iter((105..505).map(|n| WadmActorInstance {
-                                instance_id: format!("{n}"),
+                            HashSet::from_iter([WadmActorInfo {
+                                count: 400,
                                 annotations: spreadscaler_annotations(
                                     "RunInPurgatoryCloud",
                                     echo_daemonscaler.id(),
                                 ),
-                            })),
+                            }]),
                         ),
                     ]),
                     reference: echo_ref.to_string(),
@@ -597,24 +597,24 @@ mod test {
                         (
                             host_id_one.to_string(),
                             // 3 instances on this host
-                            HashSet::from_iter((0..3).map(|n| WadmActorInstance {
-                                instance_id: format!("{n}"),
+                            HashSet::from_iter([WadmActorInfo {
+                                count: 3,
                                 annotations: spreadscaler_annotations(
                                     "CrossRegionCustom",
                                     blobby_daemonscaler.id(),
                                 ),
-                            })),
+                            }]),
                         ),
                         (
                             host_id_two.to_string(),
                             // 19 instances on this host
-                            HashSet::from_iter((3..22).map(|n| WadmActorInstance {
-                                instance_id: format!("{n}"),
+                            HashSet::from_iter([WadmActorInfo {
+                                count: 19,
                                 annotations: spreadscaler_annotations(
                                     "CrossRegionReal",
                                     blobby_daemonscaler.id(),
                                 ),
-                            })),
+                            }]),
                         ),
                     ]),
                     reference: blobby_ref.to_string(),
@@ -637,7 +637,7 @@ mod test {
                         ("cloud".to_string(), "fake".to_string()),
                         ("region".to_string(), "us-brooks-1".to_string()),
                     ]),
-                    annotations: HashMap::new(),
+                    annotations: BTreeMap::new(),
                     providers: HashSet::new(),
                     uptime_seconds: 123,
                     version: None,
@@ -662,7 +662,7 @@ mod test {
                         ("region".to_string(), "us-midwest-4".to_string()),
                         ("label".to_string(), "value".to_string()),
                     ]),
-                    annotations: HashMap::new(),
+                    annotations: BTreeMap::new(),
                     providers: HashSet::new(),
                     uptime_seconds: 123,
                     version: None,
@@ -683,7 +683,7 @@ mod test {
                         ("cloud".to_string(), "purgatory".to_string()),
                         ("location".to_string(), "edge".to_string()),
                     ]),
-                    annotations: HashMap::new(),
+                    annotations: BTreeMap::new(),
                     providers: HashSet::new(),
                     uptime_seconds: 123,
                     version: None,
@@ -818,24 +818,24 @@ mod test {
                         (
                             host_id_one.to_string(),
                             // 10 instances on this host
-                            HashSet::from_iter((0..10).map(|n| WadmActorInstance {
-                                instance_id: format!("{n}"),
+                            HashSet::from_iter([WadmActorInfo {
+                                count: 10,
                                 annotations: spreadscaler_annotations(
                                     "HighAvailability",
                                     blobby_daemonscaler.id(),
                                 ),
-                            })),
+                            }]),
                         ),
                         (
                             host_id_two.to_string(),
                             // 10 instances on this host
-                            HashSet::from_iter((10..20).map(|n| WadmActorInstance {
-                                instance_id: format!("{n}"),
+                            HashSet::from_iter([WadmActorInfo {
+                                count: 10,
                                 annotations: spreadscaler_annotations(
                                     "HighAvailability",
                                     blobby_daemonscaler.id(),
                                 ),
-                            })),
+                            }]),
                         ),
                         (
                             host_id_three.to_string(),
@@ -862,7 +862,7 @@ mod test {
                         ("cloud".to_string(), "fake".to_string()),
                         ("region".to_string(), "us-brooks-1".to_string()),
                     ]),
-                    annotations: HashMap::new(),
+                    annotations: BTreeMap::new(),
                     providers: HashSet::new(),
                     uptime_seconds: 123,
                     version: None,
@@ -884,7 +884,7 @@ mod test {
                         ("region".to_string(), "us-brooks-1".to_string()),
                         ("label".to_string(), "value".to_string()),
                     ]),
-                    annotations: HashMap::new(),
+                    annotations: BTreeMap::new(),
                     providers: HashSet::new(),
                     uptime_seconds: 123,
                     version: None,
@@ -897,7 +897,7 @@ mod test {
         // Don't care about these events
         assert!(blobby_daemonscaler
             .handle_event(&Event::ProviderStarted(ProviderStarted {
-                annotations: HashMap::new(),
+                annotations: BTreeMap::new(),
                 claims: ProviderClaims::default(),
                 contract_id: "".to_string(),
                 image_ref: "".to_string(),
@@ -910,7 +910,7 @@ mod test {
             .is_empty());
         assert!(blobby_daemonscaler
             .handle_event(&Event::ProviderStopped(ProviderStopped {
-                annotations: HashMap::default(),
+                annotations: BTreeMap::default(),
                 contract_id: "".to_string(),
                 instance_id: "".to_string(),
                 link_name: "".to_string(),
@@ -942,7 +942,7 @@ mod test {
                 ("location".to_string(), "edge".to_string()),
                 ("region".to_string(), "us-brooks-1".to_string()),
             ]),
-            annotations: HashMap::new(),
+            annotations: BTreeMap::new(),
             providers: vec![],
             uptime_seconds: 123,
             version: semver::Version::new(0, 63, 1),
@@ -997,24 +997,24 @@ mod test {
                         (
                             host_id_one.to_string(),
                             // 10 instances on this host
-                            HashSet::from_iter((0..10).map(|n| WadmActorInstance {
-                                instance_id: format!("{n}"),
+                            HashSet::from_iter([WadmActorInfo {
+                                count: 10,
                                 annotations: spreadscaler_annotations(
                                     "HighAvailability",
                                     blobby_daemonscaler.id(),
                                 ),
-                            })),
+                            }]),
                         ),
                         (
                             host_id_two.to_string(),
                             // 10 instances on this host
-                            HashSet::from_iter((10..20).map(|n| WadmActorInstance {
-                                instance_id: format!("{n}"),
+                            HashSet::from_iter([WadmActorInfo {
+                                count: 10,
                                 annotations: spreadscaler_annotations(
                                     "HighAvailability",
                                     blobby_daemonscaler.id(),
                                 ),
-                            })),
+                            }]),
                         ),
                     ]),
                     reference: blobby_ref.to_string(),

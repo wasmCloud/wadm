@@ -41,7 +41,7 @@ impl Worker for CommandWorker {
                         &actor.host_id,
                         &actor.reference,
                         actor.count as u16,
-                        Some(annotations),
+                        Some(annotations.into_iter().collect()),
                     )
                     .await
             }
@@ -55,7 +55,7 @@ impl Worker for CommandWorker {
                         &actor.host_id,
                         &actor.actor_id,
                         actor.count as u16,
-                        Some(annotations),
+                        Some(annotations.into_iter().collect()),
                     )
                     .await
             }
@@ -77,7 +77,7 @@ impl Worker for CommandWorker {
                         &prov.host_id,
                         &prov.reference,
                         prov.link_name.clone(),
-                        Some(annotations),
+                        Some(annotations.into_iter().collect()),
                         config,
                     )
                     .await
@@ -95,7 +95,7 @@ impl Worker for CommandWorker {
                             .as_deref()
                             .unwrap_or(crate::DEFAULT_LINK_NAME),
                         &prov.contract_id,
-                        Some(annotations),
+                        Some(annotations.into_iter().collect()),
                     )
                     .await
             }
