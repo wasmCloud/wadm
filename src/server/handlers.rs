@@ -872,13 +872,13 @@ pub(crate) async fn validate_manifest(manifest: Manifest) -> anyhow::Result<()> 
         let mut error_message = String::new();
         for error in errors {
             error_message.push_str(&format!(
-                "Validation error instance: {} \n Instance path: {}",
+                "Validation error in object: {} \nObject path: {}",
                 // Error instance in the JSON instance and its corresponding path in that file
                 error.instance,
                 error.instance_path
             ));
         }
-        return Err(anyhow!("Validation Error : {}", error_message));
+        return Err(anyhow!("Validation Error : \n{}", error_message));
     }
 
     let mut linkdef_map: HashMap<String, Vec<String>> = HashMap::new();
