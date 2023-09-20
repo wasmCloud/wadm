@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use tracing::{instrument, warn};
 use wasmcloud_control_interface::{HostInventory, LinkDefinition};
@@ -169,7 +169,7 @@ impl<Pub: Publisher> CommandPublisher<Pub> {
 }
 
 /// Inserts managed annotations to the given `annotations` HashMap.
-pub fn insert_managed_annotations(annotations: &mut HashMap<String, String>, model_name: &str) {
+pub fn insert_managed_annotations(annotations: &mut BTreeMap<String, String>, model_name: &str) {
     annotations.extend([
         (
             crate::MANAGED_BY_ANNOTATION.to_owned(),

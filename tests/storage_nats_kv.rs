@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use chrono::Utc;
 
@@ -6,7 +6,7 @@ use wadm::{
     events::ProviderInfo,
     storage::{
         nats_kv::NatsKvStore, Actor, Host, Provider, ProviderStatus, ReadStore, Store as WadmStore,
-        WadmActorInstance,
+        WadmActorInfo,
     },
 };
 
@@ -27,9 +27,9 @@ async fn test_round_trip() {
         issuer: "afakekey".to_string(),
         instances: HashMap::from([(
             "testhost".to_string(),
-            HashSet::from_iter([WadmActorInstance {
-                instance_id: "1".to_string(),
-                annotations: HashMap::new(),
+            HashSet::from_iter([WadmActorInfo {
+                count: 1,
+                annotations: BTreeMap::new(),
             }]),
         )]),
         reference: "fake.oci.repo/testactor:0.1.0".to_string(),
@@ -43,9 +43,9 @@ async fn test_round_trip() {
         issuer: "afakekey".to_string(),
         instances: HashMap::from([(
             "testhost".to_string(),
-            HashSet::from_iter([WadmActorInstance {
-                instance_id: "2".to_string(),
-                annotations: HashMap::new(),
+            HashSet::from_iter([WadmActorInfo {
+                count: 1,
+                annotations: BTreeMap::new(),
             }]),
         )]),
         reference: "fake.oci.repo/anotheractor:0.1.0".to_string(),
@@ -59,7 +59,7 @@ async fn test_round_trip() {
             public_key: "testprovider".to_string(),
             contract_id: "wasmcloud:httpserver".to_owned(),
             link_name: "default".to_owned(),
-            annotations: HashMap::new(),
+            annotations: BTreeMap::new(),
         }]),
         friendly_name: "test-host".to_string(),
         uptime_seconds: 30,
@@ -214,9 +214,9 @@ async fn test_multiple_lattice() {
         issuer: "afakekey".to_string(),
         instances: HashMap::from([(
             "testhost".to_string(),
-            HashSet::from_iter([WadmActorInstance {
-                instance_id: "1".to_string(),
-                annotations: HashMap::new(),
+            HashSet::from_iter([WadmActorInfo {
+                count: 1,
+                annotations: BTreeMap::new(),
             }]),
         )]),
         reference: "fake.oci.repo/testactor:0.1.0".to_string(),
@@ -230,9 +230,9 @@ async fn test_multiple_lattice() {
         issuer: "afakekey".to_string(),
         instances: HashMap::from([(
             "testhost".to_string(),
-            HashSet::from_iter([WadmActorInstance {
-                instance_id: "2".to_string(),
-                annotations: HashMap::new(),
+            HashSet::from_iter([WadmActorInfo {
+                count: 1,
+                annotations: BTreeMap::new(),
             }]),
         )]),
         reference: "fake.oci.repo/anotheractor:0.1.0".to_string(),
@@ -293,9 +293,9 @@ async fn test_store_and_delete_many() {
         issuer: "afakekey".to_string(),
         instances: HashMap::from([(
             "testhost".to_string(),
-            HashSet::from_iter([WadmActorInstance {
-                instance_id: "1".to_string(),
-                annotations: HashMap::new(),
+            HashSet::from_iter([WadmActorInfo {
+                count: 1,
+                annotations: BTreeMap::new(),
             }]),
         )]),
         reference: "fake.oci.repo/testactor:0.1.0".to_string(),
@@ -309,9 +309,9 @@ async fn test_store_and_delete_many() {
         issuer: "afakekey".to_string(),
         instances: HashMap::from([(
             "testhost".to_string(),
-            HashSet::from_iter([WadmActorInstance {
-                instance_id: "2".to_string(),
-                annotations: HashMap::new(),
+            HashSet::from_iter([WadmActorInfo {
+                count: 1,
+                annotations: BTreeMap::new(),
             }]),
         )]),
         reference: "fake.oci.repo/anotheractor:0.1.0".to_string(),

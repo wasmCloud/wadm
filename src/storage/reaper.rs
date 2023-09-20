@@ -264,10 +264,13 @@ impl<S: Store + Clone + Send + Sync + 'static> Undertaker<S> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use std::{collections::HashSet, sync::Arc};
+    use std::{
+        collections::{BTreeMap, HashSet},
+        sync::Arc,
+    };
 
     use crate::{
-        storage::{ProviderStatus, ReadStore, WadmActorInstance},
+        storage::{ProviderStatus, ReadStore, WadmActorInfo},
         test_util::TestStore,
     };
 
@@ -277,8 +280,6 @@ mod test {
 
         let lattice_id = "reaper";
         let actor_id = "testactor";
-        let actor_instance_id_one = "asdasdj-asdada-132123-ffff";
-        let actor_instance_id_two = "123abc-asdada-132123-ffff";
         let host1_id = "host1";
         let host2_id = "host2";
 
@@ -294,15 +295,17 @@ mod test {
                             instances: HashMap::from([
                                 (
                                     host1_id.to_string(),
-                                    HashSet::from_iter([WadmActorInstance::from_id(
-                                        actor_instance_id_one.to_string(),
-                                    )]),
+                                    HashSet::from_iter([WadmActorInfo {
+                                        annotations: BTreeMap::default(),
+                                        count: 1,
+                                    }]),
                                 ),
                                 (
                                     host2_id.to_string(),
-                                    HashSet::from_iter([WadmActorInstance::from_id(
-                                        actor_instance_id_two.to_string(),
-                                    )]),
+                                    HashSet::from_iter([WadmActorInfo {
+                                        annotations: BTreeMap::default(),
+                                        count: 1,
+                                    }]),
                                 ),
                             ]),
                             ..Default::default()
@@ -314,9 +317,10 @@ mod test {
                             id: "idontexist".to_string(),
                             instances: HashMap::from([(
                                 host1_id.to_string(),
-                                HashSet::from_iter([WadmActorInstance::from_id(
-                                    actor_instance_id_one.to_string(),
-                                )]),
+                                HashSet::from_iter([WadmActorInfo {
+                                    annotations: BTreeMap::default(),
+                                    count: 1,
+                                }]),
                             )]),
                             ..Default::default()
                         },
@@ -398,8 +402,6 @@ mod test {
 
         let lattice_id = "reaper";
         let actor_id = "testactor";
-        let actor_instance_id_one = "asdasdj-asdada-132123-ffff";
-        let actor_instance_id_two = "123abc-asdada-132123-ffff";
         let host1_id = "host1";
         let host2_id = "host2";
 
@@ -413,15 +415,17 @@ mod test {
                     instances: HashMap::from([
                         (
                             host1_id.to_string(),
-                            HashSet::from_iter([WadmActorInstance::from_id(
-                                actor_instance_id_one.to_string(),
-                            )]),
+                            HashSet::from_iter([WadmActorInfo {
+                                annotations: BTreeMap::default(),
+                                count: 1,
+                            }]),
                         ),
                         (
                             host2_id.to_string(),
-                            HashSet::from_iter([WadmActorInstance::from_id(
-                                actor_instance_id_two.to_string(),
-                            )]),
+                            HashSet::from_iter([WadmActorInfo {
+                                annotations: BTreeMap::default(),
+                                count: 1,
+                            }]),
                         ),
                     ]),
                     ..Default::default()

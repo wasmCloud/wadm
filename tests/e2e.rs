@@ -109,8 +109,7 @@ impl ClientInfo {
     }
 
     pub fn ctl_client(&self, lattice_prefix: &str) -> &wasmcloud_control_interface::Client {
-        &self
-            .ctl_clients
+        self.ctl_clients
             .get(lattice_prefix)
             .expect("Should have ctl client for specified lattice")
     }

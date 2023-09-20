@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -132,7 +132,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderDaemonScaler<S> {
                                 contract_id: contract_id.to_string(),
                                 link_name: link_name.to_string(),
                                 public_key: provider_id.to_string(),
-                                annotations: HashMap::default(),
+                                annotations: BTreeMap::default(),
                             });
                             match (provider_on_host, self.config.spread_config.replicas) {
                                 // Spread replicas set to 0 means we're cleaning up and should stop
@@ -304,7 +304,7 @@ mod test {
                         ("cloud".to_string(), "fake".to_string()),
                         ("region".to_string(), "us-noneofyourbusiness-1".to_string()),
                     ]),
-                    annotations: HashMap::new(),
+                    annotations: BTreeMap::new(),
                     providers: HashSet::new(),
                     uptime_seconds: 123,
                     version: None,
@@ -326,7 +326,7 @@ mod test {
                         ("cloud".to_string(), "real".to_string()),
                         ("region".to_string(), "us-yourhouse-1".to_string()),
                     ]),
-                    annotations: HashMap::new(),
+                    annotations: BTreeMap::new(),
                     providers: HashSet::new(),
                     uptime_seconds: 123,
                     version: None,
