@@ -809,14 +809,15 @@ impl<P: Publisher> Handler<P> {
 
 // Manifest validation
 pub(crate) fn validate_manifest(manifest: Manifest) -> anyhow::Result<()> {
-    let mut component_details: HashSet<String> = HashSet::new();
+    let mut name_registry: HashSet<String> = HashSet::new();
+    let mut required_capability_components: HashSet<String> = HashSet::new();
 
     // Map of link names to a vector of provider references with that link name
     let mut linkdef_map: HashMap<String, Vec<String>> = HashMap::new();
 
     for component in manifest.spec.components.iter() {
         // Component name validation : each component (actors or providers) should have a unique name
-        if !component_details.insert(component.name.clone()) {
+        if !name_registry.insert(component.name.clone()) {
             return Err(anyhow!(
                 "Duplicate component name in manifest: {}",
                 component.name
@@ -864,7 +865,7 @@ pub(crate) fn validate_manifest(manifest: Manifest) -> anyhow::Result<()> {
             properties: ActorProperties { image: image_name },
         } = &component.properties
         {
-            if !component_details.insert(image_name.to_string()) {
+            if !name_registry.insert(image_name.to_string()) {
                 return Err(anyhow!(
                     "Duplicate image reference in manifest: {}",
                     image_name
@@ -888,14 +889,30 @@ pub(crate) fn validate_manifest(manifest: Manifest) -> anyhow::Result<()> {
                 {
                     if !linkdef_set.insert(target_name.to_string()) {
                         return Err(anyhow!(
-                            "Duplicate target for linkdef in manifest: {}",
-                            target_name
+                            "Duplicate target {} for component {} linkdef trait in manifest",
+                            target_name,
+                            component.name,
                         ));
                     }
+
+                    // Multiple components{ with type != 'capability'} can declare the same target, so we don't need to check for duplicates on insert
+                    required_capability_components.insert(target_name.to_string());
                 }
             }
         }
     }
+
+    let missing_capability_components = required_capability_components
+        .difference(&name_registry)
+        .collect::<Vec<&String>>();
+
+    if !missing_capability_components.is_empty() {
+        return Err(anyhow!(
+            "The following capability component(s) are missing from the manifest:  {:?}",
+            missing_capability_components
+        ));
+    }
+
     Ok(())
 }
 
@@ -957,9 +974,17 @@ mod test {
 
         match validate_manifest(manifest) {
             Ok(()) => panic!("Should have detected duplicate linkdef"),
+            Err(e) => assert!(e.to_string().contains("Duplicate target")),
+        }
+
+        let manifest = deserialize_yaml("./test/data/missing_capability_component.yaml")
+            .expect("Should be able to parse");
+
+        match validate_manifest(manifest) {
+            Ok(()) => panic!("Should have detected missing capability component"),
             Err(e) => assert!(e
                 .to_string()
-                .contains("Duplicate target for linkdef in manifest")),
+                .contains("The following capability component(s) are missing from the manifest: ")),
         }
     }
 
