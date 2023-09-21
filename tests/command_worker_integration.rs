@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 use futures::StreamExt;
 use serial_test::serial;
@@ -331,7 +331,7 @@ async fn test_annotation_stop() {
             host_id: host_id.clone(),
             count: 2,
             model_name: "fake".into(),
-            annotations: HashMap::from_iter([("fake".to_string(), "wake".to_string())]),
+            annotations: BTreeMap::from_iter([("fake".to_string(), "wake".to_string())]),
         })
         .await;
 
@@ -385,7 +385,7 @@ async fn test_annotation_stop() {
             count: 0,
             host_id: host_id.clone(),
             model_name: "fake".into(),
-            annotations: HashMap::from_iter([("fake".to_string(), "wake".to_string())]),
+            annotations: BTreeMap::from_iter([("fake".to_string(), "wake".to_string())]),
         })
         .await;
 
