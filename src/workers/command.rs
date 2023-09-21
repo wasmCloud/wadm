@@ -46,7 +46,7 @@ impl Worker for CommandWorker {
                             .map(|s| s.as_str())
                             .unwrap_or_default(),
                         actor.count as u16,
-                        Some(annotations),
+                        Some(annotations.into_iter().collect()),
                     )
                     .await
             }

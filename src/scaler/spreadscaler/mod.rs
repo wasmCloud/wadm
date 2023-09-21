@@ -1502,7 +1502,7 @@ mod test {
             .await
             .expect("should be able to handle an event");
 
-        let cmds = blobby_spreadscaler
+        let mut cmds = blobby_spreadscaler
             .handle_event(&Event::ActorsStopped(modifying_event))
             .await?;
         assert_eq!(cmds.len(), 2);
