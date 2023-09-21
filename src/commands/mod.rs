@@ -124,7 +124,7 @@ pub struct ScaleActor {
     /// The name of the model/manifest that generated this command
     pub model_name: String,
     /// Additional annotations to attach on this command
-    pub annotations: HashMap<String, String>,
+    pub annotations: BTreeMap<String, String>,
 }
 
 from_impl!(ScaleActor);

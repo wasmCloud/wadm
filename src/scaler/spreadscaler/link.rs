@@ -287,7 +287,10 @@ impl<S: ReadStore + Send + Sync, L: LinkSource> LinkScaler<S, L> {
 
 #[cfg(test)]
 mod test {
-    use std::{collections::HashSet, sync::Arc};
+    use std::{
+        collections::{BTreeMap, HashSet},
+        sync::Arc,
+    };
 
     use chrono::Utc;
     use wasmcloud_control_interface::LinkDefinition;
@@ -453,12 +456,12 @@ mod test {
                         ("cloud".to_string(), "fake".to_string()),
                         ("region".to_string(), "us-brooks-1".to_string()),
                     ]),
-                    annotations: HashMap::new(),
+                    annotations: BTreeMap::new(),
                     providers: HashSet::from_iter([ProviderInfo {
                         contract_id: "wasmcloud:httpserver".to_string(),
                         link_name: "default".to_string(),
                         public_key: "VASDASD".to_string(),
-                        annotations: HashMap::from_iter([(
+                        annotations: BTreeMap::from_iter([(
                             APP_SPEC_ANNOTATION.to_string(),
                             "foobar".to_string(),
                         )]),
@@ -521,7 +524,7 @@ mod test {
 
         let commands = link_scaler
             .handle_event(&Event::ActorsStarted(ActorsStarted {
-                annotations: HashMap::from_iter([(
+                annotations: BTreeMap::from_iter([(
                     APP_SPEC_ANNOTATION.to_string(),
                     "foobar".to_string(),
                 )]),
