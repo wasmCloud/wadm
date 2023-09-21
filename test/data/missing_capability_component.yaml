@@ -1,0 +1,33 @@
+apiVersion: core.oam.dev/v1beta1
+kind: Application
+metadata:
+  name: echo-simple
+  annotations:
+    version: v0.0.1
+    description: "This is my app"
+spec:
+  components:
+    - name: echo
+      type: actor
+      properties:
+        image: wasmcloud.azurecr.io/echo:0.3.7
+      traits:
+        - type: spreadscaler
+          properties:
+            replicas: 4
+        - type: linkdef
+          properties:
+            # This is a simple typo which should be caught by validation: there is no capability component named "httpservr"
+            target: httpservr
+            values:
+              address: 0.0.0.0:8080
+
+    - name: httpserver
+      type: capability
+      properties:
+        contract: wasmcloud:httpserver
+        image: wasmcloud.azurecr.io/httpserver:0.17.0
+      traits:
+        - type: spreadscaler
+          properties:
+            replicas: 1
