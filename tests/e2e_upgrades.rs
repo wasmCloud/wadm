@@ -132,6 +132,14 @@ async fn test_upgrade(client_info: &ClientInfo) {
             "wasmcloud.azurecr.io/kvredis:0.22.0",
             ExpectedCount::Exactly(1),
         )?;
+
+        // Oh no a sleep! How horrible!
+        // Actually, this is a good thing! If we reach this point because the httpserver
+        // provider upgraded really quickly, that means we still have to wait 5 seconds
+        // for the provider health check to trigger linkdef creation. So, after everything
+        // gets created, give the linkdef scaler time to react to the provider health check.
+        tokio::time::sleep(Duration::from_secs(5)).await;
+
         let links = client_info
             .ctl_client("default")
             .query_links()
@@ -207,6 +215,7 @@ async fn test_upgrade(client_info: &ClientInfo) {
 
     assert_status(None, None, || async {
         let inventory = client_info.get_all_inventory("default").await?;
+        println!("Inventory: {:?}", inventory);
 
         check_actors(
             &inventory,
@@ -242,12 +251,19 @@ async fn test_upgrade(client_info: &ClientInfo) {
             "wasmcloud.azurecr.io/kvredis:0.22.0",
             ExpectedCount::Exactly(0),
         )?;
+
+        // Oh no a sleep! How horrible!
+        // Actually, this is a good thing! If we reach this point because the httpserver
+        // provider upgraded really quickly, that means we still have to wait 5 seconds
+        // for the provider health check to trigger linkdef creation. So, after everything
+        // gets created, give the linkdef scaler time to react to the provider health check.
+        tokio::time::sleep(Duration::from_secs(5)).await;
+
         let links = client_info
             .ctl_client("default")
             .query_links()
             .await
             .map_err(|e| anyhow::anyhow!("{e:?}"))?;
-
         if !links.links.iter().any(|ld| {
             ld.actor_id == ECHO_ACTOR_ID
                 && ld.provider_id == HTTP_SERVER_PROVIDER_ID
