@@ -1,5 +1,5 @@
 #![cfg(feature = "_e2e_tests")]
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Duration};
 
 use futures::StreamExt;
 use wadm::server::{DeployResult, PutResult, StatusType};
@@ -158,6 +158,13 @@ async fn test_basic_separation(client_info: &ClientInfo) -> anyhow::Result<()> {
             "wasmcloud.azurecr.io/httpserver:0.17.0",
             ExpectedCount::Exactly(1),
         )?;
+
+        // Oh no a sleep! How horrible!
+        // Actually, this is a good thing! If we reach this point because the httpserver
+        // provider upgraded really quickly, that means we still have to wait 5 seconds
+        // for the provider health check to trigger linkdef creation. So, after everything
+        // gets created, give the linkdef scaler time to react to the provider health check.
+        tokio::time::sleep(Duration::from_secs(5)).await;
         let links = client_info
             .ctl_client(LATTICE_EAST)
             .query_links()
