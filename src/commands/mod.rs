@@ -1,7 +1,7 @@
 //! Type implementations for commands issued to compensate for state changes
 
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     hash::{Hash, Hasher},
 };
 
@@ -170,7 +170,7 @@ pub struct StartActor {
     /// The name of the model/manifest that generated this command
     pub model_name: String,
     /// Additional annotations to attach on this command
-    pub annotations: HashMap<String, String>,
+    pub annotations: BTreeMap<String, String>,
 }
 
 from_impl!(StartActor);
@@ -197,7 +197,7 @@ pub struct StopActor {
     /// The name of the model/manifest that generated this command
     pub model_name: String,
     /// Additional annotations to attach on this command
-    pub annotations: HashMap<String, String>,
+    pub annotations: BTreeMap<String, String>,
 }
 
 from_impl!(StopActor);
@@ -228,7 +228,7 @@ pub struct StartProvider {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub config: Option<CapabilityConfig>,
     /// Additional annotations to attach on this command
-    pub annotations: HashMap<String, String>,
+    pub annotations: BTreeMap<String, String>,
 }
 
 from_impl!(StartProvider);
@@ -264,7 +264,7 @@ pub struct StopProvider {
     /// The name of the model/manifest that generated this command
     pub model_name: String,
     /// Additional annotations to attach on this command
-    pub annotations: HashMap<String, String>,
+    pub annotations: BTreeMap<String, String>,
 }
 
 from_impl!(StopProvider);

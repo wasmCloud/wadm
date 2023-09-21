@@ -2,7 +2,10 @@
 //! attribute of a cloudevent
 // TODO: These should probably be generated from a schema which we add into the actual cloud event
 
-use std::{collections::HashMap, convert::TryFrom};
+use std::{
+    collections::{BTreeMap, HashMap},
+    convert::TryFrom,
+};
 
 use cloudevents::{AttributesReader, Data, Event as CloudEvent, EventBuilder, EventBuilderV10};
 use serde::{Deserialize, Serialize};
@@ -270,7 +273,7 @@ pub enum ConversionError {
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct ActorStarted {
-    pub annotations: HashMap<String, String>,
+    pub annotations: BTreeMap<String, String>,
     // Commented out for now because the host broken it and we actually don't use this right now
     // pub api_version: usize,
     pub claims: ActorClaims,
@@ -292,7 +295,7 @@ event_impl!(
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct ActorsStarted {
-    pub annotations: HashMap<String, String>,
+    pub annotations: BTreeMap<String, String>,
     // Commented out for now because the host broken it and we actually don't use this right now
     // pub api_version: usize,
     pub claims: ActorClaims,
@@ -313,7 +316,7 @@ event_impl!(
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct ActorsStartFailed {
-    pub annotations: HashMap<String, String>,
+    pub annotations: BTreeMap<String, String>,
     pub image_ref: String,
     // TODO: Parse as nkey?
     pub public_key: String,
@@ -332,7 +335,7 @@ event_impl!(
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct ActorStopped {
     #[serde(default)]
-    pub annotations: HashMap<String, String>,
+    pub annotations: BTreeMap<String, String>,
     pub instance_id: String,
     // TODO: Parse as nkey?
     pub public_key: String,
@@ -350,7 +353,7 @@ event_impl!(
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct ActorsStopped {
     #[serde(default)]
-    pub annotations: HashMap<String, String>,
+    pub annotations: BTreeMap<String, String>,
     // TODO: Parse as nkey?
     pub public_key: String,
     #[serde(default)]
@@ -370,7 +373,7 @@ event_impl!(
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct ProviderStarted {
-    pub annotations: HashMap<String, String>,
+    pub annotations: BTreeMap<String, String>,
     pub claims: ProviderClaims,
     pub contract_id: String,
     pub image_ref: String,
@@ -412,7 +415,7 @@ pub struct ProviderStopped {
     // TODO(thomastaylor312): Yep, there was a spelling bug in the host is 0.62.1. Revert this once
     // 0.62.2 is out
     #[serde(rename = "annotaions")]
-    pub annotations: HashMap<String, String>,
+    pub annotations: BTreeMap<String, String>,
     pub contract_id: String,
     // TODO: parse as UUID?
     pub instance_id: String,
@@ -530,7 +533,7 @@ pub struct HostHeartbeat {
     pub friendly_name: String,
     pub labels: HashMap<String, String>,
     #[serde(default)]
-    pub annotations: HashMap<String, String>,
+    pub annotations: BTreeMap<String, String>,
     pub providers: Vec<ProviderInfo>,
     pub uptime_human: String,
     pub uptime_seconds: usize,

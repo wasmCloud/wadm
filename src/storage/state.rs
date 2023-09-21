@@ -1,5 +1,6 @@
 use std::{
-    collections::{HashMap, HashSet},
+    borrow::Borrow,
+    collections::{BTreeMap, HashMap, HashSet},
     hash::{Hash, Hasher},
 };
 
@@ -100,39 +101,31 @@ impl From<&ProviderStarted> for Provider {
     }
 }
 
-/// An individual ActorInstance, named to differentiate from [ActorInstance](wasmcloud_control_interface::ActorInstance)
+/// A representation of a unique actor (as defined by its annotations) and its count. This struct
+/// has a custom implementation of PartialEq and Hash that _only_ compares the annotations. This is
+/// not a very "pure" way of doing things, but it lets us access current counts of actors without
+/// having to do a bunch of extra work.
 #[derive(Debug, Serialize, Deserialize, Clone, Default, Eq)]
-pub struct WadmActorInstance {
-    /// The GUID for this actor instance
-    pub instance_id: String,
-
-    /// Annotations attached to this acotr instance
-    pub annotations: HashMap<String, String>,
+pub struct WadmActorInfo {
+    pub annotations: BTreeMap<String, String>,
+    pub count: usize,
 }
 
-impl WadmActorInstance {
-    /// Convenience function to construct an instance from only the instance ID, mostly
-    /// used for hash lookup purposes
-    pub fn from_id(instance_id: String) -> WadmActorInstance {
-        Self {
-            instance_id,
-            annotations: HashMap::new(),
-        }
-    }
-}
-
-// Custom Hash impl's due to nested HashMaps and HashSets
-impl Hash for WadmActorInstance {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.instance_id.hash(state);
-    }
-}
-
-/// NOTE(brooksmtownsend): This is compared only by the instance ID
-/// as it's a GUID and lookups don't require annotations
-impl PartialEq for WadmActorInstance {
+impl PartialEq for WadmActorInfo {
     fn eq(&self, other: &Self) -> bool {
-        self.instance_id == other.instance_id
+        self.annotations == other.annotations
+    }
+}
+
+impl Hash for WadmActorInfo {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.annotations.hash(state);
+    }
+}
+
+impl Borrow<BTreeMap<String, String>> for WadmActorInfo {
+    fn borrow(&self) -> &BTreeMap<String, String> {
+        &self.annotations
     }
 }
 
@@ -157,9 +150,9 @@ pub struct Actor {
     /// Call alias to use for the actor
     pub call_alias: Option<String>,
 
-    /// All instances of this actor running in the lattice, keyed by the host ID
-    /// and contains a list of all [ActorInstances](ActorInstance) on that host
-    pub instances: HashMap<String, HashSet<WadmActorInstance>>,
+    /// All instances of this actor running in the lattice, keyed by the host ID and contains a hash
+    /// map of annotations -> count for each set of unique annotations
+    pub instances: HashMap<String, HashSet<WadmActorInfo>>,
 
     /// The reference used to start the actor. Can be empty if it was started from a file
     pub reference: String,
@@ -171,8 +164,17 @@ impl Actor {
     pub fn count(&self) -> usize {
         self.instances
             .values()
-            .map(|instances| instances.len())
+            .map(|instances| instances.iter().map(|info| info.count).sum::<usize>())
             .sum()
+    }
+
+    /// A helper method that returns the total count of running copies of this actor on a specific
+    /// host
+    pub fn count_for_host(&self, host_id: &str) -> usize {
+        self.instances
+            .get(host_id)
+            .map(|instances| instances.iter().map(|info| info.count).sum::<usize>())
+            .unwrap_or_default()
     }
 }
 
@@ -189,7 +191,13 @@ impl From<ActorStarted> for Actor {
             issuer: value.claims.issuer,
             call_alias: value.claims.call_alias,
             reference: value.image_ref,
-            ..Default::default()
+            instances: HashMap::from_iter([(
+                value.host_id,
+                HashSet::from_iter([WadmActorInfo {
+                    annotations: value.annotations,
+                    count: 1,
+                }]),
+            )]),
         }
     }
 }
@@ -203,7 +211,13 @@ impl From<&ActorStarted> for Actor {
             issuer: value.claims.issuer.clone(),
             call_alias: value.claims.call_alias.clone(),
             reference: value.image_ref.clone(),
-            ..Default::default()
+            instances: HashMap::from_iter([(
+                value.host_id.clone(),
+                HashSet::from_iter([WadmActorInfo {
+                    annotations: value.annotations.clone(),
+                    count: 1,
+                }]),
+            )]),
         }
     }
 }
@@ -217,7 +231,13 @@ impl From<ActorsStarted> for Actor {
             issuer: value.claims.issuer,
             call_alias: value.claims.call_alias,
             reference: value.image_ref,
-            ..Default::default()
+            instances: HashMap::from_iter([(
+                value.host_id,
+                HashSet::from_iter([WadmActorInfo {
+                    annotations: value.annotations,
+                    count: value.count,
+                }]),
+            )]),
         }
     }
 }
@@ -231,7 +251,13 @@ impl From<&ActorsStarted> for Actor {
             issuer: value.claims.issuer.clone(),
             call_alias: value.claims.call_alias.clone(),
             reference: value.image_ref.clone(),
-            ..Default::default()
+            instances: HashMap::from_iter([(
+                value.host_id.clone(),
+                HashSet::from_iter([WadmActorInfo {
+                    annotations: value.annotations.clone(),
+                    count: value.count,
+                }]),
+            )]),
         }
     }
 }
@@ -252,7 +278,7 @@ pub struct Host {
     pub labels: HashMap<String, String>,
 
     /// Additional annotations that have been added to the host
-    pub annotations: HashMap<String, String>,
+    pub annotations: BTreeMap<String, String>,
 
     /// A set of running providers on the host
     pub providers: HashSet<ProviderInfo>,

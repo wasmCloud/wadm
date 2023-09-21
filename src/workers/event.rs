@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::collections::{hash_map::Entry, HashMap, HashSet};
 
 use anyhow::Result;
@@ -13,7 +14,7 @@ use crate::events::*;
 use crate::publisher::Publisher;
 use crate::scaler::manager::{ScalerList, ScalerManager};
 use crate::server::StatusInfo;
-use crate::storage::{Actor, Host, Provider, ProviderStatus, Store, WadmActorInstance};
+use crate::storage::{Actor, Host, Provider, ProviderStatus, Store, WadmActorInfo};
 use crate::APP_SPEC_ANNOTATION;
 
 use super::event_helpers::*;
@@ -56,55 +57,66 @@ where
     // the end
 
     #[instrument(level = "debug", skip(self, actor), fields(actor_id = %actor.public_key, host_id = %actor.host_id))]
-    async fn handle_actor_started(
+    async fn handle_actors_started(
         &self,
         lattice_id: &str,
-        actor: &ActorStarted,
+        actor: &ActorsStarted,
     ) -> anyhow::Result<()> {
-        trace!("Adding newly started actor to store");
+        trace!("Adding newly started actors to store");
         debug!("Fetching current data for actor");
         // Because we could have created an actor from the host heartbeat, we just overwrite
         // everything except counts here
         let mut actor_data = Actor::from(actor);
-        if let Some(current) = self
+        if let Some(mut current) = self
             .store
             .get::<Actor>(lattice_id, &actor.public_key)
             .await?
         {
             trace!(actor = ?current, "Found existing actor data");
-            // Merge in current counts
-            actor_data.instances = current.instances;
-        }
+
+            // Merge in current counts from the incoming actor to the counts from the store
+            if let Some(current_instances) = current.instances.get_mut(&actor.host_id) {
+                // If an actor is already running on a host, update or add to the running count
+                // where _all_ annotations match
+                if let Some(instance) = current_instances.take(&actor.annotations) {
+                    current_instances.insert(WadmActorInfo {
+                        count: instance.count + actor.count,
+                        annotations: instance.annotations,
+                    });
+                } else {
+                    // Otherwise add a new entry with the count of started actors
+                    current_instances.insert(WadmActorInfo {
+                        count: actor.count,
+                        annotations: actor.annotations.clone(),
+                    });
+                }
+            } else {
+                current.instances.insert(
+                    actor.host_id.clone(),
+                    HashSet::from([WadmActorInfo {
+                        count: actor.count,
+                        annotations: actor.annotations.clone(),
+                    }]),
+                );
+            }
+
+            // Take the updated counts and store them in the actor data
+            actor_data.instances = current.instances
+        };
+
         // Update actor count in the host
         if let Some(mut host) = self.store.get::<Host>(lattice_id, &actor.host_id).await? {
             trace!(host = ?host, "Found existing host data");
 
             host.actors
                 .entry(actor.public_key.clone())
-                .and_modify(|count| *count += 1)
-                .or_insert(1);
+                .and_modify(|count| *count += actor.count)
+                .or_insert(actor.count);
 
             self.store
                 .store(lattice_id, host.id.to_owned(), host)
                 .await?
         }
-
-        // Update count of the data
-        actor_data
-            .instances
-            .entry(actor.host_id.clone())
-            .and_modify(|val| {
-                val.insert(WadmActorInstance {
-                    instance_id: actor.instance_id.to_owned(),
-                    annotations: actor.annotations.to_owned(),
-                });
-            })
-            .or_insert_with(|| {
-                HashSet::from_iter([WadmActorInstance {
-                    instance_id: actor.instance_id.to_owned(),
-                    annotations: actor.annotations.to_owned(),
-                }])
-            });
 
         self.store
             .store(lattice_id, actor.public_key.clone(), actor_data)
@@ -113,10 +125,10 @@ where
     }
 
     #[instrument(level = "debug", skip(self, actor), fields(actor_id = %actor.public_key, host_id = %actor.host_id))]
-    async fn handle_actor_stopped(
+    async fn handle_actors_stopped(
         &self,
         lattice_id: &str,
-        actor: &ActorStopped,
+        actor: &ActorsStopped,
     ) -> anyhow::Result<()> {
         trace!("Removing stopped actor from store");
         debug!("Fetching current data for actor");
@@ -129,13 +141,31 @@ where
 
             // Remove here to take ownership, then insert back into the map
             if let Some(mut current_instances) = current.instances.remove(&actor.host_id) {
-                if current_instances
-                    .remove(&WadmActorInstance::from_id(actor.instance_id.to_owned()))
-                    && current_instances.is_empty()
-                {
-                    trace!(host_id = %actor.host_id, "Stopped last actor on host");
+                match current_instances.take(&actor.annotations) {
+                    Some(current) if actor.count >= current.count => {
+                        // If the count of stopped actors is greater than or equal to the count of
+                        // running actors, remove the entry from the map. This is to guard against
+                        // some sort of weird state where we end up with a negative count (which
+                        // would just roll over since this is a usize) due to the state not
+                        // reflecting reality for some reason
+                        trace!(annotations = ?actor.annotations, "Stopped all actor instances with annotations on host");
+                        current_instances.remove(&actor.annotations);
+                    }
+                    Some(current) => {
+                        // We aren't stopping everything, so just remove the stopped count from the
+                        // total
+                        current_instances.insert(WadmActorInfo {
+                            count: current.count - actor.count,
+                            annotations: current.annotations,
+                        });
+                        trace!(annotations = ?actor.annotations, count = %actor.count, "Removed actor instances with annotations on host");
+                    }
+                    None => (),
+                }
+                if current_instances.is_empty() {
+                    trace!("Stopped last actor on host");
                 } else {
-                    trace!(host_id = %actor.host_id, "Stopped actor instance on host");
+                    trace!("Stopped actors instance on host");
 
                     current
                         .instances
@@ -159,12 +189,12 @@ where
         if let Some(mut host) = self.store.get::<Host>(lattice_id, &actor.host_id).await? {
             trace!(host = ?host, "Found existing host data");
             match host.actors.get(&actor.public_key) {
-                Some(existing_count) if *existing_count <= 1 => {
+                Some(existing_count) if actor.count >= *existing_count => {
                     host.actors.remove(&actor.public_key);
                 }
                 Some(existing_count) => {
                     host.actors
-                        .insert(actor.public_key.to_owned(), *existing_count - 1);
+                        .insert(actor.public_key.to_owned(), *existing_count - actor.count);
                 }
                 // you cannot delete what doesn't exist
                 None => (),
@@ -438,7 +468,7 @@ where
                 public_key: provider.public_key.to_owned(),
                 // We don't have this information, nor do we need it since we don't hash based
                 // on annotations
-                annotations: HashMap::new(),
+                annotations: BTreeMap::new(),
             });
 
             self.store
@@ -521,7 +551,7 @@ where
         &self,
         actors: &HashMap<String, Actor>,
         host_id: &str,
-        instance_map: HashMap<String, HashSet<WadmActorInstance>>,
+        instance_map: HashMap<String, HashSet<WadmActorInfo>>,
     ) -> anyhow::Result<Vec<(String, Actor)>> {
         let claims = self.ctl_client.get_claims().await?;
 
@@ -587,14 +617,27 @@ where
                     actor_description
                         .instances
                         .iter()
-                        .map(|instance| WadmActorInstance {
-                            instance_id: instance.instance_id.to_owned(),
-                            annotations: instance.annotations.clone().unwrap_or_default(),
+                        // The only thing we care about here are the annotations, so we can get a count
+                        .map(|instance| {
+                            instance
+                                .annotations
+                                .clone()
+                                .unwrap_or_default()
+                                .into_iter()
+                                .collect::<BTreeMap<String, String>>()
                         })
-                        .collect::<HashSet<WadmActorInstance>>(),
+                        .fold(HashMap::new(), |mut map, annotations| {
+                            map.entry(annotations)
+                                .and_modify(|count| *count += 1)
+                                .or_insert(1);
+                            map
+                        })
+                        .into_iter()
+                        .map(|(annotations, count)| WadmActorInfo { count, annotations })
+                        .collect::<HashSet<WadmActorInfo>>(),
                 )
             })
-            .collect::<HashMap<String, HashSet<WadmActorInstance>>>();
+            .collect::<HashMap<String, HashSet<WadmActorInfo>>>();
 
         // Compare stored Actors to the "true" list on this host, updating stored
         // Actors when they differ from the authoratative heartbeat
@@ -607,7 +650,27 @@ where
                         actor
                             .instances
                             .get(&host.id)
-                            .map(|store_instances| store_instances == &instances)
+                            .map(|store_instances| {
+                                // NOTE(thomastaylor312): This is the weird part where we have to do
+                                // custom equality checking because of how we did hashing. The only
+                                // way to keep this data serializable was by storing it as a
+                                // HashSet. A map of Annotations -> count would be better, but it's
+                                // not serializable. Please note that there is some iteration
+                                // involved, it is highly unlikely an actor would have more than 2
+                                // or 3 different instances running with different annotations
+                                if store_instances.len() != instances.len() {
+                                    // Short circuit if we have more or less
+                                    return false;
+                                }
+                                // Otherwise, check that all the annotations and counts are the same
+                                instances.iter().all(|instance| {
+                                    store_instances
+                                        .get(&instance.annotations)
+                                        .map_or(false, |store_instance| {
+                                            instance.count == store_instance.count
+                                        })
+                                })
+                            })
                             .unwrap_or(false)
                     })
                     .unwrap_or(false)
@@ -618,7 +681,7 @@ where
                 }
             })
             // actor ID to all instances on this host
-            .collect::<HashMap<String, HashSet<WadmActorInstance>>>();
+            .collect::<HashMap<String, HashSet<WadmActorInfo>>>();
 
         let actors_to_store = self
             .populate_actor_info(&actors, &host.id, actors_to_update)
@@ -870,16 +933,8 @@ where
             // not modify state. Ideally we'd use this to update the state of the lattice instead of the
             // individual events, but for now we're missing instance_id information. A separate issue should
             // be opened to track this and treating actors as cattle not pets (ignoring instance IDs).
-            Event::ActorsStarted(actor) => Ok(actor
-                .annotations
-                .get(APP_SPEC_ANNOTATION)
-                .map(|s| s.as_str())),
-            Event::ActorsStopped(actor) => Ok(actor
-                .annotations
-                .get(APP_SPEC_ANNOTATION)
-                .map(|s| s.as_str())),
-            Event::ActorStarted(actor) => self
-                .handle_actor_started(&message.lattice_id, actor)
+            Event::ActorsStarted(actor) => self
+                .handle_actors_started(&message.lattice_id, actor)
                 .await
                 .map(|_| {
                     actor
@@ -887,8 +942,8 @@ where
                         .get(APP_SPEC_ANNOTATION)
                         .map(|s| s.as_str())
                 }),
-            Event::ActorStopped(actor) => self
-                .handle_actor_stopped(&message.lattice_id, actor)
+            Event::ActorsStopped(actor) => self
+                .handle_actors_stopped(&message.lattice_id, actor)
                 .await
                 .map(|_| {
                     actor
@@ -896,6 +951,9 @@ where
                         .get(APP_SPEC_ANNOTATION)
                         .map(|s| s.as_str())
                 }),
+            // We don't care about the individual events, just when a full scale event happens (the
+            // ActorsStarted/Stopped events)
+            Event::ActorStarted(_) | Event::ActorStopped(_) => Ok(None),
             Event::HostHeartbeat(host) => self
                 .handle_host_heartbeat(&message.lattice_id, host)
                 .await
@@ -1163,7 +1221,7 @@ mod test {
         /******************** Actor Start Tests ********************/
         /***********************************************************/
 
-        let actor1 = ActorStarted {
+        let actor1 = ActorsStarted {
             claims: ActorClaims {
                 call_alias: Some("Grand Moff".into()),
                 capabilites: vec!["empire:command".into()],
@@ -1175,11 +1233,11 @@ mod test {
             image_ref: "coruscant.galactic.empire/tarkin:0.1.0".into(),
             public_key: "TARKIN".into(),
             host_id: host1_id.clone(),
-            annotations: HashMap::default(),
-            instance_id: "haskdhjkas-123jkh123-asdads".to_string(),
+            annotations: BTreeMap::default(),
+            count: 1,
         };
 
-        let actor2 = ActorStarted {
+        let actor2 = ActorsStarted {
             claims: ActorClaims {
                 call_alias: Some("Darth".into()),
                 capabilites: vec!["empire:command".into(), "force_user:sith".into()],
@@ -1191,14 +1249,14 @@ mod test {
             image_ref: "coruscant.galactic.empire/vader:0.1.0".into(),
             public_key: "DARTHVADER".into(),
             host_id: host1_id.clone(),
-            annotations: HashMap::default(),
-            instance_id: "2-haskdhjkas-123jkh123-asdads".to_string(),
+            annotations: BTreeMap::default(),
+            count: 2,
         };
 
         // Start a single actor first just to make sure that works properly, then start all of them
         // across the two hosts
         worker
-            .handle_actor_started(lattice_id, &actor1)
+            .handle_actors_started(lattice_id, &actor1)
             .await
             .expect("Should be able to handle actor event");
 
@@ -1215,52 +1273,36 @@ mod test {
         assert_eq!(*host.actors.get(&actor1.public_key).unwrap_or(&0), 1_usize);
 
         worker
-            .handle_actor_started(
+            .handle_actors_started(lattice_id, &actor1)
+            .await
+            .expect("Should be able to handle actor event");
+        // Start two more of actor 1 on host 2
+        worker
+            .handle_actors_started(
                 lattice_id,
-                &ActorStarted {
-                    instance_id: "unique-instance-id".to_string(),
+                &ActorsStarted {
+                    host_id: host2_id.clone(),
+                    count: 2,
                     ..actor1.clone()
                 },
             )
             .await
             .expect("Should be able to handle actor event");
-
-        for n in 0..2 {
-            // Create unique instance ID based on loop iteration
-            let evt2 = ActorStarted {
-                instance_id: format!("{n}-{}", &actor2.instance_id),
-                ..actor2.clone()
-            };
-            worker
-                .handle_actor_started(lattice_id, &evt2)
-                .await
-                .expect("Should be able to handle actor event");
-
-            // Start the actors on the other host as well
-            worker
-                .handle_actor_started(
-                    lattice_id,
-                    &ActorStarted {
-                        host_id: host2_id.clone(),
-                        instance_id: format!("{n}-host2-{}", &actor1.instance_id),
-                        ..actor1.clone()
-                    },
-                )
-                .await
-                .expect("Should be able to handle actor event");
-
-            worker
-                .handle_actor_started(
-                    lattice_id,
-                    &ActorStarted {
-                        host_id: host2_id.clone(),
-                        instance_id: format!("{n}-host2-v2-{}", &actor2.instance_id),
-                        ..actor2.clone()
-                    },
-                )
-                .await
-                .expect("Should be able to handle actor event");
-        }
+        // Start two of actor 2 on host 1 and host 2
+        worker
+            .handle_actors_started(lattice_id, &actor2)
+            .await
+            .expect("Should be able to handle actor event");
+        worker
+            .handle_actors_started(
+                lattice_id,
+                &ActorsStarted {
+                    host_id: host2_id.clone(),
+                    ..actor2.clone()
+                },
+            )
+            .await
+            .expect("Should be able to handle actor event");
 
         let actors = store.list::<Actor>(lattice_id).await.unwrap();
         assert_eq!(
@@ -1288,7 +1330,7 @@ mod test {
             image_ref: "coruscant.galactic.empire/force_choke:0.1.0".into(),
             public_key: "CHOKE".into(),
             host_id: host1_id.clone(),
-            annotations: HashMap::default(),
+            annotations: BTreeMap::default(),
             instance_id: "1".to_string(),
             contract_id: "force_user:sith".into(),
             link_name: "default".into(),
@@ -1304,7 +1346,7 @@ mod test {
             image_ref: "coruscant.galactic.empire/laser:0.1.0".into(),
             public_key: "BYEBYEALDERAAN".into(),
             host_id: host2_id.clone(),
-            annotations: HashMap::default(),
+            annotations: BTreeMap::default(),
             instance_id: "2".to_string(),
             contract_id: "empire:command".into(),
             link_name: "default".into(),
@@ -1511,20 +1553,20 @@ mod test {
                             contract_id: provider1.contract_id.clone(),
                             link_name: provider1.link_name.clone(),
                             public_key: provider1.public_key.clone(),
-                            annotations: HashMap::new(),
+                            annotations: BTreeMap::new(),
                         },
                         ProviderInfo {
                             contract_id: provider2.contract_id.clone(),
                             link_name: provider2.link_name.clone(),
                             public_key: provider2.public_key.clone(),
-                            annotations: HashMap::new(),
+                            annotations: BTreeMap::new(),
                         },
                     ],
                     uptime_human: "30s".into(),
                     uptime_seconds: 30,
                     version: semver::Version::parse("0.61.0").unwrap(),
                     id: host1_id.clone(),
-                    annotations: HashMap::default(),
+                    annotations: BTreeMap::default(),
                 },
             )
             .await
@@ -1544,13 +1586,13 @@ mod test {
                         contract_id: provider2.contract_id.clone(),
                         link_name: provider2.link_name.clone(),
                         public_key: provider2.public_key.clone(),
-                        annotations: HashMap::new(),
+                        annotations: BTreeMap::new(),
                     }],
                     uptime_human: "30s".into(),
                     uptime_seconds: 30,
                     version: semver::Version::parse("0.61.0").unwrap(),
                     id: host2_id.clone(),
-                    annotations: HashMap::default(),
+                    annotations: BTreeMap::default(),
                 },
             )
             .await
@@ -1572,25 +1614,17 @@ mod test {
         /***********************************************************/
 
         // Stop them on one host first
-        let stopped_one = ActorStopped {
-            annotations: HashMap::default(),
-            instance_id: "1".to_string(),
+        let stopped = ActorsStopped {
+            annotations: BTreeMap::default(),
             public_key: actor1.public_key.clone(),
             host_id: host1_id.clone(),
-        };
-        let stopped_two = ActorStopped {
-            annotations: HashMap::default(),
-            instance_id: "2".to_string(),
-            public_key: actor1.public_key.clone(),
-            host_id: host1_id.clone(),
+            count: 2,
+            // We don't actually care about this in our state calculations
+            remaining: 0,
         };
 
         worker
-            .handle_actor_stopped(lattice_id, &stopped_one)
-            .await
-            .expect("Should be able to handle actor stop event");
-        worker
-            .handle_actor_stopped(lattice_id, &stopped_two)
+            .handle_actors_stopped(lattice_id, &stopped)
             .await
             .expect("Should be able to handle actor stop event");
 
@@ -1608,23 +1642,13 @@ mod test {
         assert_eq!(*host.actors.get(&actor2.public_key).unwrap_or(&0), 2_usize);
 
         // Now stop on the other
-        let stopped_one_host_two = ActorStopped {
+        let stopped2 = ActorsStopped {
             host_id: host2_id.clone(),
-            instance_id: "5".to_string(),
-            ..stopped_one
-        };
-        let stopped_two_host_two = ActorStopped {
-            host_id: host2_id.clone(),
-            instance_id: "6".to_string(),
-            ..stopped_two
+            ..stopped
         };
 
         worker
-            .handle_actor_stopped(lattice_id, &stopped_one_host_two)
-            .await
-            .expect("Should be able to handle actor stop event");
-        worker
-            .handle_actor_stopped(lattice_id, &stopped_two_host_two)
+            .handle_actors_stopped(lattice_id, &stopped2)
             .await
             .expect("Should be able to handle actor stop event");
 
@@ -1641,7 +1665,7 @@ mod test {
             .handle_provider_stopped(
                 lattice_id,
                 &ProviderStopped {
-                    annotations: HashMap::default(),
+                    annotations: BTreeMap::default(),
                     contract_id: provider2.contract_id.clone(),
                     instance_id: provider2.instance_id.clone(),
                     link_name: provider2.link_name.clone(),
@@ -1751,13 +1775,13 @@ mod test {
                         contract_id: provider1.contract_id.clone(),
                         link_name: provider1.link_name.clone(),
                         public_key: provider1.public_key.clone(),
-                        annotations: HashMap::new(),
+                        annotations: BTreeMap::new(),
                     }],
                     uptime_human: "60s".into(),
                     uptime_seconds: 60,
                     version: semver::Version::parse("0.61.0").unwrap(),
                     id: host1_id.clone(),
-                    annotations: HashMap::default(),
+                    annotations: BTreeMap::default(),
                 },
             )
             .await
@@ -1774,13 +1798,13 @@ mod test {
                         contract_id: provider2.contract_id.clone(),
                         link_name: provider2.link_name.clone(),
                         public_key: provider2.public_key.clone(),
-                        annotations: HashMap::new(),
+                        annotations: BTreeMap::new(),
                     }],
                     uptime_human: "60s".into(),
                     uptime_seconds: 60,
                     version: semver::Version::parse("0.61.0").unwrap(),
                     id: host2_id.clone(),
-                    annotations: HashMap::default(),
+                    annotations: BTreeMap::default(),
                 },
             )
             .await
@@ -1959,13 +1983,13 @@ mod test {
                         contract_id: "lightspeed".into(),
                         link_name: link_name.clone(),
                         public_key: provider_id.clone(),
-                        annotations: HashMap::new(),
+                        annotations: BTreeMap::new(),
                     }],
                     uptime_human: "60s".into(),
                     uptime_seconds: 60,
                     version: semver::Version::parse("0.61.0").unwrap(),
                     id: host_id.clone(),
-                    annotations: HashMap::default(),
+                    annotations: BTreeMap::default(),
                 },
             )
             .await
@@ -1988,7 +2012,9 @@ mod test {
                 .instances
                 .get(&host_id)
                 .expect("Host should exist in count")
-                .len(),
+                .get(&BTreeMap::new())
+                .expect("Should find an actor with the correct annotations")
+                .count,
             2,
             "Should have the right number of actors running"
         );
@@ -2059,7 +2085,7 @@ mod test {
             image_ref: "bespin.lando.inc/tibanna:0.1.0".into(),
             public_key: "GAS".into(),
             host_id: host_id.clone(),
-            annotations: HashMap::default(),
+            annotations: BTreeMap::default(),
             instance_id: String::new(),
             contract_id: "mining".into(),
             link_name: "default".into(),
@@ -2214,13 +2240,13 @@ mod test {
                         contract_id: contract_id.to_string(),
                         link_name: link_name.to_string(),
                         public_key: public_key.to_string(),
-                        annotations: HashMap::new(),
+                        annotations: BTreeMap::new(),
                     }],
                     uptime_human: "60s".into(),
                     uptime_seconds: 60,
                     version: semver::Version::parse("0.61.0").unwrap(),
                     id: host_id.to_string(),
-                    annotations: HashMap::default(),
+                    annotations: BTreeMap::default(),
                 },
             )
             .await
@@ -2265,7 +2291,6 @@ mod test {
             .await,
         );
 
-        let actor_instance = "asdhjkahsd-123123-fasda-feeee";
         let host_id = "jabbaspalace";
 
         // Store some existing stuff
@@ -2277,9 +2302,10 @@ mod test {
                     id: "jabba".to_string(),
                     instances: HashMap::from([(
                         host_id.to_string(),
-                        HashSet::from_iter([WadmActorInstance::from_id(
-                            actor_instance.to_string(),
-                        )]),
+                        HashSet::from_iter([WadmActorInfo {
+                            count: 1,
+                            annotations: BTreeMap::default(),
+                        }]),
                     )]),
                     ..Default::default()
                 },
@@ -2328,7 +2354,7 @@ mod test {
                     uptime_seconds: 60,
                     version: semver::Version::parse("0.61.0").unwrap(),
                     id: host_id.to_string(),
-                    annotations: HashMap::default(),
+                    annotations: BTreeMap::default(),
                 },
             )
             .await
@@ -2342,7 +2368,7 @@ mod test {
 
     fn assert_actor(
         actors: &HashMap<String, Actor>,
-        event: &ActorStarted,
+        event: &ActorsStarted,
         expected_counts: &[(&str, usize)],
     ) {
         let actor = actors
@@ -2363,12 +2389,7 @@ mod test {
         );
         for (expected_host, expected_count) in expected_counts.iter() {
             assert_eq!(
-                actor
-                    .instances
-                    .get(*expected_host)
-                    .cloned()
-                    .expect("Actor should have a count for the host")
-                    .len(),
+                actor.count_for_host(expected_host),
                 *expected_count,
                 "Actor count on host should be correct"
             );

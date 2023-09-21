@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -153,7 +153,7 @@ impl<S: ReadStore + Send + Sync> SimpleActorScaler<S> {
                             count: count as usize, // It's a positive integer so we know this will succeed
                             host_id,
                             model_name: self.config.model_name.clone(),
-                            annotations: HashMap::new(),
+                            annotations: BTreeMap::new(),
                         })]
                     } else if count < 0 {
                         // This is written iteratively rather than functionally just because it reads better.
@@ -163,24 +163,28 @@ impl<S: ReadStore + Send + Sync> SimpleActorScaler<S> {
                         // For each host running this actor, request actor stops until
                         // the total number of stops equals the number of extra instances
                         for (host_id, instances) in actors.instances {
+                            let instance_count = instances
+                                .get(&BTreeMap::new())
+                                .map(|inst| inst.count)
+                                .unwrap_or_default();
                             if remaining == 0 {
                                 break;
-                            } else if remaining >= instances.len() {
+                            } else if remaining >= instance_count {
                                 commands.push(Command::StopActor(StopActor {
                                     actor_id: actor_id.to_owned(),
                                     host_id,
-                                    count: instances.len(),
+                                    count: instance_count,
                                     model_name: "fake".into(),
-                                    annotations: HashMap::new(),
+                                    annotations: BTreeMap::new(),
                                 }));
-                                remaining -= instances.len();
+                                remaining -= instance_count;
                             } else {
                                 commands.push(Command::StopActor(StopActor {
                                     actor_id: actor_id.to_owned(),
                                     host_id,
                                     count: remaining,
                                     model_name: "fake".into(),
-                                    annotations: HashMap::new(),
+                                    annotations: BTreeMap::new(),
                                 }));
                                 remaining = 0;
                             }
@@ -204,7 +208,7 @@ impl<S: ReadStore + Send + Sync> SimpleActorScaler<S> {
                             count: self.config.replicas,
                             host_id: host_id.to_owned(),
                             model_name: self.config.model_name.clone(),
-                            annotations: HashMap::new(),
+                            annotations: BTreeMap::new(),
                         })]
                     } else {
                         return Err(anyhow::anyhow!(
@@ -219,12 +223,15 @@ impl<S: ReadStore + Send + Sync> SimpleActorScaler<S> {
 
 #[cfg(test)]
 mod test {
-    use std::{collections::HashMap, sync::Arc};
+    use std::{
+        collections::{BTreeMap, HashMap},
+        sync::Arc,
+    };
 
     use crate::{
         commands::{Command, StartActor},
         consumers::{manager::Worker, ScopedMessage},
-        events::{ActorClaims, ActorStarted, Event, HostStarted},
+        events::{ActorClaims, ActorsStarted, Event, HostStarted},
         scaler::{manager::ScalerManager, simplescaler::SimpleActorScaler, Scaler},
         test_util::{NoopPublisher, TestLatticeSource, TestStore},
         workers::{CommandPublisher, EventWorker, StatusPublisher},
@@ -324,7 +331,7 @@ mod test {
                 host_id,
                 count: replicas,
                 model_name: model_name.to_string(),
-                annotations: HashMap::new()
+                annotations: BTreeMap::new()
             })
         )
     }
@@ -392,43 +399,37 @@ mod test {
             .await
             .expect("Should be able to handle the host started event");
 
-        for n in 0..4 {
-            // Start 4 actors on the first host
-            worker
-                .do_work(ScopedMessage::<Event> {
-                    lattice_id: lattice_id.to_string(),
-                    inner: Event::ActorStarted(ActorStarted {
-                        annotations: HashMap::new(),
-                        claims: dummy_actor_claims(),
-                        image_ref: actor_reference.to_string(),
-                        instance_id: format!("{actor_id}_{host_id_1}_{n}"),
-                        public_key: actor_id.to_string(),
-                        host_id: host_id_1.to_string(),
-                    }),
-                    acker: None,
-                })
-                .await
-                .expect("Should be able to handle the actor started event");
-        }
+        worker
+            .do_work(ScopedMessage::<Event> {
+                lattice_id: lattice_id.to_string(),
+                inner: Event::ActorsStarted(ActorsStarted {
+                    annotations: BTreeMap::new(),
+                    claims: dummy_actor_claims(),
+                    image_ref: actor_reference.to_string(),
+                    public_key: actor_id.to_string(),
+                    host_id: host_id_1.to_string(),
+                    count: 4,
+                }),
+                acker: None,
+            })
+            .await
+            .expect("Should be able to handle the actor started event");
+        worker
+            .do_work(ScopedMessage::<Event> {
+                lattice_id: lattice_id.to_string(),
+                inner: Event::ActorsStarted(ActorsStarted {
+                    annotations: BTreeMap::new(),
+                    claims: dummy_actor_claims(),
+                    image_ref: actor_reference.to_string(),
+                    public_key: actor_id.to_string(),
+                    host_id: host_id_2.to_string(),
+                    count: 3,
+                }),
+                acker: None,
+            })
+            .await
+            .expect("Should be able to handle the actor started event");
 
-        for n in 0..3 {
-            // Start 3 actors on the second host
-            worker
-                .do_work(ScopedMessage::<Event> {
-                    lattice_id: lattice_id.to_string(),
-                    inner: Event::ActorStarted(ActorStarted {
-                        annotations: HashMap::new(),
-                        claims: dummy_actor_claims(),
-                        image_ref: actor_reference.to_string(),
-                        instance_id: format!("{actor_id}_{host_id_2}_{n}"),
-                        public_key: actor_id.to_string(),
-                        host_id: host_id_2.to_string(),
-                    }),
-                    acker: None,
-                })
-                .await
-                .expect("Should be able to handle the actor started event");
-        }
         // *** STATE SETUP END ***
         // Expected Actions: Two ActorStop commands, requesting either (depending on map order):
         // - 4 stopped actors on the first host and 1 on the other
@@ -448,7 +449,6 @@ mod test {
             .expect("Should have computed a set of commands");
 
         assert_eq!(cmds.len(), 2);
-
         // Asserting we requested 5 total stops, whether 4 and 1 or 3 and 2
         let stop_count_requested = cmds
             .iter()

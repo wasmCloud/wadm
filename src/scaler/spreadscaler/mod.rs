@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::{cmp::Ordering, cmp::Reverse, collections::HashMap};
 
 use anyhow::Result;
@@ -156,18 +157,17 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
                                 .filter_map(|(host_id, instances)| {
                                     let count = instances
                                         .iter()
-                                        .filter(|instance| {
+                                        .filter_map(|info| {
                                             spreadscaler_annotations(&spread.name, self.id()).iter().all(
                                                 |(key, value)| {
-                                                    instance
-                                                        .annotations
+                                                    info.annotations
                                                         .get(key)
                                                         .map(|v| v == value)
                                                         .unwrap_or(false)
                                                 },
-                                            )
+                                            ).then_some(info.count)
                                         })
-                                        .count();
+                                        .sum();
                                     (count > 0).then_some((host_id, count))
                                 }).collect()
                         })
@@ -320,8 +320,8 @@ impl<S: ReadStore + Send + Sync> ActorSpreadScaler<S> {
 pub(crate) fn spreadscaler_annotations(
     spread_name: &str,
     scaler_id: &str,
-) -> HashMap<String, String> {
-    HashMap::from_iter([
+) -> BTreeMap<String, String> {
+    BTreeMap::from_iter([
         (SCALER_KEY.to_string(), scaler_id.to_string()),
         (SPREAD_KEY.to_string(), spread_name.to_string()),
     ])
@@ -434,8 +434,8 @@ mod test {
         commands::{Command, StartActor},
         consumers::{manager::Worker, ScopedMessage},
         events::{
-            ActorStopped, ActorsStopped, Event, Linkdef, LinkdefDeleted, LinkdefSet,
-            ProviderClaims, ProviderStarted, ProviderStopped,
+            ActorsStopped, Event, Linkdef, LinkdefDeleted, LinkdefSet, ProviderClaims,
+            ProviderStarted, ProviderStopped,
         },
         model::{Spread, SpreadScalerProperty},
         scaler::{
@@ -443,7 +443,7 @@ mod test {
             spreadscaler::{spreadscaler_annotations, ActorSpreadScaler},
             Scaler,
         },
-        storage::{Actor, Host, Store, WadmActorInstance},
+        storage::{Actor, Host, Store, WadmActorInfo},
         test_util::{NoopPublisher, TestLatticeSource, TestStore},
         workers::{CommandPublisher, EventWorker, StatusPublisher},
     };
@@ -617,7 +617,7 @@ mod test {
                     actors: HashMap::new(),
                     friendly_name: "hey".to_string(),
                     labels: HashMap::new(),
-                    annotations: HashMap::new(),
+                    annotations: BTreeMap::new(),
                     providers: HashSet::new(),
                     uptime_seconds: 123,
                     version: None,
@@ -796,35 +796,35 @@ mod test {
                         (
                             host_id_one.to_string(),
                             // One instance on this host
-                            HashSet::from_iter([WadmActorInstance {
-                                instance_id: "1".to_string(),
+                            HashSet::from_iter([WadmActorInfo {
                                 annotations: spreadscaler_annotations(
                                     "RunInFakeCloud",
                                     echo_spreadscaler.id(),
                                 ),
+                                count: 1,
                             }]),
                         ),
                         (
                             host_id_two.to_string(),
                             // 103 instances on this host
-                            HashSet::from_iter((2..105).map(|n| WadmActorInstance {
-                                instance_id: format!("{n}"),
+                            HashSet::from_iter([WadmActorInfo {
                                 annotations: spreadscaler_annotations(
                                     "RunInRealCloud",
                                     echo_spreadscaler.id(),
                                 ),
-                            })),
+                                count: 103,
+                            }]),
                         ),
                         (
                             host_id_three.to_string(),
                             // 400 instances on this host
-                            HashSet::from_iter((105..505).map(|n| WadmActorInstance {
-                                instance_id: format!("{n}"),
+                            HashSet::from_iter([WadmActorInfo {
                                 annotations: spreadscaler_annotations(
                                     "RunInPurgatoryCloud",
                                     echo_spreadscaler.id(),
                                 ),
-                            })),
+                                count: 400,
+                            }]),
                         ),
                     ]),
                     reference: echo_ref.to_string(),
@@ -846,24 +846,24 @@ mod test {
                         (
                             host_id_one.to_string(),
                             // 3 instances on this host
-                            HashSet::from_iter((0..3).map(|n| WadmActorInstance {
-                                instance_id: format!("{n}"),
+                            HashSet::from_iter([WadmActorInfo {
+                                count: 3,
                                 annotations: spreadscaler_annotations(
                                     "CrossRegionCustom",
                                     blobby_spreadscaler.id(),
                                 ),
-                            })),
+                            }]),
                         ),
                         (
                             host_id_two.to_string(),
                             // 19 instances on this host
-                            HashSet::from_iter((3..22).map(|n| WadmActorInstance {
-                                instance_id: format!("{n}"),
+                            HashSet::from_iter([WadmActorInfo {
+                                count: 19,
                                 annotations: spreadscaler_annotations(
                                     "CrossRegionReal",
                                     blobby_spreadscaler.id(),
                                 ),
-                            })),
+                            }]),
                         ),
                     ]),
                     reference: blobby_ref.to_string(),
@@ -886,7 +886,7 @@ mod test {
                         ("cloud".to_string(), "fake".to_string()),
                         ("region".to_string(), "us-brooks-1".to_string()),
                     ]),
-                    annotations: HashMap::new(),
+                    annotations: BTreeMap::new(),
                     providers: HashSet::new(),
                     uptime_seconds: 123,
                     version: None,
@@ -911,7 +911,7 @@ mod test {
                         ("region".to_string(), "us-midwest-4".to_string()),
                         ("label".to_string(), "value".to_string()),
                     ]),
-                    annotations: HashMap::new(),
+                    annotations: BTreeMap::new(),
                     providers: HashSet::new(),
                     uptime_seconds: 123,
                     version: None,
@@ -932,7 +932,7 @@ mod test {
                         ("cloud".to_string(), "purgatory".to_string()),
                         ("location".to_string(), "edge".to_string()),
                     ]),
-                    annotations: HashMap::new(),
+                    annotations: BTreeMap::new(),
                     providers: HashSet::new(),
                     uptime_seconds: 123,
                     version: None,
@@ -1035,7 +1035,7 @@ mod test {
                         ("region".to_string(), "east".to_string()),
                         ("resilient".to_string(), "true".to_string()),
                     ]),
-                    annotations: HashMap::new(),
+                    annotations: BTreeMap::new(),
                     providers: HashSet::new(),
                     uptime_seconds: 123,
                     version: None,
@@ -1058,10 +1058,10 @@ mod test {
                     instances: HashMap::from_iter([(
                         host_id.to_string(),
                         // 10 instances on this host under the first spread
-                        HashSet::from_iter((0..10).map(|n| WadmActorInstance {
-                            instance_id: format!("{n}"),
+                        HashSet::from_iter([WadmActorInfo {
+                            count: 10,
                             annotations: spreadscaler_annotations("SimpleOne", spreadscaler.id()),
-                        })),
+                        }]),
                     )]),
                     reference: actor_reference.to_string(),
                 },
@@ -1126,7 +1126,7 @@ mod test {
                             actors: HashMap::from_iter([(actor_id.to_string(), 10)]),
                             friendly_name: "hey".to_string(),
                             labels: HashMap::new(),
-                            annotations: HashMap::new(),
+                            annotations: BTreeMap::new(),
                             providers: HashSet::new(),
                             uptime_seconds: 123,
                             version: None,
@@ -1140,7 +1140,7 @@ mod test {
                             actors: HashMap::from_iter([(actor_id.to_string(), 10)]),
                             friendly_name: "hey2".to_string(),
                             labels: HashMap::new(),
-                            annotations: HashMap::new(),
+                            annotations: BTreeMap::new(),
                             providers: HashSet::new(),
                             uptime_seconds: 123,
                             version: None,
@@ -1165,17 +1165,17 @@ mod test {
                     instances: HashMap::from_iter([
                         (
                             host_id.to_string(),
-                            HashSet::from_iter((0..10).map(|n| WadmActorInstance {
-                                instance_id: format!("{n}"),
+                            HashSet::from_iter([WadmActorInfo {
+                                count: 10,
                                 annotations: spreadscaler_annotations("default", spreadscaler.id()),
-                            })),
+                            }]),
                         ),
                         (
                             host_id2.to_string(),
-                            HashSet::from_iter((0..10).map(|n| WadmActorInstance {
-                                instance_id: format!("blah{n}"),
+                            HashSet::from_iter([WadmActorInfo {
+                                count: 10,
                                 annotations: spreadscaler_annotations("default", spreadscaler.id()),
-                            })),
+                            }]),
                         ),
                     ]),
                     reference: actor_reference.to_string(),
@@ -1312,24 +1312,24 @@ mod test {
                         (
                             host_id_one.to_string(),
                             // 3 instances on this host
-                            HashSet::from_iter((0..3).map(|n| WadmActorInstance {
-                                instance_id: format!("{n}"),
+                            HashSet::from_iter([WadmActorInfo {
+                                count: 3,
                                 annotations: spreadscaler_annotations(
                                     "CrossRegionCustom",
                                     blobby_spreadscaler.id(),
                                 ),
-                            })),
+                            }]),
                         ),
                         (
                             host_id_two.to_string(),
                             // 19 instances on this host
-                            HashSet::from_iter((3..22).map(|n| WadmActorInstance {
-                                instance_id: format!("{n}"),
+                            HashSet::from_iter([WadmActorInfo {
+                                count: 19,
                                 annotations: spreadscaler_annotations(
                                     "CrossRegionReal",
                                     blobby_spreadscaler.id(),
                                 ),
-                            })),
+                            }]),
                         ),
                     ]),
                     reference: blobby_ref.to_string(),
@@ -1351,7 +1351,7 @@ mod test {
                         ("cloud".to_string(), "fake".to_string()),
                         ("region".to_string(), "us-brooks-1".to_string()),
                     ]),
-                    annotations: HashMap::new(),
+                    annotations: BTreeMap::new(),
                     providers: HashSet::new(),
                     uptime_seconds: 123,
                     version: None,
@@ -1373,7 +1373,7 @@ mod test {
                         ("region".to_string(), "us-midwest-4".to_string()),
                         ("label".to_string(), "value".to_string()),
                     ]),
-                    annotations: HashMap::new(),
+                    annotations: BTreeMap::new(),
                     providers: HashSet::new(),
                     uptime_seconds: 123,
                     version: None,
@@ -1394,7 +1394,7 @@ mod test {
                         ("cloud".to_string(), "purgatory".to_string()),
                         ("location".to_string(), "edge".to_string()),
                     ]),
-                    annotations: HashMap::new(),
+                    annotations: BTreeMap::new(),
                     providers: HashSet::new(),
                     uptime_seconds: 123,
                     version: None,
@@ -1408,7 +1408,7 @@ mod test {
         // Don't care about these events
         assert!(blobby_spreadscaler
             .handle_event(&Event::ProviderStarted(ProviderStarted {
-                annotations: HashMap::new(),
+                annotations: BTreeMap::new(),
                 claims: ProviderClaims::default(),
                 contract_id: "".to_string(),
                 image_ref: "".to_string(),
@@ -1421,7 +1421,7 @@ mod test {
             .is_empty());
         assert!(blobby_spreadscaler
             .handle_event(&Event::ProviderStopped(ProviderStopped {
-                annotations: HashMap::default(),
+                annotations: BTreeMap::default(),
                 contract_id: "".to_string(),
                 instance_id: "".to_string(),
                 link_name: "".to_string(),
@@ -1463,19 +1463,8 @@ mod test {
             }
         }
 
-        // NOTE(brooksmtownsend): Regular ActorStopped modify state, ActorsStopped
-        // is what scalers care about. Should be converted to ActorsStopped once state
-        // updates don't rely on them anymore.
-
-        // Stop an instance of an actor, and expect a modified list of commands
-        let state_modifying_event = ActorStopped {
-            annotations: HashMap::new(),
-            instance_id: "12".to_string(),
-            public_key: blobby_id.to_string(),
-            host_id: host_id_two.to_string(),
-        };
-        let scaler_modifying_event = ActorsStopped {
-            annotations: HashMap::new(),
+        let modifying_event = ActorsStopped {
+            annotations: spreadscaler_annotations("CrossRegionReal", blobby_spreadscaler.id()),
             public_key: blobby_id.to_string(),
             host_id: host_id_two.to_string(),
             count: 1,
@@ -1485,14 +1474,14 @@ mod test {
         worker
             .do_work(ScopedMessage::<Event> {
                 lattice_id: lattice_id.to_string(),
-                inner: Event::ActorStopped(state_modifying_event.clone()),
+                inner: Event::ActorsStopped(modifying_event.clone()),
                 acker: None,
             })
             .await
             .expect("should be able to handle an event");
 
         let cmds = blobby_spreadscaler
-            .handle_event(&Event::ActorsStopped(scaler_modifying_event))
+            .handle_event(&Event::ActorsStopped(modifying_event))
             .await?;
         assert_eq!(cmds.len(), 2);
 

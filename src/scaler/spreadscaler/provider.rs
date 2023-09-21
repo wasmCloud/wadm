@@ -1,4 +1,7 @@
-use std::{cmp::Ordering, collections::HashMap};
+use std::{
+    cmp::Ordering,
+    collections::{BTreeMap, HashMap},
+};
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -140,7 +143,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
                                 contract_id: contract_id.to_string(),
                                 link_name: link_name.to_string(),
                                 public_key: provider_id.to_string(),
-                                annotations: HashMap::default(),
+                                annotations: BTreeMap::default(),
                             }).is_some()
                     });
                 // Get the count of all running providers
@@ -154,7 +157,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
                             contract_id: contract_id.to_string(),
                             link_name: link_name.to_string(),
                             public_key: provider_id.to_string(),
-                            annotations: HashMap::default(),
+                            annotations: BTreeMap::default(),
                         })
                         .map(|provider| {
                             spreadscaler_annotations(&spread.name, &self.id).iter().all(|(k, v)| {
@@ -206,7 +209,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
                                     contract_id: contract_id.to_string(),
                                     link_name: link_name.to_string(),
                                     public_key: provider_id.to_string(),
-                                    annotations: HashMap::new(),
+                                    annotations: BTreeMap::new(),
                                 })
                             })
                             .map(|(_host_id, host)| {
@@ -354,12 +357,6 @@ mod test {
 
         let store = Arc::new(TestStore::default());
 
-        // let lattice_source = TestLatticeSource {
-        //     claims: HashMap::default(),
-        //     inventory: Arc::new(RwLock::new(HashMap::default())),
-        // };
-        // let worker = EventWorker::new(store.clone(), lattice_source);
-
         store
             .store(
                 lattice_id,
@@ -371,7 +368,7 @@ mod test {
                         ("cloud".to_string(), "fake".to_string()),
                         ("region".to_string(), "us-noneofyourbusiness-1".to_string()),
                     ]),
-                    annotations: HashMap::new(),
+                    annotations: BTreeMap::new(),
                     providers: HashSet::new(),
                     uptime_seconds: 123,
                     version: None,
@@ -392,7 +389,7 @@ mod test {
                         ("cloud".to_string(), "real".to_string()),
                         ("region".to_string(), "us-yourhouse-1".to_string()),
                     ]),
-                    annotations: HashMap::new(),
+                    annotations: BTreeMap::new(),
                     providers: HashSet::new(),
                     uptime_seconds: 123,
                     version: None,
@@ -572,7 +569,7 @@ mod test {
                         ("cloud".to_string(), "fake".to_string()),
                         ("region".to_string(), "us-noneofyourbusiness-1".to_string()),
                     ]),
-                    annotations: HashMap::new(),
+                    annotations: BTreeMap::new(),
                     providers: HashSet::from_iter([ProviderInfo {
                         contract_id: "prov:ider".to_string(),
                         link_name: DEFAULT_LINK_NAME.to_string(),
@@ -598,7 +595,7 @@ mod test {
                         ("cloud".to_string(), "real".to_string()),
                         ("region".to_string(), "us-yourhouse-1".to_string()),
                     ]),
-                    annotations: HashMap::new(),
+                    annotations: BTreeMap::new(),
                     providers: HashSet::new(),
                     uptime_seconds: 123,
                     version: None,
@@ -618,7 +615,7 @@ mod test {
                         ("cloud".to_string(), "inthemiddle".to_string()),
                         ("region".to_string(), "us-yourhouse-1".to_string()),
                     ]),
-                    annotations: HashMap::new(),
+                    annotations: BTreeMap::new(),
                     providers: HashSet::new(),
                     uptime_seconds: 123,
                     version: None,
@@ -638,7 +635,7 @@ mod test {
                         ("cloud".to_string(), "fake".to_string()),
                         ("region".to_string(), "us-east-1".to_string()),
                     ]),
-                    annotations: HashMap::new(),
+                    annotations: BTreeMap::new(),
                     providers: HashSet::from_iter([ProviderInfo {
                         contract_id: "prov:ider".to_string(),
                         link_name: DEFAULT_LINK_NAME.to_string(),
@@ -801,7 +798,7 @@ mod test {
                         ("cloud".to_string(), "fake".to_string()),
                         ("region".to_string(), "us-noneofyourbusiness-1".to_string()),
                     ]),
-                    annotations: HashMap::new(),
+                    annotations: BTreeMap::new(),
                     providers: HashSet::new(),
                     uptime_seconds: 123,
                     version: None,
@@ -822,12 +819,12 @@ mod test {
                         ("cloud".to_string(), "real".to_string()),
                         ("region".to_string(), "us-yourhouse-1".to_string()),
                     ]),
-                    annotations: HashMap::new(),
+                    annotations: BTreeMap::new(),
                     providers: HashSet::from_iter([ProviderInfo {
                         public_key: provider_id.to_string(),
                         contract_id: "prov:ider".to_string(),
                         link_name: DEFAULT_LINK_NAME.to_string(),
-                        annotations: HashMap::new(),
+                        annotations: BTreeMap::new(),
                     }]),
 
                     uptime_seconds: 123,
@@ -938,12 +935,12 @@ mod test {
                         ("cloud".to_string(), "fake".to_string()),
                         ("region".to_string(), "us-noneofyourbusiness-1".to_string()),
                     ]),
-                    annotations: HashMap::new(),
+                    annotations: BTreeMap::new(),
                     providers: HashSet::from_iter([ProviderInfo {
                         public_key: provider_id.to_string(),
                         contract_id: "prov:ider".to_string(),
                         link_name: DEFAULT_LINK_NAME.to_string(),
-                        annotations: HashMap::new(),
+                        annotations: BTreeMap::new(),
                     }]),
                     uptime_seconds: 123,
                     version: None,
@@ -964,12 +961,12 @@ mod test {
                         ("cloud".to_string(), "real".to_string()),
                         ("region".to_string(), "us-yourhouse-1".to_string()),
                     ]),
-                    annotations: HashMap::new(),
+                    annotations: BTreeMap::new(),
                     providers: HashSet::from_iter([ProviderInfo {
                         public_key: provider_id.to_string(),
                         contract_id: "prov:ider".to_string(),
                         link_name: DEFAULT_LINK_NAME.to_string(),
-                        annotations: HashMap::new(),
+                        annotations: BTreeMap::new(),
                     }]),
 
                     uptime_seconds: 123,
@@ -1055,12 +1052,12 @@ mod test {
                         ("cloud".to_string(), "fake".to_string()),
                         ("region".to_string(), "us-noneofyourbusiness-1".to_string()),
                     ]),
-                    annotations: HashMap::new(),
+                    annotations: BTreeMap::new(),
                     providers: HashSet::from_iter([ProviderInfo {
                         public_key: provider_id.to_string(),
                         contract_id: "prov:ider".to_string(),
                         link_name: DEFAULT_LINK_NAME.to_string(),
-                        annotations: HashMap::new(),
+                        annotations: BTreeMap::new(),
                     }]),
                     uptime_seconds: 123,
                     version: None,
@@ -1105,7 +1102,7 @@ mod test {
                         ("cloud".to_string(), "fake".to_string()),
                         ("region".to_string(), "us-yourhouse-1".to_string()),
                     ]),
-                    annotations: HashMap::new(),
+                    annotations: BTreeMap::new(),
                     providers: HashSet::from_iter([ProviderInfo {
                         public_key: provider_id.to_string(),
                         contract_id: "prov:ider".to_string(),
