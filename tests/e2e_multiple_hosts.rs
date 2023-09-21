@@ -141,6 +141,13 @@ async fn test_no_requirements(client_info: &ClientInfo) {
             "wasmcloud.azurecr.io/httpserver:0.17.0",
             ExpectedCount::Exactly(1),
         )?;
+
+        // Oh no a sleep! How horrible!
+        // Actually, this is a good thing! If we reach this point because the httpserver
+        // provider upgraded really quickly, that means we still have to wait 5 seconds
+        // for the provider health check to trigger linkdef creation. So, after everything
+        // gets created, give the linkdef scaler time to react to the provider health check.
+        tokio::time::sleep(Duration::from_secs(5)).await;
         let links = client_info
             .ctl_client("default")
             .query_links()
@@ -334,6 +341,12 @@ async fn test_complex_app(client_info: &ClientInfo) {
             ExpectedCount::Exactly(1),
         )?;
 
+        // Oh no a sleep! How horrible!
+        // Actually, this is a good thing! If we reach this point because the httpserver
+        // provider upgraded really quickly, that means we still have to wait 5 seconds
+        // for the provider health check to trigger linkdef creation. So, after everything
+        // gets created, give the linkdef scaler time to react to the provider health check.
+        tokio::time::sleep(Duration::from_secs(5)).await;
         let links = client_info
             .ctl_client("default")
             .query_links()
