@@ -793,8 +793,7 @@ where
         // redelivered. When it is, the ones that succeeded will be in backoff mode and the ones
         // that failed will be retried.
 
-        // TODO: inefficient to compute scalers twice, consider refactoring
-        let scalers = self.scalers.add_scalers(&data.manifest).await?;
+        let scalers = self.scalers.add_scalers(&data.manifest, scalers).await?;
 
         let (commands, res) = get_commands_and_result(
             scalers.iter().map(|s| s.reconcile()),
