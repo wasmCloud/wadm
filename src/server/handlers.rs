@@ -1,6 +1,7 @@
 use anyhow::anyhow;
 use async_nats::{jetstream::stream::Stream, Client, Message};
 use base64::{engine::general_purpose::STANDARD as B64decoder, Engine};
+use jsonschema::{Draft, JSONSchema};
 use regex::Regex;
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
@@ -22,8 +23,10 @@ use super::{
     GetModelResponse, GetResult, ManifestNotifier, PutModelResponse, PutResult, Status, StatusInfo,
     StatusResponse, StatusResult, UndeployModelRequest, VersionInfo, VersionResponse,
 };
-
+const JSON_SCHEMA: &str = include_str!("../../oam/oam.schema.json");
 static MANIFEST_NAME_REGEX: OnceCell<Regex> = OnceCell::const_new();
+static JSON_SCHEMA_VALUE: OnceCell<serde_json::Value> = OnceCell::const_new();
+static OAM_JSON_SCHEMA: OnceCell<JSONSchema> = OnceCell::const_new();
 
 pub(crate) struct Handler<P> {
     pub(crate) store: ModelStorage,
@@ -89,7 +92,7 @@ impl<P: Publisher> Handler<P> {
                 }
             };
 
-        if let Some(error_message) = validate_manifest(manifest.clone()).err() {
+        if let Some(error_message) = validate_manifest(manifest.clone()).await.err() {
             self.send_error(msg.reply, error_message.to_string()).await;
             return;
         }
@@ -808,9 +811,41 @@ impl<P: Publisher> Handler<P> {
 }
 
 // Manifest validation
-pub(crate) fn validate_manifest(manifest: Manifest) -> anyhow::Result<()> {
+pub(crate) async fn validate_manifest(manifest: Manifest) -> anyhow::Result<()> {
     let mut name_registry: HashSet<String> = HashSet::new();
     let mut required_capability_components: HashSet<String> = HashSet::new();
+    JSON_SCHEMA_VALUE
+        .get_or_try_init(|| async {
+            serde_json::from_str(JSON_SCHEMA)
+                .map_err(|e| anyhow!("Unable to parse JSON schema: {}", e))
+        })
+        .await?;
+
+    let ok_schema = OAM_JSON_SCHEMA
+        .get_or_try_init(|| async {
+            JSONSchema::options().with_draft(Draft::Draft7).compile(
+                JSON_SCHEMA_VALUE
+                    .get()
+                    // SAFETY: We just initialized it above
+                    .expect("JSON schema should be initialized"),
+            )
+        })
+        .await?;
+
+    let json_instance = serde_json::to_value(manifest.clone())?;
+    let validation_result = ok_schema.validate(&json_instance);
+    if let Err(errors) = validation_result {
+        let mut error_message = String::new();
+        for error in errors {
+            error_message.push_str(&format!(
+                "Validation error in object: {} \nObject path: {}",
+                // Error instance in the JSON instance and its corresponding path in that file
+                error.instance,
+                error.instance_path
+            ));
+        }
+        return Err(anyhow!("Validation Error : \n{}", error_message));
+    }
 
     // Map of link names to a vector of provider references with that link name
     let mut linkdef_map: HashMap<String, Vec<String>> = HashMap::new();
@@ -932,17 +967,30 @@ mod test {
         Ok(yaml_string)
     }
 
-    #[test]
-    fn test_manifest_validation() {
+    #[tokio::test]
+    async fn test_manifest_validation() {
         let correct_manifest =
             deserialize_yaml("./oam/simple1.yaml").expect("Should be able to parse");
 
-        assert!(validate_manifest(correct_manifest).is_ok());
+        assert!(validate_manifest(correct_manifest).await.is_ok());
+
+        let manifest = deserialize_yaml("./test/data/incorrect_component.yaml")
+            .expect("Should be able to parse");
+
+        match validate_manifest(manifest).await {
+            Ok(()) => panic!("Should have detected incorrect component"),
+            Err(e) => {
+                assert!(e
+                    .to_string()
+                    // The 0th component in the spec list is incorrect and should be detected (indexing starts from 0)
+                    .contains("Object path: /spec/components/0"))
+            }
+        }
 
         let manifest = deserialize_yaml("./test/data/duplicate_component.yaml")
             .expect("Should be able to parse");
 
-        match validate_manifest(manifest) {
+        match validate_manifest(manifest).await {
             Ok(()) => panic!("Should have detected duplicate component"),
             Err(e) => assert!(e
                 .to_string()
@@ -952,7 +1000,7 @@ mod test {
         let manifest = deserialize_yaml("./test/data/duplicate_imageref1.yaml")
             .expect("Should be able to parse");
 
-        match validate_manifest(manifest) {
+        match validate_manifest(manifest).await {
             Ok(()) => panic!("Should have detected duplicate image reference for link name in provider properties"),
             Err(e) => assert!(e
                 .to_string()
@@ -962,7 +1010,7 @@ mod test {
         let manifest = deserialize_yaml("./test/data/duplicate_imageref2.yaml")
             .expect("Should be able to parse");
 
-        match validate_manifest(manifest) {
+        match validate_manifest(manifest).await {
             Ok(()) => panic!("Should have detected duplicate image reference for actor"),
             Err(e) => assert!(e
                 .to_string()
@@ -972,7 +1020,7 @@ mod test {
         let manifest = deserialize_yaml("./test/data/duplicate_linkdef.yaml")
             .expect("Should be able to parse");
 
-        match validate_manifest(manifest) {
+        match validate_manifest(manifest).await {
             Ok(()) => panic!("Should have detected duplicate linkdef"),
             Err(e) => assert!(e.to_string().contains("Duplicate target")),
         }
@@ -980,7 +1028,7 @@ mod test {
         let manifest = deserialize_yaml("./test/data/missing_capability_component.yaml")
             .expect("Should be able to parse");
 
-        match validate_manifest(manifest) {
+        match validate_manifest(manifest).await {
             Ok(()) => panic!("Should have detected missing capability component"),
             Err(e) => assert!(e
                 .to_string()
