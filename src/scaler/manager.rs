@@ -248,8 +248,11 @@ where
     /// This only constructs the scalers and doesn't reconcile. The returned [`Scalers`] type can be
     /// used to set this model to backoff mode
     #[instrument(level = "trace", skip_all, fields(name = %manifest.metadata.name, lattice_id = %self.lattice_id))]
-    pub async fn add_scalers<'a>(&'a self, manifest: &'a Manifest) -> Result<Scalers> {
-        let scalers = self.scalers_for_manifest(manifest);
+    pub async fn add_scalers<'a>(
+        &'a self,
+        manifest: &'a Manifest,
+        scalers: ScalerList,
+    ) -> Result<Scalers> {
         self.add_raw_scalers(&manifest.metadata.name, scalers).await;
         let notification = serde_json::to_vec(&Notifications::CreateScalers(manifest.to_owned()))?;
         self.client
