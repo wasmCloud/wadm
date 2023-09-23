@@ -1,4 +1,7 @@
-use std::collections::HashMap;
+use std::{
+    collections::{BTreeMap, HashMap},
+    hash::{Hash, Hasher},
+};
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -219,7 +222,14 @@ impl<S: ReadStore + Send + Sync, L: LinkSource> LinkScaler<S, L> {
             provider_link_name.unwrap_or_else(|| DEFAULT_LINK_NAME.to_string());
         // NOTE(thomastaylor312): Yep, this is gnarly, but it was all the information that would be
         // useful to have if uniquely identifying a link scaler
-        let id = format!("{LINK_SCALER_TYPE}-{model_name}-{provider_link_name}-{actor_reference}-{provider_reference}");
+        let id = if let Some(linkscaler_values) = &values {
+            // When values are present, we want to include them in the ID as well
+            let linkscaler_values_hash = compute_linkscaler_values_hash(linkscaler_values);
+            format!("{LINK_SCALER_TYPE}-{model_name}-{provider_link_name}-{actor_reference}-{provider_reference}-{linkscaler_values_hash}")
+        } else {
+            format!("{LINK_SCALER_TYPE}-{model_name}-{provider_link_name}-{actor_reference}-{provider_reference}")
+        };
+
         Self {
             store,
             actor_id: OnceCell::new(),
@@ -285,6 +295,12 @@ impl<S: ReadStore + Send + Sync, L: LinkSource> LinkScaler<S, L> {
     }
 }
 
+fn compute_linkscaler_values_hash(values: &HashMap<String, String>) -> u64 {
+    let mut linkscaler_values_hasher = std::collections::hash_map::DefaultHasher::new();
+    BTreeMap::from_iter(values.iter()).hash(&mut linkscaler_values_hasher);
+    linkscaler_values_hasher.finish()
+}
+
 #[cfg(test)]
 mod test {
     use std::{
@@ -330,6 +346,103 @@ mod test {
             .await
             .expect("Couldn't store actor");
         store
+    }
+
+    #[tokio::test]
+    async fn test_id_generator() {
+        let lattice_id = "id_generator".to_string();
+        let actor_ref = "actor_ref".to_string();
+        let provider_ref = "provider_ref".to_string();
+
+        let values = HashMap::from([("foo".to_string(), "bar".to_string())]);
+
+        let mut linkdef = LinkDefinition::default();
+        linkdef.actor_id = "actor".to_string();
+        linkdef.provider_id = "provider".to_string();
+        linkdef.contract_id = "contract".to_string();
+        linkdef.link_name = "default".to_string();
+        linkdef.values = [("foo".to_string(), "bar".to_string())].into();
+
+        let scaler = LinkScaler::new(
+            create_store(&lattice_id, &actor_ref, &provider_ref).await,
+            actor_ref.clone(),
+            provider_ref.clone(),
+            "contract".to_string(),
+            None,
+            lattice_id.clone(),
+            "model".to_string(),
+            Some(values.clone()),
+            TestLatticeSource::default(),
+        );
+
+        let id = format!(
+            "{LINK_SCALER_TYPE}-{model_name}-{provider_link_name}-{actor_reference}-{provider_reference}-{linkscaler_values_hash}",
+            LINK_SCALER_TYPE = LINK_SCALER_TYPE,
+            model_name = "model",
+            provider_link_name = "default",
+            actor_reference = actor_ref,
+            provider_reference = provider_ref,
+            linkscaler_values_hash = compute_linkscaler_values_hash(&values)
+        );
+
+        assert_eq!(scaler.id(), id, "LinkScaler ID should be the same when scalers have the same type, model name, provider link name, actor reference, provider reference, and values");
+
+        let id = format!(
+            "{LINK_SCALER_TYPE}-{model_name}-{provider_link_name}-{actor_reference}-{provider_reference}-{linkscaler_values_hash}",
+            LINK_SCALER_TYPE = LINK_SCALER_TYPE,
+            model_name = "model",
+            provider_link_name = "default",
+            actor_reference = actor_ref,
+            provider_reference = provider_ref,
+            linkscaler_values_hash = compute_linkscaler_values_hash(&[("foo".to_string(), "nope".to_string())].into())
+        );
+
+        assert_ne!(scaler.id(), id, "LinkScaler ID should be different when scalers have different configured values");
+
+
+        let scaler = LinkScaler::new(
+            create_store(&lattice_id, &actor_ref, &provider_ref).await,
+            actor_ref.clone(),
+            provider_ref.clone(),
+            "contract".to_string(),
+            None,
+            lattice_id.clone(),
+            "model".to_string(),
+            None,
+            TestLatticeSource::default(),
+        );
+
+        let id = format!(
+            "{LINK_SCALER_TYPE}-{model_name}-{provider_link_name}-{actor_reference}-{provider_reference}",
+            LINK_SCALER_TYPE = LINK_SCALER_TYPE,
+            model_name = "model",
+            provider_link_name = "default",
+            actor_reference = actor_ref,
+            provider_reference = provider_ref,
+            
+        );
+
+        assert_eq!(scaler.id(), id, "LinkScaler ID should be the same when their type, model name, provider link name, actor reference, and provider reference are the same and they both have no values configured");
+
+        let scaler = LinkScaler::new(
+            create_store(&lattice_id, &actor_ref, &provider_ref).await,
+            actor_ref.clone(),
+            provider_ref.clone(),
+            "contract".to_string(),
+            None,
+            lattice_id.clone(),
+            "model".to_string(),
+            Some(values.clone()),
+            TestLatticeSource::default(),
+        );
+
+        assert_ne!(scaler.id(), id, "Expected LinkScaler values hash to differiantiate scalers with the same type, model name, provider link name, actor reference, and provider reference");
+        let mut scaler_id_tokens= scaler.id().split('-');
+        scaler_id_tokens.next_back();
+        let scaler_id_tokens = scaler_id_tokens.collect::<Vec<&str>>().join("-");
+        assert_eq!(scaler_id_tokens, id, "Excluding the values hash, the LinkScaler ID should be the same when scalers have the same type, model name, provider link name, actor reference, and provider reference");
+
+
     }
 
     #[tokio::test]
