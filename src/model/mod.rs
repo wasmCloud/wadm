@@ -1,4 +1,7 @@
-use std::collections::{BTreeMap, HashMap};
+use std::{
+    collections::{BTreeMap, HashMap},
+    hash::{Hash, Hasher},
+};
 
 use serde::{
     de::{self, Deserializer, MapAccess, Visitor},
@@ -179,6 +182,21 @@ impl Serialize for CapabilityConfig {
         match self {
             CapabilityConfig::Json(v) => v.serialize(serializer),
             CapabilityConfig::Opaque(v) => serializer.serialize_str(v),
+        }
+    }
+}
+
+impl Hash for CapabilityConfig {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            CapabilityConfig::Json(v) => {
+                //NOTE(@ahmedtadde): By default, Serde uses BtreeMap for JSON map objects which is good for determinism.
+                //However, for arrays, ordering is not guaranteed.
+                //In general, unless the json values are strictly equal (ordering, casing, white spaces, etc...), the hash will be different. This is something to be mindful of when using this hash function.
+                let json = serde_json::to_string(v).expect("Should be able to serialize");
+                json.hash(state);
+            }
+            CapabilityConfig::Opaque(v) => v.hash(state),
         }
     }
 }
