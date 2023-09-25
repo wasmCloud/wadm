@@ -386,7 +386,7 @@ mod test {
                 "{PROVIDER_SPREAD_SCALER_TYPE}-{}-component-provider-link",
                 MODEL_NAME
             ),
-            "ProviderScaler ID should be valid"
+            "ProviderSpreadScaler ID should be valid"
         );
 
         let config = ProviderSpreadConfig {
@@ -410,7 +410,7 @@ mod test {
                 MODEL_NAME,
                 compute_provider_config_hash(&CapabilityConfig::Opaque("foobar".to_string()))
             ),
-            "ProviderScaler ID should be valid"
+            "ProviderSpreadScaler ID should be valid"
         );
 
         let mut scaler_id_tokens = scaler.id().split('-');
@@ -422,7 +422,7 @@ mod test {
                 "{PROVIDER_SPREAD_SCALER_TYPE}-{}-component-provider-link",
                 MODEL_NAME
             ),
-            "ProviderScaler ID should be valid and depends on provider_config"
+            "ProviderSpreadScaler ID should be valid and depends on provider_config"
         );
     }
 

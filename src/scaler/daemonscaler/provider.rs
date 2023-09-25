@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::hash::{Hash, Hasher};
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -7,7 +8,7 @@ use tracing::{instrument, trace};
 
 use crate::commands::StopProvider;
 use crate::events::{HostHeartbeat, ProviderInfo};
-use crate::model::Spread;
+use crate::model::{CapabilityConfig, Spread};
 use crate::scaler::spreadscaler::provider::ProviderSpreadConfig;
 use crate::scaler::spreadscaler::{eligible_hosts, spreadscaler_annotations};
 use crate::server::StatusInfo;
@@ -209,10 +210,20 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderDaemonScaler<S> {
 impl<S: ReadStore + Send + Sync> ProviderDaemonScaler<S> {
     /// Construct a new ProviderDaemonScaler with specified configuration values
     pub fn new(store: S, config: ProviderSpreadConfig, component_name: &str) -> Self {
-        let id = format!(
-            "{PROVIDER_DAEMON_SCALER_TYPE}-{}-{component_name}-{}-{}",
-            config.model_name, config.provider_reference, config.provider_link_name,
-        );
+        let id = if let Some(provider_config) = &config.provider_config {
+            format!(
+                "{PROVIDER_DAEMON_SCALER_TYPE}-{}-{component_name}-{}-{}-{}",
+                config.model_name,
+                config.provider_reference,
+                config.provider_link_name,
+                compute_provider_config_hash(provider_config),
+            )
+        } else {
+            format!(
+                "{PROVIDER_DAEMON_SCALER_TYPE}-{}-{component_name}-{}-{}",
+                config.model_name, config.provider_reference, config.provider_link_name,
+            )
+        };
         // If no spreads are specified, an empty spread is sufficient to match _every_ host
         // in a lattice
         let spread_config = if config.spread_config.spread.is_empty() {
@@ -258,6 +269,12 @@ impl<S: ReadStore + Send + Sync> ProviderDaemonScaler<S> {
     }
 }
 
+fn compute_provider_config_hash(provider_config: &CapabilityConfig) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    provider_config.hash(&mut hasher);
+    hasher.finish()
+}
+
 #[cfg(test)]
 mod test {
     use std::{
@@ -280,6 +297,68 @@ mod test {
     use super::*;
 
     const MODEL_NAME: &str = "test_provider_spreadscaler";
+
+    #[test]
+    fn test_id_generator() {
+        let config = ProviderSpreadConfig {
+            lattice_id: "lattice".to_string(),
+            provider_reference: "provider".to_string(),
+            provider_link_name: "link".to_string(),
+            provider_contract_id: "contract".to_string(),
+            model_name: MODEL_NAME.to_string(),
+            spread_config: SpreadScalerProperty {
+                replicas: 1,
+                spread: vec![],
+            },
+            provider_config: None,
+        };
+
+        let scaler = ProviderDaemonScaler::new(Arc::new(TestStore::default()), config, "component");
+        assert_eq!(
+            scaler.id(),
+            format!(
+                "{PROVIDER_DAEMON_SCALER_TYPE}-{}-component-provider-link",
+                MODEL_NAME
+            ),
+            "ProviderDaemonScaler ID should be valid"
+        );
+
+        let config = ProviderSpreadConfig {
+            lattice_id: "lattice".to_string(),
+            provider_reference: "provider".to_string(),
+            provider_link_name: "link".to_string(),
+            provider_contract_id: "contract".to_string(),
+            model_name: MODEL_NAME.to_string(),
+            spread_config: SpreadScalerProperty {
+                replicas: 1,
+                spread: vec![],
+            },
+            provider_config: Some(CapabilityConfig::Opaque("foobar".to_string())),
+        };
+
+        let scaler = ProviderDaemonScaler::new(Arc::new(TestStore::default()), config, "component");
+        assert_eq!(
+            scaler.id(),
+            format!(
+                "{PROVIDER_DAEMON_SCALER_TYPE}-{}-component-provider-link-{}",
+                MODEL_NAME,
+                compute_provider_config_hash(&CapabilityConfig::Opaque("foobar".to_string()))
+            ),
+            "ProviderDaemonScaler ID should be valid"
+        );
+
+        let mut scaler_id_tokens = scaler.id().split('-');
+        scaler_id_tokens.next_back();
+        let scaler_id_tokens = scaler_id_tokens.collect::<Vec<&str>>().join("-");
+        assert_eq!(
+            scaler_id_tokens,
+            format!(
+                "{PROVIDER_DAEMON_SCALER_TYPE}-{}-component-provider-link",
+                MODEL_NAME
+            ),
+            "ProviderDaemonScaler ID should be valid and depends on provider_config"
+        );
+    }
 
     #[tokio::test]
     async fn can_spread_on_multiple_hosts() -> Result<()> {
