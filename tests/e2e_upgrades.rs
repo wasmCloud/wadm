@@ -299,4 +299,116 @@ async fn test_upgrade(client_info: &ClientInfo) {
         Ok(())
     })
     .await;
+
+    // Deploy another updated manifest -- this time just w/ link values and provider config modifications
+    let resp = client_info
+        .put_manifest_from_file("upgradedapp.yaml", None, None)
+        .await;
+
+    assert_ne!(
+        resp.result,
+        PutResult::Error,
+        "Shouldn't have errored when creating manifest: {resp:?}"
+    );
+
+    let resp = client_info
+        .deploy_manifest("updateapp", None, None, Some("v0.0.3"))
+        .await;
+    assert_ne!(
+        resp.result,
+        DeployResult::Error,
+        "Shouldn't have errored when deploying manifest: {resp:?}"
+    );
+
+    // Once manifest is updated, status should be compensating
+    check_status(&stream, "default", "updateapp", StatusType::Compensating)
+        .await
+        .unwrap();
+
+    assert_status(None, None, || async {
+        let inventory = client_info.get_all_inventory("default").await?;
+        println!("Inventory: {:?}", inventory);
+
+        check_actors(
+            &inventory,
+            "wasmcloud.azurecr.io/xkcd:0.1.1",
+            "updateapp",
+            5,
+        )?;
+        check_actors(
+            &inventory,
+            "wasmcloud.azurecr.io/message-pub:0.1.3",
+            "updateapp",
+            1,
+        )?;
+        check_actors(
+            &inventory,
+            "wasmcloud.azurecr.io/echo:0.3.8",
+            "updateapp",
+            3,
+        )?;
+        check_actors(
+            &inventory,
+            "wasmcloud.azurecr.io/kvcounter:0.4.0",
+            "updateapp",
+            0,
+        )?;
+        check_providers(
+            &inventory,
+            "wasmcloud.azurecr.io/httpserver:0.19.0",
+            ExpectedCount::Exactly(1),
+        )?;
+        check_providers(
+            &inventory,
+            "wasmcloud.azurecr.io/kvredis:0.22.0",
+            ExpectedCount::Exactly(0),
+        )?;
+
+        // Oh no a sleep! How horrible!
+        // Actually, this is a good thing! If we reach this point because the httpserver
+        // provider upgraded really quickly, that means we still have to wait 5 seconds
+        // for the provider health check to trigger linkdef creation. So, after everything
+        // gets created, give the linkdef scaler time to react to the provider health check.
+        tokio::time::sleep(Duration::from_secs(5)).await;
+
+        let links = client_info
+            .ctl_client("default")
+            .query_links()
+            .await
+            .map_err(|e| anyhow::anyhow!("{e:?}"))?;
+
+        if !links.links.iter().any(|ld| {
+            ld.actor_id == ECHO_ACTOR_ID
+                && ld.provider_id == HTTP_SERVER_PROVIDER_ID
+                && ld.contract_id == "wasmcloud:httpserver"
+                && ld
+                    .values
+                    .get("address")
+                    .map(|v| v == "0.0.0.0:8088")
+                    .expect("Linkdef values should have an address")
+        }) {
+            anyhow::bail!(
+                "Link between echo actor and http provider should exist on port 8088: {:#?}",
+                links
+            )
+        }
+
+        if links.links.iter().any(|ld| {
+            ld.actor_id == KV_COUNTER_ACTOR_ID
+                && ld.provider_id == KV_REDIS_PROVIDER_ID
+                && ld.contract_id == "wasmcloud:keyvalue"
+        }) {
+            anyhow::bail!(
+                "Link between kvcounter actor and redis provider should not exist: {:#?}",
+                links
+            )
+        }
+
+        check_status(&stream, "default", "updateapp", StatusType::Ready)
+            .await
+            .unwrap();
+
+        Ok(())
+    })
+    .await;
 }
