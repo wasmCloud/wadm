@@ -302,7 +302,7 @@ async fn test_upgrade(client_info: &ClientInfo) {
 
     // Deploy another updated manifest -- this time just w/ link values and provider config modifications
     let resp = client_info
-        .put_manifest_from_file("upgradedapp.yaml", None, None)
+        .put_manifest_from_file("upgradedapp2.yaml", None, None)
         .await;
 
     assert_ne!(
