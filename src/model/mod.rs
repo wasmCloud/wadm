@@ -193,7 +193,15 @@ impl Hash for CapabilityConfig {
                 //NOTE(@ahmedtadde): By default, Serde uses BtreeMap for JSON map objects which is good for determinism.
                 //However, for arrays, ordering is not guaranteed.
                 //In general, unless the json values are strictly equal (ordering, casing, white spaces, etc...), the hash will be different. This is something to be mindful of when using this hash function.
-                let json = serde_json::to_string(v).expect("Should be able to serialize");
+                let json = match serde_json::to_string(v) {
+                    Ok(json) => json,
+                    Err(e) => {
+                        // This really shouldn't happen, but if it does, we should log it and fallback to a default value '{}' to avoid panicking
+                        eprintln!("Failed to serialize json value: {}", e);
+                        "{}".to_string()
+                    }
+                };
+
                 json.hash(state);
             }
             CapabilityConfig::Opaque(v) => v.hash(state),
