@@ -323,6 +323,20 @@ async fn test_annotation_stop() {
         .id
         .to_owned();
 
+    // Start an unmangaged actor
+    // NOTE(thomastaylor312): This is a workaround with current behavior where empty annotations
+    // acts on _everything_. We could technically move this back down after the initial scale up of
+    // the managed actors after https://github.com/wasmCloud/wasmCloud/issues/746 is resolved
+    ctl_client
+        .scale_actor(&host_id, "wasmcloud.azurecr.io/echo:0.3.4", Some(1), None)
+        .await
+        .unwrap();
+
+    wait_for_event(&mut sub, "actors_started").await;
+    // Sorry for the lazy de-racing, but for some reason if we don't wait for a bit the host hasn't
+    // finished updating its inventory
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
     // Start an actor
     wrapper
         .publish_command(ScaleActor {
@@ -341,9 +355,8 @@ async fn test_annotation_stop() {
         .await
         .expect("Should be able to handle command properly");
 
-    // We are starting two actors so wait for both
-    wait_for_event(&mut sub, "actor_started").await;
-    wait_for_event(&mut sub, "actor_started").await;
+    // Wait for the actors_started event
+    wait_for_event(&mut sub, "actors_started").await;
     // Sorry for the lazy de-racing, but for some reason if we don't wait for a bit the host hasn't
     // finished updating its inventory
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
@@ -360,24 +373,30 @@ async fn test_annotation_stop() {
         "wasmcloud.azurecr.io/echo:0.3.4",
         "Should have started the correct actor"
     );
+    // NOTE(#191): This should be changed to only check the max_concurrent value
     assert_eq!(
-        inventory[0].instances.len(),
+        inventory[0]
+            .instances
+            .iter()
+            // Only select the managed actors
+            .filter(|inst| inst
+                .annotations
+                .as_ref()
+                .map(|annotations| !annotations.is_empty())
+                .unwrap_or(false))
+            .map(|i| {
+                if i.max_concurrent == 0 {
+                    1
+                } else {
+                    i.max_concurrent
+                }
+            })
+            .sum::<u16>(),
         2,
         "Should have started the correct number of actors"
     );
 
-    // Start another actor without the annotation
-    ctl_client
-        .start_actor(&host_id, "wasmcloud.azurecr.io/echo:0.3.4", 1, None)
-        .await
-        .unwrap();
-
-    wait_for_event(&mut sub, "actor_started").await;
-    // Sorry for the lazy de-racing, but for some reason if we don't wait for a bit the host hasn't
-    // finished updating its inventory
-    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-
-    // Stop the actor
+    // Stop the managed actors
     wrapper
         .publish_command(ScaleActor {
             actor_id: Some(ECHO_ACTOR_ID.to_owned()),
@@ -395,9 +414,7 @@ async fn test_annotation_stop() {
         .await
         .expect("Should be able to handle command properly");
 
-    // We are stopping two actors so wait for both
-    wait_for_event(&mut sub, "actor_stopped").await;
-    wait_for_event(&mut sub, "actor_stopped").await;
+    wait_for_event(&mut sub, "actors_stopped").await;
 
     // Get the current providers and make sure stuff was started
     let inventory = ctl_client

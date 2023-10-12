@@ -610,26 +610,37 @@ where
         let actors = self.store.list::<Actor>(lattice_id).await?;
 
         let host_instances = inventory_actors
-            .iter()
+            .into_iter()
             .map(|actor_description| {
                 (
                     actor_description.id.to_owned(),
                     actor_description
                         .instances
-                        .iter()
-                        // The only thing we care about here are the annotations, so we can get a count
+                        .into_iter()
+                        // The only thing we care about here are the annotations and the count
+                        // associated with those annotations
                         .map(|instance| {
-                            instance
-                                .annotations
-                                .clone()
-                                .unwrap_or_default()
-                                .into_iter()
-                                .collect::<BTreeMap<String, String>>()
+                            (
+                                instance
+                                    .annotations
+                                    .unwrap_or_default()
+                                    .into_iter()
+                                    .collect::<BTreeMap<String, String>>(),
+                                instance.max_concurrent,
+                            )
                         })
-                        .fold(HashMap::new(), |mut map, annotations| {
+                        .fold(HashMap::new(), |mut map, (annotations, max_concurrent)| {
+                            // NOTE(#191): This is for backwards compat with 0.78 as 0.79 changes this to be
+                            // just a max concurrent value. This code should be removed probably by
+                            // the time we release 0.80
+                            let plus = if max_concurrent == 0 {
+                                1_usize
+                            } else {
+                                max_concurrent as usize
+                            };
                             map.entry(annotations)
-                                .and_modify(|count| *count += 1)
-                                .or_insert(1);
+                                .and_modify(|count| *count += plus)
+                                .or_insert(plus);
                             map
                         })
                         .into_iter()
