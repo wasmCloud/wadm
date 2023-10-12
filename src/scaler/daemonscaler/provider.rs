@@ -281,15 +281,8 @@ impl<S: ReadStore + Send + Sync> ProviderDaemonScaler<S> {
     }
 }
 
-fn compute_provider_config_hash(provider_config: &CapabilityConfig) -> Option<u64> {
-    match provider_config.try_base64_encoding() {
-        Ok(base64) => {
-            let mut hasher = std::collections::hash_map::DefaultHasher::new();
-            base64.hash(&mut hasher);
-            Some(hasher.finish())
-        }
-        Err(_) => None,
-    }
+fn compute_provider_config_hash(provider_config: &CapabilityConfig) -> Option<String> {
+    provider_config.try_base64_encoding().ok()
 }
 
 #[cfg(test)]
