@@ -1441,7 +1441,6 @@ mod test {
                                     annotations: None,
                                     instance_id: "1".to_string(),
                                     revision: 0,
-                                    // TODO: FIXME
                                     image_ref: None,
                                     max_concurrent: 0,
                                 },
@@ -1449,7 +1448,6 @@ mod test {
                                     annotations: None,
                                     instance_id: "2".to_string(),
                                     revision: 0,
-                                    // TODO: FIXME
                                     image_ref: None,
                                     max_concurrent: 0,
                                 },
@@ -1465,7 +1463,6 @@ mod test {
                                     annotations: None,
                                     instance_id: "3".to_string(),
                                     revision: 0,
-                                    // TODO: FIXME
                                     image_ref: None,
                                     max_concurrent: 0,
                                 },
@@ -1473,7 +1470,6 @@ mod test {
                                     annotations: None,
                                     instance_id: "4".to_string(),
                                     revision: 0,
-                                    // TODO: FIXME
                                     image_ref: None,
                                     max_concurrent: 0,
                                 },
@@ -1520,7 +1516,6 @@ mod test {
                                     annotations: None,
                                     instance_id: "5".to_string(),
                                     revision: 0,
-                                    // TODO: FIXME
                                     image_ref: None,
                                     max_concurrent: 0,
                                 },
@@ -1528,7 +1523,6 @@ mod test {
                                     annotations: None,
                                     instance_id: "6".to_string(),
                                     revision: 0,
-                                    // TODO: FIXME
                                     image_ref: None,
                                     max_concurrent: 0,
                                 },
@@ -1544,7 +1538,6 @@ mod test {
                                     annotations: None,
                                     instance_id: "7".to_string(),
                                     revision: 0,
-                                    // TODO: FIXME
                                     image_ref: None,
                                     max_concurrent: 0,
                                 },
@@ -1552,7 +1545,6 @@ mod test {
                                     annotations: None,
                                     instance_id: "8".to_string(),
                                     revision: 0,
-                                    // TODO: FIXME
                                     image_ref: None,
                                     max_concurrent: 0,
                                 },
@@ -1754,7 +1746,6 @@ mod test {
                                 annotations: None,
                                 instance_id: "3".to_string(),
                                 revision: 0,
-                                // TODO: FIXME
                                 image_ref: None,
                                 max_concurrent: 0,
                             },
@@ -1762,7 +1753,6 @@ mod test {
                                 annotations: None,
                                 instance_id: "4".to_string(),
                                 revision: 0,
-                                // TODO: FIXME
                                 image_ref: None,
                                 max_concurrent: 0,
                             },
@@ -1789,7 +1779,6 @@ mod test {
                                 annotations: None,
                                 instance_id: "7".to_string(),
                                 revision: 0,
-                                // TODO: FIXME
                                 image_ref: None,
                                 max_concurrent: 0,
                             },
@@ -1797,7 +1786,6 @@ mod test {
                                 annotations: None,
                                 instance_id: "8".to_string(),
                                 revision: 0,
-                                // TODO: FIXME
                                 image_ref: None,
                                 max_concurrent: 0,
                             },
@@ -1986,7 +1974,6 @@ mod test {
                                 annotations: None,
                                 instance_id: "1".to_string(),
                                 revision: 0,
-                                // TODO: FIXME
                                 image_ref: None,
                                 max_concurrent: 0,
                             },
@@ -1994,7 +1981,6 @@ mod test {
                                 annotations: None,
                                 instance_id: "2".to_string(),
                                 revision: 0,
-                                // TODO: FIXME
                                 image_ref: None,
                                 max_concurrent: 0,
                             },
@@ -2009,7 +1995,6 @@ mod test {
                             annotations: None,
                             instance_id: "3".to_string(),
                             revision: 0,
-                            // TODO: FIXME
                             image_ref: None,
                             max_concurrent: 0,
                         }],
@@ -2389,7 +2374,6 @@ mod test {
                             instance_id: "1".to_string(),
                             annotations: None,
                             revision: 0,
-                            // TODO: FIXME
                             image_ref: None,
                             max_concurrent: 0,
                         },
@@ -2397,7 +2381,6 @@ mod test {
                             instance_id: "2".to_string(),
                             annotations: None,
                             revision: 0,
-                            // TODO: FIXME
                             image_ref: None,
                             max_concurrent: 0,
                         },
