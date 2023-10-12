@@ -210,20 +210,32 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderDaemonScaler<S> {
 impl<S: ReadStore + Send + Sync> ProviderDaemonScaler<S> {
     /// Construct a new ProviderDaemonScaler with specified configuration values
     pub fn new(store: S, config: ProviderSpreadConfig, component_name: &str) -> Self {
-        let id = if let Some(provider_config) = &config.provider_config {
-            format!(
-                "{PROVIDER_DAEMON_SCALER_TYPE}-{}-{component_name}-{}-{}-{}",
-                config.model_name,
-                config.provider_reference,
-                config.provider_link_name,
-                compute_provider_config_hash(provider_config),
-            )
-        } else {
-            format!(
+        let id = {
+            let default = format!(
                 "{PROVIDER_DAEMON_SCALER_TYPE}-{}-{component_name}-{}-{}",
                 config.model_name, config.provider_reference, config.provider_link_name,
-            )
+            );
+
+            match &config.provider_config {
+                Some(provider_config) => {
+                    if let Some(provider_config_hash) =
+                        compute_provider_config_hash(provider_config)
+                    {
+                        format!(
+                            "{PROVIDER_DAEMON_SCALER_TYPE}-{}-{component_name}-{}-{}-{}",
+                            config.model_name,
+                            config.provider_reference,
+                            config.provider_link_name,
+                            provider_config_hash
+                        )
+                    } else {
+                        default
+                    }
+                }
+                None => default,
+            }
         };
+
         // If no spreads are specified, an empty spread is sufficient to match _every_ host
         // in a lattice
         let spread_config = if config.spread_config.spread.is_empty() {
@@ -269,10 +281,15 @@ impl<S: ReadStore + Send + Sync> ProviderDaemonScaler<S> {
     }
 }
 
-fn compute_provider_config_hash(provider_config: &CapabilityConfig) -> u64 {
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    provider_config.hash(&mut hasher);
-    hasher.finish()
+fn compute_provider_config_hash(provider_config: &CapabilityConfig) -> Option<u64> {
+    match provider_config.try_base64_encoding() {
+        Ok(base64) => {
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            base64.hash(&mut hasher);
+            Some(hasher.finish())
+        }
+        Err(_) => None,
+    }
 }
 
 #[cfg(test)]
@@ -343,6 +360,7 @@ mod test {
                 "{PROVIDER_DAEMON_SCALER_TYPE}-{}-component-provider-link-{}",
                 MODEL_NAME,
                 compute_provider_config_hash(&CapabilityConfig::Opaque("foobar".to_string()))
+                    .unwrap()
             ),
             "ProviderDaemonScaler ID should be valid"
         );

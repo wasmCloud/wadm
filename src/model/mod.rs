@@ -1,13 +1,13 @@
-use std::{
-    collections::{BTreeMap, HashMap},
-    hash::{Hash, Hasher},
-};
+use std::collections::{BTreeMap, HashMap};
 
+use anyhow::Context;
 use serde::{
     de::{self, Deserializer, MapAccess, Visitor},
     ser::Serializer,
     Deserialize, Serialize,
 };
+
+use base64::{engine::general_purpose, Engine as _};
 
 pub(crate) mod internal;
 
@@ -140,6 +140,25 @@ pub enum CapabilityConfig {
     Opaque(String),
 }
 
+impl CapabilityConfig {
+    pub fn try_base64_encoding(&self) -> anyhow::Result<String> {
+        let mut bytes: Vec<u8> = Vec::new();
+        serde_json::to_writer(&mut bytes, &self)
+            .context("failed to serialize capability config into bytes for base64 encoding")?;
+        Ok(general_purpose::STANDARD.encode(&bytes))
+    }
+
+    pub fn try_base64_encoding_with_engine<T: base64::Engine>(
+        &self,
+        engine: &T,
+    ) -> anyhow::Result<String> {
+        let mut bytes: Vec<u8> = Vec::new();
+        serde_json::to_writer(&mut bytes, &self)
+            .context("failed to serialize capability config into bytes for base64 encoding")?;
+        Ok(engine.encode(&bytes))
+    }
+}
+
 impl<'de> Deserialize<'de> for CapabilityConfig {
     fn deserialize<D>(deserializer: D) -> Result<CapabilityConfig, D::Error>
     where
@@ -185,30 +204,6 @@ impl Serialize for CapabilityConfig {
         }
     }
 }
-
-impl Hash for CapabilityConfig {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        match self {
-            CapabilityConfig::Json(v) => {
-                //NOTE(@ahmedtadde): By default, Serde uses BtreeMap for JSON map objects which is good for determinism.
-                //However, for arrays, ordering is not guaranteed.
-                //In general, unless the json values are strictly equal (ordering, casing, white spaces, etc...), the hash will be different. This is something to be mindful of when using this hash function.
-                let json = match serde_json::to_string(v) {
-                    Ok(json) => json,
-                    Err(e) => {
-                        // This really shouldn't happen, but if it does, we should log it and fallback to a default value '{}' to avoid panicking
-                        eprintln!("Failed to serialize json value: {}", e);
-                        "{}".to_string()
-                    }
-                };
-
-                json.hash(state);
-            }
-            CapabilityConfig::Opaque(v) => v.hash(state),
-        }
-    }
-}
-
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct Trait {
     /// The type of trait specified. This should be a unique string for the type of scaler. As we
