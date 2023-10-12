@@ -28,6 +28,7 @@ mod nats;
 mod observer;
 
 use connections::{ControlClientConfig, ControlClientConstructor};
+use wasmcloud_control_interface::kv::{CachedKvStore, DirectKvStore};
 
 const EVENT_STREAM_NAME: &str = "wadm_events";
 const COMMAND_STREAM_NAME: &str = "wadm_commands";
@@ -180,13 +181,22 @@ async fn main() -> anyhow::Result<()> {
     .await?;
 
     // TODO: We will probably need to set up all the flags (like lattice prefix and topic prefix) down the line
-    let connection_pool = ControlClientConstructor::new(
+    let connection_pool: ControlClientConstructor<CachedKvStore> = ControlClientConstructor::new(
         client.clone(),
         ControlClientConfig {
-            js_domain: args.domain,
+            js_domain: args.domain.clone(),
             topic_prefix: None,
         },
     );
+
+    let direct_connection_pool: ControlClientConstructor<DirectKvStore> =
+        ControlClientConstructor::new(
+            client.clone(),
+            ControlClientConfig {
+                js_domain: args.domain,
+                topic_prefix: None,
+            },
+        );
 
     let trimmer: &[_] = &['.', '>', '*'];
 
@@ -276,7 +286,7 @@ async fn main() -> anyhow::Result<()> {
     let event_worker_creator = EventWorkerCreator {
         state_store: state_storage.clone(),
         manifest_store: manifest_storage.clone(),
-        pool: connection_pool.clone(),
+        pool: connection_pool,
         command_topic_prefix: DEFAULT_COMMANDS_TOPIC.trim_matches(trimmer).to_owned(),
         publisher: context.clone(),
         notify_stream,
@@ -292,7 +302,7 @@ async fn main() -> anyhow::Result<()> {
     debug!("Creating command consumer manager");
 
     let command_worker_creator = CommandWorkerCreator {
-        pool: connection_pool,
+        pool: direct_connection_pool,
     };
     let commands_manager: ConsumerManager<CommandConsumer> = ConsumerManager::new(
         permit_pool.clone(),
@@ -353,12 +363,12 @@ async fn main() -> anyhow::Result<()> {
 
 #[derive(Clone)]
 struct CommandWorkerCreator {
-    pool: ControlClientConstructor,
+    pool: ControlClientConstructor<DirectKvStore>,
 }
 
 #[async_trait::async_trait]
 impl WorkerCreator for CommandWorkerCreator {
-    type Output = CommandWorker;
+    type Output = CommandWorker<DirectKvStore>;
 
     async fn create(
         &self,
@@ -376,7 +386,7 @@ impl WorkerCreator for CommandWorkerCreator {
 struct EventWorkerCreator<StateStore> {
     state_store: StateStore,
     manifest_store: async_nats::jetstream::kv::Store,
-    pool: ControlClientConstructor,
+    pool: ControlClientConstructor<CachedKvStore>,
     command_topic_prefix: String,
     publisher: Context,
     notify_stream: Stream,
@@ -387,7 +397,8 @@ impl<StateStore> WorkerCreator for EventWorkerCreator<StateStore>
 where
     StateStore: wadm::storage::Store + Send + Sync + Clone + 'static,
 {
-    type Output = EventWorker<StateStore, wasmcloud_control_interface::Client, Context>;
+    type Output =
+        EventWorker<StateStore, wasmcloud_control_interface::Client<CachedKvStore>, Context>;
 
     async fn create(
         &self,
@@ -416,6 +427,7 @@ where
                     self.state_store.clone(),
                     self.manifest_store.clone(),
                     command_publisher.clone(),
+                    status_publisher.clone(),
                     client.clone(),
                 )
                 .await?;

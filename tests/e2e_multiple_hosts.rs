@@ -154,7 +154,7 @@ async fn test_no_requirements(client_info: &ClientInfo) {
             .await
             .map_err(|e| anyhow::anyhow!("{e:?}"))?;
 
-        if !links.links.iter().any(|ld| {
+        if !links.iter().any(|ld| {
             ld.actor_id == ECHO_ACTOR_ID
                 && ld.provider_id == HTTP_SERVER_PROVIDER_ID
                 && ld.contract_id == "wasmcloud:httpserver"
@@ -353,7 +353,7 @@ async fn test_complex_app(client_info: &ClientInfo) {
             .await
             .map_err(|e| anyhow::anyhow!("{e:?}"))?;
 
-        if !links.links.iter().any(|ld| {
+        if !links.iter().any(|ld| {
             ld.actor_id == BLOBBY_ACTOR_ID
                 && ld.provider_id == HTTP_SERVER_PROVIDER_ID
                 && ld.contract_id == "wasmcloud:httpserver"
@@ -364,7 +364,7 @@ async fn test_complex_app(client_info: &ClientInfo) {
             );
         }
 
-        if !links.links.iter().any(|ld| {
+        if !links.iter().any(|ld| {
             ld.actor_id == BLOBBY_ACTOR_ID
                 && ld.provider_id == BLOBSTORE_FS_PROVIDER_ID
                 && ld.contract_id == "wasmcloud:blobstore"

@@ -38,7 +38,7 @@ services:
 
   # Have hosts in two different accounts
   wasmcloud_east:
-    image: wasmcloud/wasmcloud:0.78.0-rc10
+    image: wasmcloud/wasmcloud:0.78.0
     depends_on:
       - nats-leaf-a
     deploy:
@@ -51,7 +51,7 @@ services:
       WASMCLOUD_CLUSTER_SEED: SCAOGJWX53TGI4233T6GAXWYWBIB5ZDGPTCO6ODJQYELS52YCQCBQSRPA4
       HOST_region: us-brooks-east
   wasmcloud_west:
-    image: wasmcloud/wasmcloud:0.78.0-rc10
+    image: wasmcloud/wasmcloud:0.78.0
     depends_on:
       - nats-leaf-b
     deploy:

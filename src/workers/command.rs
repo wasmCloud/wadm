@@ -1,4 +1,5 @@
 use tracing::{instrument, trace};
+use wasmcloud_control_interface::{kv::KvStore, CtlOperationAck};
 
 use crate::{
     commands::*,
@@ -13,19 +14,19 @@ use super::insert_managed_annotations;
 
 /// A worker implementation for handling incoming commands
 #[derive(Clone)]
-pub struct CommandWorker {
-    client: wasmcloud_control_interface::Client,
+pub struct CommandWorker<T: Clone> {
+    client: wasmcloud_control_interface::Client<T>,
 }
 
-impl CommandWorker {
+impl<T: Clone> CommandWorker<T> {
     /// Creates a new command worker with the given connection pool.
-    pub fn new(ctl_client: wasmcloud_control_interface::Client) -> CommandWorker {
+    pub fn new(ctl_client: wasmcloud_control_interface::Client<T>) -> CommandWorker<T> {
         CommandWorker { client: ctl_client }
     }
 }
 
 #[async_trait::async_trait]
-impl Worker for CommandWorker {
+impl<T: KvStore + Clone + Send + Sync> Worker for CommandWorker<T> {
     type Message = Command;
 
     #[instrument(level = "trace", skip_all)]
@@ -40,12 +41,7 @@ impl Worker for CommandWorker {
                     .scale_actor(
                         &actor.host_id,
                         &actor.reference,
-                        actor
-                            .actor_id
-                            .as_ref()
-                            .map(|s| s.as_str())
-                            .unwrap_or_default(),
-                        actor.count as u16,
+                        Some(actor.count as u16),
                         Some(annotations.into_iter().collect()),
                     )
                     .await
@@ -103,20 +99,34 @@ impl Worker for CommandWorker {
                         ld.values.clone(),
                     )
                     .await
+                    .map(|_| CtlOperationAck {
+                        accepted: true,
+                        ..Default::default()
+                    })
             }
             Command::DeleteLinkdef(ld) => {
                 trace!(command = ?ld, "Handling delete linkdef command");
                 self.client
                     .remove_link(&ld.actor_id, &ld.contract_id, &ld.link_name)
                     .await
+                    .map(|_| CtlOperationAck {
+                        accepted: true,
+                        ..Default::default()
+                    })
             }
         }
         .map_err(|e| anyhow::anyhow!("{e:?}"));
 
-        if let Err(e) = res {
-            message.nack().await;
-            return Err(WorkError::Other(e.into()));
+        match res {
+            Ok(ack) if !ack.accepted => {
+                message.nack().await;
+                Err(WorkError::Other(anyhow::anyhow!("{}", ack.error).into()))
+            }
+            Ok(_) => message.ack().await.map_err(WorkError::from),
+            Err(e) => {
+                message.nack().await;
+                Err(WorkError::Other(e.into()))
+            }
         }
-        message.ack().await.map_err(WorkError::from)
     }
 }

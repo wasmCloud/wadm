@@ -401,12 +401,13 @@ mod test {
         let provider_ref = "provider_ref".to_string();
 
         let values = HashMap::from([("foo".to_string(), "bar".to_string())]);
-        let mut linkdef = LinkDefinition::default();
-        linkdef.actor_id = "actor".to_string();
-        linkdef.provider_id = "provider".to_string();
-        linkdef.contract_id = "contract".to_string();
-        linkdef.link_name = "default".to_string();
-        linkdef.values = values.clone();
+        let linkdef = LinkDefinition {
+            actor_id: "actor".to_string(),
+            provider_id: "provider".to_string(),
+            contract_id: "contract".to_string(),
+            link_name: "default".to_string(),
+            values: values.clone(),
+        };
 
         let scaler = LinkScaler::new(
             create_store(&lattice_id, &actor_ref, &provider_ref).await,

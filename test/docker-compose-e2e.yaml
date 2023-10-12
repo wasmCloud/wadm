@@ -6,7 +6,7 @@ services:
       - 4222:4222
   # Have hosts in 3 different "regions"
   wasmcloud_east:
-    image: wasmcloud/wasmcloud:0.78.0-rc10
+    image: wasmcloud/wasmcloud:0.78.0
     depends_on:
       - nats
     deploy:
@@ -18,7 +18,7 @@ services:
       WASMCLOUD_CLUSTER_SEED: SCAOGJWX53TGI4233T6GAXWYWBIB5ZDGPTCO6ODJQYELS52YCQCBQSRPA4
       HOST_region: us-brooks-east
   wasmcloud_west:
-    image: wasmcloud/wasmcloud:0.78.0-rc10
+    image: wasmcloud/wasmcloud:0.78.0
     depends_on:
       - nats
     deploy:
@@ -30,7 +30,7 @@ services:
       WASMCLOUD_CLUSTER_SEED: SCAOGJWX53TGI4233T6GAXWYWBIB5ZDGPTCO6ODJQYELS52YCQCBQSRPA4
       HOST_region: us-taylor-west
   wasmcloud_moon:
-    image: wasmcloud/wasmcloud:0.78.0-rc10
+    image: wasmcloud/wasmcloud:0.78.0
     depends_on:
       - nats
     deploy:

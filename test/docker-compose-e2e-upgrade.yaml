@@ -5,7 +5,7 @@ services:
     ports:
       - 4222:4222
   wasmcloud:
-    image: wasmcloud/wasmcloud:0.78.0-rc10
+    image: wasmcloud/wasmcloud:0.78.0
     depends_on:
       - nats
     deploy:

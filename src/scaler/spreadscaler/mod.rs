@@ -1271,6 +1271,7 @@ mod test {
                 lattice_id,
                 store.clone(),
                 command_publisher,
+                status_publisher.clone(),
                 lattice_source,
             )
             .await,

@@ -5,6 +5,7 @@
 use std::{
     collections::{BTreeMap, HashMap},
     convert::TryFrom,
+    fmt::Display,
 };
 
 use cloudevents::{AttributesReader, Data, Event as CloudEvent, EventBuilder, EventBuilderV10};
@@ -111,6 +112,31 @@ pub enum Event {
     // for now to have them here even though they aren't technically lattice events
     ManifestPublished(ManifestPublished),
     ManifestUnpublished(ManifestUnpublished),
+}
+
+impl Display for Event {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Event::ActorStarted(_) => write!(f, "ActorStarted"),
+            Event::ActorsStarted(_) => write!(f, "ActorsStarted"),
+            Event::ActorsStartFailed(_) => write!(f, "ActorsStartFailed"),
+            Event::ActorStopped(_) => write!(f, "ActorStopped"),
+            Event::ActorsStopped(_) => write!(f, "ActorsStopped"),
+            Event::ProviderStarted(_) => write!(f, "ProviderStarted"),
+            Event::ProviderStopped(_) => write!(f, "ProviderStopped"),
+            Event::ProviderStartFailed(_) => write!(f, "ProviderStartFailed"),
+            Event::ProviderHealthCheckPassed(_) => write!(f, "ProviderHealthCheckPassed"),
+            Event::ProviderHealthCheckFailed(_) => write!(f, "ProviderHealthCheckFailed"),
+            Event::ProviderHealthCheckStatus(_) => write!(f, "ProviderHealthCheckStatus"),
+            Event::HostStarted(_) => write!(f, "HostStarted"),
+            Event::HostStopped(_) => write!(f, "HostStopped"),
+            Event::HostHeartbeat(_) => write!(f, "HostHeartbeat"),
+            Event::LinkdefSet(_) => write!(f, "LinkdefSet"),
+            Event::LinkdefDeleted(_) => write!(f, "LinkdefDeleted"),
+            Event::ManifestPublished(_) => write!(f, "ManifestPublished"),
+            Event::ManifestUnpublished(_) => write!(f, "ManifestUnpublished"),
+        }
+    }
 }
 
 impl TryFrom<CloudEvent> for Event {

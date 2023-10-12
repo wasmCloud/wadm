@@ -171,7 +171,7 @@ async fn test_basic_separation(client_info: &ClientInfo) -> anyhow::Result<()> {
             .await
             .map_err(|e| anyhow::anyhow!("{e:?}"))?;
 
-        if !links.links.iter().any(|ld| {
+        if !links.iter().any(|ld| {
             ld.actor_id == ECHO_ACTOR_ID
                 && ld.provider_id == HTTP_SERVER_PROVIDER_ID
                 && ld.contract_id == "wasmcloud:httpserver"
@@ -206,7 +206,7 @@ async fn test_basic_separation(client_info: &ClientInfo) -> anyhow::Result<()> {
             .await
             .map_err(|e| anyhow::anyhow!("{e:?}"))?;
 
-        if !links.links.iter().any(|ld| {
+        if !links.iter().any(|ld| {
             ld.actor_id == MESSAGE_PUB_ACTOR_ID
                 && ld.provider_id == HTTP_SERVER_PROVIDER_ID
                 && ld.contract_id == "wasmcloud:httpserver"
@@ -216,7 +216,7 @@ async fn test_basic_separation(client_info: &ClientInfo) -> anyhow::Result<()> {
                 links
             )
         }
-        if !links.links.iter().any(|ld| {
+        if !links.iter().any(|ld| {
             ld.actor_id == MESSAGE_PUB_ACTOR_ID
                 && ld.provider_id == NATS_PROVIDER_ID
                 && ld.contract_id == "wasmcloud:messaging"
@@ -246,7 +246,7 @@ async fn test_basic_separation(client_info: &ClientInfo) -> anyhow::Result<()> {
             .await
             .map_err(|e| anyhow::anyhow!("{e:?}"))?;
 
-        if links.links.iter().any(|ld| {
+        if links.iter().any(|ld| {
             ld.actor_id == ECHO_ACTOR_ID
                 && ld.provider_id == HTTP_SERVER_PROVIDER_ID
                 && ld.contract_id == "wasmcloud:httpserver"
@@ -278,7 +278,7 @@ async fn test_basic_separation(client_info: &ClientInfo) -> anyhow::Result<()> {
             .await
             .map_err(|e| anyhow::anyhow!("{e:?}"))?;
 
-        if links.links.iter().any(|ld| {
+        if links.iter().any(|ld| {
             ld.actor_id == MESSAGE_PUB_ACTOR_ID
                 && ld.provider_id == HTTP_SERVER_PROVIDER_ID
                 && ld.contract_id == "wasmcloud:httpserver"
@@ -288,7 +288,7 @@ async fn test_basic_separation(client_info: &ClientInfo) -> anyhow::Result<()> {
                 links
             )
         }
-        if links.links.iter().any(|ld| {
+        if links.iter().any(|ld| {
             ld.actor_id == MESSAGE_PUB_ACTOR_ID
                 && ld.provider_id == NATS_PROVIDER_ID
                 && ld.contract_id == "wasmcloud:messaging"

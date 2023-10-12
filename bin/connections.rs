@@ -1,7 +1,12 @@
 //! A module for connection pools and generators. This is needed because control interface clients
 //! (and possibly other things like nats connections in the future) are lattice scoped or need
 //! different credentials
-use wasmcloud_control_interface::{Client, ClientBuilder};
+use std::marker::PhantomData;
+
+use wasmcloud_control_interface::{
+    kv::{Build, KvStore},
+    Client, ClientBuilder,
+};
 
 // Copied from https://github.com/wasmCloud/control-interface-client/blob/main/src/broker.rs#L1, not public
 const DEFAULT_TOPIC_PREFIX: &str = "wasmbus.ctl";
@@ -17,19 +22,24 @@ pub struct ControlClientConfig {
 /// A client constructor for wasmCloud control interface clients, identified by a lattice ID
 // NOTE: Yes, this sounds java-y. Deal with it.
 #[derive(Clone)]
-pub struct ControlClientConstructor {
+pub struct ControlClientConstructor<T> {
     client: async_nats::Client,
     config: ControlClientConfig,
+    marker: PhantomData<T>,
 }
 
-impl ControlClientConstructor {
+impl<T: KvStore + Build + Clone> ControlClientConstructor<T> {
     /// Creates a new client pool that is all backed using the same NATS client. The given NATS
     /// client should be using credentials that can access all desired lattices.
     pub fn new(
         client: async_nats::Client,
         config: ControlClientConfig,
-    ) -> ControlClientConstructor {
-        ControlClientConstructor { client, config }
+    ) -> ControlClientConstructor<T> {
+        ControlClientConstructor {
+            client,
+            config,
+            marker: PhantomData,
+        }
     }
 
     /// Get the client for the given lattice ID
@@ -37,8 +47,9 @@ impl ControlClientConstructor {
         &self,
         id: &str,
         multitenant_prefix: Option<&str>,
-    ) -> anyhow::Result<Client> {
-        let builder = ClientBuilder::new(self.client.clone()).lattice_prefix(id);
+    ) -> anyhow::Result<Client<T>> {
+        let builder: ClientBuilder<T> =
+            ClientBuilder::new_generic(self.client.clone()).lattice_prefix(id);
         let builder = if let Some(domain) = self.config.js_domain.as_deref() {
             builder.js_domain(domain)
         } else {

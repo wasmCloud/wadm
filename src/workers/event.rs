@@ -610,26 +610,37 @@ where
         let actors = self.store.list::<Actor>(lattice_id).await?;
 
         let host_instances = inventory_actors
-            .iter()
+            .into_iter()
             .map(|actor_description| {
                 (
                     actor_description.id.to_owned(),
                     actor_description
                         .instances
-                        .iter()
-                        // The only thing we care about here are the annotations, so we can get a count
+                        .into_iter()
+                        // The only thing we care about here are the annotations and the count
+                        // associated with those annotations
                         .map(|instance| {
-                            instance
-                                .annotations
-                                .clone()
-                                .unwrap_or_default()
-                                .into_iter()
-                                .collect::<BTreeMap<String, String>>()
+                            (
+                                instance
+                                    .annotations
+                                    .unwrap_or_default()
+                                    .into_iter()
+                                    .collect::<BTreeMap<String, String>>(),
+                                instance.max_concurrent,
+                            )
                         })
-                        .fold(HashMap::new(), |mut map, annotations| {
+                        .fold(HashMap::new(), |mut map, (annotations, max_concurrent)| {
+                            // NOTE(#191): This is for backwards compat with 0.78 as 0.79 changes this to be
+                            // just a max concurrent value. This code should be removed probably by
+                            // the time we release 0.80
+                            let plus = if max_concurrent == 0 {
+                                1_usize
+                            } else {
+                                max_concurrent as usize
+                            };
                             map.entry(annotations)
-                                .and_modify(|count| *count += 1)
-                                .or_insert(1);
+                                .and_modify(|count| *count += plus)
+                                .or_insert(plus);
                             map
                         })
                         .into_iter()
@@ -780,7 +791,13 @@ where
             futures::future::join_all(futs)
                 .await
                 .into_iter()
-                .filter_map(|res: Result<Vec<Command>>| res.ok())
+                .filter_map(|res: Result<Vec<Command>>| match res {
+                    Ok(commands) => Some(commands),
+                    Err(e) => {
+                        warn!(error = ?e, "Failed to clean up old scaler");
+                        None
+                    }
+                })
                 .flatten()
                 .collect::<Vec<Command>>()
         } else {
@@ -817,10 +834,13 @@ where
         };
 
         trace!(?commands, "Publishing commands");
-        // Handle the result from initial reconciliation
+        // Handle the result from initial reconciliation. This lets us handle the net new stuff
+        // immediately
         self.command_publisher.publish_commands(commands).await?;
 
-        // Handle the result from cleaning up old scalers
+        // Now publish the cleanup commands from the old scalers. This will cause the new scalers to
+        // react to the actors/providers/linkdefs disappearing and create new ones with the new
+        // versions
         if let Err(e) = self
             .command_publisher
             .publish_commands(cleanup_commands)
@@ -851,7 +871,7 @@ where
             scaler_status(&scalers).await
         } else {
             StatusInfo::compensating(&format!(
-                "Event modified scaler \"{}\" state, running compensating commands",
+                "Event {event} modified scaler \"{}\" state, running compensating commands",
                 name.to_owned(),
             ))
         };
@@ -881,7 +901,7 @@ where
                 scaler_status(scalers).await
             } else {
                 StatusInfo::compensating(&format!(
-                    "Event modified scaler \"{}\" state, running compensating commands",
+                    "Event {event} modified scaler \"{}\" state, running compensating commands",
                     name.to_owned(),
                 ))
             };
@@ -1002,13 +1022,6 @@ where
 
                 match self.scalers.remove_scalers(&data.name).await {
                     Some(Ok(_)) => {
-                        if let Err(e) = self
-                            .status_publisher
-                            .publish_status(&data.name, StatusInfo::undeployed(""))
-                            .await
-                        {
-                            warn!(error = ?e, "Failed to set status to undeployed");
-                        }
                         return message.ack().await.map_err(WorkError::from);
                     }
                     Some(Err(e)) => {
@@ -1144,6 +1157,7 @@ mod test {
                 lattice_id,
                 store.clone(),
                 command_publisher,
+                status_publisher.clone(),
                 lattice_source,
             )
             .await,
@@ -1427,11 +1441,17 @@ mod test {
                                     annotations: None,
                                     instance_id: "1".to_string(),
                                     revision: 0,
+                                    // TODO: FIXME
+                                    image_ref: None,
+                                    max_concurrent: 0,
                                 },
                                 ActorInstance {
                                     annotations: None,
                                     instance_id: "2".to_string(),
                                     revision: 0,
+                                    // TODO: FIXME
+                                    image_ref: None,
+                                    max_concurrent: 0,
                                 },
                             ],
                             name: None,
@@ -1445,11 +1465,17 @@ mod test {
                                     annotations: None,
                                     instance_id: "3".to_string(),
                                     revision: 0,
+                                    // TODO: FIXME
+                                    image_ref: None,
+                                    max_concurrent: 0,
                                 },
                                 ActorInstance {
                                     annotations: None,
                                     instance_id: "4".to_string(),
                                     revision: 0,
+                                    // TODO: FIXME
+                                    image_ref: None,
+                                    max_concurrent: 0,
                                 },
                             ],
                             name: None,
@@ -1494,11 +1520,17 @@ mod test {
                                     annotations: None,
                                     instance_id: "5".to_string(),
                                     revision: 0,
+                                    // TODO: FIXME
+                                    image_ref: None,
+                                    max_concurrent: 0,
                                 },
                                 ActorInstance {
                                     annotations: None,
                                     instance_id: "6".to_string(),
                                     revision: 0,
+                                    // TODO: FIXME
+                                    image_ref: None,
+                                    max_concurrent: 0,
                                 },
                             ],
                             name: None,
@@ -1512,11 +1544,17 @@ mod test {
                                     annotations: None,
                                     instance_id: "7".to_string(),
                                     revision: 0,
+                                    // TODO: FIXME
+                                    image_ref: None,
+                                    max_concurrent: 0,
                                 },
                                 ActorInstance {
                                     annotations: None,
                                     instance_id: "8".to_string(),
                                     revision: 0,
+                                    // TODO: FIXME
+                                    image_ref: None,
+                                    max_concurrent: 0,
                                 },
                             ],
                             name: None,
@@ -1716,11 +1754,17 @@ mod test {
                                 annotations: None,
                                 instance_id: "3".to_string(),
                                 revision: 0,
+                                // TODO: FIXME
+                                image_ref: None,
+                                max_concurrent: 0,
                             },
                             ActorInstance {
                                 annotations: None,
                                 instance_id: "4".to_string(),
                                 revision: 0,
+                                // TODO: FIXME
+                                image_ref: None,
+                                max_concurrent: 0,
                             },
                         ],
                         name: None,
@@ -1745,11 +1789,17 @@ mod test {
                                 annotations: None,
                                 instance_id: "7".to_string(),
                                 revision: 0,
+                                // TODO: FIXME
+                                image_ref: None,
+                                max_concurrent: 0,
                             },
                             ActorInstance {
                                 annotations: None,
                                 instance_id: "8".to_string(),
                                 revision: 0,
+                                // TODO: FIXME
+                                image_ref: None,
+                                max_concurrent: 0,
                             },
                         ],
                         name: None,
@@ -1910,6 +1960,7 @@ mod test {
                 lattice_id,
                 store.clone(),
                 command_publisher,
+                status_publisher.clone(),
                 lattice_source,
             )
             .await,
@@ -1935,11 +1986,17 @@ mod test {
                                 annotations: None,
                                 instance_id: "1".to_string(),
                                 revision: 0,
+                                // TODO: FIXME
+                                image_ref: None,
+                                max_concurrent: 0,
                             },
                             ActorInstance {
                                 annotations: None,
                                 instance_id: "2".to_string(),
                                 revision: 0,
+                                // TODO: FIXME
+                                image_ref: None,
+                                max_concurrent: 0,
                             },
                         ],
                         name: None,
@@ -1952,6 +2009,9 @@ mod test {
                             annotations: None,
                             instance_id: "3".to_string(),
                             revision: 0,
+                            // TODO: FIXME
+                            image_ref: None,
+                            max_concurrent: 0,
                         }],
                         name: None,
                     },
@@ -2066,6 +2126,7 @@ mod test {
                 lattice_id,
                 store.clone(),
                 command_publisher,
+                status_publisher.clone(),
                 lattice_source,
             )
             .await,
@@ -2182,6 +2243,7 @@ mod test {
                 lattice_id,
                 store.clone(),
                 command_publisher,
+                status_publisher.clone(),
                 lattice_source,
             )
             .await,
@@ -2285,6 +2347,7 @@ mod test {
                 lattice_id,
                 store.clone(),
                 command_publisher,
+                status_publisher.clone(),
                 lattice_source,
             )
             .await,
@@ -2326,11 +2389,17 @@ mod test {
                             instance_id: "1".to_string(),
                             annotations: None,
                             revision: 0,
+                            // TODO: FIXME
+                            image_ref: None,
+                            max_concurrent: 0,
                         },
                         ActorInstance {
                             instance_id: "2".to_string(),
                             annotations: None,
                             revision: 0,
+                            // TODO: FIXME
+                            image_ref: None,
+                            max_concurrent: 0,
                         },
                     ],
                 }],
