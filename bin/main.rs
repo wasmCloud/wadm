@@ -137,8 +137,10 @@ struct Args {
     )]
     api_prefix: String,
 
-    /// The Stream topic prefix to use. This is an advanced setting that should only be used if you
-    /// know what you are doing
+    /// This prefix to used for the internal streams. When running in a multitenant environment,
+    /// clients share the same JS domain (since messages need to come from lattices).
+    /// Setting a stream prefix makes it possible to have a separate stream for different wadms running in a multitenant environment.
+    /// This is an advanced setting that should only be used if you know what you are doing.
     #[arg(long = "stream-prefix", env = "WADM_STREAM_PREFIX")]
     stream_prefix: Option<String>,
 
