@@ -1,6 +1,6 @@
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
+use std::{collections::HashMap, path::PathBuf};
 
 use async_nats::jetstream::{stream::Stream, Context};
 use clap::Parser;
@@ -137,6 +137,13 @@ struct Args {
     )]
     api_prefix: String,
 
+    /// This prefix to used for the internal streams. When running in a multitenant environment,
+    /// clients share the same JS domain (since messages need to come from lattices).
+    /// Setting a stream prefix makes it possible to have a separate stream for different wadms running in a multitenant environment.
+    /// This is an advanced setting that should only be used if you know what you are doing.
+    #[arg(long = "stream-prefix", env = "WADM_STREAM_PREFIX")]
+    stream_prefix: Option<String>,
+
     /// Name of the bucket used for storage of manifests
     #[arg(
         long = "manifest-bucket-name",
@@ -191,9 +198,22 @@ async fn main() -> anyhow::Result<()> {
 
     debug!("Ensuring event stream");
 
+    let internal_stream_name = |stream_name: &str| -> String {
+        match args.stream_prefix.clone() {
+            Some(stream_prefix) => {
+                format!(
+                    "{}.{}",
+                    stream_prefix.trim_end_matches(trimmer),
+                    stream_name
+                )
+            }
+            None => stream_name.to_string(),
+        }
+    };
+
     let event_stream = nats::ensure_stream(
         &context,
-        EVENT_STREAM_NAME.to_owned(),
+        internal_stream_name(EVENT_STREAM_NAME),
         vec![DEFAULT_WADM_EVENTS_TOPIC.to_owned()],
         Some(
             "A stream that stores all events coming in on the wasmbus.evt topics in a cluster"
@@ -206,7 +226,7 @@ async fn main() -> anyhow::Result<()> {
 
     let command_stream = nats::ensure_stream(
         &context,
-        COMMAND_STREAM_NAME.to_owned(),
+        internal_stream_name(COMMAND_STREAM_NAME),
         vec![DEFAULT_COMMANDS_TOPIC.to_owned()],
         Some("A stream that stores all commands for wadm".to_string()),
     )
@@ -214,7 +234,7 @@ async fn main() -> anyhow::Result<()> {
 
     let status_stream = nats::ensure_status_stream(
         &context,
-        STATUS_STREAM_NAME.to_owned(),
+        internal_stream_name(STATUS_STREAM_NAME),
         vec![DEFAULT_STATUS_TOPIC.to_owned()],
     )
     .await?;
@@ -233,7 +253,7 @@ async fn main() -> anyhow::Result<()> {
 
     let mirror_stream = nats::ensure_stream(
         &context,
-        mirror_stream.to_owned(),
+        internal_stream_name(mirror_stream),
         event_stream_topics.clone(),
         Some("A stream that publishes all events to the same stream".to_string()),
     )
