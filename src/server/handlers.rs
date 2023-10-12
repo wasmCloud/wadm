@@ -881,18 +881,33 @@ pub(crate) async fn validate_manifest(manifest: Manifest) -> anyhow::Result<()> 
                 }
             }
 
+            let image_ref_split: Vec<&str> = image_name.split(':').collect();
+            let image_ref = match image_ref_split.first() {
+                Some(&ref_link) => ref_link,
+                None => {
+                    // This case should never occur unless the reference just contains a version
+                    return Err(anyhow!(
+                        "Incorrect image reference {} to link name {} in manifest",
+                        image_name,
+                        link
+                    ));
+                }
+            };
+
+            // Check the capability reference regardless of the version
+            // This will prevent providers with different versions to run on the same link name
             if let Some(duplicate_ref) = linkdef_map.get_mut(link) {
-                if duplicate_ref.contains(image_name) {
+                if duplicate_ref.contains(&image_ref.to_string()) {
                     return Err(anyhow!(
                         "Duplicate image reference {} to link name {} in manifest",
                         image_name,
                         link
                     ));
                 } else {
-                    duplicate_ref.push(image_name.to_string());
+                    duplicate_ref.push(image_ref.to_string());
                 }
             }
-            linkdef_map.insert(link.to_string(), vec![image_name.to_string()]);
+            linkdef_map.insert(link.to_string(), vec![image_ref.to_string()]);
         }
 
         // Actor validation : Actors should have a unique name and reference
