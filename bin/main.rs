@@ -1,6 +1,6 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
-use std::{collections::HashMap, path::PathBuf};
 
 use async_nats::jetstream::{stream::Stream, Context};
 use clap::Parser;

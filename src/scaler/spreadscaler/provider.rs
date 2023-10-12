@@ -1,7 +1,6 @@
 use std::{
     cmp::Ordering,
     collections::{BTreeMap, HashMap},
-    hash::{Hash, Hasher},
 };
 
 use anyhow::Result;
