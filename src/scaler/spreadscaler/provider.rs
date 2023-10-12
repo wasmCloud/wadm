@@ -282,10 +282,32 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
 impl<S: ReadStore + Send + Sync> ProviderSpreadScaler<S> {
     /// Construct a new ProviderSpreadScaler with specified configuration values
     pub fn new(store: S, config: ProviderSpreadConfig, component_name: &str) -> Self {
-        let id = format!(
-            "{PROVIDER_SPREAD_SCALER_TYPE}-{}-{component_name}-{}-{}",
-            config.model_name, config.provider_reference, config.provider_link_name,
-        );
+        let id = {
+            let default = format!(
+                "{PROVIDER_SPREAD_SCALER_TYPE}-{}-{component_name}-{}-{}",
+                config.model_name, config.provider_reference, config.provider_link_name,
+            );
+
+            match &config.provider_config {
+                Some(provider_config) => {
+                    if let Some(provider_config_hash) =
+                        compute_provider_config_hash(provider_config)
+                    {
+                        format!(
+                            "{PROVIDER_SPREAD_SCALER_TYPE}-{}-{component_name}-{}-{}-{}",
+                            config.model_name,
+                            config.provider_reference,
+                            config.provider_link_name,
+                            provider_config_hash
+                        )
+                    } else {
+                        default
+                    }
+                }
+                None => default,
+            }
+        };
+
         Self {
             store,
             spread_requirements: compute_spread(&config.spread_config),
@@ -319,6 +341,10 @@ impl<S: ReadStore + Send + Sync> ProviderSpreadScaler<S> {
     }
 }
 
+fn compute_provider_config_hash(provider_config: &CapabilityConfig) -> Option<String> {
+    provider_config.try_base64_encoding().ok()
+}
+
 #[cfg(test)]
 mod test {
     use std::{
@@ -345,6 +371,69 @@ mod test {
     use super::*;
 
     const MODEL_NAME: &str = "test_provider_spreadscaler";
+
+    #[test]
+    fn test_id_generator() {
+        let config = ProviderSpreadConfig {
+            lattice_id: "lattice".to_string(),
+            provider_reference: "provider".to_string(),
+            provider_link_name: "link".to_string(),
+            provider_contract_id: "contract".to_string(),
+            model_name: MODEL_NAME.to_string(),
+            spread_config: SpreadScalerProperty {
+                replicas: 1,
+                spread: vec![],
+            },
+            provider_config: None,
+        };
+
+        let scaler = ProviderSpreadScaler::new(Arc::new(TestStore::default()), config, "component");
+        assert_eq!(
+            scaler.id(),
+            format!(
+                "{PROVIDER_SPREAD_SCALER_TYPE}-{}-component-provider-link",
+                MODEL_NAME
+            ),
+            "ProviderSpreadScaler ID should be valid"
+        );
+
+        let config = ProviderSpreadConfig {
+            lattice_id: "lattice".to_string(),
+            provider_reference: "provider".to_string(),
+            provider_link_name: "link".to_string(),
+            provider_contract_id: "contract".to_string(),
+            model_name: MODEL_NAME.to_string(),
+            spread_config: SpreadScalerProperty {
+                replicas: 1,
+                spread: vec![],
+            },
+            provider_config: Some(CapabilityConfig::Opaque("foobar".to_string())),
+        };
+
+        let scaler = ProviderSpreadScaler::new(Arc::new(TestStore::default()), config, "component");
+        assert_eq!(
+            scaler.id(),
+            format!(
+                "{PROVIDER_SPREAD_SCALER_TYPE}-{}-component-provider-link-{}",
+                MODEL_NAME,
+                compute_provider_config_hash(&CapabilityConfig::Opaque("foobar".to_string()))
+                    .unwrap()
+            ),
+            "ProviderSpreadScaler ID should be valid"
+        );
+
+        let mut scaler_id_tokens = scaler.id().split('-');
+        scaler_id_tokens.next_back();
+        let scaler_id_tokens = scaler_id_tokens.collect::<Vec<&str>>().join("-");
+        assert_eq!(
+            scaler_id_tokens,
+            format!(
+                "{PROVIDER_SPREAD_SCALER_TYPE}-{}-component-provider-link",
+                MODEL_NAME
+            ),
+            "ProviderSpreadScaler ID should be valid and depends on provider_config"
+        );
+    }
 
     #[tokio::test]
     async fn can_spread_on_multiple_hosts() -> Result<()> {

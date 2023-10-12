@@ -1,10 +1,13 @@
 use std::collections::{BTreeMap, HashMap};
 
+use anyhow::Context;
 use serde::{
     de::{self, Deserializer, MapAccess, Visitor},
     ser::Serializer,
     Deserialize, Serialize,
 };
+
+use base64::{engine::general_purpose, Engine as _};
 
 pub(crate) mod internal;
 
@@ -137,6 +140,25 @@ pub enum CapabilityConfig {
     Opaque(String),
 }
 
+impl CapabilityConfig {
+    pub fn try_base64_encoding(&self) -> anyhow::Result<String> {
+        let mut bytes: Vec<u8> = Vec::new();
+        serde_json::to_writer(&mut bytes, &self)
+            .context("failed to serialize capability config into bytes for base64 encoding")?;
+        Ok(general_purpose::STANDARD.encode(&bytes))
+    }
+
+    pub fn try_base64_encoding_with_engine<T: base64::Engine>(
+        &self,
+        engine: &T,
+    ) -> anyhow::Result<String> {
+        let mut bytes: Vec<u8> = Vec::new();
+        serde_json::to_writer(&mut bytes, &self)
+            .context("failed to serialize capability config into bytes for base64 encoding")?;
+        Ok(engine.encode(&bytes))
+    }
+}
+
 impl<'de> Deserialize<'de> for CapabilityConfig {
     fn deserialize<D>(deserializer: D) -> Result<CapabilityConfig, D::Error>
     where
@@ -182,7 +204,6 @@ impl Serialize for CapabilityConfig {
         }
     }
 }
-
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct Trait {
     /// The type of trait specified. This should be a unique string for the type of scaler. As we
