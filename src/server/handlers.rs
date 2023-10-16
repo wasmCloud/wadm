@@ -521,6 +521,91 @@ impl<P: Publisher> Handler<P> {
                 }
             };
 
+        // Retrieve all stored models in the lattice
+        let stored_models = match self.store.list(account_id, lattice_id).await {
+            Ok(d) => d,
+            Err(e) => {
+                error!(error = %e, "Unable to fetch data");
+                self.send_error(msg.reply, "Internal storage error".to_string())
+                    .await;
+                return;
+            }
+        };
+
+        // Retrieve all the existing provider refs in store that are currently deployed
+        let mut existing_provider_refs: HashSet<String> = HashSet::new();
+        for model_summary in stored_models.iter() {
+            if let Some(deployed_version) = &model_summary.deployed_version {
+                let (stored_manifest, _) = match self
+                    .store
+                    .get(account_id, lattice_id, &model_summary.name)
+                    .await
+                {
+                    Ok(Some(m)) => m,
+                    Ok(None) => (StoredManifest::default(), 0),
+                    Err(e) => {
+                        error!(error = %e, "Unable to fetch data");
+                        self.send_error(msg.reply, "Internal storage error".to_string())
+                            .await;
+                        return;
+                    }
+                };
+                if let Some(deployed_manifest) = stored_manifest.get_version(deployed_version) {
+                    for component in deployed_manifest.spec.components.iter() {
+                        if let Properties::Capability {
+                            properties:
+                                CapabilityProperties {
+                                    image: image_name, ..
+                                },
+                        } = &component.properties
+                        {
+                            let image_ref_split: Vec<&str> = image_name.split(':').collect();
+                            if let Some(&ref_link) = image_ref_split.first() {
+                                existing_provider_refs.insert(ref_link.to_string());
+                            }
+                        }
+                    }
+                };
+            }
+        }
+
+        let staged_model = match req.version.clone() {
+            Some(v) => {
+                if let Some(model) = manifests.get_version(&v) {
+                    model
+                } else {
+                    manifests.get_current()
+                }
+            }
+            None => manifests.get_current(),
+        };
+
+        // Compare if any of the provider refs in the staged model are duplicates
+        for component in staged_model.spec.components.iter() {
+            if let Properties::Capability {
+                properties:
+                    CapabilityProperties {
+                        image: image_name, ..
+                    },
+            } = &component.properties
+            {
+                let image_ref_split: Vec<&str> = image_name.split(':').collect();
+                if let Some(&ref_link) = image_ref_split.first() {
+                    if !existing_provider_refs.insert(ref_link.to_string()) {
+                        error!("Provider {image_name} is currently deployed. Forbidden operation.",);
+                        self.send_error(
+                            msg.reply,
+                            format!(
+                                "Provider {image_name} is currently deployed. Forbidden operation."
+                            ),
+                        )
+                        .await;
+                        return;
+                    }
+                }
+            }
+        }
+
         if !manifests.deploy(req.version) {
             trace!("Requested version does not exist");
             self.send_reply(
