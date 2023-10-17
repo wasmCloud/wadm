@@ -533,7 +533,7 @@ impl<P: Publisher> Handler<P> {
         };
 
         // Retrieve all the existing provider refs in store that are currently deployed
-        let mut existing_provider_refs: HashSet<String> = HashSet::new();
+        let mut existing_provider_refs: HashMap<String, String> = HashMap::new();
         for model_summary in stored_models.iter() {
             if let Some(deployed_version) = &model_summary.deployed_version {
                 let (stored_manifest, _) = match self
@@ -550,22 +550,27 @@ impl<P: Publisher> Handler<P> {
                         return;
                     }
                 };
-                if let Some(deployed_manifest) = stored_manifest.get_version(deployed_version) {
-                    for component in deployed_manifest.spec.components.iter() {
-                        if let Properties::Capability {
-                            properties:
-                                CapabilityProperties {
-                                    image: image_name, ..
-                                },
-                        } = &component.properties
-                        {
-                            let image_ref_split: Vec<&str> = image_name.split(':').collect();
-                            if let Some(&ref_link) = image_ref_split.first() {
-                                existing_provider_refs.insert(ref_link.to_string());
+                if stored_manifest.name() != name {
+                    if let Some(deployed_manifest) = stored_manifest.get_version(deployed_version) {
+                        for component in deployed_manifest.spec.components.iter() {
+                            if let Properties::Capability {
+                                properties:
+                                    CapabilityProperties {
+                                        image: image_name, ..
+                                    },
+                            } = &component.properties
+                            {
+                                let image_ref_split: Vec<&str> = image_name.split(':').collect();
+                                if let (Some(&ref_link), Some(&ref_version)) =
+                                    (image_ref_split.first(), image_ref_split.last())
+                                {
+                                    existing_provider_refs
+                                        .insert(ref_link.to_string(), ref_version.to_string());
+                                }
                             }
                         }
-                    }
-                };
+                    };
+                }
             }
         }
 
@@ -590,17 +595,23 @@ impl<P: Publisher> Handler<P> {
             } = &component.properties
             {
                 let image_ref_split: Vec<&str> = image_name.split(':').collect();
-                if let Some(&ref_link) = image_ref_split.first() {
-                    if !existing_provider_refs.insert(ref_link.to_string()) {
-                        error!("Provider {image_name} is currently deployed. Forbidden operation.",);
-                        self.send_error(
-                            msg.reply,
-                            format!(
+                if let (Some(&ref_link), Some(&ref_version)) =
+                    (image_ref_split.first(), image_ref_split.last())
+                {
+                    if let Some(old_version) = existing_provider_refs.get(ref_link) {
+                        if old_version != ref_version {
+                            error!(
+                                "Provider {image_name} is currently deployed. Forbidden operation.",
+                            );
+                            self.send_error(
+                                msg.reply,
+                                format!(
                                 "Provider {image_name} is currently deployed. Forbidden operation."
                             ),
-                        )
-                        .await;
-                        return;
+                            )
+                            .await;
+                            return;
+                        }
                     }
                 }
             }
