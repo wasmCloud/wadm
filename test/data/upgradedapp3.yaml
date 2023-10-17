@@ -1,0 +1,15 @@
+apiVersion: core.oam.dev/v1beta1
+kind: Application
+metadata:
+  name: dontupdateapp
+  annotations:
+    version: v0.0.1
+    description: "Testing effect of duplicate providers"
+spec:
+  components:
+    # Provider component of an old version that should not be allowed
+    - name: httpserver
+      type: capability
+      properties:
+        contract: wasmcloud:httpserver
+        image: wasmcloud.azurecr.io/httpserver:0.17.0
