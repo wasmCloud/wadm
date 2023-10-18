@@ -521,6 +521,120 @@ impl<P: Publisher> Handler<P> {
                 }
             };
 
+        // Retrieve all stored models in the lattice
+        let stored_models = match self.store.list(account_id, lattice_id).await {
+            Ok(d) => d,
+            Err(e) => {
+                error!(error = %e, "Unable to fetch data");
+                self.send_error(msg.reply, "Internal storage error".to_string())
+                    .await;
+                return;
+            }
+        };
+
+        let staged_model = match req.version.clone() {
+            Some(v) if v == LATEST_VERSION => manifests.get_current(),
+            Some(v) => {
+                if let Some(model) = manifests.get_version(&v) {
+                    model
+                } else {
+                    trace!("Requested version does not exist");
+                    self.send_reply(
+                        msg.reply,
+                        // NOTE: We are constructing all data here, so this shouldn't fail, but just in
+                        // case we unwrap to nothing
+                        serde_json::to_vec(&DeployModelResponse {
+                            result: DeployResult::Error,
+                            message: format!(
+                        "Model with the name {name} does not have the specified version to deploy"
+                    ),
+                        })
+                        .unwrap_or_default(),
+                    )
+                    .await;
+                    return;
+                }
+            }
+            // Get the current version if payload version is None, since deploy() does the same
+            None => manifests.get_current(),
+        };
+
+        // Retrieve all the existing provider refs in store that are currently deployed
+        let mut existing_provider_refs: HashMap<String, (String, String)> = HashMap::new();
+        for model_summary in stored_models.iter() {
+            // Excluding models that do not have a deployed version at present
+            if model_summary.deployed_version.is_some() {
+                let (stored_manifest, _) = match self
+                    .store
+                    .get(account_id, lattice_id, &model_summary.name)
+                    .await
+                {
+                    Ok(Some(m)) => m,
+                    Ok(None) => (StoredManifest::default(), 0),
+                    Err(e) => {
+                        error!(error = %e, "Unable to fetch data");
+                        self.send_error(msg.reply, "Internal storage error".to_string())
+                            .await;
+                        return;
+                    }
+                };
+
+                // Performing checks against all other manifests except previous versions of the current manifest
+                // Because upgrading versions is a valid case for adding providers of updated versions
+                if stored_manifest.name() != name {
+                    if let Some(deployed_manifest) = stored_manifest.get_deployed() {
+                        for component in deployed_manifest.spec.components.iter() {
+                            if let Properties::Capability {
+                                properties:
+                                    CapabilityProperties {
+                                        image: image_name, ..
+                                    },
+                            } = &component.properties
+                            {
+                                if let Some((ref_link, ref_version)) = parse_image_ref(image_name) {
+                                    existing_provider_refs.insert(
+                                        ref_link,
+                                        (ref_version, stored_manifest.name().to_string()),
+                                    );
+                                }
+                            }
+                        }
+                    };
+                }
+            }
+        }
+
+        // Compare if any of the provider refs in the staged model are duplicates
+        for component in staged_model.spec.components.iter() {
+            if let Properties::Capability {
+                properties:
+                    CapabilityProperties {
+                        image: image_name, ..
+                    },
+            } = &component.properties
+            {
+                if let Some((ref_link, ref_version)) = parse_image_ref(image_name) {
+                    if let Some((old_version, old_manifest_name)) =
+                        existing_provider_refs.get(&ref_link)
+                    {
+                        if old_version != &ref_version {
+                            error!(
+                                "Provider {image_name} is already deployed with a different version in {old_manifest_name}.",
+                            );
+                            self.send_error(
+                                msg.reply,
+                                format!(
+                                "Provider {image_name} is already deployed with a different version in {old_manifest_name}."
+                            ),
+                            )
+                            .await;
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+
         if !manifests.deploy(req.version) {
             trace!("Requested version does not exist");
             self.send_reply(
@@ -881,18 +995,31 @@ pub(crate) async fn validate_manifest(manifest: Manifest) -> anyhow::Result<()> 
                 }
             }
 
+            let image_ref = if let Some((ref_link, _)) = parse_image_ref(image_name) {
+                ref_link
+            } else {
+                // This case should never occur unless the reference just contains a version
+                return Err(anyhow!(
+                    "Incorrect image reference {} to link name {} in manifest",
+                    image_name,
+                    link
+                ));
+            };
+
+            // Check the capability reference regardless of the version
+            // This will prevent providers with different versions to run on the same link name
             if let Some(duplicate_ref) = linkdef_map.get_mut(link) {
-                if duplicate_ref.contains(image_name) {
+                if duplicate_ref.contains(&image_ref.to_string()) {
                     return Err(anyhow!(
                         "Duplicate image reference {} to link name {} in manifest",
                         image_name,
                         link
                     ));
                 } else {
-                    duplicate_ref.push(image_name.to_string());
+                    duplicate_ref.push(image_ref.to_string());
                 }
             }
-            linkdef_map.insert(link.to_string(), vec![image_name.to_string()]);
+            linkdef_map.insert(link.to_string(), vec![image_ref.to_string()]);
         }
 
         // Actor validation : Actors should have a unique name and reference
@@ -949,6 +1076,17 @@ pub(crate) async fn validate_manifest(manifest: Manifest) -> anyhow::Result<()> 
     }
 
     Ok(())
+}
+
+fn parse_image_ref(image_name: &str) -> Option<(String, String)> {
+    let image_ref_split: Vec<&str> = image_name.split(':').collect();
+    if let (Some(&ref_link), Some(&ref_version)) = (image_ref_split.first(), image_ref_split.last())
+    {
+        Some((ref_link.to_owned(), ref_version.to_owned()))
+    } else {
+        // ignore if image ref is not in the format some_url:some_version
+        None
+    }
 }
 
 #[cfg(test)]

@@ -411,4 +411,40 @@ async fn test_upgrade(client_info: &ClientInfo) {
         Ok(())
     })
     .await;
+
+    let resp = client_info
+        .put_manifest_from_file("upgradedapp3.yaml", None, None)
+        .await;
+
+    assert_ne!(
+        resp.result,
+        PutResult::Error,
+        "Shouldn't have errored when creating manifest: {resp:?}"
+    );
+
+    let resp = client_info
+        .deploy_manifest("dontupdateapp", None, None, Some("v0.0.1"))
+        .await;
+    assert_eq!(
+        resp.result,
+        DeployResult::Error,
+        "Should have errored when deploying manifest: {resp:?}"
+    );
+
+    assert_status(None, None, || async {
+        let inventory = client_info.get_all_inventory("default").await?;
+        println!("Inventory: {:?}", inventory);
+        check_providers(
+            &inventory,
+            "wasmcloud.azurecr.io/httpserver:0.19.0",
+            ExpectedCount::Exactly(1),
+        )?;
+        check_providers(
+            &inventory,
+            "wasmcloud.azurecr.io/httpserver:0.17.0",
+            ExpectedCount::Exactly(0),
+        )?;
+        Ok(())
+    })
+    .await;
 }

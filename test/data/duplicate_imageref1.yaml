@@ -40,6 +40,6 @@ spec:
     - name: webcap2
       type: capability
       properties:
-        image: wasmcloud.azurecr.io/httpserver:0.13.1
+        image: wasmcloud.azurecr.io/httpserver:0.14.1
         contract: wasmcloud:blinkenlights
         link_name: default
