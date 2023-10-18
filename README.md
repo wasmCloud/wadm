@@ -1,4 +1,4 @@
-<img align="right" src="./wadm.png" alt="wadm logo" style="width: 200px" />
+<img align="right" src="./static/images/wadm_128.png" alt="wadm logo" />
 
 # wasmCloud Application Deployment Manager (wadm)
 
