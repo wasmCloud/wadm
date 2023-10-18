@@ -533,6 +533,7 @@ impl<P: Publisher> Handler<P> {
         };
 
         let staged_model = match req.version.clone() {
+            Some(v) if v == LATEST_VERSION => manifests.get_current(),
             Some(v) => {
                 if let Some(model) = manifests.get_version(&v) {
                     model
