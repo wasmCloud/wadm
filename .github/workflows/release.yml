@@ -51,7 +51,7 @@ jobs:
               targetPath: "target/aarch64-apple-darwin/release/",
             }
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: set the release version (tag)
         if: startsWith(github.ref, 'refs/tags/v')
@@ -166,7 +166,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: build
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Install latest Rust stable toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -186,7 +186,7 @@ jobs:
     env:
       RELEASE_VERSION: ${{ needs.build.outputs.version_output }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v2
