@@ -551,32 +551,37 @@ where
         &self,
         actors: &HashMap<String, Actor>,
         host_id: &str,
-        instance_map: HashMap<String, HashSet<WadmActorInfo>>,
+        instance_map: Vec<(ActorDescription, HashSet<WadmActorInfo>)>,
     ) -> anyhow::Result<Vec<(String, Actor)>> {
         let claims = self.ctl_client.get_claims().await?;
 
         Ok(instance_map
             .into_iter()
-            .map(|(actor_id, instances)| {
-                if let Some(actor) = actors.get(&actor_id) {
+            .map(|(actor_description, instances)| {
+                if let Some(actor) = actors.get(&actor_description.id) {
                     // Construct modified Actor with new instances included
                     let mut new_instances = actor.instances.clone();
                     new_instances.insert(host_id.to_owned(), instances);
                     let actor = Actor {
                         instances: new_instances,
+                        reference: actor_description
+                            .image_ref
+                            .unwrap_or(actor.reference.clone()),
+                        name: actor_description.name.unwrap_or(actor.name.clone()),
                         ..actor.clone()
                     };
 
-                    (actor_id, actor)
-                } else if let Some(claim) = claims.get(&actor_id) {
+                    (actor_description.id, actor)
+                } else if let Some(claim) = claims.get(&actor_description.id) {
                     (
-                        actor_id.clone(),
+                        actor_description.id.clone(),
                         Actor {
-                            id: actor_id,
+                            id: actor_description.id,
                             name: claim.name.to_owned(),
                             capabilities: claim.capabilities.to_owned(),
                             issuer: claim.issuer.to_owned(),
                             instances: HashMap::from_iter([(host_id.to_owned(), instances)]),
+                            reference: actor_description.image_ref.unwrap_or_default(),
                             ..Default::default()
                         },
                     )
@@ -584,13 +589,14 @@ where
                     warn!("Claims not found for actor on host, information is missing");
 
                     (
-                        actor_id.clone(),
+                        actor_description.id.clone(),
                         Actor {
-                            id: actor_id,
+                            id: actor_description.id,
                             name: "".to_owned(),
                             capabilities: Vec::new(),
                             issuer: "".to_owned(),
                             instances: HashMap::from_iter([(host_id.to_owned(), instances)]),
+                            reference: actor_description.image_ref.unwrap_or_default(),
                             ..Default::default()
                         },
                     )
@@ -613,7 +619,15 @@ where
             .into_iter()
             .map(|actor_description| {
                 (
-                    actor_description.id.to_owned(),
+                    ActorDescription {
+                        id: actor_description.id,
+                        image_ref: actor_description.image_ref,
+                        name: actor_description.name,
+                        // TODO(#191): Explicitly throwing away the instances list, we don't need it in the
+                        // inventory format. As we resolve #191 we should be able to avoid the below folding
+                        // logic and proceed with the instances list as-is on the host inventory.
+                        ..Default::default()
+                    },
                     actor_description
                         .instances
                         .into_iter()
@@ -648,51 +662,56 @@ where
                         .collect::<HashSet<WadmActorInfo>>(),
                 )
             })
-            .collect::<HashMap<String, HashSet<WadmActorInfo>>>();
+            .collect::<Vec<(ActorDescription, HashSet<WadmActorInfo>)>>();
 
         // Compare stored Actors to the "true" list on this host, updating stored
         // Actors when they differ from the authoratative heartbeat
         let actors_to_update = host_instances
             .into_iter()
-            .filter_map(|(actor_id, instances)| {
+            .filter_map(|(actor_description, instances)| {
                 if actors
-                    .get(&actor_id)
+                    .get(&actor_description.id)
                     .map(|actor| {
-                        actor
-                            .instances
-                            .get(&host.id)
-                            .map(|store_instances| {
-                                // NOTE(thomastaylor312): This is the weird part where we have to do
-                                // custom equality checking because of how we did hashing. The only
-                                // way to keep this data serializable was by storing it as a
-                                // HashSet. A map of Annotations -> count would be better, but it's
-                                // not serializable. Please note that there is some iteration
-                                // involved, it is highly unlikely an actor would have more than 2
-                                // or 3 different instances running with different annotations
-                                if store_instances.len() != instances.len() {
-                                    // Short circuit if we have more or less
-                                    return false;
-                                }
-                                // Otherwise, check that all the annotations and counts are the same
-                                instances.iter().all(|instance| {
-                                    store_instances
-                                        .get(&instance.annotations)
-                                        .map_or(false, |store_instance| {
-                                            instance.count == store_instance.count
-                                        })
+                        // If the stored reference isn't what we receive on the heartbeat, update
+                        actor_description
+                            .image_ref
+                            .as_ref()
+                            .is_some_and(|actor_ref| &actor.reference == actor_ref)
+                            && actor
+                                .instances
+                                .get(&host.id)
+                                .map(|store_instances| {
+                                    // NOTE(thomastaylor312): This is the weird part where we have to do
+                                    // custom equality checking because of how we did hashing. The only
+                                    // way to keep this data serializable was by storing it as a
+                                    // HashSet. A map of Annotations -> count would be better, but it's
+                                    // not serializable. Please note that there is some iteration
+                                    // involved, it is highly unlikely an actor would have more than 2
+                                    // or 3 different instances running with different annotations
+                                    if store_instances.len() != instances.len() {
+                                        // Short circuit if we have more or less
+                                        return false;
+                                    }
+                                    // Otherwise, check that all the annotations and counts are the same
+                                    instances.iter().all(|instance| {
+                                        store_instances
+                                            .get(&instance.annotations)
+                                            .map_or(false, |store_instance| {
+                                                instance.count == store_instance.count
+                                            })
+                                    })
                                 })
-                            })
-                            .unwrap_or(false)
+                                .unwrap_or(false)
                     })
                     .unwrap_or(false)
                 {
                     None
                 } else {
-                    Some((actor_id, instances))
+                    Some((actor_description, instances))
                 }
             })
             // actor ID to all instances on this host
-            .collect::<HashMap<String, HashSet<WadmActorInfo>>>();
+            .collect::<Vec<(ActorDescription, HashSet<WadmActorInfo>)>>();
 
         let actors_to_store = self
             .populate_actor_info(&actors, &host.id, actors_to_update)
