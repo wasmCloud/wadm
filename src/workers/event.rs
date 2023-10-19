@@ -2381,7 +2381,8 @@ mod test {
 
         let host_id = "jabbaspalace";
 
-        // Store some existing stuff
+        // Store existing actors and providers as-if they had the minimum
+        // amount of information
         store
             .store(
                 lattice_id,
@@ -2400,6 +2401,19 @@ mod test {
             )
             .await
             .unwrap();
+        store
+            .store(
+                lattice_id,
+                "jabbatheprovider/default".to_string(),
+                Provider {
+                    id: "jabbatheprovider".to_string(),
+                    link_name: "default".to_string(),
+                    hosts: HashMap::from_iter([(host_id.to_string(), ProviderStatus::Pending)]),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
 
         *inventory.write().await = HashMap::from_iter([(
             host_id.to_string(),
@@ -2408,8 +2422,8 @@ mod test {
                 issuer: "my-issuer-5".to_string(),
                 actors: vec![ActorDescription {
                     id: "jabba".to_string(),
-                    image_ref: None,
-                    name: None,
+                    image_ref: Some("jabba.tatooinecr.io/jabba:latest".to_string()),
+                    name: Some("Da Hutt".to_string()),
                     instances: vec![
                         ActorInstance {
                             instance_id: "1".to_string(),
@@ -2429,7 +2443,15 @@ mod test {
                 }],
                 labels: HashMap::new(),
                 host_id: host_id.to_string(),
-                providers: vec![],
+                providers: vec![ProviderDescription {
+                    annotations: None,
+                    id: "jabbatheprovider".to_string(),
+                    image_ref: Some("jabba.tatooinecr.io/provider:latest".to_string()),
+                    contract_id: "jabba:jabba".to_string(),
+                    link_name: "default".to_string(),
+                    name: Some("Jabba The Provider".to_string()),
+                    revision: 0,
+                }],
             },
         )]);
 
@@ -2441,7 +2463,12 @@ mod test {
                     actors: HashMap::from([("jabba".to_string(), 2)]),
                     friendly_name: "palace-1983".to_string(),
                     labels: HashMap::default(),
-                    providers: vec![],
+                    providers: vec![ProviderInfo {
+                        contract_id: "jabba:jabba".to_string(),
+                        link_name: "default".to_string(),
+                        annotations: BTreeMap::new(),
+                        public_key: "jabbatheprovider".to_string(),
+                    }],
                     uptime_human: "60s".into(),
                     uptime_seconds: 60,
                     version: semver::Version::parse("0.61.0").unwrap(),
@@ -2456,6 +2483,32 @@ mod test {
         assert_eq!(actors.len(), 1, "Should have 1 actor in the store");
         let actor = actors.get("jabba").expect("Actor should exist");
         assert_eq!(actor.count(), 2, "Should now have 2 actors");
+        assert_eq!(actor.name, "Da Hutt", "Should have the correct name");
+        assert_eq!(
+            actor.reference, "jabba.tatooinecr.io/jabba:latest",
+            "Should have the correct reference"
+        );
+
+        let providers = store
+            .list::<Provider>(lattice_id)
+            .await
+            .expect("should be able to grab providers from store");
+        assert_eq!(providers.len(), 1, "Should have 1 provider in the store");
+        let provider = providers
+            .get("jabbatheprovider/default")
+            .expect("Provider should exist");
+        assert_eq!(
+            provider.name, "Jabba The Provider",
+            "Should have the correct name"
+        );
+        assert_eq!(
+            provider.reference, "jabba.tatooinecr.io/provider:latest",
+            "Should have the correct reference"
+        );
+        assert_eq!(
+            provider.contract_id, "jabba:jabba",
+            "Should have the correct contract id"
+        );
     }
 
     fn assert_actor(
