@@ -2,3 +2,6 @@
 test/e2e_log/
 
 *.dump
+
+# Thanks MacOS
+.DS_Store
