@@ -513,7 +513,7 @@ where
         lattice_id: &str,
         host_id: &str,
         provider: &ProviderHealthCheckInfo,
-        failed: bool,
+        failed: Option<bool>,
     ) -> anyhow::Result<()> {
         debug!("Handling provider health check event");
         trace!("Getting current provider");
@@ -529,13 +529,21 @@ where
                 }
             }
         };
-        debug!("Updating store with current status");
-        let status = if failed {
-            ProviderStatus::Failed
-        } else {
-            ProviderStatus::Running
+
+        let status = match (current.hosts.get(host_id), failed) {
+            // If the provider status changed from when we last saw it, modify status
+            (_, Some(true)) => Some(ProviderStatus::Failed),
+            (_, Some(false)) => Some(ProviderStatus::Running),
+            // If the provider is pending or we missed the initial start and we get a health check
+            // status, assume it's running fine.
+            (Some(ProviderStatus::Pending) | None, None) => Some(ProviderStatus::Running),
+            _ => None,
         };
-        current.hosts.insert(host_id.to_owned(), status);
+
+        if let Some(status) = status {
+            debug!("Updating store with current status");
+            current.hosts.insert(host_id.to_owned(), status);
+        }
 
         // TODO(thomastaylor312): Once we are able to fetch refmaps from the ctl client, we should
         // make it update any empty references with the data from the refmap
@@ -1024,12 +1032,16 @@ where
                 .handle_provider_stopped(&message.lattice_id, provider)
                 .await
                 .map(|_| None),
+            Event::ProviderHealthCheckStatus(ProviderHealthCheckStatus { data, host_id }) => self
+                .handle_provider_health_check(&message.lattice_id, host_id, data, None)
+                .await
+                .map(|_| None),
             Event::ProviderHealthCheckPassed(ProviderHealthCheckPassed { data, host_id }) => self
-                .handle_provider_health_check(&message.lattice_id, host_id, data, false)
+                .handle_provider_health_check(&message.lattice_id, host_id, data, Some(false))
                 .await
                 .map(|_| None),
             Event::ProviderHealthCheckFailed(ProviderHealthCheckFailed { data, host_id }) => self
-                .handle_provider_health_check(&message.lattice_id, host_id, data, true)
+                .handle_provider_health_check(&message.lattice_id, host_id, data, Some(true))
                 .await
                 .map(|_| None),
             Event::ManifestPublished(data) => self
@@ -2168,7 +2180,7 @@ mod test {
                     public_key: provider.public_key.clone(),
                     contract_id: provider.contract_id.clone(),
                 },
-                false,
+                Some(false),
             )
             .await
             .expect("Should be able to handle a provider health check event");
@@ -2201,7 +2213,7 @@ mod test {
                     public_key: provider.public_key.clone(),
                     contract_id: provider.contract_id.clone(),
                 },
-                true,
+                Some(true),
             )
             .await
             .expect("Should be able to handle a provider health check event");
@@ -2288,7 +2300,7 @@ mod test {
                     public_key: public_key.to_string(),
                     contract_id: contract_id.to_string(),
                 },
-                false,
+                Some(false),
             )
             .await
             .expect("Should be able to handle a provider health check event");
