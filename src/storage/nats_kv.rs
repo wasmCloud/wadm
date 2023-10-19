@@ -16,7 +16,7 @@ use std::collections::HashMap;
 use std::io::Error as IoError;
 
 use async_nats::{
-    jetstream::kv::{Operation, Store as KvStore},
+    jetstream::kv::{Operation, Store as KvStore, UpdateErrorKind},
     Error as NatsError,
 };
 use async_trait::async_trait;
@@ -170,17 +170,38 @@ impl Store for NatsKvStore {
             };
         }
         let serialized = serde_json::to_vec(&current_data)?;
-        // NOTE(thomastaylor312): This could not matter, but because this is JSON and not consuming
-        // the data it is serializing, we are now holding a vec of the serialized data and the
-        // actual struct in memory. So this drops it immediately to hopefully keep memory usage down
-        // on busy servers
-        drop(current_data);
         trace!(len = serialized.len(), "Writing bytes to store");
-        self.store
+        match self
+            .store
             .update(key, serialized.into(), revision)
             .await
             .map(|_| ())
-            .map_err(|e| NatsStoreError::Nats(e.into()))
+        {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == UpdateErrorKind::Other => {
+                // Revisions are tracked specifically by key, but the revision number is a global
+                // monotonically increasing number. So if we get an error that the revision is the
+                // wrong last sequence AND the revision for the key we're writing to hasn't changed,
+                // we can simply `put` the value instead of using the update. Put another way, this means
+                // that we made another change to the stream but not this specific key.
+                if self
+                    .internal_list::<T>(lattice_id)
+                    .in_current_span()
+                    .await?
+                    .1
+                    == revision
+                {
+                    let key = generate_key::<T>(lattice_id);
+                    let serialized = serde_json::to_vec(&current_data)?;
+                    self.store.put(key, serialized.into()).await.map(|_| ())
+                } else {
+                    Ok(())
+                }
+                // otherwise, retry?
+            }
+            Err(_) => Ok(()),
+        }
+        .map_err(|e| NatsStoreError::Nats(e.into()))
     }
 
     #[instrument(level = "debug", skip(self, data), fields(key = Empty))]
@@ -229,4 +250,12 @@ impl Store for NatsKvStore {
 
 fn generate_key<T: StateKind>(lattice_id: &str) -> String {
     format!("{}_{lattice_id}", T::KIND)
+}
+
+#[cfg(test)]
+mod test {
+    #[tokio::test]
+    async fn can_update_if_other_key_updated() {
+        assert!(true)
+    }
 }
