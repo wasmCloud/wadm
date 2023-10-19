@@ -755,6 +755,14 @@ where
                         prov.contract_id = info.contract_id.clone();
                         has_changes = true;
                     }
+                    if prov.name.is_empty() {
+                        prov.name = info.name.clone().unwrap_or_default();
+                        has_changes = true;
+                    }
+                    if prov.reference.is_empty() {
+                        prov.reference = info.image_ref.clone().unwrap_or_default();
+                        has_changes = true;
+                    }
                     if let Entry::Vacant(entry) = prov.hosts.entry(host.id.clone()) {
                         entry.insert(ProviderStatus::default());
                         has_changes = true;
@@ -775,6 +783,8 @@ where
                             contract_id: info.contract_id.clone(),
                             link_name: info.link_name.clone(),
                             hosts: [(host.id.clone(), ProviderStatus::default())].into(),
+                            name: info.name.clone().unwrap_or_default(),
+                            reference: info.image_ref.clone().unwrap_or_default(),
                             ..Default::default()
                         },
                     ))
