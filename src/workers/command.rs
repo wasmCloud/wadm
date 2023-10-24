@@ -1,5 +1,5 @@
 use tracing::{instrument, trace};
-use wasmcloud_control_interface::{kv::KvStore, CtlOperationAck};
+use wasmcloud_control_interface::CtlOperationAck;
 
 use crate::{
     commands::*,
@@ -14,19 +14,19 @@ use super::insert_managed_annotations;
 
 /// A worker implementation for handling incoming commands
 #[derive(Clone)]
-pub struct CommandWorker<T: Clone> {
-    client: wasmcloud_control_interface::Client<T>,
+pub struct CommandWorker {
+    client: wasmcloud_control_interface::Client,
 }
 
-impl<T: Clone> CommandWorker<T> {
+impl CommandWorker {
     /// Creates a new command worker with the given connection pool.
-    pub fn new(ctl_client: wasmcloud_control_interface::Client<T>) -> CommandWorker<T> {
+    pub fn new(ctl_client: wasmcloud_control_interface::Client) -> CommandWorker {
         CommandWorker { client: ctl_client }
     }
 }
 
 #[async_trait::async_trait]
-impl<T: KvStore + Clone + Send + Sync> Worker for CommandWorker<T> {
+impl Worker for CommandWorker {
     type Message = Command;
 
     #[instrument(level = "trace", skip_all)]

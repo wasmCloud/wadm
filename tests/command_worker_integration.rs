@@ -22,10 +22,8 @@ async fn test_commands() {
 
     let mut wrapper = StreamWrapper::new("commands_integration".into(), config.nats_port).await;
 
-    let ctl_client = wasmcloud_control_interface::ClientBuilder::new(wrapper.client.clone())
-        .build()
-        .await
-        .expect("Should be able to create ctl client");
+    let ctl_client =
+        wasmcloud_control_interface::ClientBuilder::new(wrapper.client.clone()).build();
     let worker = CommandWorker::new(ctl_client.clone());
 
     let host_id = ctl_client
@@ -302,10 +300,8 @@ async fn test_annotation_stop() {
 
     let mut wrapper = StreamWrapper::new("annotation_stop".into(), config.nats_port).await;
 
-    let ctl_client = wasmcloud_control_interface::ClientBuilder::new(wrapper.client.clone())
-        .build()
-        .await
-        .expect("Should be able to create ctl client");
+    let ctl_client =
+        wasmcloud_control_interface::ClientBuilder::new(wrapper.client.clone()).build();
     let worker = CommandWorker::new(ctl_client.clone());
 
     let mut sub = wrapper

@@ -27,8 +27,7 @@ mod logging;
 mod nats;
 mod observer;
 
-use connections::{ControlClientConfig, ControlClientConstructor};
-use wasmcloud_control_interface::kv::{CachedKvStore, DirectKvStore};
+use connections::ControlClientConstructor;
 
 const EVENT_STREAM_NAME: &str = "wadm_events";
 const COMMAND_STREAM_NAME: &str = "wadm_commands";
@@ -181,22 +180,7 @@ async fn main() -> anyhow::Result<()> {
     .await?;
 
     // TODO: We will probably need to set up all the flags (like lattice prefix and topic prefix) down the line
-    let connection_pool: ControlClientConstructor<CachedKvStore> = ControlClientConstructor::new(
-        client.clone(),
-        ControlClientConfig {
-            js_domain: args.domain.clone(),
-            topic_prefix: None,
-        },
-    );
-
-    let direct_connection_pool: ControlClientConstructor<DirectKvStore> =
-        ControlClientConstructor::new(
-            client.clone(),
-            ControlClientConfig {
-                js_domain: args.domain,
-                topic_prefix: None,
-            },
-        );
+    let connection_pool = ControlClientConstructor::new(client.clone(), None);
 
     let trimmer: &[_] = &['.', '>', '*'];
 
@@ -286,7 +270,7 @@ async fn main() -> anyhow::Result<()> {
     let event_worker_creator = EventWorkerCreator {
         state_store: state_storage.clone(),
         manifest_store: manifest_storage.clone(),
-        pool: connection_pool,
+        pool: connection_pool.clone(),
         command_topic_prefix: DEFAULT_COMMANDS_TOPIC.trim_matches(trimmer).to_owned(),
         publisher: context.clone(),
         notify_stream,
@@ -302,7 +286,7 @@ async fn main() -> anyhow::Result<()> {
     debug!("Creating command consumer manager");
 
     let command_worker_creator = CommandWorkerCreator {
-        pool: direct_connection_pool,
+        pool: connection_pool,
     };
     let commands_manager: ConsumerManager<CommandConsumer> = ConsumerManager::new(
         permit_pool.clone(),
@@ -363,22 +347,21 @@ async fn main() -> anyhow::Result<()> {
 
 #[derive(Clone)]
 struct CommandWorkerCreator {
-    pool: ControlClientConstructor<DirectKvStore>,
+    pool: ControlClientConstructor,
 }
 
 #[async_trait::async_trait]
 impl WorkerCreator for CommandWorkerCreator {
-    type Output = CommandWorker<DirectKvStore>;
+    type Output = CommandWorker;
 
     async fn create(
         &self,
         lattice_id: &str,
         multitenant_prefix: Option<&str>,
     ) -> anyhow::Result<Self::Output> {
-        self.pool
-            .get_connection(lattice_id, multitenant_prefix)
-            .await
-            .map(CommandWorker::new)
+        let client = self.pool.get_connection(lattice_id, multitenant_prefix);
+
+        Ok(CommandWorker::new(client))
     }
 }
 
@@ -386,7 +369,7 @@ impl WorkerCreator for CommandWorkerCreator {
 struct EventWorkerCreator<StateStore> {
     state_store: StateStore,
     manifest_store: async_nats::jetstream::kv::Store,
-    pool: ControlClientConstructor<CachedKvStore>,
+    pool: ControlClientConstructor,
     command_topic_prefix: String,
     publisher: Context,
     notify_stream: Stream,
@@ -397,49 +380,38 @@ impl<StateStore> WorkerCreator for EventWorkerCreator<StateStore>
 where
     StateStore: wadm::storage::Store + Send + Sync + Clone + 'static,
 {
-    type Output =
-        EventWorker<StateStore, wasmcloud_control_interface::Client<CachedKvStore>, Context>;
+    type Output = EventWorker<StateStore, wasmcloud_control_interface::Client, Context>;
 
     async fn create(
         &self,
         lattice_id: &str,
         multitenant_prefix: Option<&str>,
     ) -> anyhow::Result<Self::Output> {
-        match self
-            .pool
-            .get_connection(lattice_id, multitenant_prefix)
-            .await
-        {
-            Ok(client) => {
-                let command_publisher = CommandPublisher::new(
-                    self.publisher.clone(),
-                    &format!("{}.{lattice_id}", self.command_topic_prefix),
-                );
-                let status_publisher = StatusPublisher::new(
-                    self.publisher.clone(),
-                    &format!("wadm.status.{lattice_id}"),
-                );
-                let manager = ScalerManager::new(
-                    self.publisher.clone(),
-                    self.notify_stream.clone(),
-                    lattice_id,
-                    multitenant_prefix,
-                    self.state_store.clone(),
-                    self.manifest_store.clone(),
-                    command_publisher.clone(),
-                    status_publisher.clone(),
-                    client.clone(),
-                )
-                .await?;
-                Ok(EventWorker::new(
-                    self.state_store.clone(),
-                    client,
-                    command_publisher,
-                    status_publisher,
-                    manager,
-                ))
-            }
-            Err(e) => Err(e),
-        }
+        let client = self.pool.get_connection(lattice_id, multitenant_prefix);
+        let command_publisher = CommandPublisher::new(
+            self.publisher.clone(),
+            &format!("{}.{lattice_id}", self.command_topic_prefix),
+        );
+        let status_publisher =
+            StatusPublisher::new(self.publisher.clone(), &format!("wadm.status.{lattice_id}"));
+        let manager = ScalerManager::new(
+            self.publisher.clone(),
+            self.notify_stream.clone(),
+            lattice_id,
+            multitenant_prefix,
+            self.state_store.clone(),
+            self.manifest_store.clone(),
+            command_publisher.clone(),
+            status_publisher.clone(),
+            client.clone(),
+        )
+        .await?;
+        Ok(EventWorker::new(
+            self.state_store.clone(),
+            client,
+            command_publisher,
+            status_publisher,
+            manager,
+        ))
     }
 }
