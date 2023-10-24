@@ -1,70 +1,44 @@
 //! A module for connection pools and generators. This is needed because control interface clients
 //! (and possibly other things like nats connections in the future) are lattice scoped or need
 //! different credentials
-use std::marker::PhantomData;
-
-use wasmcloud_control_interface::{
-    kv::{Build, KvStore},
-    Client, ClientBuilder,
-};
+use wasmcloud_control_interface::{Client, ClientBuilder};
 
 // Copied from https://github.com/wasmCloud/control-interface-client/blob/main/src/broker.rs#L1, not public
 const DEFAULT_TOPIC_PREFIX: &str = "wasmbus.ctl";
 
-#[derive(Debug, Default, Clone)]
-pub struct ControlClientConfig {
-    /// The jetstream domain to use for the clients
-    pub js_domain: Option<String>,
-    /// The topic prefix to use for operations
-    pub topic_prefix: Option<String>,
-}
-
 /// A client constructor for wasmCloud control interface clients, identified by a lattice ID
 // NOTE: Yes, this sounds java-y. Deal with it.
 #[derive(Clone)]
-pub struct ControlClientConstructor<T> {
+pub struct ControlClientConstructor {
     client: async_nats::Client,
-    config: ControlClientConfig,
-    marker: PhantomData<T>,
+    /// The topic prefix to use for operations
+    topic_prefix: Option<String>,
 }
 
-impl<T: KvStore + Build + Clone> ControlClientConstructor<T> {
-    /// Creates a new client pool that is all backed using the same NATS client. The given NATS
-    /// client should be using credentials that can access all desired lattices.
+impl ControlClientConstructor {
+    /// Creates a new client pool that is all backed using the same NATS client and an optional
+    /// topic prefix. The given NATS client should be using credentials that can access all desired
+    /// lattices.
     pub fn new(
         client: async_nats::Client,
-        config: ControlClientConfig,
-    ) -> ControlClientConstructor<T> {
+        topic_prefix: Option<String>,
+    ) -> ControlClientConstructor {
         ControlClientConstructor {
             client,
-            config,
-            marker: PhantomData,
+            topic_prefix,
         }
     }
 
     /// Get the client for the given lattice ID
-    pub async fn get_connection(
-        &self,
-        id: &str,
-        multitenant_prefix: Option<&str>,
-    ) -> anyhow::Result<Client<T>> {
-        let builder: ClientBuilder<T> =
-            ClientBuilder::new_generic(self.client.clone()).lattice_prefix(id);
-        let builder = if let Some(domain) = self.config.js_domain.as_deref() {
-            builder.js_domain(domain)
-        } else {
-            builder
-        };
+    pub fn get_connection(&self, id: &str, multitenant_prefix: Option<&str>) -> Client {
+        let builder = ClientBuilder::new(self.client.clone()).lattice_prefix(id);
 
         let builder = builder.topic_prefix(topic_prefix(
             multitenant_prefix,
-            self.config.topic_prefix.as_deref(),
+            self.topic_prefix.as_deref(),
         ));
 
-        builder
-            .build()
-            .await
-            .map_err(|e| anyhow::anyhow!("Error building client for {id}: {e:?}"))
+        builder.build()
     }
 }
 

@@ -24,7 +24,7 @@ use wadm::{
     },
     APP_SPEC_ANNOTATION, MANAGED_BY_ANNOTATION, MANAGED_BY_IDENTIFIER,
 };
-use wasmcloud_control_interface::{kv::DirectKvStore, HostInventory};
+use wasmcloud_control_interface::HostInventory;
 
 const LOG_DIR: &str = "test/e2e_log";
 const DEFAULT_LATTICE_ID: &str = "default";
@@ -40,7 +40,7 @@ pub struct ClientInfo {
     pub client: Client,
     // Map of lattice prefix to control client. Note that this is a direct kv store client here so
     // we don't have flaky tests by waiting for the local cache to update
-    ctl_clients: HashMap<String, wasmcloud_control_interface::Client<DirectKvStore>>,
+    ctl_clients: HashMap<String, wasmcloud_control_interface::Client>,
     manifest_dir: PathBuf,
     compose_file: PathBuf,
     commands: Vec<Child>,
@@ -109,25 +109,13 @@ impl ClientInfo {
         }
     }
 
-    pub fn ctl_client(
-        &self,
-        lattice_prefix: &str,
-    ) -> &wasmcloud_control_interface::Client<DirectKvStore> {
+    pub fn ctl_client(&self, lattice_prefix: &str) -> &wasmcloud_control_interface::Client {
         self.ctl_clients
             .get(lattice_prefix)
             .expect("Should have ctl client for specified lattice")
     }
 
     pub async fn add_ctl_client(&mut self, lattice_prefix: &str, topic_prefix: Option<&str>) {
-        // Now that the control clients only use buckets, we need to make sure those buckets exist
-        // before we try to create the client
-        jetstream::new(self.client.clone())
-            .create_key_value(async_nats::jetstream::kv::Config {
-                bucket: format!("LATTICEDATA_{}", lattice_prefix),
-                ..Default::default()
-            })
-            .await
-            .expect("Unable to ensure existence of KV bucket for lattice metadata");
         let builder = wasmcloud_control_interface::ClientBuilder::new(self.client.clone())
             .lattice_prefix(lattice_prefix);
 
@@ -137,13 +125,8 @@ impl ClientInfo {
             builder
         };
 
-        self.ctl_clients.insert(
-            lattice_prefix.to_string(),
-            builder
-                .build()
-                .await
-                .expect("Unable to construct ctl client"),
-        );
+        self.ctl_clients
+            .insert(lattice_prefix.to_string(), builder.build());
     }
 
     pub async fn launch_wadm(&mut self) {

@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
 
 use tracing::{instrument, warn};
-use wasmcloud_control_interface::{kv::KvStore, HostInventory, LinkDefinition};
+use wasmcloud_control_interface::{HostInventory, LinkDefinition};
 
 use crate::{commands::Command, publisher::Publisher, server::StatusInfo, APP_SPEC_ANNOTATION};
 
@@ -43,7 +43,7 @@ pub trait LinkSource {
 }
 
 #[async_trait::async_trait]
-impl<T: KvStore + Clone + Send + Sync> ClaimsSource for wasmcloud_control_interface::Client<T> {
+impl ClaimsSource for wasmcloud_control_interface::Client {
     async fn get_claims(&self) -> anyhow::Result<HashMap<String, Claims>> {
         Ok(self
             .get_claims()
@@ -72,7 +72,7 @@ impl<T: KvStore + Clone + Send + Sync> ClaimsSource for wasmcloud_control_interf
 }
 
 #[async_trait::async_trait]
-impl<T: KvStore + Clone + Send + Sync> InventorySource for wasmcloud_control_interface::Client<T> {
+impl InventorySource for wasmcloud_control_interface::Client {
     async fn get_inventory(&self, host_id: &str) -> anyhow::Result<HostInventory> {
         Ok(self
             .get_host_inventory(host_id)
@@ -86,7 +86,7 @@ impl<T: KvStore + Clone + Send + Sync> InventorySource for wasmcloud_control_int
 // the KV store for updates. This would allow us to not have to fetch every time we need to get
 // links
 #[async_trait::async_trait]
-impl<T: KvStore + Clone + Send + Sync> LinkSource for wasmcloud_control_interface::Client<T> {
+impl LinkSource for wasmcloud_control_interface::Client {
     async fn get_links(&self) -> anyhow::Result<Vec<LinkDefinition>> {
         self.query_links()
             .await
