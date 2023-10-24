@@ -52,7 +52,7 @@ pub enum PutResult {
 }
 
 /// Summary of a given model returned when listing
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ModelSummary {
     pub name: String,
     pub version: String,
@@ -72,7 +72,7 @@ pub struct VersionResponse {
 }
 
 /// Information about a given version of a model, returned as part of a list of all versions
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct VersionInfo {
     pub version: String,
     pub deployed: bool,
