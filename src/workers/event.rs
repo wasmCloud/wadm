@@ -215,31 +215,40 @@ where
         host: &HostHeartbeat,
     ) -> anyhow::Result<()> {
         debug!("Updating store with current host heartbeat information");
-        // TODO(thomastaylor312) We update some annotation data (namely providers) in the Host data
-        // for now. This is not ideal, but for actual consumption, we should probably rewrite the
-        // `Provider` info to handle annotations better
-        let mut host_data = Host::from(host);
-        if let Some(mut current_host_data) = self.store.get::<Host>(lattice_id, &host.id).await? {
-            host_data.providers = host_data
-                .providers
-                .into_iter()
-                .map(|mut info| {
-                    // Taking to avoid clone
-                    if let Some(current_info) = current_host_data.providers.take(&info) {
-                        info.annotations = current_info.annotations;
-                    }
-                    info
-                })
-                .collect();
-        }
-        self.store
-            .store(lattice_id, host.id.clone(), host_data)
-            .await?;
-
+        debug!("Requesting host inventory to supplement heartbeat");
         // NOTE(brooksmtownsend): Currently, the heartbeat does not tell us the instance IDs or annotations
         // of actors, or the annotations of providers. We need to make an inventory request to get this
         // information so we can properly update state.
         let host_inventory = self.ctl_client.get_inventory(&host.id).await?;
+        let mut host_data = Host::from(host);
+        // Supplement host provider annotation data with annotations from inventory
+        host_data.providers = host_data
+            .providers
+            .into_iter()
+            .map(|mut info| {
+                if info.annotations.is_empty() {
+                    match host_inventory.providers.iter().find(|p| {
+                        p.id == info.public_key
+                            && p.contract_id == info.contract_id
+                            && p.link_name == info.link_name
+                    }) {
+                        Some(provider) if provider.annotations.is_some() => {
+                            info.annotations = provider
+                                .annotations
+                                .clone()
+                                .map(|annotations| annotations.into_iter().collect())
+                                .unwrap_or_default();
+                        }
+                        _ => (),
+                    }
+                }
+
+                info
+            })
+            .collect();
+        self.store
+            .store(lattice_id, host.id.clone(), host_data)
+            .await?;
 
         // NOTE: We can return an error here and then nack because we'll just reupdate the host data
         // with the exact same host heartbeat entry. There is no possibility of a duplicate
@@ -2427,7 +2436,10 @@ mod test {
                     instances: vec![
                         ActorInstance {
                             instance_id: "1".to_string(),
-                            annotations: None,
+                            annotations: Some(HashMap::from_iter([(
+                                "da".to_string(),
+                                "gobah".to_string(),
+                            )])),
                             revision: 0,
                             image_ref: None,
                             max_concurrent: 0,
@@ -2444,7 +2456,7 @@ mod test {
                 labels: HashMap::new(),
                 host_id: host_id.to_string(),
                 providers: vec![ProviderDescription {
-                    annotations: None,
+                    annotations: Some(HashMap::from_iter([("one".to_string(), "two".to_string())])),
                     id: "jabbatheprovider".to_string(),
                     image_ref: Some("jabba.tatooinecr.io/provider:latest".to_string()),
                     contract_id: "jabba:jabba".to_string(),
@@ -2488,6 +2500,19 @@ mod test {
             actor.reference, "jabba.tatooinecr.io/jabba:latest",
             "Should have the correct reference"
         );
+        assert_eq!(
+            actor
+                .instances
+                .get(host_id)
+                .expect("instances to be on our specified host")
+                .iter()
+                .find(|i| !i.annotations.is_empty())
+                .expect("instance with annotations to exist")
+                .annotations
+                .get("da")
+                .expect("annotation to exist"),
+            "gobah"
+        );
 
         let providers = store
             .list::<Provider>(lattice_id)
@@ -2509,6 +2534,31 @@ mod test {
             provider.contract_id, "jabba:jabba",
             "Should have the correct contract id"
         );
+
+        let hosts = store
+            .list::<Host>(lattice_id)
+            .await
+            .expect("should be able to get hosts from store");
+        assert_eq!(hosts.len(), 1);
+        let host = hosts.get(host_id).expect("host with generated ID to exist");
+        let host_provider = host
+            .providers
+            .get(&ProviderInfo {
+                contract_id: "jabba:jabba".to_string(),
+                link_name: "default".to_string(),
+                public_key: "jabbatheprovider".to_string(),
+                annotations: BTreeMap::new(),
+            })
+            .expect("provider to exist on host");
+
+        assert_eq!(
+            host_provider
+                .annotations
+                .get("one")
+                .expect("annotation to exist"),
+            "two"
+        );
+        assert_eq!(host_provider.contract_id, "jabba:jabba");
     }
 
     fn assert_actor(
