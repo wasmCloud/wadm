@@ -1,0 +1,23 @@
+---
+apiVersion: core.oam.dev/v1beta1
+kind: Application
+metadata:
+  name: echo-simple
+  annotations:
+    version: v0.0.1
+    description: "This is my app"
+spec:
+  components:
+    - name: echo
+      type: actor
+      properties:
+        image: file:///some/path/to/another/path/that/is/very/long/and/would/normally/crash/the/thing/but/in/this/case/doesnt/because/the/size/is/changed.wasm
+    - name: httpserver
+      type: capability
+      properties:
+        contract: wasmcloud:httpserver
+        image: file:///some/path/to/another/path/that/is/very/long/and/would/normally/crash/the/thing/but/in/this/case/doesnt/because/the/size/is/changed.exe
+      traits:
+        - type: spreadscaler
+          properties:
+            replicas: 1

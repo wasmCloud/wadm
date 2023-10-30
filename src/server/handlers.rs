@@ -1,10 +1,11 @@
+use std::collections::{HashMap, HashSet};
+
 use anyhow::anyhow;
 use async_nats::{jetstream::stream::Stream, Client, Message};
 use base64::{engine::general_purpose::STANDARD as B64decoder, Engine};
 use jsonschema::{Draft, JSONSchema};
 use regex::Regex;
 use serde_json::json;
-use std::collections::{HashMap, HashSet};
 use tokio::sync::OnceCell;
 use tracing::{debug, error, instrument, log::warn, trace};
 
@@ -1095,7 +1096,7 @@ mod test {
     use std::path::Path;
 
     use super::*;
-    use anyhow::Result;
+    use anyhow::{Context, Result};
     use serde_yaml;
 
     pub(crate) fn deserialize_yaml(filepath: impl AsRef<Path>) -> Result<Manifest> {
@@ -1172,6 +1173,19 @@ mod test {
                 .to_string()
                 .contains("The following capability component(s) are missing from the manifest: ")),
         }
+    }
+
+    /// Ensure that a long image ref in a manifest works,
+    /// for both providers and actors
+    #[tokio::test]
+    async fn manifest_name_long_image_ref() -> Result<()> {
+        validate_manifest(
+            deserialize_yaml("./test/data/long_image_refs.yaml")
+                .context("failed to deserialize YAML")?,
+        )
+        .await
+        .context("failed to validate long image ref")?;
+        Ok(())
     }
 
     #[tokio::test]
