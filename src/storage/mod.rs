@@ -4,6 +4,7 @@ use std::{collections::HashMap, ops::Deref};
 
 pub mod nats_kv;
 pub mod reaper;
+pub(crate) mod snapshot;
 mod state;
 
 pub use state::{Actor, Host, Provider, ProviderStatus, WadmActorInfo};

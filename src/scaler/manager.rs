@@ -27,7 +27,7 @@ use crate::{
     publisher::Publisher,
     scaler::{spreadscaler::ActorSpreadScaler, Command, Scaler},
     server::StatusInfo,
-    storage::ReadStore,
+    storage::{snapshot::SnapshotStore, ReadStore},
     workers::{CommandPublisher, LinkSource, StatusPublisher},
     DEFAULT_LINK_NAME,
 };
@@ -115,10 +115,9 @@ pub struct ScalerManager<StateStore, P: Clone, L: Clone> {
     client: P,
     subject: String,
     lattice_id: String,
-    state_store: StateStore,
     command_publisher: CommandPublisher<P>,
     status_publisher: StatusPublisher<P>,
-    link_getter: L,
+    snapshot_data: SnapshotStore<StateStore, L>,
 }
 
 impl<StateStore, P: Clone, L: Clone> Drop for ScalerManager<StateStore, P, L> {
@@ -187,6 +186,11 @@ where
             .filter_map(|manifest| manifest.transpose())
             .map(|res| res.map(|(manifest, _)| manifest))
             .collect::<Result<Vec<_>>>()?;
+        let snapshot_data = SnapshotStore::new(
+            state_store.clone(),
+            link_getter.clone(),
+            lattice_id.to_owned(),
+        );
         let scalers: HashMap<String, ScalerList> = all_manifests
             .into_iter()
             .filter_map(|manifest| {
@@ -194,28 +198,27 @@ where
                 let name = manifest.name().to_owned();
                 let scalers = components_to_scalers(
                     &data.spec.components,
-                    &state_store,
                     lattice_id,
                     &client,
                     &name,
                     &subject,
-                    &link_getter,
+                    &snapshot_data,
                 );
                 Some((name, scalers))
             })
             .collect();
 
         let scalers = Arc::new(RwLock::new(scalers));
+
         let mut manager = ScalerManager {
             handle: None,
             scalers,
             client,
             subject,
             lattice_id: lattice_id.to_owned(),
-            state_store,
             command_publisher,
             status_publisher,
-            link_getter,
+            snapshot_data,
         };
         let cloned = manager.clone();
         let handle = tokio::spawn(async move { cloned.notify(messages).await });
@@ -234,17 +237,27 @@ where
         status_publisher: StatusPublisher<P>,
         link_getter: L,
     ) -> ScalerManager<StateStore, P, L> {
+        let snapshot_data = SnapshotStore::new(
+            state_store.clone(),
+            link_getter.clone(),
+            lattice_id.to_owned(),
+        );
         ScalerManager {
             handle: None,
             scalers: Arc::new(RwLock::new(HashMap::new())),
             client,
             subject: format!("{WADM_NOTIFY_PREFIX}.{lattice_id}"),
             lattice_id: lattice_id.to_owned(),
-            state_store,
             command_publisher,
             status_publisher,
-            link_getter,
+            snapshot_data,
         }
+    }
+
+    /// Refreshes the snapshot data consumed by all scalers. This is a temporary workaround until we
+    /// start caching data
+    pub(crate) async fn refresh_data(&self) -> Result<()> {
+        self.snapshot_data.refresh().await
     }
 
     /// Adds scalers for the given manifest. Emitting an event to notify other wadm processes that
@@ -275,12 +288,11 @@ where
     pub fn scalers_for_manifest<'a>(&'a self, manifest: &'a Manifest) -> ScalerList {
         components_to_scalers(
             &manifest.spec.components,
-            &self.state_store,
             &self.lattice_id,
             &self.client,
             &manifest.metadata.name,
             &self.subject,
-            &self.link_getter,
+            &self.snapshot_data,
         )
     }
 
@@ -370,6 +382,10 @@ where
     /// Does everything except sending the notification
     #[instrument(level = "debug", skip(self), fields(lattice_id = %self.lattice_id))]
     async fn remove_scalers_internal(&self, name: &str) -> Option<Result<ScalerList>> {
+        // Always refresh data before removing
+        if let Err(e) = self.refresh_data().await {
+            return Some(Err(e));
+        }
         let scalers = self.remove_raw_scalers(name).await?;
         let commands = match futures::future::join_all(
             scalers.iter().map(|scaler| scaler.cleanup()),
@@ -417,12 +433,11 @@ where
                                     // We don't want to trigger the notification, so just create the scalers and then insert
                                     let scalers = components_to_scalers(
                                         &manifest.spec.components,
-                                        &self.state_store,
                                         &self.lattice_id,
                                         &self.client,
                                         &manifest.metadata.name,
                                         &self.subject,
-                                        &self.link_getter,
+                                        &self.snapshot_data,
                                     );
                                     let num_scalers = scalers.len();
                                     self.add_raw_scalers(&manifest.metadata.name, scalers).await;
@@ -547,12 +562,11 @@ const EMPTY_TRAIT_VEC: Vec<Trait> = Vec::new();
 /// * `name` - The name of the manifest that the scalers are being created for
 pub(crate) fn components_to_scalers<S, P, L>(
     components: &[Component],
-    store: &S,
     lattice_id: &str,
     notifier: &P,
     name: &str,
     notifier_subject: &str,
-    link_getter: &L,
+    snapshot_data: &SnapshotStore<S, L>,
 ) -> ScalerList
 where
     S: ReadStore + Send + Sync + Clone + 'static,
@@ -569,7 +583,7 @@ where
                         (SPREADSCALER_TRAIT, TraitProperty::SpreadScaler(p)) => {
                             Some(Box::new(BackoffAwareScaler::new(
                                 ActorSpreadScaler::new(
-                                    store.clone(),
+                                    snapshot_data.clone(),
                                     props.image.to_owned(),
                                     lattice_id.to_owned(),
                                     name.to_owned(),
@@ -585,7 +599,7 @@ where
                         (DAEMONSCALER_TRAIT, TraitProperty::SpreadScaler(p)) => {
                             Some(Box::new(BackoffAwareScaler::new(
                                 ActorDaemonScaler::new(
-                                    store.clone(),
+                                    snapshot_data.clone(),
                                     props.image.to_owned(),
                                     lattice_id.to_owned(),
                                     name.to_owned(),
@@ -607,7 +621,7 @@ where
                                     {
                                         Some(Box::new(BackoffAwareScaler::new(
                                             LinkScaler::new(
-                                                store.clone(),
+                                                snapshot_data.clone(),
                                                 props.image.to_owned(),
                                                 cappy.image.to_owned(),
                                                 cappy.contract.to_owned(),
@@ -615,7 +629,7 @@ where
                                                 lattice_id.to_owned(),
                                                 name.to_owned(),
                                                 p.values.to_owned(),
-                                                link_getter.clone(),
+                                                snapshot_data.clone(),
                                             ),
                                             notifier.to_owned(),
                                             notifier_subject,
@@ -638,7 +652,7 @@ where
                             (SPREADSCALER_TRAIT, TraitProperty::SpreadScaler(p)) => {
                                 Some(Box::new(BackoffAwareScaler::new(
                                     ProviderSpreadScaler::new(
-                                        store.clone(),
+                                        snapshot_data.clone(),
                                         ProviderSpreadConfig {
                                             lattice_id: lattice_id.to_owned(),
                                             provider_reference: props.image.to_owned(),
@@ -664,7 +678,7 @@ where
                             (DAEMONSCALER_TRAIT, TraitProperty::SpreadScaler(p)) => {
                                 Some(Box::new(BackoffAwareScaler::new(
                                     ProviderDaemonScaler::new(
-                                        store.clone(),
+                                        snapshot_data.clone(),
                                         ProviderSpreadConfig {
                                             lattice_id: lattice_id.to_owned(),
                                             provider_reference: props.image.to_owned(),
@@ -695,7 +709,7 @@ where
                     // Allow providers to omit the scaler entirely for simplicity
                     scalers.push(Box::new(BackoffAwareScaler::new(
                         ProviderSpreadScaler::new(
-                            store.clone(),
+                            snapshot_data.clone(),
                             ProviderSpreadConfig {
                                 lattice_id: lattice_id.to_owned(),
                                 provider_reference: props.image.to_owned(),
