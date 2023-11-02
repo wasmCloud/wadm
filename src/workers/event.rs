@@ -823,6 +823,8 @@ where
             .await;
         let scalers = self.scalers.scalers_for_manifest(&data.manifest);
 
+        // Refresh the snapshot data before cleaning up and/or adding scalers
+        self.scalers.refresh_data().await?;
         let cleanup_commands = if let Some(old_scalers) = old_scalers {
             // This relies on the idea that an ID is a unique identifier for a scaler, and any
             // change in the ID is indicative of the fact that the scaler is outdated and should be cleaned up.
@@ -907,6 +909,8 @@ where
                 return Ok(());
             }
         };
+        // Refresh the snapshot data before running
+        self.scalers.refresh_data().await?;
         let (commands, res) = get_commands_and_result(
             scalers.iter().map(|s| s.handle_event(event)),
             "Errors occurred while handling event",
@@ -935,7 +939,8 @@ where
     #[instrument(level = "debug", skip(self))]
     async fn run_all_scalers(&self, event: &Event) -> anyhow::Result<()> {
         let scalers = self.scalers.get_all_scalers().await;
-
+        // Refresh the snapshot data before running
+        self.scalers.refresh_data().await?;
         let futs = scalers.iter().map(|(name, scalers)| async {
             let (commands, res) = get_commands_and_result(
                 scalers.iter().map(|scaler| scaler.handle_event(event)),
