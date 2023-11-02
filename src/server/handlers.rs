@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use anyhow::anyhow;
 use async_nats::{jetstream::stream::Stream, Client, Message};
 use base64::{engine::general_purpose::STANDARD as B64decoder, Engine};
-use jsonschema::{Draft, JSONSchema};
+use jsonschema::{paths::PathChunk, Draft, JSONSchema};
 use regex::Regex;
 use serde_json::json;
 use tokio::sync::OnceCell;
@@ -952,14 +952,26 @@ pub(crate) async fn validate_manifest(manifest: Manifest) -> anyhow::Result<()> 
     if let Err(errors) = validation_result {
         let mut error_message = String::new();
         for error in errors {
+            let instance_path = error
+                .instance_path
+                .into_iter()
+                .map(|item| match item {
+                    PathChunk::Property(value) => value.to_string(),
+                    PathChunk::Index(idx) => format!(" at index: {idx}"),
+                    PathChunk::Keyword(keyword) => keyword.to_string(),
+                })
+                .collect::<Vec<String>>()
+                .join("/");
             error_message.push_str(&format!(
-                "Validation error in object: {} \nObject path: {}",
-                // Error instance in the JSON instance and its corresponding path in that file
-                error.instance,
-                error.instance_path
+                "Should be able to parse object at: {} \n",
+                // The path of the corresponding JSON error instance in that file
+                instance_path
             ));
         }
-        return Err(anyhow!("Validation Error : \n{}", error_message));
+        return Err(anyhow!(
+            "Validation Error : \n{}Please check for missing or incorrect elements",
+            error_message
+        ));
     }
 
     // Map of link names to a vector of provider references with that link name
@@ -1122,7 +1134,7 @@ mod test {
                 assert!(e
                     .to_string()
                     // The 0th component in the spec list is incorrect and should be detected (indexing starts from 0)
-                    .contains("Object path: /spec/components/0"))
+                    .contains("Should be able to parse object at: spec/components/ at index: 0"))
             }
         }
 
