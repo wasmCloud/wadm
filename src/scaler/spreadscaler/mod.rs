@@ -59,7 +59,6 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
     }
 
     async fn status(&self) -> StatusInfo {
-        let _ = self.reconcile().await;
         self.status.read().await.to_owned()
     }
 
