@@ -969,7 +969,7 @@ pub(crate) async fn validate_manifest(manifest: Manifest) -> anyhow::Result<()> 
             ));
         }
         return Err(anyhow!(
-            "Validation Error : \n{}Please check for missing or incorrect elements",
+            "Validation Error: \n{}Please check for missing or incorrect elements",
             error_message
         ));
     }
