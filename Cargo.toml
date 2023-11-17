@@ -24,7 +24,7 @@ _e2e_tests = []
 
 [dependencies]
 anyhow = "1"
-async-nats = "0.31"
+async-nats = "0.33"
 async-trait = "0.1"
 atty = { version = "0.2", optional = true }
 base64 = "0.21.2"
@@ -63,7 +63,7 @@ tracing-subscriber = { version = "0.3.7", features = [
     "json",
 ], optional = true }
 uuid = "1"
-wasmcloud-control-interface = "0.31"
+wasmcloud-control-interface = "0.32"
 
 [dev-dependencies]
 serial_test = "1"

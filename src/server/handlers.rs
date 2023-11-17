@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use anyhow::anyhow;
-use async_nats::{jetstream::stream::Stream, Client, Message};
+use async_nats::{jetstream::stream::Stream, Client, Message, Subject};
 use base64::{engine::general_purpose::STANDARD as B64decoder, Engine};
 use jsonschema::{paths::PathChunk, Draft, JSONSchema};
 use regex::Regex;
@@ -875,7 +875,7 @@ impl<P: Publisher> Handler<P> {
     /// Sends a reply to the topic with the given data, logging an error if one occurs when
     /// sending the reply
     #[instrument(level = "debug", skip(self, data))]
-    pub async fn send_reply(&self, reply: Option<String>, data: Vec<u8>) {
+    pub async fn send_reply(&self, reply: Option<Subject>, data: Vec<u8>) {
         let reply_topic = match reply {
             Some(t) => t,
             None => {
@@ -891,7 +891,7 @@ impl<P: Publisher> Handler<P> {
 
     /// Sends an error reply
     #[instrument(level = "error", skip(self, error_message))]
-    pub async fn send_error(&self, reply: Option<String>, error_message: String) {
+    pub async fn send_error(&self, reply: Option<Subject>, error_message: String) {
         // SAFETY: We control the construction of the JSON here and all data going in, so this
         // shouldn't fail except in some sort of really odd case. In those cases, we just unwrap to
         // a default
