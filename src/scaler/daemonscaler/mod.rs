@@ -35,10 +35,10 @@ struct ActorSpreadConfig {
     spread_config: SpreadScalerProperty,
 }
 
-/// The ActorDaemonScaler ensures that a certain number of replicas are running on every host, according to a
+/// The ActorDaemonScaler ensures that a certain number of instances are running on every host, according to a
 /// [SpreadScalerProperty](crate::model::SpreadScalerProperty)
 ///
-/// If no [Spreads](crate::model::Spread) are specified, this Scaler simply maintains the number of replicas
+/// If no [Spreads](crate::model::Spread) are specified, this Scaler simply maintains the number of instances
 /// on every available host.
 pub struct ActorDaemonScaler<S> {
     config: ActorSpreadConfig,
@@ -68,7 +68,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorDaemonScaler<S> {
         // in a lattice
         let spread_config = if spread_config.spread.is_empty() {
             SpreadScalerProperty {
-                replicas: spread_config.replicas,
+                instances: spread_config.instances,
                 spread: vec![Spread::default()],
             }
         } else {
@@ -182,7 +182,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorDaemonScaler<S> {
                             .iter()
                             .filter_map(|(host_id, current_count)| {
                                 // Here we'll generate commands for the proper host depending on where they are running
-                                match current_count.cmp(&self.config.spread_config.replicas) {
+                                match current_count.cmp(&self.config.spread_config.instances) {
                                     Ordering::Equal => None,
                                     // Scale actor can handle both up and down scaling
                                     Ordering::Less | Ordering::Greater => {
@@ -190,7 +190,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorDaemonScaler<S> {
                                             reference: self.config.actor_reference.to_owned(),
                                             actor_id: actor_id.to_owned(),
                                             host_id: host_id.to_string(),
-                                            count: self.config.spread_config.replicas,
+                                            count: self.config.spread_config.instances,
                                             model_name: self.config.model_name.to_owned(),
                                             annotations: spreadscaler_annotations(
                                                 &spread.name,
@@ -236,7 +236,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorDaemonScaler<S> {
     #[instrument(level = "trace", skip_all, fields(name = %self.config.model_name))]
     async fn cleanup(&self) -> Result<Vec<Command>> {
         let mut config_clone = self.config.clone();
-        config_clone.spread_config.replicas = 0;
+        config_clone.spread_config.instances = 0;
 
         let cleanerupper = ActorDaemonScaler {
             config: config_clone,
@@ -266,7 +266,7 @@ impl<S: ReadStore + Send + Sync> ActorDaemonScaler<S> {
         // in a lattice
         let spread_config = if spread_config.spread.is_empty() {
             SpreadScalerProperty {
-                replicas: spread_config.replicas,
+                instances: spread_config.instances,
                 spread: vec![Spread::default()],
             }
         } else {
@@ -369,7 +369,7 @@ mod test {
 
         // Daemonscalers ignore weight, so it should have no bearing
         let complex_spread = SpreadScalerProperty {
-            replicas: 13,
+            instances: 13,
             spread: vec![
                 Spread {
                     name: "ComplexOne".to_string(),
@@ -456,7 +456,7 @@ mod test {
         let store = Arc::new(TestStore::default());
 
         let echo_spread_property = SpreadScalerProperty {
-            replicas: 412,
+            instances: 412,
             spread: vec![
                 Spread {
                     name: "RunInFakeCloud".to_string(),
@@ -480,7 +480,7 @@ mod test {
         };
 
         let blobby_spread_property = SpreadScalerProperty {
-            replicas: 3,
+            instances: 3,
             spread: vec![
                 Spread {
                     name: "CrossRegionCustom".to_string(),
@@ -771,7 +771,7 @@ mod test {
             },
         );
         let command_publisher = CommandPublisher::new(NoopPublisher, "doesntmatter");
-        let status_publisher = StatusPublisher::new(NoopPublisher,None,  "doesntmatter");
+        let status_publisher = StatusPublisher::new(NoopPublisher, None, "doesntmatter");
         let worker = EventWorker::new(
             store.clone(),
             lattice_source.clone(),
@@ -788,7 +788,7 @@ mod test {
             .await,
         );
         let blobby_spread_property = SpreadScalerProperty {
-            replicas: 10,
+            instances: 10,
             spread: vec![Spread {
                 name: "HighAvailability".to_string(),
                 requirements: BTreeMap::from_iter([(

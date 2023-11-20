@@ -714,7 +714,7 @@ where
                                 lattice_id: lattice_id.to_owned(),
                                 provider_reference: props.image.to_owned(),
                                 spread_config: SpreadScalerProperty {
-                                    replicas: 1,
+                                    instances: 1,
                                     spread: vec![],
                                 },
                                 provider_contract_id: props.contract.to_owned(),

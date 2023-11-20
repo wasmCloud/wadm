@@ -26,7 +26,7 @@ pub const PROVIDER_DAEMON_SCALER_TYPE: &str = "providerdaemonscaler";
 /// The ProviderDaemonScaler ensures that a provider is running on every host, according to a
 /// [SpreadScalerProperty](crate::model::SpreadScalerProperty)
 ///
-/// If no [Spreads](crate::model::Spread) are specified, this Scaler simply maintains the number of replicas
+/// If no [Spreads](crate::model::Spread) are specified, this Scaler simply maintains the number of instances
 /// on every available host.
 pub struct ProviderDaemonScaler<S> {
     config: ProviderSpreadConfig,
@@ -56,7 +56,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderDaemonScaler<S> {
         // in a lattice
         let spread_config = if spread_config.spread.is_empty() {
             SpreadScalerProperty {
-                replicas: spread_config.replicas,
+                instances: spread_config.instances,
                 spread: vec![Spread::default()],
             }
         } else {
@@ -134,8 +134,8 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderDaemonScaler<S> {
                                 public_key: provider_id.to_string(),
                                 annotations: BTreeMap::default(),
                             });
-                            match (provider_on_host, self.config.spread_config.replicas) {
-                                // Spread replicas set to 0 means we're cleaning up and should stop
+                            match (provider_on_host, self.config.spread_config.instances) {
+                                // Spread instances set to 0 means we're cleaning up and should stop
                                 // running providers
                                 (Some(_), 0) => Some(Command::StopProvider(StopProvider {
                                     provider_id: provider_id.to_owned(),
@@ -145,7 +145,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderDaemonScaler<S> {
                                     model_name: self.config.model_name.to_owned(),
                                     annotations: spreadscaler_annotations(&spread.name, &self.id),
                                 })),
-                                // Whenever replicas > 0, we should start a provider if it's not already running
+                                // Whenever instances > 0, we should start a provider if it's not already running
                                 (None, _n) => Some(Command::StartProvider(StartProvider {
                                     reference: provider_ref.to_owned(),
                                     host_id: host.id.to_string(),
@@ -192,7 +192,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderDaemonScaler<S> {
     #[instrument(level = "trace", skip_all, fields(name = %self.config.model_name))]
     async fn cleanup(&self) -> Result<Vec<Command>> {
         let mut config_clone = self.config.clone();
-        config_clone.spread_config.replicas = 0;
+        config_clone.spread_config.instances = 0;
 
         let cleanerupper = ProviderDaemonScaler {
             config: config_clone,
@@ -239,7 +239,7 @@ impl<S: ReadStore + Send + Sync> ProviderDaemonScaler<S> {
         // in a lattice
         let spread_config = if config.spread_config.spread.is_empty() {
             SpreadScalerProperty {
-                replicas: config.spread_config.replicas,
+                instances: config.spread_config.instances,
                 spread: vec![Spread::default()],
             }
         } else {
@@ -316,7 +316,7 @@ mod test {
             provider_contract_id: "contract".to_string(),
             model_name: MODEL_NAME.to_string(),
             spread_config: SpreadScalerProperty {
-                replicas: 1,
+                instances: 1,
                 spread: vec![],
             },
             provider_config: None,
@@ -339,7 +339,7 @@ mod test {
             provider_contract_id: "contract".to_string(),
             model_name: MODEL_NAME.to_string(),
             spread_config: SpreadScalerProperty {
-                replicas: 1,
+                instances: 1,
                 spread: vec![],
             },
             provider_config: Some(CapabilityConfig::Opaque("foobar".to_string())),
@@ -443,8 +443,8 @@ mod test {
 
         // Ensure we spread evenly with equal weights, clean division
         let multi_spread_even = SpreadScalerProperty {
-            // Replicas are ignored so putting an absurd number
-            replicas: 12312,
+            // instances are ignored so putting an absurd number
+            instances: 12312,
             spread: vec![Spread {
                 name: "SimpleOne".to_string(),
                 requirements: BTreeMap::from_iter([("inda".to_string(), "cloud".to_string())]),
