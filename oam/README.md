@@ -1,17 +1,23 @@
 # wadm Open Application Model
+
 The wasmCloud Application Deployment Manager uses the [Open Application Model](https://oam.dev) to define application specifications. Because this specification is extensible and _platform agnostic_, it makes for an ideal way to represent applications with metadata specific to wasmCloud.
 
 ## wasmCloud OAM Components
+
 The following is a list of the `component`s wasmCloud has added to the model.
-* `actor` - An actor
-* `provider` - A capability provider
+
+- `actor` - An actor
+- `provider` - A capability provider
 
 ## wasmCloud OAM Traits
+
 The following is a list of the `traits` wasmCloud has added via customization to its application model.
-* `spreadscaler` - Defines the spread of instances of a particular entity across multiple hosts with affinity requirements
-* `linkdef` - A link definition that describes a link between an actor and a capability provider
+
+- `spreadscaler` - Defines the spread of instances of a particular entity across multiple hosts with affinity requirements
+- `linkdef` - A link definition that describes a link between an actor and a capability provider
 
 ## Example Application YAML
+
 The following is an example YAML file describing an ALC application
 
 ```yaml
@@ -31,7 +37,7 @@ spec:
       traits:
         - type: spreadscaler
           properties:
-            replicas: 4
+            instances: 4
             spread:
               - name: eastcoast
                 requirements:
@@ -63,7 +69,7 @@ spec:
       traits:
         - type: spreadscaler
           properties:
-            replicas: 1
+            instances: 1
             spread:
               - name: haslights
                 requirements:

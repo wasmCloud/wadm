@@ -15,7 +15,7 @@ spec:
       traits:
         - type: spreadscaler
           properties:
-            replicas: 5
+            instances: 5
         - type: linkdef
           properties:
             target: httpserver
@@ -29,7 +29,7 @@ spec:
       traits:
         - type: spreadscaler
           properties:
-            replicas: 1
+            instances: 1
     # Updated actor component
     - name: echo
       type: actor
@@ -38,7 +38,7 @@ spec:
       traits:
         - type: spreadscaler
           properties:
-            replicas: 3
+            instances: 3
         # Updated linkdef trait
         - type: linkdef
           properties:
