@@ -15,7 +15,7 @@ spec:
         # NOTE: This demonstrates what a custom scaler could look like. This functionality does not currently exist
         - type: customscaler
           properties:
-            replicas: 4
+            instances: 4
             clouds:
               - aws
               - azure

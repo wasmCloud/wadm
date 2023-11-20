@@ -14,7 +14,7 @@ spec:
       traits:
         - type: spreadscaler
           properties:
-            replicas: 1
+            instances: 1
             spread:
               - name: uiclinicapp
                 requirements:
@@ -32,7 +32,7 @@ spec:
               uri: postgres://user:pass@your.db.host.com/petclinic
         - type: spreadscaler
           properties:
-            replicas: 1
+            instances: 1
             spread:
               - name: customersclinicapp
                 requirements:
@@ -56,7 +56,7 @@ spec:
               uri: postgres://user:pass@your.db.host.com/petclinic2
         - type: spreadscaler
           properties:
-            replicas: 1
+            instances: 1
             spread:
               - name: vetsclinicapp
                 requirements:
@@ -75,7 +75,7 @@ spec:
 
         - type: spreadscaler
           properties:
-            replicas: 1
+            instances: 1
             spread:
               - name: visitsclinicapp
                 requirements:
@@ -88,7 +88,7 @@ spec:
       traits:
         - type: spreadscaler
           properties:
-            replicas: 1
+            instances: 1
             spread:
               - name: clinicapp
                 requirements:
@@ -107,7 +107,7 @@ spec:
       traits:
         - type: spreadscaler
           properties:
-            replicas: 1
+            instances: 1
             spread:
               - name: httpserverspread
                 requirements:
@@ -121,7 +121,7 @@ spec:
       traits:
         - type: spreadscaler
           properties:
-            replicas: 1
+            instances: 1
             spread:
               - name: postgresspread
                 requirements:

@@ -14,7 +14,7 @@ spec:
       traits:
         - type: spreadscaler
           properties:
-            replicas: 1
+            instances: 1
             spread:
               - name: uiclinicapp
                 requirements:
@@ -27,7 +27,7 @@ spec:
       traits:
         - type: spreadscaler
           properties:
-            replicas: 1
+            instances: 1
             spread:
               - name: customersclinicapp
                 requirements:

@@ -14,7 +14,7 @@ spec:
       traits:
         - type: spreadscaler
           properties:
-            replicas: 4
+            instances: 4
         - type: linkdef
           properties:
             # This is a simple typo which should be caught by validation: there is no capability component named "httpservr"
@@ -30,4 +30,4 @@ spec:
       traits:
         - type: spreadscaler
           properties:
-            replicas: 1
+            instances: 1

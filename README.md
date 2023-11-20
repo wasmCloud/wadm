@@ -52,7 +52,7 @@ spec:
       traits:
         - type: spreadscaler
           properties:
-            replicas: 1
+            instances: 1
         - type: linkdef
           properties:
             target: httpserver
@@ -67,7 +67,7 @@ spec:
       traits:
         - type: spreadscaler
           properties:
-            replicas: 1
+            instances: 1
 ```
 
 Then, use **wadm** to put the manifest and deploy it.
@@ -90,7 +90,7 @@ wash app undeploy echo
 ### Modifying applications
 
 **wadm** supports upgrading applications by `put`ting new versions of manifests and then `deploy`ing
-them. Try changing the manifest you created above by updating the number of echo replicas.
+them. Try changing the manifest you created above by updating the number of echo instances.
 
 ```yaml
 <<ELIDED>>
@@ -107,7 +107,7 @@ spec:
       traits:
         - type: spreadscaler
           properties:
-            replicas: 10 # Let's run 10!
+            instances: 10 # Let's run 10!
 <<ELIDED>>
 ```
 
@@ -143,7 +143,7 @@ in a lattice is forthcoming._
 In advanced use cases, **wadm** is also capable of:
 
 - Monitoring multiple lattices.
-- Running multiple replicas to distribute load among multiple processes, or for a high-availability
+- Running multiple instances to distribute load among multiple processes, or for a high-availability
   architecture.
 
 🚧 The above functionality is somewhat tested, but not as rigorously as a single instance monitoring
