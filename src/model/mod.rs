@@ -246,7 +246,7 @@ pub enum TraitProperty {
     Linkdef(LinkdefProperty),
     SpreadScaler(SpreadScalerProperty),
     // TODO(thomastaylor312): This is still broken right now with deserializing. If the incoming
-    // type specifies replicas, it matches with spreadscaler first. So we need to implement a custom
+    // type specifies instances, it matches with spreadscaler first. So we need to implement a custom
     // parser here
     Custom(serde_json::Value),
 }
@@ -282,9 +282,10 @@ pub struct LinkdefProperty {
 /// Properties for spread scalers
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct SpreadScalerProperty {
-    /// Number of replicas to scale
-    pub replicas: usize,
-    /// Requirements for spreading those replicas
+    /// Number of instances to spread across matching requirements
+    #[serde(alias = "replicas")]
+    pub instances: usize,
+    /// Requirements for spreading those instances
     #[serde(default)]
     pub spread: Vec<Spread>,
 }
@@ -508,7 +509,7 @@ mod test {
         spread_vec.push(spread_item);
         let mut trait_vec: Vec<Trait> = Vec::new();
         let spreadscalerprop = SpreadScalerProperty {
-            replicas: 4,
+            instances: 4,
             spread: spread_vec,
         };
         let trait_item = Trait::new_spreadscaler(spreadscalerprop);
@@ -552,7 +553,7 @@ mod test {
         };
         spread_vec.push(spread_item);
         let spreadscalerprop = SpreadScalerProperty {
-            replicas: 1,
+            instances: 1,
             spread: spread_vec,
         };
         let mut trait_vec: Vec<Trait> = Vec::new();

@@ -262,8 +262,17 @@
       "type": "object",
       "description": "A properties object (for spreadscaler configuration) is an object whose structure is determined by the spreadscaler property schema. It may be a simple value, or it may be a complex object.",
       "properties": {
-        "replicas": {
-          "type": "integer"
+        "instances": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "title": "instances"
+            },
+            {
+              "type": "integer",
+              "title": "replicas"
+            }
+          ]
         },
         "spread": {
           "type": "array",
@@ -287,7 +296,14 @@
           }
         }
       },
-      "required": ["replicas", "spread"]
+      "oneOf": [
+        {
+          "required": ["instances", "spread"]
+        },
+        {
+          "required": ["replicas", "spread"]
+        }
+      ]
     },
     "propertiesObject": {
       "anyOf": [

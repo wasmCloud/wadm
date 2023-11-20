@@ -38,10 +38,10 @@ struct ActorSpreadConfig {
     spread_config: SpreadScalerProperty,
 }
 
-/// The ActorSpreadScaler ensures that a certain number of replicas are running,
+/// The ActorSpreadScaler ensures that a certain number of instances are running,
 /// spread across a number of hosts according to a [SpreadScalerProperty](crate::model::SpreadScalerProperty)
 ///
-/// If no [Spreads](crate::model::Spread) are specified, this Scaler simply maintains the number of replicas
+/// If no [Spreads](crate::model::Spread) are specified, this Scaler simply maintains the number of instances
 /// on an available host
 pub struct ActorSpreadScaler<S> {
     config: ActorSpreadConfig,
@@ -177,7 +177,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
                     // Here we'll generate commands for the proper host depending on where they are running
                     match current_count.cmp(count) {
                         Ordering::Equal => None,
-                        // Start actors to reach desired replicas
+                        // Start actors to reach desired instances
                         Ordering::Less =>{
                             // Right now just start on the first available host. We can be smarter about it later
                             Some(vec![Command::ScaleActor(ScaleActor {
@@ -190,7 +190,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
                                 annotations: spreadscaler_annotations(&spread.name, self.id()),
                             })])
                         }
-                        // Stop actors to reach desired replicas
+                        // Stop actors to reach desired instances
                         Ordering::Greater => {
                             // Actors across all available hosts that exceed our desired number
                             let count_to_stop = current_count - count;
@@ -249,7 +249,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
     #[instrument(level = "trace", skip_all, fields(name = %self.config.model_name))]
     async fn cleanup(&self) -> Result<Vec<Command>> {
         let mut config_clone = self.config.clone();
-        config_clone.spread_config.replicas = 0;
+        config_clone.spread_config.instances = 0;
         let spread_requirements = compute_spread(&config_clone.spread_config);
 
         let cleanerupper = ActorSpreadScaler {
@@ -347,7 +347,7 @@ pub(crate) fn eligible_hosts<'a>(
 /// Given a spread config, return a vector of tuples that represents the spread
 /// and the actual number of actors to start for a specific spread requirement
 fn compute_spread(spread_config: &SpreadScalerProperty) -> Vec<(Spread, usize)> {
-    let requested_replicas = spread_config.replicas;
+    let requested_instances = spread_config.instances;
     let mut requested_spreads = spread_config.spread.clone();
     requested_spreads.sort_by_key(|s| Reverse(s.weight.unwrap_or(DEFAULT_SPREAD_WEIGHT)));
 
@@ -361,27 +361,27 @@ fn compute_spread(spread_config: &SpreadScalerProperty) -> Vec<(Spread, usize)> 
             (
                 s.to_owned(),
                 // Order is important here since usizes chop off remaining decimals
-                (requested_replicas * s.weight.unwrap_or(DEFAULT_SPREAD_WEIGHT)) / total_weight,
+                (requested_instances * s.weight.unwrap_or(DEFAULT_SPREAD_WEIGHT)) / total_weight,
             )
         })
         .collect();
 
     let computed_spreads = if computed_spreads.is_empty() {
-        vec![(Spread::default(), requested_replicas)]
+        vec![(Spread::default(), requested_instances)]
     } else {
         computed_spreads
     };
 
     // Because of math, we may end up rounding a few instances away. Evenly distribute them
     // among the remaining hosts
-    let computed_replicas = computed_spreads
+    let computed_instances = computed_spreads
         .iter()
         .map(|(_, count)| count)
         .sum::<usize>();
-    let computed_spreads = match computed_replicas.cmp(&requested_replicas) {
-        // To meet the specified/requested number of replicas, evenly distribute the remaining unassigned replicas among the computed spreads
+    let computed_spreads = match computed_instances.cmp(&requested_instances) {
+        // To meet the specified/requested number of instances, evenly distribute the remaining unassigned instances among the computed spreads
         Ordering::Less => {
-            let mut diff = requested_replicas - computed_replicas;
+            let mut diff = requested_instances - computed_instances;
             computed_spreads
                 .into_iter()
                 .map(|(spread, count)| {
@@ -404,7 +404,7 @@ fn compute_spread(spread_config: &SpreadScalerProperty) -> Vec<(Spread, usize)> 
         Ordering::Equal => computed_spreads,
     };
 
-    // If there are no spreads specified, we should only have one (default) spread with the total number of replicas
+    // If there are no spreads specified, we should only have one (default) spread with the total number of instances
     if requested_spreads.is_empty() && computed_spreads.len() == 1 {
         return computed_spreads;
     }
@@ -456,7 +456,7 @@ mod test {
     fn can_spread_properly() -> Result<()> {
         // Basic test to ensure our types are correct
         let simple_spread = SpreadScalerProperty {
-            replicas: 1,
+            instances: 1,
             spread: vec![Spread {
                 name: "Simple".to_string(),
                 requirements: BTreeMap::new(),
@@ -469,7 +469,7 @@ mod test {
 
         // Ensure we spread evenly with equal weights, clean division
         let multi_spread_even = SpreadScalerProperty {
-            replicas: 10,
+            instances: 10,
             spread: vec![
                 Spread {
                     name: "SimpleOne".to_string(),
@@ -490,7 +490,7 @@ mod test {
 
         // Ensure we spread an odd number with clean dividing weights
         let multi_spread_odd = SpreadScalerProperty {
-            replicas: 7,
+            instances: 7,
             spread: vec![
                 Spread {
                     name: "SimpleOne".to_string(),
@@ -511,7 +511,7 @@ mod test {
 
         // Ensure we spread an odd number with unclean dividing weights
         let multi_spread_odd = SpreadScalerProperty {
-            replicas: 7,
+            instances: 7,
             spread: vec![
                 Spread {
                     name: "SimpleOne".to_string(),
@@ -532,7 +532,7 @@ mod test {
 
         // Ensure we compute if a weights aren't specified
         let multi_spread_even_no_weight = SpreadScalerProperty {
-            replicas: 10,
+            instances: 10,
             spread: vec![
                 Spread {
                     name: "SimpleOne".to_string(),
@@ -553,7 +553,7 @@ mod test {
 
         // Ensure we compute if spread vec is empty
         let simple_spread_replica_only = SpreadScalerProperty {
-            replicas: 12,
+            instances: 12,
             spread: vec![],
         };
 
@@ -563,7 +563,7 @@ mod test {
 
         // Ensure we handle an all around complex case
         let complex_spread = SpreadScalerProperty {
-            replicas: 103,
+            instances: 103,
             spread: vec![
                 Spread {
                     // 9 + 1 (remainder trip)
@@ -629,7 +629,7 @@ mod test {
 
         // Ensure we compute if a weights aren't specified
         let complex_spread = SpreadScalerProperty {
-            replicas: 103,
+            instances: 103,
             spread: vec![
                 Spread {
                     // 9 + 1 (remainder trip)
@@ -712,7 +712,7 @@ mod test {
         let store = Arc::new(TestStore::default());
 
         let echo_spread_property = SpreadScalerProperty {
-            replicas: 412,
+            instances: 412,
             spread: vec![
                 Spread {
                     name: "RunInFakeCloud".to_string(),
@@ -736,7 +736,7 @@ mod test {
         };
 
         let blobby_spread_property = SpreadScalerProperty {
-            replicas: 9,
+            instances: 9,
             spread: vec![
                 Spread {
                     name: "CrossRegionCustom".to_string(),
@@ -1009,7 +1009,7 @@ mod test {
 
         // Run 75% in east, 25% on resilient hosts
         let real_spread = SpreadScalerProperty {
-            replicas: 20,
+            instances: 20,
             spread: vec![
                 Spread {
                     name: "SimpleOne".to_string(),
@@ -1117,7 +1117,7 @@ mod test {
 
         let real_spread = SpreadScalerProperty {
             // Makes it so we always get at least 2 commands
-            replicas: 9,
+            instances: 9,
             spread: Vec::new(),
         };
 
@@ -1277,7 +1277,7 @@ mod test {
             .await,
         );
         let blobby_spread_property = SpreadScalerProperty {
-            replicas: 9,
+            instances: 9,
             spread: vec![
                 Spread {
                     name: "CrossRegionCustom".to_string(),

@@ -41,12 +41,12 @@ pub struct ProviderSpreadConfig {
     pub provider_config: Option<CapabilityConfig>,
 }
 
-/// The ProviderSpreadScaler ensures that a certain number of provider replicas are running,
+/// The ProviderSpreadScaler ensures that a certain number of provider instances are running,
 /// spread across a number of hosts according to a [SpreadScalerProperty](crate::model::SpreadScalerProperty)
 ///
-/// If no [Spreads](crate::model::Spread) are specified, this Scaler simply maintains the number of replicas
+/// If no [Spreads](crate::model::Spread) are specified, this Scaler simply maintains the number of instances
 /// on an available host. It's important to note that only one instance of a provider id + link + contract
-/// can run on each host, so it's possible to specify too many replicas to be satisfied by the spread configs.
+/// can run on each host, so it's possible to specify too many instances to be satisfied by the spread configs.
 pub struct ProviderSpreadScaler<S: ReadStore + Send + Sync> {
     store: S,
     pub config: ProviderSpreadConfig,
@@ -263,7 +263,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
     #[instrument(level = "trace", skip_all, fields(name = %self.config.model_name))]
     async fn cleanup(&self) -> Result<Vec<Command>> {
         let mut config_clone = self.config.clone();
-        config_clone.spread_config.replicas = 0;
+        config_clone.spread_config.instances = 0;
         let spread_requirements = compute_spread(&config_clone.spread_config);
 
         let cleanerupper = ProviderSpreadScaler {
@@ -381,7 +381,7 @@ mod test {
             provider_contract_id: "contract".to_string(),
             model_name: MODEL_NAME.to_string(),
             spread_config: SpreadScalerProperty {
-                replicas: 1,
+                instances: 1,
                 spread: vec![],
             },
             provider_config: None,
@@ -404,7 +404,7 @@ mod test {
             provider_contract_id: "contract".to_string(),
             model_name: MODEL_NAME.to_string(),
             spread_config: SpreadScalerProperty {
-                replicas: 1,
+                instances: 1,
                 spread: vec![],
             },
             provider_config: Some(CapabilityConfig::Opaque("foobar".to_string())),
@@ -506,7 +506,7 @@ mod test {
 
         // Ensure we spread evenly with equal weights, clean division
         let multi_spread_even = SpreadScalerProperty {
-            replicas: 2,
+            instances: 2,
             spread: vec![
                 Spread {
                     name: "SimpleOne".to_string(),
@@ -592,7 +592,7 @@ mod test {
     }
 
     #[tokio::test]
-    async fn can_do_multiple_replicas_per_spread() -> Result<()> {
+    async fn can_do_multiple_instances_per_spread() -> Result<()> {
         let lattice_id = "provider_spread_multi_host";
         let provider_ref = "fakecloud.azurecr.io/provider:3.2.1".to_string();
         let provider_id = "VASDASDIAMAREALPROVIDERPROVIDER";
@@ -615,7 +615,7 @@ mod test {
         // start proivder with 1 replica on 3
         // stop provider with 1 replica on 4
         let multi_spread_hard = SpreadScalerProperty {
-            replicas: 3,
+            instances: 3,
             spread: vec![
                 Spread {
                     name: "ComplexOne".to_string(),
@@ -942,7 +942,7 @@ mod test {
 
         // Ensure we spread evenly with equal weights, clean division
         let multi_spread_even = SpreadScalerProperty {
-            replicas: 2,
+            instances: 2,
             spread: vec![
                 Spread {
                     name: "SimpleOne".to_string(),
@@ -1084,7 +1084,7 @@ mod test {
 
         // Ensure we spread evenly with equal weights, clean division
         let multi_spread_even = SpreadScalerProperty {
-            replicas: 2,
+            instances: 2,
             spread: vec![
                 Spread {
                     name: "SimpleOne".to_string(),
@@ -1158,7 +1158,7 @@ mod test {
 
         // Ensure we spread evenly with equal weights, clean division
         let multi_spread_even = SpreadScalerProperty {
-            replicas: 1,
+            instances: 1,
             spread: vec![Spread {
                 name: "SimpleOne".to_string(),
                 requirements: BTreeMap::from_iter([("cloud".to_string(), "fake".to_string())]),
