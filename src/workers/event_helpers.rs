@@ -1,7 +1,8 @@
+use async_nats::jetstream::stream::Stream;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
 
-use tracing::{instrument, warn};
+use tracing::{instrument, trace, warn};
 use wasmcloud_control_interface::{HostInventory, LinkDefinition};
 
 use crate::{commands::Command, publisher::Publisher, server::StatusInfo, APP_SPEC_ANNOTATION};
@@ -98,6 +99,8 @@ impl LinkSource for wasmcloud_control_interface::Client {
 #[derive(Clone)]
 pub struct StatusPublisher<Pub> {
     publisher: Pub,
+    // Stream for querying current status to avoid duplicate updates
+    status_stream: Option<Stream>,
     // Topic prefix, e.g. wadm.status.default
     topic_prefix: String,
 }
@@ -105,9 +108,14 @@ pub struct StatusPublisher<Pub> {
 impl<Pub> StatusPublisher<Pub> {
     /// Creates an new status publisher configured with the given publisher that will send to the
     /// manifest status topic using the given prefix
-    pub fn new(publisher: Pub, topic_prefix: &str) -> StatusPublisher<Pub> {
+    pub fn new(
+        publisher: Pub,
+        status_stream: Option<Stream>,
+        topic_prefix: &str,
+    ) -> StatusPublisher<Pub> {
         StatusPublisher {
             publisher,
+            status_stream,
             topic_prefix: topic_prefix.to_owned(),
         }
     }
@@ -116,12 +124,34 @@ impl<Pub> StatusPublisher<Pub> {
 impl<Pub: Publisher> StatusPublisher<Pub> {
     #[instrument(level = "trace", skip(self))]
     pub async fn publish_status(&self, name: &str, status: StatusInfo) -> anyhow::Result<()> {
-        self.publisher
-            .publish(
-                serde_json::to_vec(&status)?,
-                Some(&format!("{}.{name}", self.topic_prefix)),
-            )
-            .await
+        let topic = format!("{}.{name}", self.topic_prefix);
+
+        // NOTE(brooksmtownsend): This direct get may not always query the jetstream leader. In the
+        // worst case where the last message isn't all the way updated, we may publish a duplicate
+        // status. This is an acceptable tradeoff to not have to query the leader directly every time.
+        let prev_status = if let Some(status_stream) = &self.status_stream {
+            status_stream
+                .direct_get_last_for_subject(&topic)
+                .await
+                .map(|m| serde_json::from_slice::<StatusInfo>(&m.payload).ok())
+                .ok()
+                .flatten()
+        } else {
+            None
+        };
+
+        match prev_status {
+            // If the status hasn't changed, skip publishing
+            Some(prev_status) if prev_status == status => {
+                trace!(%name, "Status hasn't changed since last update. Skipping");
+                Ok(())
+            }
+            _ => {
+                self.publisher
+                    .publish(serde_json::to_vec(&status)?, Some(&topic))
+                    .await
+            }
+        }
     }
 }
 

@@ -274,6 +274,7 @@ async fn main() -> anyhow::Result<()> {
         command_topic_prefix: DEFAULT_COMMANDS_TOPIC.trim_matches(trimmer).to_owned(),
         publisher: context.clone(),
         notify_stream,
+        status_stream: status_stream.clone(),
     };
     let events_manager: ConsumerManager<EventConsumer> = ConsumerManager::new(
         permit_pool.clone(),
@@ -373,6 +374,7 @@ struct EventWorkerCreator<StateStore> {
     command_topic_prefix: String,
     publisher: Context,
     notify_stream: Stream,
+    status_stream: Stream,
 }
 
 #[async_trait::async_trait]
@@ -392,8 +394,11 @@ where
             self.publisher.clone(),
             &format!("{}.{lattice_id}", self.command_topic_prefix),
         );
-        let status_publisher =
-            StatusPublisher::new(self.publisher.clone(), &format!("wadm.status.{lattice_id}"));
+        let status_publisher = StatusPublisher::new(
+            self.publisher.clone(),
+            Some(self.status_stream.clone()),
+            &format!("wadm.status.{lattice_id}"),
+        );
         let manager = ScalerManager::new(
             self.publisher.clone(),
             self.notify_stream.clone(),
