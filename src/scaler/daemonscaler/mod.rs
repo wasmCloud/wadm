@@ -771,7 +771,7 @@ mod test {
             },
         );
         let command_publisher = CommandPublisher::new(NoopPublisher, "doesntmatter");
-        let status_publisher = StatusPublisher::new(NoopPublisher, "doesntmatter");
+        let status_publisher = StatusPublisher::new(NoopPublisher,None,  "doesntmatter");
         let worker = EventWorker::new(
             store.clone(),
             lattice_source.clone(),

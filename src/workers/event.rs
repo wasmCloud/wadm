@@ -1201,7 +1201,7 @@ mod test {
         let lattice_id = "all_state";
 
         let command_publisher = CommandPublisher::new(NoopPublisher, "doesntmatter");
-        let status_publisher = StatusPublisher::new(NoopPublisher, "doesntmatter");
+        let status_publisher = StatusPublisher::new(NoopPublisher, None, "doesntmatter");
         let worker = EventWorker::new(
             store.clone(),
             lattice_source.clone(),
@@ -1490,7 +1490,7 @@ mod test {
                         ActorDescription {
                             id: actor1.public_key.to_string(),
                             image_ref: None,
-                            /// The individual instances of this actor that are running
+                            // The individual instances of this actor that are running
                             instances: vec![
                                 ActorInstance {
                                     annotations: None,
@@ -1512,7 +1512,7 @@ mod test {
                         ActorDescription {
                             id: actor2.public_key.to_string(),
                             image_ref: None,
-                            /// The individual instances of this actor that are running
+                            // The individual instances of this actor that are running
                             instances: vec![
                                 ActorInstance {
                                     annotations: None,
@@ -1565,7 +1565,7 @@ mod test {
                         ActorDescription {
                             id: actor1.public_key.to_string(),
                             image_ref: None,
-                            /// The individual instances of this actor that are running
+                            // The individual instances of this actor that are running
                             instances: vec![
                                 ActorInstance {
                                     annotations: None,
@@ -1587,7 +1587,7 @@ mod test {
                         ActorDescription {
                             id: actor2.public_key.to_string(),
                             image_ref: None,
-                            /// The individual instances of this actor that are running
+                            // The individual instances of this actor that are running
                             instances: vec![
                                 ActorInstance {
                                     annotations: None,
@@ -1795,7 +1795,7 @@ mod test {
                     actors: vec![ActorDescription {
                         id: actor2.public_key.to_string(),
                         image_ref: None,
-                        /// The individual instances of this actor that are running
+                        // The individual instances of this actor that are running
                         instances: vec![
                             ActorInstance {
                                 annotations: None,
@@ -1828,7 +1828,7 @@ mod test {
                     actors: vec![ActorDescription {
                         id: actor2.public_key.to_string(),
                         image_ref: None,
-                        /// The individual instances of this actor that are running
+                        // The individual instances of this actor that are running
                         instances: vec![
                             ActorInstance {
                                 annotations: None,
@@ -1992,7 +1992,7 @@ mod test {
             ..Default::default()
         };
         let command_publisher = CommandPublisher::new(NoopPublisher, "doesntmatter");
-        let status_publisher = StatusPublisher::new(NoopPublisher, "doesntmatter");
+        let status_publisher = StatusPublisher::new(NoopPublisher, None, "doesntmatter");
         let worker = EventWorker::new(
             store.clone(),
             lattice_source.clone(),
@@ -2023,7 +2023,7 @@ mod test {
                     ActorDescription {
                         id: actor1_id.to_string(),
                         image_ref: None,
-                        /// The individual instances of this actor that are running
+                        // The individual instances of this actor that are running
                         instances: vec![
                             ActorInstance {
                                 annotations: None,
@@ -2045,7 +2045,7 @@ mod test {
                     ActorDescription {
                         id: actor2_id.to_string(),
                         image_ref: None,
-                        /// The individual instances of this actor that are running
+                        // The individual instances of this actor that are running
                         instances: vec![ActorInstance {
                             annotations: None,
                             instance_id: "3".to_string(),
@@ -2155,7 +2155,7 @@ mod test {
         let lattice_source = TestLatticeSource::default();
         let lattice_id = "provider_status";
         let command_publisher = CommandPublisher::new(NoopPublisher, "doesntmatter");
-        let status_publisher = StatusPublisher::new(NoopPublisher, "doesntmatter");
+        let status_publisher = StatusPublisher::new(NoopPublisher, None, "doesntmatter");
         let worker = EventWorker::new(
             store.clone(),
             lattice_source.clone(),
@@ -2272,7 +2272,7 @@ mod test {
         let lattice_id = "provider_contract_id";
 
         let command_publisher = CommandPublisher::new(NoopPublisher, "doesntmatter");
-        let status_publisher = StatusPublisher::new(NoopPublisher, "doesntmatter");
+        let status_publisher = StatusPublisher::new(NoopPublisher, None, "doesntmatter");
         let worker = EventWorker::new(
             store.clone(),
             lattice_source.clone(),
@@ -2376,7 +2376,7 @@ mod test {
         let lattice_id = "update_data";
 
         let command_publisher = CommandPublisher::new(NoopPublisher, "doesntmatter");
-        let status_publisher = StatusPublisher::new(NoopPublisher, "doesntmatter");
+        let status_publisher = StatusPublisher::new(NoopPublisher, None, "doesntmatter");
         let worker = EventWorker::new(
             store.clone(),
             lattice_source.clone(),
