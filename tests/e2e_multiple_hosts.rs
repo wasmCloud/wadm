@@ -121,7 +121,7 @@ async fn test_no_requirements(client_info: &ClientInfo) {
     );
 
     // Once manifest is deployed, first status should be compensating
-    check_status(&stream, "default", "echo-simple", StatusType::Compensating)
+    check_status(&stream, "default", "echo-simple", StatusType::Reconciling)
         .await
         .unwrap();
 
@@ -165,7 +165,7 @@ async fn test_no_requirements(client_info: &ClientInfo) {
             )
         }
 
-        check_status(&stream, "default", "echo-simple", StatusType::Ready)
+        check_status(&stream, "default", "echo-simple", StatusType::Deployed)
             .await
             .unwrap();
 

@@ -969,7 +969,7 @@ mod test {
         assert_eq!(cmds.len(), 1);
         assert_eq!(
             blobby_daemonscaler.status().await.status_type,
-            StatusType::Compensating
+            StatusType::Reconciling
         );
 
         for cmd in cmds.iter() {
@@ -1030,7 +1030,7 @@ mod test {
 
         assert_eq!(
             blobby_daemonscaler.status().await.status_type,
-            StatusType::Ready
+            StatusType::Deployed
         );
 
         Ok(())
