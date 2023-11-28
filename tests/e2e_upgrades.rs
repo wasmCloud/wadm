@@ -97,7 +97,7 @@ async fn test_upgrade(client_info: &ClientInfo) {
     );
 
     // Once manifest is deployed, first status should be compensating
-    check_status(&stream, "default", "updateapp", StatusType::Compensating)
+    check_status(&stream, "default", "updateapp", StatusType::Reconciling)
         .await
         .unwrap();
 
@@ -180,7 +180,7 @@ async fn test_upgrade(client_info: &ClientInfo) {
             )
         }
 
-        check_status(&stream, "default", "updateapp", StatusType::Ready)
+        check_status(&stream, "default", "updateapp", StatusType::Deployed)
             .await
             .unwrap();
 
@@ -209,7 +209,7 @@ async fn test_upgrade(client_info: &ClientInfo) {
     );
 
     // Once manifest is updated, status should be compensating
-    check_status(&stream, "default", "updateapp", StatusType::Compensating)
+    check_status(&stream, "default", "updateapp", StatusType::Reconciling)
         .await
         .unwrap();
 
@@ -292,7 +292,7 @@ async fn test_upgrade(client_info: &ClientInfo) {
             )
         }
 
-        check_status(&stream, "default", "updateapp", StatusType::Ready)
+        check_status(&stream, "default", "updateapp", StatusType::Deployed)
             .await
             .unwrap();
 
@@ -321,7 +321,7 @@ async fn test_upgrade(client_info: &ClientInfo) {
     );
 
     // Once manifest is updated, status should be compensating
-    check_status(&stream, "default", "updateapp", StatusType::Compensating)
+    check_status(&stream, "default", "updateapp", StatusType::Reconciling)
         .await
         .unwrap();
 
@@ -404,7 +404,7 @@ async fn test_upgrade(client_info: &ClientInfo) {
             )
         }
 
-        check_status(&stream, "default", "updateapp", StatusType::Ready)
+        check_status(&stream, "default", "updateapp", StatusType::Deployed)
             .await
             .unwrap();
 

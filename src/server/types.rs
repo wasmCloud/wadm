@@ -205,7 +205,7 @@ impl StatusInfo {
 
     pub fn ready(message: &str) -> Self {
         StatusInfo {
-            status_type: StatusType::Ready,
+            status_type: StatusType::Deployed,
             message: message.to_owned(),
         }
     }
@@ -219,7 +219,7 @@ impl StatusInfo {
 
     pub fn compensating(message: &str) -> Self {
         StatusInfo {
-            status_type: StatusType::Compensating,
+            status_type: StatusType::Reconciling,
             message: message.to_owned(),
         }
     }
@@ -231,8 +231,10 @@ impl StatusInfo {
 pub enum StatusType {
     #[default]
     Undeployed,
-    Compensating,
-    Ready,
+    #[serde(alias = "compensating")]
+    Reconciling,
+    #[serde(alias = "ready")]
+    Deployed,
     Failed,
 }
 
@@ -256,8 +258,8 @@ impl std::ops::Add for StatusType {
             // If anything is undeployed, the whole thing is
             (Self::Undeployed, _) => Self::Undeployed,
             (_, Self::Undeployed) => Self::Undeployed,
-            (Self::Compensating, _) => Self::Compensating,
-            (_, Self::Compensating) => Self::Compensating,
+            (Self::Reconciling, _) => Self::Reconciling,
+            (_, Self::Reconciling) => Self::Reconciling,
             _ => unreachable!("aggregating StatusType failure. This is programmer error"),
         }
     }
@@ -278,8 +280,10 @@ mod test {
     #[test]
     fn test_status_aggregate() {
         assert!(matches!(
-            [StatusType::Ready, StatusType::Ready].into_iter().sum(),
-            StatusType::Ready
+            [StatusType::Deployed, StatusType::Deployed]
+                .into_iter()
+                .sum(),
+            StatusType::Deployed
         ));
 
         assert!(matches!(
@@ -297,14 +301,14 @@ mod test {
         ));
 
         assert!(matches!(
-            [StatusType::Compensating, StatusType::Undeployed]
+            [StatusType::Reconciling, StatusType::Undeployed]
                 .into_iter()
                 .sum(),
             StatusType::Undeployed
         ));
 
         assert!(matches!(
-            [StatusType::Ready, StatusType::Undeployed]
+            [StatusType::Deployed, StatusType::Undeployed]
                 .into_iter()
                 .sum(),
             StatusType::Undeployed
@@ -312,8 +316,8 @@ mod test {
 
         assert!(matches!(
             [
-                StatusType::Ready,
-                StatusType::Compensating,
+                StatusType::Deployed,
+                StatusType::Reconciling,
                 StatusType::Undeployed,
                 StatusType::Failed
             ]

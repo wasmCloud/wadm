@@ -125,7 +125,7 @@ async fn test_basic_separation(client_info: &ClientInfo) -> anyhow::Result<()> {
         &stream,
         LATTICE_EAST,
         "echo-simple",
-        StatusType::Compensating,
+        StatusType::Reconciling,
     )
     .await
     .unwrap();
@@ -133,7 +133,7 @@ async fn test_basic_separation(client_info: &ClientInfo) -> anyhow::Result<()> {
         &stream,
         LATTICE_WEST,
         "messaging-simple",
-        StatusType::Compensating,
+        StatusType::Reconciling,
     )
     .await
     .unwrap();
@@ -299,10 +299,10 @@ async fn test_basic_separation(client_info: &ClientInfo) -> anyhow::Result<()> {
             )
         }
 
-        check_status(&stream, LATTICE_EAST, "echo-simple", StatusType::Ready)
+        check_status(&stream, LATTICE_EAST, "echo-simple", StatusType::Deployed)
             .await
             .unwrap();
-        check_status(&stream, LATTICE_WEST, "messaging-simple", StatusType::Ready)
+        check_status(&stream, LATTICE_WEST, "messaging-simple", StatusType::Deployed)
             .await
             .unwrap();
 
