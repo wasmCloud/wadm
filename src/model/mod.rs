@@ -284,7 +284,7 @@ pub struct LinkdefProperty {
 pub struct SpreadScalerProperty {
     /// Number of replicas to scale
     pub replicas: usize,
-    /// Requirements for spreading throse replicas
+    /// Requirements for spreading those replicas
     #[serde(default)]
     pub spread: Vec<Spread>,
 }
