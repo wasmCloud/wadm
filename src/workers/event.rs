@@ -1490,7 +1490,7 @@ mod test {
                         ActorDescription {
                             id: actor1.public_key.to_string(),
                             image_ref: None,
-                            /// The individual instances of this actor that are running
+                            // The individual instances of this actor that are running
                             instances: vec![
                                 ActorInstance {
                                     annotations: None,
@@ -1512,7 +1512,7 @@ mod test {
                         ActorDescription {
                             id: actor2.public_key.to_string(),
                             image_ref: None,
-                            /// The individual instances of this actor that are running
+                            // The individual instances of this actor that are running
                             instances: vec![
                                 ActorInstance {
                                     annotations: None,
@@ -1565,7 +1565,7 @@ mod test {
                         ActorDescription {
                             id: actor1.public_key.to_string(),
                             image_ref: None,
-                            /// The individual instances of this actor that are running
+                            // The individual instances of this actor that are running
                             instances: vec![
                                 ActorInstance {
                                     annotations: None,
@@ -1587,7 +1587,7 @@ mod test {
                         ActorDescription {
                             id: actor2.public_key.to_string(),
                             image_ref: None,
-                            /// The individual instances of this actor that are running
+                            // The individual instances of this actor that are running
                             instances: vec![
                                 ActorInstance {
                                     annotations: None,
@@ -1795,7 +1795,7 @@ mod test {
                     actors: vec![ActorDescription {
                         id: actor2.public_key.to_string(),
                         image_ref: None,
-                        /// The individual instances of this actor that are running
+                        // The individual instances of this actor that are running
                         instances: vec![
                             ActorInstance {
                                 annotations: None,
@@ -1828,7 +1828,7 @@ mod test {
                     actors: vec![ActorDescription {
                         id: actor2.public_key.to_string(),
                         image_ref: None,
-                        /// The individual instances of this actor that are running
+                        // The individual instances of this actor that are running
                         instances: vec![
                             ActorInstance {
                                 annotations: None,
@@ -2023,7 +2023,7 @@ mod test {
                     ActorDescription {
                         id: actor1_id.to_string(),
                         image_ref: None,
-                        /// The individual instances of this actor that are running
+                        // The individual instances of this actor that are running
                         instances: vec![
                             ActorInstance {
                                 annotations: None,
@@ -2045,7 +2045,7 @@ mod test {
                     ActorDescription {
                         id: actor2_id.to_string(),
                         image_ref: None,
-                        /// The individual instances of this actor that are running
+                        // The individual instances of this actor that are running
                         instances: vec![ActorInstance {
                             annotations: None,
                             instance_id: "3".to_string(),
