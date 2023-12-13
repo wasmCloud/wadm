@@ -149,7 +149,7 @@ jobs:
       - name: Publish to GHCR
         uses: softprops/action-gh-release@v1
         with:
-          token: ${{ secrets.WADM_GITHUB_TOKEN }}
+          token: ${{ secrets.GITHUB_TOKEN }}
           prerelease: false
           draft: false
           files: |
