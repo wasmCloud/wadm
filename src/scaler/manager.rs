@@ -581,35 +581,23 @@ where
                 scalers.extend(traits.unwrap_or(&EMPTY_TRAIT_VEC).iter().filter_map(|trt| {
                     match (trt.trait_type.as_str(), &trt.properties) {
                         (SPREADSCALER_TRAIT, TraitProperty::SpreadScaler(p)) => {
-                            Some(Box::new(BackoffAwareScaler::new(
-                                ActorSpreadScaler::new(
-                                    snapshot_data.clone(),
-                                    props.image.to_owned(),
-                                    lattice_id.to_owned(),
-                                    name.to_owned(),
-                                    p.to_owned(),
-                                    &component.name,
-                                ),
-                                notifier.to_owned(),
-                                notifier_subject,
-                                name,
-                                None,
+                            Some(Box::new(ActorSpreadScaler::new(
+                                snapshot_data.clone(),
+                                props.image.to_owned(),
+                                lattice_id.to_owned(),
+                                name.to_owned(),
+                                p.to_owned(),
+                                &component.name,
                             )) as BoxedScaler)
                         }
                         (DAEMONSCALER_TRAIT, TraitProperty::SpreadScaler(p)) => {
-                            Some(Box::new(BackoffAwareScaler::new(
-                                ActorDaemonScaler::new(
-                                    snapshot_data.clone(),
-                                    props.image.to_owned(),
-                                    lattice_id.to_owned(),
-                                    name.to_owned(),
-                                    p.to_owned(),
-                                    &component.name,
-                                ),
-                                notifier.to_owned(),
-                                notifier_subject,
-                                name,
-                                None,
+                            Some(Box::new(ActorDaemonScaler::new(
+                                snapshot_data.clone(),
+                                props.image.to_owned(),
+                                lattice_id.to_owned(),
+                                name.to_owned(),
+                                p.to_owned(),
+                                &component.name,
                             )) as BoxedScaler)
                         }
                         (LINKDEF_TRAIT, TraitProperty::Linkdef(p)) => {
@@ -619,22 +607,16 @@ where
                                     Properties::Capability { properties: cappy }
                                         if component.name == p.target =>
                                     {
-                                        Some(Box::new(BackoffAwareScaler::new(
-                                            LinkScaler::new(
-                                                snapshot_data.clone(),
-                                                props.image.to_owned(),
-                                                cappy.image.to_owned(),
-                                                cappy.contract.to_owned(),
-                                                cappy.link_name.to_owned(),
-                                                lattice_id.to_owned(),
-                                                name.to_owned(),
-                                                p.values.to_owned(),
-                                                snapshot_data.clone(),
-                                            ),
-                                            notifier.to_owned(),
-                                            notifier_subject,
-                                            name,
-                                            None,
+                                        Some(Box::new(LinkScaler::new(
+                                            snapshot_data.clone(),
+                                            props.image.to_owned(),
+                                            cappy.image.to_owned(),
+                                            cappy.contract.to_owned(),
+                                            cappy.link_name.to_owned(),
+                                            lattice_id.to_owned(),
+                                            name.to_owned(),
+                                            p.values.to_owned(),
+                                            snapshot_data.clone(),
                                         ))
                                             as BoxedScaler)
                                     }

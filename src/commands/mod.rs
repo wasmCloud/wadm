@@ -8,7 +8,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    events::{Event, Linkdef, LinkdefSet, ProviderClaims, ProviderStartFailed, ProviderStarted},
+    events::{Event, ProviderClaims, ProviderStartFailed, ProviderStarted},
     model::CapabilityConfig,
     workers::insert_managed_annotations,
 };
@@ -78,32 +78,6 @@ impl Command {
                     })),
                 ))
             }
-            Command::PutLinkdef(PutLinkdef {
-                actor_id,
-                provider_id,
-                link_name,
-                contract_id,
-                values,
-                ..
-            }) => Some((
-                Event::LinkdefSet(LinkdefSet {
-                    linkdef: Linkdef {
-                        actor_id: actor_id.to_owned(),
-                        contract_id: contract_id.to_owned(),
-                        link_name: link_name.to_owned(),
-                        provider_id: provider_id.to_owned(),
-                        values: values.to_owned(),
-                        // We don't know the linkdef ID from the command
-                        id: String::with_capacity(0),
-                    },
-                }),
-                None,
-            )),
-            // NOTE: this is explicitly added as a reminder that scaling an actor
-            // doesn't have an exact corresponding event, but we're not really worried about that
-            // because scale is idempotent. So, in the worst case, we issue multiple commands which
-            // would result in the same state as if we issued one command.
-            Command::ScaleActor(_) => None,
             _ => None,
         }
     }
