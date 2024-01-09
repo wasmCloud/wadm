@@ -3,6 +3,7 @@ use opentelemetry::sdk::{
     Resource,
 };
 use opentelemetry_otlp::{Protocol, WithExportConfig};
+use std::io::IsTerminal;
 use tracing::{Event as TracingEvent, Subscriber};
 use tracing_subscriber::fmt::{
     format::{Format, Full, Json, JsonFields, Writer},
@@ -109,7 +110,7 @@ where
 {
     let log_layer = tracing_subscriber::fmt::layer()
         .with_writer(std::io::stderr)
-        .with_ansi(atty::is(atty::Stream::Stderr));
+        .with_ansi(std::io::stderr().is_terminal());
     if structured_logging {
         Box::new(
             log_layer
