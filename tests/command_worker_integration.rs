@@ -369,7 +369,6 @@ async fn test_annotation_stop() {
         "wasmcloud.azurecr.io/echo:0.3.4",
         "Should have started the correct actor"
     );
-    // NOTE(#191): This should be changed to only check the max_concurrent value
     assert_eq!(
         inventory[0]
             .instances
@@ -380,13 +379,7 @@ async fn test_annotation_stop() {
                 .as_ref()
                 .map(|annotations| !annotations.is_empty())
                 .unwrap_or(false))
-            .map(|i| {
-                if i.max_concurrent == 0 {
-                    1
-                } else {
-                    i.max_concurrent
-                }
-            })
+            .map(|i| { i.max_concurrent })
             .sum::<u16>(),
         2,
         "Should have started the correct number of actors"

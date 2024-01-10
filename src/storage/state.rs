@@ -10,7 +10,8 @@ use serde::{Deserialize, Serialize};
 
 use super::StateKind;
 use crate::events::{
-    ActorStarted, ActorsStarted, HostHeartbeat, HostStarted, ProviderInfo, ProviderStarted,
+    ActorStarted, ActorsStarted, BackwardsCompatActors, BackwardsCompatProviders, HostHeartbeat,
+    HostStarted, ProviderInfo, ProviderStarted,
 };
 
 /// A wasmCloud Capability provider
@@ -277,9 +278,6 @@ pub struct Host {
     /// An arbitrary hashmap of string labels attached to the host
     pub labels: HashMap<String, String>,
 
-    /// Additional annotations that have been added to the host
-    pub annotations: BTreeMap<String, String>,
-
     /// A set of running providers on the host
     pub providers: HashSet<ProviderInfo>,
 
@@ -329,15 +327,48 @@ impl From<&HostStarted> for Host {
 
 impl From<HostHeartbeat> for Host {
     fn from(value: HostHeartbeat) -> Self {
+        let actors = match value.actors.clone() {
+            BackwardsCompatActors::V81(actors) => actors,
+            // TODO(#235): Change the format of the [Host] to use the new format
+            BackwardsCompatActors::V82(actors) => actors
+                .into_iter()
+                .map(|actor| {
+                    (
+                        actor.id,
+                        actor
+                            .instances
+                            .into_iter()
+                            .map(|instance| instance.max_concurrent as usize)
+                            .sum(),
+                    )
+                })
+                .collect(),
+        };
+
+        let providers = match value.providers {
+            BackwardsCompatProviders::V81(providers) => providers.into_iter().collect(),
+            BackwardsCompatProviders::V82(providers) => providers
+                .into_iter()
+                .map(|provider| ProviderInfo {
+                    public_key: provider.id,
+                    annotations: provider
+                        .annotations
+                        .map(|a| a.into_iter().collect())
+                        .unwrap_or_default(),
+                    contract_id: provider.contract_id,
+                    link_name: provider.link_name,
+                })
+                .collect(),
+        };
+
         Host {
-            actors: value.actors,
+            actors,
             friendly_name: value.friendly_name,
             labels: value.labels,
-            annotations: value.annotations,
-            providers: value.providers.into_iter().collect(),
-            uptime_seconds: value.uptime_seconds,
+            providers,
+            uptime_seconds: value.uptime_seconds as usize,
             version: Some(value.version),
-            id: value.id,
+            id: value.host_id,
             last_seen: Utc::now(),
         }
     }
@@ -345,15 +376,48 @@ impl From<HostHeartbeat> for Host {
 
 impl From<&HostHeartbeat> for Host {
     fn from(value: &HostHeartbeat) -> Self {
+        let actors = match value.actors.clone() {
+            BackwardsCompatActors::V81(actors) => actors,
+            // TODO(#235): Change the format of the [Host] to use the new format
+            BackwardsCompatActors::V82(actors) => actors
+                .into_iter()
+                .map(|actor| {
+                    (
+                        actor.id,
+                        actor
+                            .instances
+                            .into_iter()
+                            .map(|instance| instance.max_concurrent as usize)
+                            .sum(),
+                    )
+                })
+                .collect(),
+        };
+
+        let providers = match value.providers.clone() {
+            BackwardsCompatProviders::V81(providers) => providers.iter().cloned().collect(),
+            BackwardsCompatProviders::V82(providers) => providers
+                .into_iter()
+                .map(|provider| ProviderInfo {
+                    public_key: provider.id,
+                    annotations: provider
+                        .annotations
+                        .map(|a| a.into_iter().collect())
+                        .unwrap_or_default(),
+                    contract_id: provider.contract_id,
+                    link_name: provider.link_name,
+                })
+                .collect(),
+        };
+
         Host {
-            actors: value.actors.clone(),
+            actors,
             friendly_name: value.friendly_name.clone(),
             labels: value.labels.clone(),
-            annotations: value.annotations.clone(),
-            providers: value.providers.iter().cloned().collect(),
-            uptime_seconds: value.uptime_seconds,
+            providers,
+            uptime_seconds: value.uptime_seconds as usize,
             version: Some(value.version.clone()),
-            id: value.id.clone(),
+            id: value.host_id.clone(),
             last_seen: Utc::now(),
         }
     }
