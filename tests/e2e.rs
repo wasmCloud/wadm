@@ -430,7 +430,7 @@ pub fn check_actors(
                 .then_some(&actor.instances)
         })
         .flatten();
-    let actor_count = all_actors
+    let actor_count: usize = all_actors
         .filter(|actor| {
             actor
                 .annotations
@@ -442,7 +442,8 @@ pub fn check_actors(
                 })
                 .unwrap_or(false)
         })
-        .count();
+        .map(|actor| actor.max_concurrent as usize)
+        .sum();
     if actor_count != expected_count {
         anyhow::bail!(
             "Should have had {expected_count} actors managed by wadm running, found {actor_count}"
