@@ -11,6 +11,7 @@ use std::{
 use cloudevents::{AttributesReader, Data, Event as CloudEvent, EventBuilder, EventBuilderV10};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use wasmcloud_control_interface::{ActorDescription, LabelsMap, ProviderDescriptions};
 
 use crate::model::Manifest;
 
@@ -553,27 +554,51 @@ event_impl!(
     id
 );
 
+// TODO(#235): Remove once wasmCloud v0.82 is released
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum BackwardsCompatActors {
+    V81(HashMap<String, usize>),
+    V82(Vec<ActorDescription>),
+}
+
+// TODO(#235): Remove once wasmCloud v0.82 is released
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum BackwardsCompatProviders {
+    V81(Vec<ProviderInfo>),
+    V82(ProviderDescriptions),
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct HostHeartbeat {
-    pub actors: HashMap<String, usize>,
+    /// Actors running on this host.
+    pub actors: BackwardsCompatActors,
+    /// Providers running on this host
+    pub providers: BackwardsCompatProviders,
+    /// The host's unique ID
+    #[serde(default, alias = "id")]
+    pub host_id: String,
+    /// The host's cluster issuer public key
+    #[serde(default)]
+    pub issuer: String,
+    /// The host's human-readable friendly name
     pub friendly_name: String,
-    pub labels: HashMap<String, String>,
-    #[serde(default)]
-    pub annotations: BTreeMap<String, String>,
-    pub providers: Vec<ProviderInfo>,
-    pub uptime_human: String,
-    pub uptime_seconds: usize,
+    /// The host's labels
+    pub labels: LabelsMap,
+    /// The host version
     pub version: semver::Version,
-    // TODO: Parse as nkey?
-    #[serde(default)]
-    pub id: String,
+    /// The host uptime in human-readable form
+    pub uptime_human: String,
+    /// The host uptime in seconds
+    pub uptime_seconds: u64,
 }
 
 event_impl!(
     HostHeartbeat,
     "com.wasmcloud.lattice.host_heartbeat",
     source,
-    id
+    host_id
 );
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]

@@ -208,57 +208,79 @@ where
         Ok(())
     }
 
-    #[instrument(level = "debug", skip(self, host), fields(host_id = %host.id))]
+    #[instrument(level = "debug", skip(self, host), fields(host_id = %host.host_id))]
     async fn handle_host_heartbeat(
         &self,
         lattice_id: &str,
         host: &HostHeartbeat,
     ) -> anyhow::Result<()> {
         debug!("Updating store with current host heartbeat information");
-        debug!("Requesting host inventory to supplement heartbeat");
-        // NOTE(brooksmtownsend): Currently, the heartbeat does not tell us the instance IDs or annotations
-        // of actors, or the annotations of providers. We need to make an inventory request to get this
-        // information so we can properly update state.
-        let host_inventory = self.ctl_client.get_inventory(&host.id).await?;
-        let mut host_data = Host::from(host);
-        // Supplement host provider annotation data with annotations from inventory
-        host_data.providers = host_data
-            .providers
-            .into_iter()
-            .map(|mut info| {
-                if info.annotations.is_empty() {
-                    match host_inventory.providers.iter().find(|p| {
-                        p.id == info.public_key
-                            && p.contract_id == info.contract_id
-                            && p.link_name == info.link_name
-                    }) {
-                        Some(provider) if provider.annotations.is_some() => {
-                            info.annotations = provider
-                                .annotations
-                                .clone()
-                                .map(|annotations| annotations.into_iter().collect())
-                                .unwrap_or_default();
+        match (&host.actors, &host.providers) {
+            // New heartbeat format, skip the inventory request and update the store
+            (BackwardsCompatActors::V82(actors), BackwardsCompatProviders::V82(providers)) => {
+                let host_data = Host::from(host);
+                self.store
+                    .store(lattice_id, host.host_id.clone(), host_data)
+                    .await?;
+
+                // NOTE: We can return an error here and then nack because we'll just reupdate the host data
+                // with the exact same host heartbeat entry. There is no possibility of a duplicate
+                self.heartbeat_provider_update(lattice_id, host, providers)
+                    .await?;
+
+                // NOTE: We can return an error here and then nack because we'll just reupdate the host data
+                // with the exact same host heartbeat entry. There is no possibility of a duplicate
+                self.heartbeat_actor_update(lattice_id, host, actors)
+                    .await?;
+            }
+            // Old heartbeat format, request inventory for supplemental information and update the store
+            _ => {
+                debug!("Requesting host inventory to supplement heartbeat");
+                // NOTE(brooksmtownsend): Until wasmCloud 0.82, the heartbeat does not tell us the instance IDs or annotations
+                // of actors, or the annotations of providers. We need to make an inventory request to get this
+                // information so we can properly update state.
+                let host_inventory = self.ctl_client.get_inventory(&host.host_id).await?;
+                let mut host_data = Host::from(host);
+                // Supplement host provider annotation data with annotations from inventory
+                host_data.providers = host_data
+                    .providers
+                    .into_iter()
+                    .map(|mut info| {
+                        if info.annotations.is_empty() {
+                            match host_inventory.providers.iter().find(|p| {
+                                p.id == info.public_key
+                                    && p.contract_id == info.contract_id
+                                    && p.link_name == info.link_name
+                            }) {
+                                Some(provider) if provider.annotations.is_some() => {
+                                    info.annotations = provider
+                                        .annotations
+                                        .clone()
+                                        .map(|annotations| annotations.into_iter().collect())
+                                        .unwrap_or_default();
+                                }
+                                _ => (),
+                            }
                         }
-                        _ => (),
-                    }
-                }
 
-                info
-            })
-            .collect();
-        self.store
-            .store(lattice_id, host.id.clone(), host_data)
-            .await?;
+                        info
+                    })
+                    .collect();
+                self.store
+                    .store(lattice_id, host.host_id.clone(), host_data)
+                    .await?;
 
-        // NOTE: We can return an error here and then nack because we'll just reupdate the host data
-        // with the exact same host heartbeat entry. There is no possibility of a duplicate
-        self.heartbeat_provider_update(lattice_id, host, host_inventory.providers)
-            .await?;
+                // NOTE: We can return an error here and then nack because we'll just reupdate the host data
+                // with the exact same host heartbeat entry. There is no possibility of a duplicate
+                self.heartbeat_provider_update(lattice_id, host, &host_inventory.providers)
+                    .await?;
 
-        // NOTE: We can return an error here and then nack because we'll just reupdate the host data
-        // with the exact same host heartbeat entry. There is no possibility of a duplicate
-        self.heartbeat_actor_update(lattice_id, host, host_inventory.actors)
-            .await?;
+                // NOTE: We can return an error here and then nack because we'll just reupdate the host data
+                // with the exact same host heartbeat entry. There is no possibility of a duplicate
+                self.heartbeat_actor_update(lattice_id, host, &host_inventory.actors)
+                    .await?;
+            }
+        }
 
         Ok(())
     }
@@ -477,7 +499,7 @@ where
                 public_key: provider.public_key.to_owned(),
                 // We don't have this information, nor do we need it since we don't hash based
                 // on annotations
-                annotations: BTreeMap::new(),
+                annotations: BTreeMap::default(),
             });
 
             self.store
@@ -568,13 +590,27 @@ where
         &self,
         actors: &HashMap<String, Actor>,
         host_id: &str,
-        instance_map: Vec<(ActorDescription, HashSet<WadmActorInfo>)>,
+        instance_map: Vec<ActorDescription>,
     ) -> anyhow::Result<Vec<(String, Actor)>> {
         let claims = self.ctl_client.get_claims().await?;
 
         Ok(instance_map
             .into_iter()
-            .map(|(actor_description, instances)| {
+            .map(|actor_description| {
+                let instances = actor_description
+                    .instances
+                    .into_iter()
+                    .map(|instance| {
+                        let annotations = instance
+                            .annotations
+                            .map(|a| a.into_iter().collect())
+                            .unwrap_or_default();
+                        WadmActorInfo {
+                            count: instance.max_concurrent as usize,
+                            annotations,
+                        }
+                    })
+                    .collect();
                 if let Some(actor) = actors.get(&actor_description.id) {
                     // Construct modified Actor with new instances included
                     let mut new_instances = actor.instances.clone();
@@ -622,72 +658,25 @@ where
             .collect::<Vec<(String, Actor)>>())
     }
 
-    #[instrument(level = "debug", skip(self, host), fields(host_id = %host.id))]
+    #[instrument(level = "debug", skip(self, host), fields(host_id = %host.host_id))]
     async fn heartbeat_actor_update(
         &self,
         lattice_id: &str,
         host: &HostHeartbeat,
-        inventory_actors: Vec<ActorDescription>,
+        inventory_actors: &Vec<ActorDescription>,
     ) -> anyhow::Result<()> {
         debug!("Fetching current actor state");
         let actors = self.store.list::<Actor>(lattice_id).await?;
 
-        let host_instances = inventory_actors
-            .into_iter()
-            .map(|actor_description| {
-                (
-                    ActorDescription {
-                        id: actor_description.id,
-                        image_ref: actor_description.image_ref,
-                        name: actor_description.name,
-                        // TODO(#191): Explicitly throwing away the instances list, we don't need it in the
-                        // inventory format. As we resolve #191 we should be able to avoid the below folding
-                        // logic and proceed with the instances list as-is on the host inventory.
-                        ..Default::default()
-                    },
-                    actor_description
-                        .instances
-                        .into_iter()
-                        // The only thing we care about here are the annotations and the count
-                        // associated with those annotations
-                        .map(|instance| {
-                            (
-                                instance
-                                    .annotations
-                                    .unwrap_or_default()
-                                    .into_iter()
-                                    .collect::<BTreeMap<String, String>>(),
-                                instance.max_concurrent,
-                            )
-                        })
-                        .fold(HashMap::new(), |mut map, (annotations, max_concurrent)| {
-                            // NOTE(#191): This is for backwards compat with 0.78 as 0.79 changes this to be
-                            // just a max concurrent value. This code should be removed probably by
-                            // the time we release 0.80
-                            let plus = if max_concurrent == 0 {
-                                1_usize
-                            } else {
-                                max_concurrent as usize
-                            };
-                            map.entry(annotations)
-                                .and_modify(|count| *count += plus)
-                                .or_insert(plus);
-                            map
-                        })
-                        .into_iter()
-                        .map(|(annotations, count)| WadmActorInfo { count, annotations })
-                        .collect::<HashSet<WadmActorInfo>>(),
-                )
-            })
-            .collect::<Vec<(ActorDescription, HashSet<WadmActorInfo>)>>();
-
         // Compare stored Actors to the "true" list on this host, updating stored
         // Actors when they differ from the authoratative heartbeat
-        let actors_to_update = host_instances
-            .into_iter()
-            .filter_map(|(actor_description, instances)| {
+        let actors_to_update = inventory_actors
+            .iter()
+            .filter_map(|actor_description| {
                 if actors
                     .get(&actor_description.id)
+                    // NOTE(brooksmtownsend): This code maps the actor to a boolean indicating if it's up-to-date with the heartbeat or not.
+                    // If the actor matches what the heartbeat says, we return None, otherwise we return Some(actor_description).
                     .map(|actor| {
                         // If the stored reference isn't what we receive on the heartbeat, update
                         actor_description
@@ -696,26 +685,26 @@ where
                             .is_some_and(|actor_ref| &actor.reference == actor_ref)
                             && actor
                                 .instances
-                                .get(&host.id)
+                                .get(&host.host_id)
                                 .map(|store_instances| {
-                                    // NOTE(thomastaylor312): This is the weird part where we have to do
-                                    // custom equality checking because of how we did hashing. The only
-                                    // way to keep this data serializable was by storing it as a
-                                    // HashSet. A map of Annotations -> count would be better, but it's
-                                    // not serializable. Please note that there is some iteration
-                                    // involved, it is highly unlikely an actor would have more than 2
-                                    // or 3 different instances running with different annotations
-                                    if store_instances.len() != instances.len() {
-                                        // Short circuit if we have more or less
+                                    // Update if the number of instances is different
+                                    if store_instances.len() != actor.instances.len() {
                                         return false;
                                     }
-                                    // Otherwise, check that all the annotations and counts are the same
-                                    instances.iter().all(|instance| {
-                                        store_instances
-                                            .get(&instance.annotations)
-                                            .map_or(false, |store_instance| {
-                                                instance.count == store_instance.count
-                                            })
+                                    // Update if annotations or counts are different
+                                    actor_description.instances.iter().all(|instance| {
+                                        let annotations: BTreeMap<String, String> = instance
+                                            .annotations
+                                            .clone()
+                                            .map(|a| a.into_iter().collect())
+                                            .unwrap_or_default();
+                                        store_instances.get(&annotations).map_or(
+                                            false,
+                                            |store_instance| {
+                                                instance.max_concurrent as usize
+                                                    == store_instance.count
+                                            },
+                                        )
                                     })
                                 })
                                 .unwrap_or(false)
@@ -724,14 +713,14 @@ where
                 {
                     None
                 } else {
-                    Some((actor_description, instances))
+                    Some(actor_description.to_owned())
                 }
             })
             // actor ID to all instances on this host
-            .collect::<Vec<(ActorDescription, HashSet<WadmActorInfo>)>>();
+            .collect::<Vec<ActorDescription>>();
 
         let actors_to_store = self
-            .populate_actor_info(&actors, &host.id, actors_to_update)
+            .populate_actor_info(&actors, &host.host_id, actors_to_update)
             .await?;
 
         trace!("Updating actors with new status from host");
@@ -741,12 +730,12 @@ where
         Ok(())
     }
 
-    #[instrument(level = "debug", skip(self, host), fields(host_id = %host.id))]
+    #[instrument(level = "debug", skip(self, heartbeat), fields(host_id = %heartbeat.host_id))]
     async fn heartbeat_provider_update(
         &self,
         lattice_id: &str,
-        host: &HostHeartbeat,
-        inventory_providers: Vec<ProviderDescription>,
+        heartbeat: &HostHeartbeat,
+        inventory_providers: &Vec<ProviderDescription>,
     ) -> anyhow::Result<()> {
         debug!("Fetching current provider state");
         let providers = self.store.list::<Provider>(lattice_id).await?;
@@ -772,7 +761,7 @@ where
                         prov.reference = info.image_ref.clone().unwrap_or_default();
                         has_changes = true;
                     }
-                    if let Entry::Vacant(entry) = prov.hosts.entry(host.id.clone()) {
+                    if let Entry::Vacant(entry) = prov.hosts.entry(heartbeat.host_id.clone()) {
                         entry.insert(ProviderStatus::default());
                         has_changes = true;
                     }
@@ -791,7 +780,7 @@ where
                             id: info.id.clone(),
                             contract_id: info.contract_id.clone(),
                             link_name: info.link_name.clone(),
-                            hosts: [(host.id.clone(), ProviderStatus::default())].into(),
+                            hosts: [(heartbeat.host_id.clone(), ProviderStatus::default())].into(),
                             name: info.name.clone().unwrap_or_default(),
                             reference: info.image_ref.clone().unwrap_or_default(),
                             ..Default::default()
@@ -1480,6 +1469,7 @@ mod test {
 
         // NOTE(brooksmtownsend): Painful manual manipulation of host inventory
         // to satisfy the way we currently query the inventory when handling heartbeats.
+        // TODO(#235): Remove this as we no longer need the inventory to handle a heartbeat
         *inventory.write().await = HashMap::from_iter([
             (
                 host1_id.to_string(),
@@ -1491,44 +1481,26 @@ mod test {
                             id: actor1.public_key.to_string(),
                             image_ref: None,
                             // The individual instances of this actor that are running
-                            instances: vec![
-                                ActorInstance {
-                                    annotations: None,
-                                    instance_id: "1".to_string(),
-                                    revision: 0,
-                                    image_ref: None,
-                                    max_concurrent: 0,
-                                },
-                                ActorInstance {
-                                    annotations: None,
-                                    instance_id: "2".to_string(),
-                                    revision: 0,
-                                    image_ref: None,
-                                    max_concurrent: 0,
-                                },
-                            ],
+                            instances: vec![ActorInstance {
+                                annotations: None,
+                                instance_id: "1".to_string(),
+                                revision: 0,
+                                image_ref: None,
+                                max_concurrent: 2,
+                            }],
                             name: None,
                         },
                         ActorDescription {
                             id: actor2.public_key.to_string(),
                             image_ref: None,
                             // The individual instances of this actor that are running
-                            instances: vec![
-                                ActorInstance {
-                                    annotations: None,
-                                    instance_id: "3".to_string(),
-                                    revision: 0,
-                                    image_ref: None,
-                                    max_concurrent: 0,
-                                },
-                                ActorInstance {
-                                    annotations: None,
-                                    instance_id: "4".to_string(),
-                                    revision: 0,
-                                    image_ref: None,
-                                    max_concurrent: 0,
-                                },
-                            ],
+                            instances: vec![ActorInstance {
+                                annotations: None,
+                                instance_id: "2".to_string(),
+                                revision: 0,
+                                image_ref: None,
+                                max_concurrent: 2,
+                            }],
                             name: None,
                         },
                     ],
@@ -1566,44 +1538,26 @@ mod test {
                             id: actor1.public_key.to_string(),
                             image_ref: None,
                             // The individual instances of this actor that are running
-                            instances: vec![
-                                ActorInstance {
-                                    annotations: None,
-                                    instance_id: "5".to_string(),
-                                    revision: 0,
-                                    image_ref: None,
-                                    max_concurrent: 0,
-                                },
-                                ActorInstance {
-                                    annotations: None,
-                                    instance_id: "6".to_string(),
-                                    revision: 0,
-                                    image_ref: None,
-                                    max_concurrent: 0,
-                                },
-                            ],
+                            instances: vec![ActorInstance {
+                                annotations: None,
+                                instance_id: "3".to_string(),
+                                revision: 0,
+                                image_ref: None,
+                                max_concurrent: 2,
+                            }],
                             name: None,
                         },
                         ActorDescription {
                             id: actor2.public_key.to_string(),
                             image_ref: None,
                             // The individual instances of this actor that are running
-                            instances: vec![
-                                ActorInstance {
-                                    annotations: None,
-                                    instance_id: "7".to_string(),
-                                    revision: 0,
-                                    image_ref: None,
-                                    max_concurrent: 0,
-                                },
-                                ActorInstance {
-                                    annotations: None,
-                                    instance_id: "8".to_string(),
-                                    revision: 0,
-                                    image_ref: None,
-                                    max_concurrent: 0,
-                                },
-                            ],
+                            instances: vec![ActorInstance {
+                                annotations: None,
+                                instance_id: "3".to_string(),
+                                revision: 0,
+                                image_ref: None,
+                                max_concurrent: 2,
+                            }],
                             name: None,
                         },
                     ],
@@ -1626,31 +1580,31 @@ mod test {
             .handle_host_heartbeat(
                 lattice_id,
                 &HostHeartbeat {
-                    actors: HashMap::from([
+                    actors: BackwardsCompatActors::V81(HashMap::from([
                         (actor1.public_key.clone(), 2),
                         (actor2.public_key.clone(), 2),
-                    ]),
+                    ])),
                     friendly_name: "death-star-42".to_string(),
                     labels: labels.clone(),
-                    providers: vec![
+                    issuer: "".to_string(),
+                    providers: BackwardsCompatProviders::V81(vec![
                         ProviderInfo {
                             contract_id: provider1.contract_id.clone(),
                             link_name: provider1.link_name.clone(),
                             public_key: provider1.public_key.clone(),
-                            annotations: BTreeMap::new(),
+                            annotations: BTreeMap::default(),
                         },
                         ProviderInfo {
                             contract_id: provider2.contract_id.clone(),
                             link_name: provider2.link_name.clone(),
                             public_key: provider2.public_key.clone(),
-                            annotations: BTreeMap::new(),
+                            annotations: BTreeMap::default(),
                         },
-                    ],
+                    ]),
                     uptime_human: "30s".into(),
                     uptime_seconds: 30,
                     version: semver::Version::parse("0.61.0").unwrap(),
-                    id: host1_id.clone(),
-                    annotations: BTreeMap::default(),
+                    host_id: host1_id.clone(),
                 },
             )
             .await
@@ -1660,23 +1614,23 @@ mod test {
             .handle_host_heartbeat(
                 lattice_id,
                 &HostHeartbeat {
-                    actors: HashMap::from([
+                    actors: BackwardsCompatActors::V81(HashMap::from([
                         (actor1.public_key.clone(), 2),
                         (actor2.public_key.clone(), 2),
-                    ]),
+                    ])),
+                    issuer: "".to_string(),
                     friendly_name: "starkiller-base-2015".to_string(),
                     labels: labels2.clone(),
-                    providers: vec![ProviderInfo {
+                    providers: BackwardsCompatProviders::V81(vec![ProviderInfo {
                         contract_id: provider2.contract_id.clone(),
                         link_name: provider2.link_name.clone(),
                         public_key: provider2.public_key.clone(),
-                        annotations: BTreeMap::new(),
-                    }],
+                        annotations: BTreeMap::default(),
+                    }]),
                     uptime_human: "30s".into(),
                     uptime_seconds: 30,
                     version: semver::Version::parse("0.61.0").unwrap(),
-                    id: host2_id.clone(),
-                    annotations: BTreeMap::default(),
+                    host_id: host2_id.clone(),
                 },
             )
             .await
@@ -1796,22 +1750,13 @@ mod test {
                         id: actor2.public_key.to_string(),
                         image_ref: None,
                         // The individual instances of this actor that are running
-                        instances: vec![
-                            ActorInstance {
-                                annotations: None,
-                                instance_id: "3".to_string(),
-                                revision: 0,
-                                image_ref: None,
-                                max_concurrent: 0,
-                            },
-                            ActorInstance {
-                                annotations: None,
-                                instance_id: "4".to_string(),
-                                revision: 0,
-                                image_ref: None,
-                                max_concurrent: 0,
-                            },
-                        ],
+                        instances: vec![ActorInstance {
+                            annotations: None,
+                            instance_id: "4".to_string(),
+                            revision: 0,
+                            image_ref: None,
+                            max_concurrent: 2,
+                        }],
                         name: None,
                     }],
                     host_id: host1_id.to_string(),
@@ -1829,22 +1774,13 @@ mod test {
                         id: actor2.public_key.to_string(),
                         image_ref: None,
                         // The individual instances of this actor that are running
-                        instances: vec![
-                            ActorInstance {
-                                annotations: None,
-                                instance_id: "7".to_string(),
-                                revision: 0,
-                                image_ref: None,
-                                max_concurrent: 0,
-                            },
-                            ActorInstance {
-                                annotations: None,
-                                instance_id: "8".to_string(),
-                                revision: 0,
-                                image_ref: None,
-                                max_concurrent: 0,
-                            },
-                        ],
+                        instances: vec![ActorInstance {
+                            annotations: None,
+                            instance_id: "5".to_string(),
+                            revision: 0,
+                            image_ref: None,
+                            max_concurrent: 2,
+                        }],
                         name: None,
                     }],
                     host_id: host2_id.to_string(),
@@ -1860,20 +1796,23 @@ mod test {
             .handle_host_heartbeat(
                 lattice_id,
                 &HostHeartbeat {
-                    actors: HashMap::from([(actor2.public_key.clone(), 2)]),
+                    actors: BackwardsCompatActors::V81(HashMap::from([(
+                        actor2.public_key.clone(),
+                        2,
+                    )])),
                     friendly_name: "death-star-42".to_string(),
+                    issuer: "".to_string(),
                     labels,
-                    providers: vec![ProviderInfo {
+                    providers: BackwardsCompatProviders::V81(vec![ProviderInfo {
                         contract_id: provider1.contract_id.clone(),
                         link_name: provider1.link_name.clone(),
                         public_key: provider1.public_key.clone(),
-                        annotations: BTreeMap::new(),
-                    }],
+                        annotations: BTreeMap::default(),
+                    }]),
                     uptime_human: "60s".into(),
                     uptime_seconds: 60,
                     version: semver::Version::parse("0.61.0").unwrap(),
-                    id: host1_id.clone(),
-                    annotations: BTreeMap::default(),
+                    host_id: host1_id.clone(),
                 },
             )
             .await
@@ -1883,20 +1822,23 @@ mod test {
             .handle_host_heartbeat(
                 lattice_id,
                 &HostHeartbeat {
-                    actors: HashMap::from([(actor2.public_key.clone(), 2)]),
+                    actors: BackwardsCompatActors::V81(HashMap::from([(
+                        actor2.public_key.clone(),
+                        2,
+                    )])),
                     friendly_name: "starkiller-base-2015".to_string(),
                     labels: labels2,
-                    providers: vec![ProviderInfo {
+                    issuer: "".to_string(),
+                    providers: BackwardsCompatProviders::V81(vec![ProviderInfo {
                         contract_id: provider2.contract_id.clone(),
                         link_name: provider2.link_name.clone(),
                         public_key: provider2.public_key.clone(),
-                        annotations: BTreeMap::new(),
-                    }],
+                        annotations: BTreeMap::default(),
+                    }]),
                     uptime_human: "60s".into(),
                     uptime_seconds: 60,
                     version: semver::Version::parse("0.61.0").unwrap(),
-                    id: host2_id.clone(),
-                    annotations: BTreeMap::default(),
+                    host_id: host2_id.clone(),
                 },
             )
             .await
@@ -2024,22 +1966,13 @@ mod test {
                         id: actor1_id.to_string(),
                         image_ref: None,
                         // The individual instances of this actor that are running
-                        instances: vec![
-                            ActorInstance {
-                                annotations: None,
-                                instance_id: "1".to_string(),
-                                revision: 0,
-                                image_ref: None,
-                                max_concurrent: 0,
-                            },
-                            ActorInstance {
-                                annotations: None,
-                                instance_id: "2".to_string(),
-                                revision: 0,
-                                image_ref: None,
-                                max_concurrent: 0,
-                            },
-                        ],
+                        instances: vec![ActorInstance {
+                            annotations: None,
+                            instance_id: "1".to_string(),
+                            revision: 0,
+                            image_ref: None,
+                            max_concurrent: 2,
+                        }],
                         name: None,
                     },
                     ActorDescription {
@@ -2048,10 +1981,10 @@ mod test {
                         // The individual instances of this actor that are running
                         instances: vec![ActorInstance {
                             annotations: None,
-                            instance_id: "3".to_string(),
+                            instance_id: "2".to_string(),
                             revision: 0,
                             image_ref: None,
-                            max_concurrent: 0,
+                            max_concurrent: 1,
                         }],
                         name: None,
                     },
@@ -2075,20 +2008,23 @@ mod test {
             .handle_host_heartbeat(
                 lattice_id,
                 &HostHeartbeat {
-                    actors: HashMap::from([(actor1_id.clone(), 2), (actor2_id.clone(), 1)]),
+                    actors: BackwardsCompatActors::V81(HashMap::from([
+                        (actor1_id.clone(), 2),
+                        (actor2_id.clone(), 1),
+                    ])),
                     friendly_name: "millenium_falcon-1977".to_string(),
                     labels: HashMap::default(),
-                    providers: vec![ProviderInfo {
+                    issuer: "".to_string(),
+                    providers: BackwardsCompatProviders::V81(vec![ProviderInfo {
                         contract_id: "lightspeed".into(),
                         link_name: link_name.clone(),
                         public_key: provider_id.clone(),
-                        annotations: BTreeMap::new(),
-                    }],
+                        annotations: BTreeMap::default(),
+                    }]),
                     uptime_human: "60s".into(),
                     uptime_seconds: 60,
                     version: semver::Version::parse("0.61.0").unwrap(),
-                    id: host_id.clone(),
-                    annotations: BTreeMap::default(),
+                    host_id: host_id.clone(),
                 },
             )
             .await
@@ -2334,20 +2270,20 @@ mod test {
             .handle_host_heartbeat(
                 lattice_id,
                 &HostHeartbeat {
-                    actors: HashMap::default(),
+                    actors: BackwardsCompatActors::V82(vec![]),
                     friendly_name: "tatooine-1977".to_string(),
                     labels: HashMap::default(),
-                    providers: vec![ProviderInfo {
+                    issuer: "".to_string(),
+                    providers: BackwardsCompatProviders::V81(vec![ProviderInfo {
                         contract_id: contract_id.to_string(),
                         link_name: link_name.to_string(),
                         public_key: public_key.to_string(),
-                        annotations: BTreeMap::new(),
-                    }],
+                        annotations: BTreeMap::default(),
+                    }]),
                     uptime_human: "60s".into(),
                     uptime_seconds: 60,
                     version: semver::Version::parse("0.61.0").unwrap(),
-                    id: host_id.to_string(),
-                    annotations: BTreeMap::default(),
+                    host_id: host_id.to_string(),
                 },
             )
             .await
@@ -2447,14 +2383,14 @@ mod test {
                             )])),
                             revision: 0,
                             image_ref: None,
-                            max_concurrent: 0,
+                            max_concurrent: 1,
                         },
                         ActorInstance {
                             instance_id: "2".to_string(),
                             annotations: None,
                             revision: 0,
                             image_ref: None,
-                            max_concurrent: 0,
+                            max_concurrent: 1,
                         },
                     ],
                 }],
@@ -2477,20 +2413,21 @@ mod test {
             .handle_host_heartbeat(
                 lattice_id,
                 &HostHeartbeat {
-                    actors: HashMap::from([("jabba".to_string(), 2)]),
+                    actors: BackwardsCompatActors::V81(HashMap::from([("jabba".to_string(), 2)])),
                     friendly_name: "palace-1983".to_string(),
                     labels: HashMap::default(),
-                    providers: vec![ProviderInfo {
+                    issuer: "".to_string(),
+                    providers: BackwardsCompatProviders::V81(vec![ProviderInfo {
                         contract_id: "jabba:jabba".to_string(),
                         link_name: "default".to_string(),
-                        annotations: BTreeMap::new(),
+
+                        annotations: BTreeMap::default(),
                         public_key: "jabbatheprovider".to_string(),
-                    }],
+                    }]),
                     uptime_human: "60s".into(),
                     uptime_seconds: 60,
                     version: semver::Version::parse("0.61.0").unwrap(),
-                    id: host_id.to_string(),
-                    annotations: BTreeMap::default(),
+                    host_id: host_id.to_string(),
                 },
             )
             .await
@@ -2552,7 +2489,7 @@ mod test {
                 contract_id: "jabba:jabba".to_string(),
                 link_name: "default".to_string(),
                 public_key: "jabbatheprovider".to_string(),
-                annotations: BTreeMap::new(),
+                annotations: BTreeMap::default(),
             })
             .expect("provider to exist on host");
 

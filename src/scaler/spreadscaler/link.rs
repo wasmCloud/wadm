@@ -390,8 +390,11 @@ mod test {
             linkscaler_values_hash = compute_linkscaler_values_hash(&[("foo".to_string(), "nope".to_string())].into())
         );
 
-        assert_ne!(scaler.id(), id, "LinkScaler ID should be different when scalers have different configured values");
-
+        assert_ne!(
+            scaler.id(),
+            id,
+            "LinkScaler ID should be different when scalers have different configured values"
+        );
 
         let scaler = LinkScaler::new(
             create_store(&lattice_id, &actor_ref, &provider_ref).await,
@@ -412,7 +415,6 @@ mod test {
             provider_link_name = "default",
             actor_reference = actor_ref,
             provider_reference = provider_ref,
-            
         );
 
         assert_eq!(scaler.id(), id, "LinkScaler ID should be the same when their type, model name, provider link name, actor reference, and provider reference are the same and they both have no values configured");
@@ -430,12 +432,10 @@ mod test {
         );
 
         assert_ne!(scaler.id(), id, "Expected LinkScaler values hash to differiantiate scalers with the same type, model name, provider link name, actor reference, and provider reference");
-        let mut scaler_id_tokens= scaler.id().split('-');
+        let mut scaler_id_tokens = scaler.id().split('-');
         scaler_id_tokens.next_back();
         let scaler_id_tokens = scaler_id_tokens.collect::<Vec<&str>>().join("-");
         assert_eq!(scaler_id_tokens, id, "Excluding the values hash, the LinkScaler ID should be the same when scalers have the same type, model name, provider link name, actor reference, and provider reference");
-
-
     }
 
     #[tokio::test]
@@ -563,7 +563,7 @@ mod test {
                         ("cloud".to_string(), "fake".to_string()),
                         ("region".to_string(), "us-brooks-1".to_string()),
                     ]),
-                    annotations: BTreeMap::new(),
+
                     providers: HashSet::from_iter([ProviderInfo {
                         contract_id: "wasmcloud:httpserver".to_string(),
                         link_name: "default".to_string(),

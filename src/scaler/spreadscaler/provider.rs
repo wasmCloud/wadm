@@ -209,7 +209,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
                                     contract_id: contract_id.to_string(),
                                     link_name: link_name.to_string(),
                                     public_key: provider_id.to_string(),
-                                    annotations: BTreeMap::new(),
+                                    annotations: BTreeMap::default(),
                                 })
                             })
                             .map(|(_host_id, host)| {
@@ -457,7 +457,6 @@ mod test {
                         ("cloud".to_string(), "fake".to_string()),
                         ("region".to_string(), "us-noneofyourbusiness-1".to_string()),
                     ]),
-                    annotations: BTreeMap::new(),
                     providers: HashSet::new(),
                     uptime_seconds: 123,
                     version: None,
@@ -478,7 +477,6 @@ mod test {
                         ("cloud".to_string(), "real".to_string()),
                         ("region".to_string(), "us-yourhouse-1".to_string()),
                     ]),
-                    annotations: BTreeMap::new(),
                     providers: HashSet::new(),
                     uptime_seconds: 123,
                     version: None,
@@ -658,7 +656,7 @@ mod test {
                         ("cloud".to_string(), "fake".to_string()),
                         ("region".to_string(), "us-noneofyourbusiness-1".to_string()),
                     ]),
-                    annotations: BTreeMap::new(),
+
                     providers: HashSet::from_iter([ProviderInfo {
                         contract_id: "prov:ider".to_string(),
                         link_name: DEFAULT_LINK_NAME.to_string(),
@@ -684,7 +682,6 @@ mod test {
                         ("cloud".to_string(), "real".to_string()),
                         ("region".to_string(), "us-yourhouse-1".to_string()),
                     ]),
-                    annotations: BTreeMap::new(),
                     providers: HashSet::new(),
                     uptime_seconds: 123,
                     version: None,
@@ -704,7 +701,6 @@ mod test {
                         ("cloud".to_string(), "inthemiddle".to_string()),
                         ("region".to_string(), "us-yourhouse-1".to_string()),
                     ]),
-                    annotations: BTreeMap::new(),
                     providers: HashSet::new(),
                     uptime_seconds: 123,
                     version: None,
@@ -724,7 +720,7 @@ mod test {
                         ("cloud".to_string(), "fake".to_string()),
                         ("region".to_string(), "us-east-1".to_string()),
                     ]),
-                    annotations: BTreeMap::new(),
+
                     providers: HashSet::from_iter([ProviderInfo {
                         contract_id: "prov:ider".to_string(),
                         link_name: DEFAULT_LINK_NAME.to_string(),
@@ -887,7 +883,6 @@ mod test {
                         ("cloud".to_string(), "fake".to_string()),
                         ("region".to_string(), "us-noneofyourbusiness-1".to_string()),
                     ]),
-                    annotations: BTreeMap::new(),
                     providers: HashSet::new(),
                     uptime_seconds: 123,
                     version: None,
@@ -908,12 +903,12 @@ mod test {
                         ("cloud".to_string(), "real".to_string()),
                         ("region".to_string(), "us-yourhouse-1".to_string()),
                     ]),
-                    annotations: BTreeMap::new(),
+
                     providers: HashSet::from_iter([ProviderInfo {
                         public_key: provider_id.to_string(),
                         contract_id: "prov:ider".to_string(),
                         link_name: DEFAULT_LINK_NAME.to_string(),
-                        annotations: BTreeMap::new(),
+                        annotations: BTreeMap::default(),
                     }]),
 
                     uptime_seconds: 123,
@@ -1024,12 +1019,12 @@ mod test {
                         ("cloud".to_string(), "fake".to_string()),
                         ("region".to_string(), "us-noneofyourbusiness-1".to_string()),
                     ]),
-                    annotations: BTreeMap::new(),
+
                     providers: HashSet::from_iter([ProviderInfo {
                         public_key: provider_id.to_string(),
                         contract_id: "prov:ider".to_string(),
                         link_name: DEFAULT_LINK_NAME.to_string(),
-                        annotations: BTreeMap::new(),
+                        annotations: BTreeMap::default(),
                     }]),
                     uptime_seconds: 123,
                     version: None,
@@ -1050,12 +1045,12 @@ mod test {
                         ("cloud".to_string(), "real".to_string()),
                         ("region".to_string(), "us-yourhouse-1".to_string()),
                     ]),
-                    annotations: BTreeMap::new(),
+
                     providers: HashSet::from_iter([ProviderInfo {
                         public_key: provider_id.to_string(),
                         contract_id: "prov:ider".to_string(),
                         link_name: DEFAULT_LINK_NAME.to_string(),
-                        annotations: BTreeMap::new(),
+                        annotations: BTreeMap::default(),
                     }]),
 
                     uptime_seconds: 123,
@@ -1141,12 +1136,12 @@ mod test {
                         ("cloud".to_string(), "fake".to_string()),
                         ("region".to_string(), "us-noneofyourbusiness-1".to_string()),
                     ]),
-                    annotations: BTreeMap::new(),
+
                     providers: HashSet::from_iter([ProviderInfo {
                         public_key: provider_id.to_string(),
                         contract_id: "prov:ider".to_string(),
                         link_name: DEFAULT_LINK_NAME.to_string(),
-                        annotations: BTreeMap::new(),
+                        annotations: BTreeMap::default(),
                     }]),
                     uptime_seconds: 123,
                     version: None,
@@ -1191,7 +1186,7 @@ mod test {
                         ("cloud".to_string(), "fake".to_string()),
                         ("region".to_string(), "us-yourhouse-1".to_string()),
                     ]),
-                    annotations: BTreeMap::new(),
+
                     providers: HashSet::from_iter([ProviderInfo {
                         public_key: provider_id.to_string(),
                         contract_id: "prov:ider".to_string(),

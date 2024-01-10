@@ -357,7 +357,6 @@ mod test {
                     actors: HashMap::new(),
                     friendly_name: "hey".to_string(),
                     labels: HashMap::new(),
-                    annotations: BTreeMap::new(),
                     providers: HashSet::new(),
                     uptime_seconds: 123,
                     version: None,
@@ -633,7 +632,6 @@ mod test {
                         ("cloud".to_string(), "fake".to_string()),
                         ("region".to_string(), "us-brooks-1".to_string()),
                     ]),
-                    annotations: BTreeMap::new(),
                     providers: HashSet::new(),
                     uptime_seconds: 123,
                     version: None,
@@ -658,7 +656,6 @@ mod test {
                         ("region".to_string(), "us-midwest-4".to_string()),
                         ("label".to_string(), "value".to_string()),
                     ]),
-                    annotations: BTreeMap::new(),
                     providers: HashSet::new(),
                     uptime_seconds: 123,
                     version: None,
@@ -679,7 +676,6 @@ mod test {
                         ("cloud".to_string(), "purgatory".to_string()),
                         ("location".to_string(), "edge".to_string()),
                     ]),
-                    annotations: BTreeMap::new(),
                     providers: HashSet::new(),
                     uptime_seconds: 123,
                     version: None,
@@ -866,7 +862,6 @@ mod test {
                         ("cloud".to_string(), "fake".to_string()),
                         ("region".to_string(), "us-brooks-1".to_string()),
                     ]),
-                    annotations: BTreeMap::new(),
                     providers: HashSet::new(),
                     uptime_seconds: 123,
                     version: None,
@@ -888,7 +883,6 @@ mod test {
                         ("region".to_string(), "us-brooks-1".to_string()),
                         ("label".to_string(), "value".to_string()),
                     ]),
-                    annotations: BTreeMap::new(),
                     providers: HashSet::new(),
                     uptime_seconds: 123,
                     version: None,
@@ -901,10 +895,10 @@ mod test {
         // Don't care about these events
         assert!(blobby_daemonscaler
             .handle_event(&Event::ProviderStarted(ProviderStarted {
-                annotations: BTreeMap::new(),
                 claims: ProviderClaims::default(),
                 contract_id: "".to_string(),
                 image_ref: "".to_string(),
+                annotations: BTreeMap::default(),
                 instance_id: "".to_string(),
                 link_name: "".to_string(),
                 public_key: "".to_string(),
@@ -939,18 +933,18 @@ mod test {
 
         // Let a new host come online, should match the spread
         let modifying_event = HostHeartbeat {
-            actors: HashMap::new(),
+            actors: crate::events::BackwardsCompatActors::V82(vec![]),
             friendly_name: "hey".to_string(),
+            issuer: "".to_string(),
             labels: HashMap::from_iter([
                 ("cloud".to_string(), "purgatory".to_string()),
                 ("location".to_string(), "edge".to_string()),
                 ("region".to_string(), "us-brooks-1".to_string()),
             ]),
-            annotations: BTreeMap::new(),
-            providers: vec![],
+            providers: crate::events::BackwardsCompatProviders::V82(vec![]),
             uptime_seconds: 123,
             version: semver::Version::new(0, 63, 1),
-            id: host_id_three.to_string(),
+            host_id: host_id_three.to_string(),
             uptime_human: "time_is_a_human_construct".to_string(),
         };
 
