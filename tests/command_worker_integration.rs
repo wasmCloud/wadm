@@ -85,8 +85,12 @@ async fn test_commands() {
     );
     assert_eq!(
         inventory[0].instances.len(),
-        2,
+        1,
         "Should have started the correct number of actors"
+    );
+    assert_eq!(
+        inventory[0].instances[0].max_concurrent, 2,
+        "Should have started the actor with correct concurrency"
     );
     assert_eq!(
         inventory[0].instances[0]

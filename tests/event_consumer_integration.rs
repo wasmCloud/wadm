@@ -15,7 +15,6 @@ use anyhow::Result;
 const HTTP_SERVER_REFERENCE: &str = "wasmcloud.azurecr.io/httpserver:0.17.0";
 const ECHO_REFERENCE: &str = "wasmcloud.azurecr.io/echo:0.3.4";
 const CONTRACT_ID: &str = "wasmcloud:httpserver";
-const LINK_NAME: &str = "default";
 const WASMBUS_EVENT_TOPIC: &str = "wasmbus.evt.default";
 const STREAM_NAME: &str = "test_wadm_events";
 
@@ -207,10 +206,10 @@ async fn test_event_stream() -> Result<()> {
     helpers::run_wash_command([
         "stop",
         "provider",
-        &host_id,
         HTTP_SERVER_PROVIDER_ID,
-        LINK_NAME,
         CONTRACT_ID,
+        "--host-id",
+        &host_id,
         "--ctl-port",
         &ctl_port,
     ])
@@ -232,8 +231,9 @@ async fn test_event_stream() -> Result<()> {
     helpers::run_wash_command([
         "stop",
         "actor",
-        &host_id,
         ECHO_ACTOR_ID,
+        "--host-id",
+        &host_id,
         "--ctl-port",
         &ctl_port,
     ])
