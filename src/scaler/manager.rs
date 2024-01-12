@@ -342,12 +342,12 @@ where
     #[instrument(level = "debug", skip(self), fields(lattice_id = %self.lattice_id))]
     pub async fn remove_scalers(&self, name: &str) -> Option<Result<()>> {
         let scalers = match self.remove_scalers_internal(name).await {
-            Some(Ok(s)) => s,
+            Some(Ok(s)) => Some(s),
             Some(Err(e)) => {
                 warn!(err = ?e, "Error when running cleanup steps for scalers. Operation will be retried");
                 return Some(Err(e));
             }
-            None => return None,
+            None => None,
         };
 
         // SAFETY: This is entirely data in our control and should be safe to unwrap
@@ -360,7 +360,9 @@ where
             .await
         {
             error!(error = %e, "Unable to publish notification");
-            self.scalers.write().await.insert(name.to_owned(), scalers);
+            if let Some(scalers) = scalers {
+                self.scalers.write().await.insert(name.to_owned(), scalers);
+            }
             Some(Err(e))
         } else {
             Some(Ok(()))
