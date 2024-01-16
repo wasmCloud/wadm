@@ -203,7 +203,7 @@ impl StatusInfo {
         }
     }
 
-    pub fn ready(message: &str) -> Self {
+    pub fn deployed(message: &str) -> Self {
         StatusInfo {
             status_type: StatusType::Deployed,
             message: message.to_owned(),
@@ -217,7 +217,7 @@ impl StatusInfo {
         }
     }
 
-    pub fn compensating(message: &str) -> Self {
+    pub fn reconciling(message: &str) -> Self {
         StatusInfo {
             status_type: StatusType::Reconciling,
             message: message.to_owned(),

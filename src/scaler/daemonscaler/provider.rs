@@ -173,8 +173,8 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderDaemonScaler<S> {
         trace!(?commands, "Calculated commands for provider daemonscaler");
 
         let status = match (spread_status.is_empty(), commands.is_empty()) {
-            (true, true) => StatusInfo::ready(""),
-            (_, false) => StatusInfo::compensating(""),
+            (true, true) => StatusInfo::deployed(""),
+            (_, false) => StatusInfo::reconciling(""),
             (false, true) => StatusInfo::failed(
                 &spread_status
                     .into_iter()
@@ -199,7 +199,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderDaemonScaler<S> {
             store: self.store.clone(),
             provider_id: self.provider_id.clone(),
             id: self.id.clone(),
-            status: RwLock::new(StatusInfo::compensating("")),
+            status: RwLock::new(StatusInfo::reconciling("")),
         };
 
         cleanerupper.reconcile().await
@@ -253,7 +253,7 @@ impl<S: ReadStore + Send + Sync> ProviderDaemonScaler<S> {
                 ..config
             },
             id,
-            status: RwLock::new(StatusInfo::compensating("")),
+            status: RwLock::new(StatusInfo::reconciling("")),
         }
     }
 

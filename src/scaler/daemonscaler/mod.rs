@@ -217,8 +217,8 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorDaemonScaler<S> {
         trace!(?commands, "Calculated commands for actor daemon scaler");
 
         let status = match (spread_status.is_empty(), commands.is_empty()) {
-            (true, true) => StatusInfo::ready(""),
-            (_, false) => StatusInfo::compensating(""),
+            (true, true) => StatusInfo::deployed(""),
+            (_, false) => StatusInfo::reconciling(""),
             (false, true) => StatusInfo::failed(
                 &spread_status
                     .into_iter()
@@ -243,7 +243,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorDaemonScaler<S> {
             store: self.store.clone(),
             actor_id: self.actor_id.clone(),
             id: self.id.clone(),
-            status: RwLock::new(StatusInfo::compensating("")),
+            status: RwLock::new(StatusInfo::reconciling("")),
         };
 
         cleanerupper.reconcile().await
@@ -282,7 +282,7 @@ impl<S: ReadStore + Send + Sync> ActorDaemonScaler<S> {
                 model_name,
             },
             id,
-            status: RwLock::new(StatusInfo::compensating("")),
+            status: RwLock::new(StatusInfo::reconciling("")),
         }
     }
 
