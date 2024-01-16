@@ -1,5 +1,47 @@
 [
   {
+    "specversion": "1.0",
+    "id": "018d32ce-6133-2f9d-0b69-1437b25cf59c",
+    "type": "com.wasmcloud.lattice.actor_scaled",
+    "source": "NCBAWBHRT6JNSQIYQEURM3AQZ74I6HTQRRCFMTVPC3OAX4BUTCNTYADZ",
+    "datacontenttype": "application/json",
+    "time": "2024-01-22T20:13:22.611283Z",
+    "data": {
+      "annotations": {},
+      "claims": {
+        "call_alias": null,
+        "caps": ["wasmcloud:httpserver"],
+        "expires_human": "TODO",
+        "issuer": "ACOJJN6WUP4ODD75XEBKKTCCUJJCY5ZKQ56XVKYK4BEJWGVAOOQHZMCW",
+        "name": "Echo",
+        "not_before_human": "TODO",
+        "revision": 4,
+        "tags": [],
+        "version": "0.3.4"
+      },
+      "host_id": "NCBAWBHRT6JNSQIYQEURM3AQZ74I6HTQRRCFMTVPC3OAX4BUTCNTYADZ",
+      "image_ref": "wasmcloud.azurecr.io/echo:0.3.4",
+      "max_instances": 10,
+      "public_key": "MBCFOPM6JW2APJLXJD3Z5O4CN7CPYJ2B4FTKLJUR5YR5MITIU7HD3WD5"
+    }
+  },
+  {
+    "specversion": "1.0",
+    "id": "018d32d0-4687-8e53-e77b-4af4d6dc0a67",
+    "type": "com.wasmcloud.lattice.actor_scale_failed",
+    "source": "NCBAWBHRT6JNSQIYQEURM3AQZ74I6HTQRRCFMTVPC3OAX4BUTCNTYADZ",
+    "datacontenttype": "application/json",
+    "time": "2024-01-22T20:15:26.855859Z",
+    "data": {
+      "annotations": {},
+      "error": "actor is already running with a different image reference `wasmcloud.azurecr.io/echo:0.3.4`",
+      "host_id": "NCBAWBHRT6JNSQIYQEURM3AQZ74I6HTQRRCFMTVPC3OAX4BUTCNTYADZ",
+      "image_ref": "wasmcloud.azurecr.io/echo:0.3.8",
+      "max_instances": 11,
+      "public_key": "MBCFOPM6JW2APJLXJD3Z5O4CN7CPYJ2B4FTKLJUR5YR5MITIU7HD3WD5"
+    }
+  },
+  {
     "data": {
       "annotations": {},
       "claims": {

@@ -98,6 +98,8 @@ pub enum Event {
     ActorsStartFailed(ActorsStartFailed),
     ActorStopped(ActorStopped),
     ActorsStopped(ActorsStopped),
+    ActorScaled(ActorScaled),
+    ActorScaleFailed(ActorScaleFailed),
     ProviderStarted(ProviderStarted),
     ProviderStopped(ProviderStopped),
     ProviderStartFailed(ProviderStartFailed),
@@ -123,6 +125,8 @@ impl Display for Event {
             Event::ActorsStartFailed(_) => write!(f, "ActorsStartFailed"),
             Event::ActorStopped(_) => write!(f, "ActorStopped"),
             Event::ActorsStopped(_) => write!(f, "ActorsStopped"),
+            Event::ActorScaled(_) => write!(f, "ActorScaled"),
+            Event::ActorScaleFailed(_) => write!(f, "ActorScaleFailed"),
             Event::ProviderStarted(_) => write!(f, "ProviderStarted"),
             Event::ProviderStopped(_) => write!(f, "ProviderStopped"),
             Event::ProviderStartFailed(_) => write!(f, "ProviderStartFailed"),
@@ -152,6 +156,10 @@ impl TryFrom<CloudEvent> for Event {
             }
             ActorStopped::TYPE => ActorStopped::try_from(value).map(Event::ActorStopped),
             ActorsStopped::TYPE => ActorsStopped::try_from(value).map(Event::ActorsStopped),
+            ActorScaled::TYPE => ActorScaled::try_from(value).map(Event::ActorScaled),
+            ActorScaleFailed::TYPE => {
+                ActorScaleFailed::try_from(value).map(Event::ActorScaleFailed)
+            }
             ProviderStarted::TYPE => ProviderStarted::try_from(value).map(Event::ProviderStarted),
             ProviderStopped::TYPE => ProviderStopped::try_from(value).map(Event::ProviderStopped),
             ProviderStartFailed::TYPE => {
@@ -192,6 +200,8 @@ impl TryFrom<Event> for CloudEvent {
             Event::ActorsStartFailed(_) => ActorsStartFailed::TYPE,
             Event::ActorStopped(_) => ActorStopped::TYPE,
             Event::ActorsStopped(_) => ActorsStopped::TYPE,
+            Event::ActorScaled(_) => ActorScaled::TYPE,
+            Event::ActorScaleFailed(_) => ActorScaleFailed::TYPE,
             Event::ProviderStarted(_) => ProviderStarted::TYPE,
             Event::ProviderStopped(_) => ProviderStopped::TYPE,
             Event::ProviderStartFailed(_) => ProviderStartFailed::TYPE,
@@ -230,6 +240,8 @@ impl Serialize for Event {
             Event::ActorsStartFailed(evt) => evt.serialize(serializer),
             Event::ActorStopped(evt) => evt.serialize(serializer),
             Event::ActorsStopped(evt) => evt.serialize(serializer),
+            Event::ActorScaled(evt) => evt.serialize(serializer),
+            Event::ActorScaleFailed(evt) => evt.serialize(serializer),
             Event::ProviderStarted(evt) => evt.serialize(serializer),
             Event::ProviderStopped(evt) => evt.serialize(serializer),
             Event::ProviderStartFailed(evt) => evt.serialize(serializer),
@@ -261,6 +273,8 @@ impl Event {
             Event::ActorsStartFailed(_) => ActorsStartFailed::TYPE,
             Event::ActorStopped(_) => ActorStopped::TYPE,
             Event::ActorsStopped(_) => ActorsStopped::TYPE,
+            Event::ActorScaled(_) => ActorScaled::TYPE,
+            Event::ActorScaleFailed(_) => ActorScaleFailed::TYPE,
             Event::ProviderStarted(_) => ProviderStarted::TYPE,
             Event::ProviderStopped(_) => ProviderStopped::TYPE,
             Event::ProviderStartFailed(_) => ProviderStopped::TYPE,
@@ -394,6 +408,44 @@ pub struct ActorsStopped {
 event_impl!(
     ActorsStopped,
     "com.wasmcloud.lattice.actors_stopped",
+    source,
+    host_id
+);
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct ActorScaled {
+    pub annotations: BTreeMap<String, String>,
+    pub claims: ActorClaims,
+    pub image_ref: String,
+    pub max_instances: usize,
+    // TODO: Parse as nkey?
+    pub public_key: String,
+    #[serde(default)]
+    pub host_id: String,
+}
+
+event_impl!(
+    ActorScaled,
+    "com.wasmcloud.lattice.actor_scaled",
+    source,
+    host_id
+);
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct ActorScaleFailed {
+    pub annotations: BTreeMap<String, String>,
+    pub image_ref: String,
+    pub max_instances: usize,
+    // TODO: Parse as nkey?
+    pub public_key: String,
+    #[serde(default)]
+    pub host_id: String,
+    pub error: String,
+}
+
+event_impl!(
+    ActorScaleFailed,
+    "com.wasmcloud.lattice.actor_scale_failed",
     source,
     host_id
 );
