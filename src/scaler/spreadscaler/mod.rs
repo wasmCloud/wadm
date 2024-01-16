@@ -230,7 +230,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
         trace!(?commands, "Calculated commands for actor scaler");
 
         let status = if spread_status.is_empty() {
-            StatusInfo::ready("")
+            StatusInfo::deployed("")
         } else {
             StatusInfo::failed(
                 &spread_status
@@ -258,7 +258,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
             spread_requirements,
             actor_id: self.actor_id.clone(),
             id: self.id.clone(),
-            status: RwLock::new(StatusInfo::compensating("")),
+            status: RwLock::new(StatusInfo::reconciling("")),
         };
 
         cleanerupper.reconcile().await
@@ -288,7 +288,7 @@ impl<S: ReadStore + Send + Sync> ActorSpreadScaler<S> {
                 model_name,
             },
             id,
-            status: RwLock::new(StatusInfo::compensating("")),
+            status: RwLock::new(StatusInfo::reconciling("")),
         }
     }
 

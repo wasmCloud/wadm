@@ -115,7 +115,7 @@ where
                     && linkdef.provider_id == self.provider_id().await.unwrap_or_default()
                     && linkdef.actor_id == self.actor_id().await.unwrap_or_default() =>
             {
-                *self.status.write().await = StatusInfo::ready("");
+                *self.status.write().await = StatusInfo::deployed("");
                 Ok(Vec::new())
             }
             _ => Ok(Vec::new()),
@@ -169,7 +169,7 @@ where
             // };
 
             let commands = if !exists {
-                *self.status.write().await = StatusInfo::compensating(&format!(
+                *self.status.write().await = StatusInfo::reconciling(&format!(
                     "Putting link definition between {actor_id} and {provider_id}"
                 ));
                 vec![Command::PutLinkdef(PutLinkdef {
@@ -181,13 +181,13 @@ where
                     model_name: self.config.model_name.to_owned(),
                 })]
             } else {
-                *self.status.write().await = StatusInfo::ready("");
+                *self.status.write().await = StatusInfo::deployed("");
                 Vec::with_capacity(0)
             };
             Ok(commands)
         } else {
             trace!("Actor ID and provider ID are not initialized, skipping linkdef creation");
-            *self.status.write().await = StatusInfo::compensating(&format!(
+            *self.status.write().await = StatusInfo::reconciling(&format!(
                 "Linkdef pending, waiting for {} and {} to start",
                 self.config.actor_reference, self.config.provider_reference
             ));
@@ -253,7 +253,7 @@ impl<S: ReadStore + Send + Sync, L: LinkSource> LinkScaler<S, L> {
             },
             ctl_client,
             id,
-            status: RwLock::new(StatusInfo::compensating("")),
+            status: RwLock::new(StatusInfo::reconciling("")),
         }
     }
 

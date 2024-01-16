@@ -244,7 +244,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
         trace!(?commands, "Calculated commands for provider scaler");
 
         let status = if spread_status.is_empty() {
-            StatusInfo::ready("")
+            StatusInfo::deployed("")
         } else {
             StatusInfo::failed(
                 &spread_status
@@ -272,7 +272,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
             spread_requirements,
             provider_id: self.provider_id.clone(),
             id: self.id.clone(),
-            status: RwLock::new(StatusInfo::compensating("")),
+            status: RwLock::new(StatusInfo::reconciling("")),
         };
 
         cleanerupper.reconcile().await
@@ -314,7 +314,7 @@ impl<S: ReadStore + Send + Sync> ProviderSpreadScaler<S> {
             provider_id: OnceCell::new(),
             config,
             id,
-            status: RwLock::new(StatusInfo::compensating("")),
+            status: RwLock::new(StatusInfo::reconciling("")),
         }
     }
 

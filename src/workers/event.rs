@@ -858,7 +858,7 @@ where
         let status = if commands.is_empty() {
             scaler_status(&scalers).await
         } else {
-            StatusInfo::compensating("Model deployed, running initial compensating commands")
+            StatusInfo::reconciling("Model deployed, running initial compensating commands")
         };
 
         trace!(?status, "Setting status");
@@ -909,7 +909,7 @@ where
         let status = if commands.is_empty() {
             scaler_status(&scalers).await
         } else {
-            StatusInfo::compensating(&format!(
+            StatusInfo::reconciling(&format!(
                 "Event {event} modified scaler \"{}\" state, running compensating commands",
                 name.to_owned(),
             ))
@@ -940,7 +940,7 @@ where
             let status = if commands.is_empty() {
                 scaler_status(scalers).await
             } else {
-                StatusInfo::compensating(&format!(
+                StatusInfo::reconciling(&format!(
                     "Event {event} modified scaler \"{}\" state, running compensating commands",
                     name.to_owned(),
                 ))
