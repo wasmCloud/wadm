@@ -102,13 +102,21 @@ where
                 self.reconcile().await
             }
             Event::LinkdefDeleted(LinkdefDeleted { linkdef })
-            | Event::LinkdefSet(LinkdefSet { linkdef })
                 if linkdef.contract_id == self.config.provider_contract_id
                     && linkdef.link_name == self.config.provider_link_name
                     && linkdef.provider_id == self.provider_id().await.unwrap_or_default()
                     && linkdef.actor_id == self.actor_id().await.unwrap_or_default() =>
             {
                 self.reconcile().await
+            }
+            Event::LinkdefSet(LinkdefSet { linkdef })
+                if linkdef.contract_id == self.config.provider_contract_id
+                    && linkdef.link_name == self.config.provider_link_name
+                    && linkdef.provider_id == self.provider_id().await.unwrap_or_default()
+                    && linkdef.actor_id == self.actor_id().await.unwrap_or_default() =>
+            {
+                *self.status.write().await = StatusInfo::ready("");
+                Ok(Vec::new())
             }
             _ => Ok(Vec::new()),
         }
