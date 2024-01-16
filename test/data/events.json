@@ -106,32 +106,6 @@
   },
   {
     "data": {
-      "annotations": {},
-      "api_version": "n/a",
-      "claims": {
-        "call_alias": null,
-        "caps": ["wasmcloud:httpserver"],
-        "expires_human": "never",
-        "issuer": "ACOJJN6WUP4ODD75XEBKKTCCUJJCY5ZKQ56XVKYK4BEJWGVAOOQHZMCW",
-        "name": "Echo",
-        "not_before_human": "immediately",
-        "revision": 4,
-        "tags": [],
-        "version": "0.3.4"
-      },
-      "image_ref": "wasmcloud.azurecr.io/echo:0.3.4",
-      "instance_id": "5ebc4920-cec4-44a6-a718-df4d43d94b09",
-      "public_key": "MBCFOPM6JW2APJLXJD3Z5O4CN7CPYJ2B4FTKLJUR5YR5MITIU7HD3WD5"
-    },
-    "datacontenttype": "application/json",
-    "id": "84ee3ab6-f951-4423-99b6-73ddf58bcd1d",
-    "source": "NB6PMW4RGLBP3NAVUVO2IH34VFJFSX7LF7TJOQCDU4GGUGF3P57SZLPX",
-    "specversion": "1.0",
-    "time": "2023-02-14T19:21:38.222286Z",
-    "type": "com.wasmcloud.lattice.actor_started"
-  },
-  {
-    "data": {
       "actors": {
         "MBCFOPM6JW2APJLXJD3Z5O4CN7CPYJ2B4FTKLJUR5YR5MITIU7HD3WD5": 1
       },
@@ -242,18 +216,6 @@
     "specversion": "1.0",
     "time": "2023-02-14T19:22:57.131368Z",
     "type": "com.wasmcloud.lattice.linkdef_deleted"
-  },
-  {
-    "data": {
-      "instance_id": "5ebc4920-cec4-44a6-a718-df4d43d94b09",
-      "public_key": "MBCFOPM6JW2APJLXJD3Z5O4CN7CPYJ2B4FTKLJUR5YR5MITIU7HD3WD5"
-    },
-    "datacontenttype": "application/json",
-    "id": "fc22b1cb-5245-404c-9c36-a61ea8d3bac3",
-    "source": "NB6PMW4RGLBP3NAVUVO2IH34VFJFSX7LF7TJOQCDU4GGUGF3P57SZLPX",
-    "specversion": "1.0",
-    "time": "2023-02-14T19:23:01.877353Z",
-    "type": "com.wasmcloud.lattice.actor_stopped"
   },
   {
     "data": {

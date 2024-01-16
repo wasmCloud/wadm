@@ -59,9 +59,7 @@ async fn test_commands() {
         .await
         .expect("Should be able to handle command properly");
 
-    // We are starting two actors so wait for both
-    wait_for_event(&mut sub, "actor_started").await;
-    wait_for_event(&mut sub, "actor_started").await;
+    wait_for_event(&mut sub, "actors_started").await;
     // Sorry for the lazy de-racing, but for some reason if we don't wait for a bit the host hasn't
     // finished updating its inventory
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
@@ -280,9 +278,7 @@ async fn test_commands() {
         .await
         .expect("Should be able to handle command properly");
 
-    // We're stopping two actors so we need to wait for both events
-    wait_for_event(&mut sub, "actor_stopped").await;
-    wait_for_event(&mut sub, "actor_stopped").await;
+    wait_for_event(&mut sub, "actors_stopped").await;
 
     // Get the current providers and make sure stuff was started
     let inventory = ctl_client

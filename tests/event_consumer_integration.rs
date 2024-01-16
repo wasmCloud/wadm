@@ -97,7 +97,7 @@ async fn test_event_stream() -> Result<()> {
     helpers::run_wash_command(["start", "actor", ECHO_REFERENCE, "--ctl-port", &ctl_port]).await;
 
     let mut evt = wait_for_event(&mut stream, DEFAULT_TIMEOUT_DURATION).await;
-    if let Event::ActorStarted(actor) = evt.as_ref() {
+    if let Event::ActorsStarted(actor) = evt.as_ref() {
         assert_eq!(
             actor.public_key, ECHO_ACTOR_ID,
             "Expected to get a started event for the right actor, got ID: {}",
@@ -240,7 +240,7 @@ async fn test_event_stream() -> Result<()> {
     .await;
 
     let mut evt = wait_for_event(&mut stream, DEFAULT_TIMEOUT_DURATION).await;
-    if let Event::ActorStopped(actor) = evt.as_ref() {
+    if let Event::ActorsStopped(actor) = evt.as_ref() {
         assert_eq!(
             actor.public_key, ECHO_ACTOR_ID,
             "Expected to get a stopped event for the right actor, got ID: {}",
@@ -291,7 +291,7 @@ async fn test_nack_and_rereceive() -> Result<()> {
     // Get the event and then nack it
     let mut evt = wait_for_event(&mut stream, DEFAULT_TIMEOUT_DURATION).await;
     // Make sure we got the right event
-    if let Event::ActorStarted(actor) = evt.as_ref() {
+    if let Event::ActorsStarted(actor) = evt.as_ref() {
         assert_eq!(
             actor.public_key, ECHO_ACTOR_ID,
             "Expected to get a started event for the right actor, got ID: {}",
@@ -305,7 +305,7 @@ async fn test_nack_and_rereceive() -> Result<()> {
 
     // Now do it again and make sure we get the same event
     let mut evt = wait_for_event(&mut stream, DEFAULT_TIMEOUT_DURATION).await;
-    if let Event::ActorStarted(actor) = evt.as_ref() {
+    if let Event::ActorsStarted(actor) = evt.as_ref() {
         assert_eq!(
             actor.public_key, ECHO_ACTOR_ID,
             "Expected to get a started event for the right actor, got ID: {}",
@@ -341,11 +341,6 @@ async fn wait_for_event(
         Event::HostHeartbeat(_)
             | Event::ProviderHealthCheckPassed(_)
             | Event::ProviderHealthCheckFailed(_)
-            // NOTE(brooksmtownsend): Ignoring the plural actor event for now as this test
-            // is more for the event stream than scalers. When we use plural events to
-            // synthesize lattice state, this should be changed to the singular event
-            | Event::ActorsStarted(_)
-            | Event::ActorsStopped(_)
     ) {
         evt.ack().await.expect("Should be able to ack message");
         // Just a copy paste here so we don't have to deal with async recursion
