@@ -1167,11 +1167,8 @@ where
                 .annotations
                 .get(APP_SPEC_ANNOTATION)
                 .map(|s| s.as_str())),
-            // We don't care about the individual events, just when a full scale event happens (the
-            // ActorsStarted/Stopped events)
-            Event::ActorStarted(_) | Event::ActorStopped(_) => Ok(None),
             // All other events we don't care about for state. Explicitly mention them in order
-            // to make sure we don't forget to handle them
+            // to make sure we don't forget to handle them when new events are added.
             Event::LinkdefSet(_)
             | Event::LinkdefDeleted(_)
             | Event::ProviderStartFailed(_)
