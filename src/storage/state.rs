@@ -10,8 +10,8 @@ use serde::{Deserialize, Serialize};
 
 use super::StateKind;
 use crate::events::{
-    ActorStarted, ActorsStarted, BackwardsCompatActors, BackwardsCompatProviders, HostHeartbeat,
-    HostStarted, ProviderInfo, ProviderStarted,
+    ActorScaled, ActorStarted, ActorsStarted, BackwardsCompatActors, BackwardsCompatProviders,
+    HostHeartbeat, HostStarted, ProviderInfo, ProviderStarted,
 };
 
 /// A wasmCloud Capability provider
@@ -257,6 +257,46 @@ impl From<&ActorsStarted> for Actor {
                 HashSet::from_iter([WadmActorInfo {
                     annotations: value.annotations.clone(),
                     count: value.count,
+                }]),
+            )]),
+        }
+    }
+}
+
+impl From<ActorScaled> for Actor {
+    fn from(value: ActorScaled) -> Self {
+        Actor {
+            id: value.public_key,
+            name: value.claims.name,
+            capabilities: value.claims.capabilites,
+            issuer: value.claims.issuer,
+            call_alias: value.claims.call_alias,
+            reference: value.image_ref,
+            instances: HashMap::from_iter([(
+                value.host_id,
+                HashSet::from_iter([WadmActorInfo {
+                    annotations: value.annotations,
+                    count: value.max_instances,
+                }]),
+            )]),
+        }
+    }
+}
+
+impl From<&ActorScaled> for Actor {
+    fn from(value: &ActorScaled) -> Self {
+        Actor {
+            id: value.public_key.clone(),
+            name: value.claims.name.clone(),
+            capabilities: value.claims.capabilites.clone(),
+            issuer: value.claims.issuer.clone(),
+            call_alias: value.claims.call_alias.clone(),
+            reference: value.image_ref.clone(),
+            instances: HashMap::from_iter([(
+                value.host_id.clone(),
+                HashSet::from_iter([WadmActorInfo {
+                    annotations: value.annotations.clone(),
+                    count: value.max_instances,
                 }]),
             )]),
         }

@@ -208,6 +208,87 @@ where
         Ok(())
     }
 
+    #[instrument(level = "debug", skip(self, actor), fields(actor_id = %actor.public_key, host_id = %actor.host_id))]
+    async fn handle_actor_scaled(
+        &self,
+        lattice_id: &str,
+        actor: &ActorScaled,
+    ) -> anyhow::Result<()> {
+        trace!("Scaling actor in store");
+        debug!("Fetching current data for actor");
+
+        // Update actor count in the actor state, adding to the state if it didn't exist or removing
+        // if the scale is down to zero.
+        let mut actor_data = Actor::from(actor);
+        if let Some(mut current) = self
+            .store
+            .get::<Actor>(lattice_id, &actor.public_key)
+            .await?
+        {
+            trace!(actor = ?current, "Found existing actor data");
+
+            match current.instances.get_mut(&actor.host_id) {
+                // If the actor is running and is now scaled down to zero, remove it
+                Some(current_instances) if actor.max_instances == 0 => {
+                    current_instances.remove(&actor.annotations);
+                }
+                // If an actor is already running on a host, update the running count to the scaled max_instances value
+                Some(current_instances) => {
+                    current_instances.replace(WadmActorInfo {
+                        count: actor.max_instances,
+                        annotations: actor.annotations.clone(),
+                    });
+                }
+                // Actor is not running and now scaled to zero, no action required. This can happen if we
+                // update the state before we receive the ActorScaled event
+                None if actor.max_instances == 0 => (),
+                // If an actor isn't running yet, add it with the scaled max_instances value
+                None => {
+                    current.instances.insert(
+                        actor.host_id.clone(),
+                        HashSet::from([WadmActorInfo {
+                            count: actor.max_instances,
+                            annotations: actor.annotations.clone(),
+                        }]),
+                    );
+                }
+            }
+
+            // Take the updated counts and store them in the actor data
+            actor_data.instances = current.instances;
+        };
+
+        // Update actor count in the host state, removing the actor if the scale is zero
+        if let Some(mut host) = self.store.get::<Host>(lattice_id, &actor.host_id).await? {
+            trace!(host = ?host, "Found existing host data");
+
+            if actor.max_instances == 0 {
+                host.actors.remove(&actor.public_key);
+            } else {
+                host.actors
+                    .entry(actor.public_key.clone())
+                    .and_modify(|count| *count = actor.max_instances)
+                    .or_insert(actor.max_instances);
+            }
+
+            self.store
+                .store(lattice_id, host.id.to_owned(), host)
+                .await?
+        }
+
+        if actor_data.instances.is_empty() {
+            self.store
+                .delete::<Actor>(lattice_id, &actor.public_key)
+                .await
+                .map_err(anyhow::Error::from)
+        } else {
+            self.store
+                .store(lattice_id, actor.public_key.clone(), actor_data)
+                .await
+                .map_err(anyhow::Error::from)
+        }
+    }
+
     #[instrument(level = "debug", skip(self, host), fields(host_id = %host.host_id))]
     async fn handle_host_heartbeat(
         &self,
@@ -1010,9 +1091,15 @@ where
                         .get(APP_SPEC_ANNOTATION)
                         .map(|s| s.as_str())
                 }),
-            // We don't care about the individual events, just when a full scale event happens (the
-            // ActorsStarted/Stopped events)
-            Event::ActorStarted(_) | Event::ActorStopped(_) => Ok(None),
+            Event::ActorScaled(actor) => self
+                .handle_actor_scaled(&message.lattice_id, actor)
+                .await
+                .map(|_| {
+                    actor
+                        .annotations
+                        .get(APP_SPEC_ANNOTATION)
+                        .map(|s| s.as_str())
+                }),
             Event::HostHeartbeat(host) => self
                 .handle_host_heartbeat(&message.lattice_id, host)
                 .await
@@ -1025,7 +1112,6 @@ where
                 .handle_host_stopped(&message.lattice_id, host)
                 .await
                 .map(|_| None),
-            Event::LinkdefDeleted(_ld) => Ok(None),
             Event::ProviderStarted(provider) => self
                 .handle_provider_started(&message.lattice_id, provider)
                 .await
@@ -1081,9 +1167,15 @@ where
                 .annotations
                 .get(APP_SPEC_ANNOTATION)
                 .map(|s| s.as_str())),
-            Event::ProviderStartFailed(_provider) => Ok(None),
-            // All other events we don't care about for state.
-            _ => {
+            // We don't care about the individual events, just when a full scale event happens (the
+            // ActorsStarted/Stopped events)
+            Event::ActorStarted(_) | Event::ActorStopped(_) => Ok(None),
+            // All other events we don't care about for state. Explicitly mention them in order
+            // to make sure we don't forget to handle them
+            Event::LinkdefSet(_)
+            | Event::LinkdefDeleted(_)
+            | Event::ProviderStartFailed(_)
+            | Event::ActorScaleFailed(_) => {
                 trace!("Got event we don't care about. Skipping");
                 Ok(None)
             }
@@ -1372,6 +1464,146 @@ mod test {
         assert_actor(&actors, &actor1, &[(&host1_id, 2), (&host2_id, 2)]);
         // Check the second actor
         assert_actor(&actors, &actor2, &[(&host1_id, 2), (&host2_id, 2)]);
+
+        /***********************************************************/
+        /******************** Actor Scale Tests ********************/
+        /***********************************************************/
+
+        let actor1_scaled = ActorScaled {
+            claims: ActorClaims {
+                call_alias: Some("Grand Moff".into()),
+                capabilites: vec!["empire:command".into()],
+                issuer: "Sheev Palpatine".into(),
+                name: "Grand Moff Tarkin".into(),
+                version: Some("0.1.0".into()),
+                ..Default::default()
+            },
+            image_ref: "coruscant.galactic.empire/tarkin:0.1.0".into(),
+            public_key: "TARKIN".into(),
+            host_id: host1_id.clone(),
+            annotations: BTreeMap::default(),
+            max_instances: 500,
+        };
+        worker
+            .handle_actor_scaled(lattice_id, &actor1_scaled)
+            .await
+            .expect("Should be able to handle actor event");
+        let actors = store.list::<Actor>(lattice_id).await.unwrap();
+        let actor = actors.get("TARKIN").expect("Actor should exist in state");
+        let hosts = store.list::<Host>(lattice_id).await.unwrap();
+        let host = hosts.get(&host1_id).expect("Host should exist in state");
+        assert_eq!(
+            host.actors.get(&actor1_scaled.public_key),
+            Some(&500),
+            "Actor count in host should be updated"
+        );
+        assert_eq!(
+            actor.count_for_host(&host1_id),
+            500,
+            "Actor count should be modified with an increase in scale"
+        );
+
+        let actor1_scaled = ActorScaled {
+            claims: ActorClaims {
+                call_alias: Some("Grand Moff".into()),
+                capabilites: vec!["empire:command".into()],
+                issuer: "Sheev Palpatine".into(),
+                name: "Grand Moff Tarkin".into(),
+                version: Some("0.1.0".into()),
+                ..Default::default()
+            },
+            image_ref: "coruscant.galactic.empire/tarkin:0.1.0".into(),
+            public_key: "TARKIN".into(),
+            host_id: host1_id.clone(),
+            annotations: BTreeMap::default(),
+            max_instances: 200,
+        };
+        worker
+            .handle_actor_scaled(lattice_id, &actor1_scaled)
+            .await
+            .expect("Should be able to handle actor event");
+        let actors = store.list::<Actor>(lattice_id).await.unwrap();
+        let actor = actors.get("TARKIN").expect("Actor should exist in state");
+        let hosts = store.list::<Host>(lattice_id).await.unwrap();
+        let host = hosts.get(&host1_id).expect("Host should exist in state");
+        assert_eq!(
+            host.actors.get(&actor1_scaled.public_key),
+            Some(&200),
+            "Actor count in host should be updated"
+        );
+        assert_eq!(
+            actor.count_for_host(&host1_id),
+            200,
+            "Actor count should be modified with a decrease in scale"
+        );
+
+        let actor1_scaled = ActorScaled {
+            claims: ActorClaims {
+                call_alias: Some("Grand Moff".into()),
+                capabilites: vec!["empire:command".into()],
+                issuer: "Sheev Palpatine".into(),
+                name: "Grand Moff Tarkin".into(),
+                version: Some("0.1.0".into()),
+                ..Default::default()
+            },
+            image_ref: "coruscant.galactic.empire/tarkin:0.1.0".into(),
+            public_key: "TARKIN".into(),
+            host_id: host1_id.clone(),
+            annotations: BTreeMap::default(),
+            max_instances: 0,
+        };
+        worker
+            .handle_actor_scaled(lattice_id, &actor1_scaled)
+            .await
+            .expect("Should be able to handle actor event");
+        let actors = store.list::<Actor>(lattice_id).await.unwrap();
+        let actor = actors.get("TARKIN").expect("Actor should exist in state");
+        let hosts = store.list::<Host>(lattice_id).await.unwrap();
+        let host = hosts.get(&host1_id).expect("Host should exist in state");
+        assert_eq!(
+            host.actors.get(&actor1_scaled.public_key),
+            None,
+            "Actor in host should be removed"
+        );
+        assert_eq!(
+            actor.count_for_host(&host1_id),
+            0,
+            "Actor count should be modified with a scale to zero"
+        );
+
+        let actor1_scaled = ActorScaled {
+            claims: ActorClaims {
+                call_alias: Some("Grand Moff".into()),
+                capabilites: vec!["empire:command".into()],
+                issuer: "Sheev Palpatine".into(),
+                name: "Grand Moff Tarkin".into(),
+                version: Some("0.1.0".into()),
+                ..Default::default()
+            },
+            image_ref: "coruscant.galactic.empire/tarkin:0.1.0".into(),
+            public_key: "TARKIN".into(),
+            host_id: host1_id.clone(),
+            annotations: BTreeMap::default(),
+            max_instances: 1,
+        };
+        worker
+            .handle_actor_scaled(lattice_id, &actor1_scaled)
+            .await
+            .expect("Should be able to handle actor event");
+        let actors = store.list::<Actor>(lattice_id).await.unwrap();
+        let actor = actors.get("TARKIN").expect("Actor should exist in state");
+        let hosts = store.list::<Host>(lattice_id).await.unwrap();
+        let host = hosts.get(&host1_id).expect("Host should exist in state");
+        assert_eq!(
+            host.actors.get(&actor1_scaled.public_key),
+            Some(&1),
+            "Actor in host should be readded from scratch"
+        );
+        assert_eq!(
+            actor.count_for_host(&host1_id),
+            1,
+            "Actor count should be modified with an initial start"
+        );
 
         /***********************************************************/
         /****************** Provider Start Tests *******************/
