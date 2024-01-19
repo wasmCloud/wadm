@@ -45,7 +45,7 @@ impl ControlClientConstructor {
 /// Returns the topic prefix to use for the given multitenant prefix and topic prefix. The
 /// default prefix is `wasmbus.ctl`.
 ///
-/// If running in multitenant mode, we listen to events on *.wasmbus.evt and need to send commands
+/// If running in multitenant mode, we listen to events on *.wasmbus.evt.*.> and need to send commands
 /// back to the '*' account. This match takes into account custom prefixes as well to support
 /// advanced use cases.
 ///

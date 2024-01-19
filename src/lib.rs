@@ -19,9 +19,9 @@ pub mod test_util;
 /// some wiggle room. Exported to make setting defaults easy
 pub const DEFAULT_EXPIRY_TIME: Duration = Duration::from_secs(70);
 /// Default topic to listen to for all lattice events
-pub const DEFAULT_EVENTS_TOPIC: &str = "wasmbus.evt.*";
+pub const DEFAULT_EVENTS_TOPIC: &str = "wasmbus.evt.*.>";
 /// Default topic to listen to for all lattice events in a multitenant deployment
-pub const DEFAULT_MULTITENANT_EVENTS_TOPIC: &str = "*.wasmbus.evt.*";
+pub const DEFAULT_MULTITENANT_EVENTS_TOPIC: &str = "*.wasmbus.evt.*.>";
 /// Default topic to listen to for all commands
 pub const DEFAULT_COMMANDS_TOPIC: &str = "wadm.cmd.*";
 /// Default topic to listen to for all status updates. wadm.status.<lattice_id>.<manifest_name>

@@ -37,7 +37,7 @@ async fn test_commands() {
 
     let mut sub = wrapper
         .client
-        .subscribe("wasmbus.evt.default".to_string())
+        .subscribe("wasmbus.evt.default.>".to_string())
         .await
         .unwrap();
 
@@ -310,7 +310,7 @@ async fn test_annotation_stop() {
 
     let mut sub = wrapper
         .client
-        .subscribe("wasmbus.evt.default".to_string())
+        .subscribe("wasmbus.evt.default.>".to_string())
         .await
         .unwrap();
 

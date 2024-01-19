@@ -12,7 +12,7 @@ pub struct LatticeIdParser {
 impl LatticeIdParser {
     /// Returns a new parser configured to use the given prefix. If `multitenant` is set to true,
     /// this parser will also attempt to parse a subject as if it were an account imported topic
-    /// (e.g. `A****.wasmbus.evt.{lattice-id}`) if it doesn't match the normally expected pattern
+    /// (e.g. `A****.wasmbus.evt.{lattice-id}.>`) if it doesn't match the normally expected pattern
     pub fn new(prefix: &str, multitenant: bool) -> LatticeIdParser {
         LatticeIdParser {
             prefix: prefix.to_owned(),
@@ -32,10 +32,10 @@ impl LatticeIdParser {
         //
         // Note that the account ID should be prefaced with an `A`
         match separated[..] {
-            [prefix, evt, lattice_id] if prefix == self.prefix && evt == EVENT_SUBJECT => {
+            [prefix, evt, lattice_id, _event_type] if prefix == self.prefix && evt == EVENT_SUBJECT => {
                 (Some(lattice_id), None)
             }
-            [account_id, prefix, evt, lattice_id]
+            [account_id, prefix, evt, lattice_id, _event_type]
                 if self.multitenant
                     && prefix == self.prefix
                     && evt == EVENT_SUBJECT
@@ -59,7 +59,7 @@ mod test {
 
         assert_eq!(
             parser
-                .parse("wasmbus.evt.blahblah")
+                .parse("wasmbus.evt.blahblah.>")
                 .0
                 .expect("Should return lattice id"),
             "blahblah",
@@ -68,7 +68,7 @@ mod test {
 
         // Shouldn't parse a multitenant
         assert!(
-            parser.parse("ACCOUNTID.wasmbus.evt.default").0.is_none(),
+            parser.parse("ACCOUNTID.wasmbus.evt.default.>").0.is_none(),
             "Shouldn't parse a multitenant topic"
         );
 
@@ -77,14 +77,14 @@ mod test {
 
         assert_eq!(
             parser
-                .parse("wasmbus.evt.blahblah")
+                .parse("wasmbus.evt.blahblah.>")
                 .0
                 .expect("Should return lattice id"),
             "blahblah",
             "Should return the right ID"
         );
 
-        let res = parser.parse("ACCOUNTID.wasmbus.evt.blahblah");
+        let res = parser.parse("ACCOUNTID.wasmbus.evt.blahblah.>");
 
         assert_eq!(
             res.0.expect("Should return lattice id"),
@@ -105,27 +105,27 @@ mod test {
 
         // Test 3 and 4 part subjects to make sure they don't parse
         assert!(
-            parser.parse("BLAH.wasmbus.notevt.default").0.is_none(),
+            parser.parse("BLAH.wasmbus.notevt.default.>").0.is_none(),
             "Shouldn't parse 4 part invalid topic"
         );
 
         assert!(
-            parser.parse("wasmbus.notme.default").0.is_none(),
+            parser.parse("wasmbus.notme.default.>").0.is_none(),
             "Shouldn't parse 3 part invalid topic"
         );
 
         assert!(
-            parser.parse("lebus.evt.default").0.is_none(),
+            parser.parse("lebus.evt.default.>").0.is_none(),
             "Shouldn't parse an non-matching prefix"
         );
 
         assert!(
-            parser.parse("wasmbus.evt").0.is_none(),
+            parser.parse("wasmbus.evt.>").0.is_none(),
             "Shouldn't parse a too short topic"
         );
 
         assert!(
-            parser.parse("BADACCOUNT.wasmbus.evt.default").0.is_none(),
+            parser.parse("BADACCOUNT.wasmbus.evt.default.>").0.is_none(),
             "Shouldn't parse invalid account topic"
         );
 
