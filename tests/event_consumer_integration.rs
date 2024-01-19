@@ -15,7 +15,7 @@ use anyhow::Result;
 const HTTP_SERVER_REFERENCE: &str = "wasmcloud.azurecr.io/httpserver:0.17.0";
 const ECHO_REFERENCE: &str = "wasmcloud.azurecr.io/echo:0.3.4";
 const CONTRACT_ID: &str = "wasmcloud:httpserver";
-const WASMBUS_EVENT_TOPIC: &str = "wasmbus.evt.default";
+const WASMBUS_EVENT_TOPIC: &str = "wasmbus.evt.default.>";
 const STREAM_NAME: &str = "test_wadm_events";
 
 // Timeout accounts for time to pull stuff from registry
