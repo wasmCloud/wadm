@@ -46,14 +46,14 @@ where
                     if !is_event_we_care_about(&msg.payload) {
                         continue;
                     }
-                    let (lattice_id, multitenant_prefix) = match self.parser.parse(&msg.subject) {
-                        (Some(lattice), Some(account)) => (lattice, Some(account)),
-                        (Some(lattice), None) => (lattice, None),
-                        (None, _) => {
-                            trace!(subject = %msg.subject, "Found non-matching lattice subject");
-                            continue;
-                        }
+
+                    let Some(lattice_info) = self.parser.parse(&msg.subject) else {
+                        trace!(subject = %msg.subject, "Found non-matching lattice subject");
+                        continue;
                     };
+                    let lattice_id = lattice_info.lattice_id();
+                    let multitenant_prefix = lattice_info.multitenant_prefix();
+                    let event_subject = lattice_info.event_subject();
 
                     // Create the reaper for this lattice. This operation returns early if it is
                     // already running
@@ -63,7 +63,7 @@ where
                     // if it is already running
                     if let Err(e) = self
                         .mirror
-                        .monitor_lattice(&msg.subject, lattice_id, multitenant_prefix)
+                        .monitor_lattice(&event_subject, lattice_id, multitenant_prefix)
                         .await
                     {
                         // If we can't set up the mirror, we can't proceed, so exit early
@@ -76,7 +76,7 @@ where
                     let needs_command = !self.command_manager.has_consumer(&command_topic).await;
                     let needs_event = !self.event_manager.has_consumer(&events_topic).await;
                     if needs_command {
-                        debug!(%lattice_id, subject = %msg.subject, mapped_subject = %command_topic, "Found unmonitored lattice, adding command consumer");
+                        debug!(%lattice_id, subject = %event_subject, mapped_subject = %command_topic, "Found unmonitored lattice, adding command consumer");
                         let worker = match self
                             .command_worker_creator
                             .create(lattice_id, multitenant_prefix)
@@ -96,7 +96,7 @@ where
                             })
                     }
                     if needs_event {
-                        debug!(%lattice_id, subject = %msg.subject, mapped_subject = %events_topic,  "Found unmonitored lattice, adding event consumer");
+                        debug!(%lattice_id, subject = %event_subject, mapped_subject = %events_topic,  "Found unmonitored lattice, adding event consumer");
                         let worker = match self
                             .event_worker_creator
                             .create(lattice_id, multitenant_prefix)
