@@ -63,7 +63,7 @@ struct Args {
     tracing_enabled: bool,
 
     /// The endpoint to use for tracing. Setting this flag enables tracing, even if --tracing is set
-    /// to false. Defaults to http://localhost:55681/v1/traces if not set and tracing is enabled
+    /// to false. Defaults to http://localhost:4318/v1/traces if not set and tracing is enabled
     #[arg(short = 'e', long = "tracing-endpoint", env = "WADM_TRACING_ENDPOINT")]
     tracing_endpoint: Option<String>,
 
