@@ -111,6 +111,10 @@ struct Args {
     )]
     nats_creds: Option<PathBuf>,
 
+    /// (Optional) NATS TLS certificate file to use when authenticating
+    #[arg(long = "nats-tls-ca-file", env = "WADM_NATS_TLS_CA_FILE")]
+    nats_tls_ca_file: Option<PathBuf>,
+
     /// Name of the bucket used for storage of lattice state
     #[arg(
         long = "state-bucket-name",
@@ -176,6 +180,7 @@ async fn main() -> anyhow::Result<()> {
         args.nats_seed.clone(),
         args.nats_jwt.clone(),
         args.nats_creds.clone(),
+        args.nats_tls_ca_file.clone(),
     )
     .await?;
 

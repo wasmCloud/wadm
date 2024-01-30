@@ -20,11 +20,16 @@ pub async fn get_client_and_context(
     seed: Option<String>,
     jwt: Option<String>,
     creds_path: Option<PathBuf>,
+    ca_path: Option<PathBuf>,
 ) -> Result<(Client, Context)> {
     let client = if seed.is_none() && jwt.is_none() && creds_path.is_none() {
-        async_nats::connect(url).await?
+        let mut opts = async_nats::ConnectOptions::new();
+        if let Some(ca) = ca_path {
+            opts = opts.add_root_certificates(ca).require_tls(true);
+        }
+        opts.connect(url).await?
     } else {
-        let opts = build_nats_options(seed, jwt, creds_path).await?;
+        let opts = build_nats_options(seed, jwt, creds_path, ca_path).await?;
         async_nats::connect_with_options(url, opts).await?
     };
 
@@ -41,27 +46,31 @@ async fn build_nats_options(
     seed: Option<String>,
     jwt: Option<String>,
     creds_path: Option<PathBuf>,
+    ca_path: Option<PathBuf>,
 ) -> Result<ConnectOptions> {
-    match (seed, jwt, creds_path) {
+    let mut opts = async_nats::ConnectOptions::new();
+    opts = match (seed, jwt, creds_path) {
         (Some(seed), Some(jwt), None) => {
             let jwt = resolve_jwt(jwt).await?;
             let kp = std::sync::Arc::new(get_seed(seed).await?);
 
-            Ok(async_nats::ConnectOptions::with_jwt(jwt, move |nonce| {
+            opts.jwt(jwt, move |nonce| {
                 let key_pair = kp.clone();
                 async move { key_pair.sign(&nonce).map_err(async_nats::AuthError::new) }
-            }))
+            })
         }
-        (None, None, Some(creds)) => async_nats::ConnectOptions::with_credentials_file(creds)
-            .await
-            .map_err(anyhow::Error::from),
+        (None, None, Some(creds)) => opts.credentials_file(creds).await?,
         _ => {
             // We shouldn't ever get here due to the requirements on the flags, but return a helpful error just in case
-            Err(anyhow::anyhow!(
+            return Err(anyhow::anyhow!(
                 "Got too many options. Make sure to provide a seed and jwt or a creds path"
-            ))
+            ));
         }
+    };
+    if let Some(ca) = ca_path {
+        opts = opts.add_root_certificates(ca).require_tls(true);
     }
+    Ok(opts)
 }
 
 /// Takes a string that could be a raw seed, or a path and does all the necessary loading and parsing steps
