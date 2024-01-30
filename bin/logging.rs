@@ -60,7 +60,7 @@ pub fn configure_tracing(
     }
 
     let mut tracing_endpoint =
-        tracing_endpoint.unwrap_or_else(|| format!("http://localhost:55681{}", TRACING_PATH));
+        tracing_endpoint.unwrap_or_else(|| format!("http://localhost:4318{}", TRACING_PATH));
     if !tracing_endpoint.ends_with(TRACING_PATH) {
         tracing_endpoint.push_str(TRACING_PATH);
     }
