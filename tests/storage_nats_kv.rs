@@ -56,9 +56,8 @@ async fn test_round_trip() {
         actors: HashMap::from([("testactor".to_string(), 1)]),
         id: "testhost".to_string(),
         providers: HashSet::from([ProviderInfo {
-            public_key: "testprovider".to_string(),
-            contract_id: "wasmcloud:httpserver".to_owned(),
-            link_name: "default".to_owned(),
+            provider_id: "testprovider".to_string(),
+            provider_ref: "fake.oci.repo/testprovider:0.1.0".to_string(),
             annotations: BTreeMap::new(),
         }]),
         friendly_name: "test-host".to_string(),

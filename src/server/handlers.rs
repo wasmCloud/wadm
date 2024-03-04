@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use anyhow::anyhow;
+use anyhow::{anyhow, bail};
 use async_nats::{jetstream::stream::Stream, Client, Message, Subject};
 use base64::{engine::general_purpose::STANDARD as B64decoder, Engine};
 use jsonschema::{paths::PathChunk, Draft, JSONSchema};
@@ -11,7 +11,7 @@ use tracing::{debug, error, instrument, log::warn, trace};
 
 use crate::{
     model::{
-        internal::StoredManifest, ActorProperties, CapabilityProperties, LinkdefProperty, Manifest,
+        internal::StoredManifest, ActorProperties, CapabilityProperties, LinkProperty, Manifest,
         Properties, Trait, TraitProperty, LATEST_VERSION,
     },
     publisher::Publisher,
@@ -974,9 +974,6 @@ pub(crate) async fn validate_manifest(manifest: Manifest) -> anyhow::Result<()> 
         ));
     }
 
-    // Map of link names to a vector of provider references with that link name
-    let mut linkdef_map: HashMap<String, Vec<String>> = HashMap::new();
-
     for component in manifest.spec.components.iter() {
         // Component name validation : each component (actors or providers) should have a unique name
         if !name_registry.insert(component.name.clone()) {
@@ -992,8 +989,7 @@ pub(crate) async fn validate_manifest(manifest: Manifest) -> anyhow::Result<()> 
         if let Properties::Capability {
             properties:
                 CapabilityProperties {
-                    image: image_name,
-                    link_name: Some(link),
+                    id,
                     config: capability_config,
                     ..
                 },
@@ -1008,43 +1004,20 @@ pub(crate) async fn validate_manifest(manifest: Manifest) -> anyhow::Result<()> 
                 }
             }
 
-            let image_ref = if let Some((ref_link, _)) = parse_image_ref(image_name) {
-                ref_link
-            } else {
-                // This case should never occur unless the reference just contains a version
-                return Err(anyhow!(
-                    "Incorrect image reference {} to link name {} in manifest",
-                    image_name,
-                    link
-                ));
-            };
-
-            // Check the capability reference regardless of the version
-            // This will prevent providers with different versions to run on the same link name
-            if let Some(duplicate_ref) = linkdef_map.get_mut(link) {
-                if duplicate_ref.contains(&image_ref.to_string()) {
-                    return Err(anyhow!(
-                        "Duplicate image reference {} to link name {} in manifest",
-                        image_name,
-                        link
-                    ));
-                } else {
-                    duplicate_ref.push(image_ref.to_string());
+            if let Some(component_id) = id {
+                if !name_registry.insert(component_id.to_string()) {
+                    bail!("Duplicate component identifier in manifest: {component_id}");
                 }
             }
-            linkdef_map.insert(link.to_string(), vec![image_ref.to_string()]);
         }
 
-        // Actor validation : Actors should have a unique name and reference
+        // Actor validation : Actors should have a unique identifier per manifest
         if let Properties::Actor {
-            properties: ActorProperties { image: image_name },
+            properties: ActorProperties { id: Some(id), .. },
         } = &component.properties
         {
-            if !name_registry.insert(image_name.to_string()) {
-                return Err(anyhow!(
-                    "Duplicate image reference in manifest: {}",
-                    image_name
-                ));
+            if !name_registry.insert(id.to_string()) {
+                bail!("Duplicate component identifier in manifest: {id}");
             }
         }
 
@@ -1055,7 +1028,7 @@ pub(crate) async fn validate_manifest(manifest: Manifest) -> anyhow::Result<()> 
                 if let Trait {
                     // TODO : add trait type validation after custom types are done. See TraitProperty enum.
                     properties:
-                        TraitProperty::Linkdef(LinkdefProperty {
+                        TraitProperty::Linkdef(LinkProperty {
                             target: target_name,
                             ..
                         }),
@@ -1092,10 +1065,8 @@ pub(crate) async fn validate_manifest(manifest: Manifest) -> anyhow::Result<()> 
 }
 
 fn parse_image_ref(image_name: &str) -> Option<(String, String)> {
-    let image_ref_split: Vec<&str> = image_name.split(':').collect();
-    if let (Some(&ref_link), Some(&ref_version)) = (image_ref_split.first(), image_ref_split.last())
-    {
-        Some((ref_link.to_owned(), ref_version.to_owned()))
+    if let Some((repository_reference, ref_version)) = image_name.split_once(':') {
+        Some((repository_reference.to_owned(), ref_version.to_owned()))
     } else {
         // ignore if image ref is not in the format some_url:some_version
         None

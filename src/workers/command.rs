@@ -1,5 +1,4 @@
 use tracing::{instrument, trace};
-use wasmcloud_control_interface::CtlOperationAck;
 
 use crate::{
     commands::*,
@@ -41,7 +40,8 @@ impl Worker for CommandWorker {
                     .scale_actor(
                         &actor.host_id,
                         &actor.reference,
-                        Some(actor.count as u16),
+                        &actor.actor_id,
+                        actor.count,
                         Some(annotations.into_iter().collect()),
                     )
                     .await
@@ -63,7 +63,7 @@ impl Worker for CommandWorker {
                     .start_provider(
                         &prov.host_id,
                         &prov.reference,
-                        prov.link_name.clone(),
+                        &prov.provider_id,
                         Some(annotations.into_iter().collect()),
                         config,
                     )
@@ -75,52 +75,33 @@ impl Worker for CommandWorker {
                 let mut annotations = prov.annotations.clone();
                 insert_managed_annotations(&mut annotations, &prov.model_name);
                 self.client
-                    .stop_provider(
-                        &prov.host_id,
-                        &prov.provider_id,
-                        prov.link_name
-                            .as_deref()
-                            .unwrap_or(crate::DEFAULT_LINK_NAME),
-                        &prov.contract_id,
-                        Some(annotations.into_iter().collect()),
-                    )
+                    .stop_provider(&prov.host_id, &prov.provider_id)
                     .await
             }
             Command::PutLinkdef(ld) => {
                 trace!(command = ?ld, "Handling put linkdef command");
                 // TODO(thomastaylor312): We should probably change ScopedMessage to allow us `pub`
                 // access to the inner type so we don't have to clone, but no need to worry for now
-                self.client
-                    .advertise_link(
-                        &ld.actor_id,
-                        &ld.provider_id,
-                        &ld.contract_id,
-                        &ld.link_name,
-                        ld.values.clone(),
-                    )
-                    .await
-                    .map(|_| CtlOperationAck {
-                        accepted: true,
-                        ..Default::default()
-                    })
+                self.client.put_link(ld.clone().into()).await
             }
             Command::DeleteLinkdef(ld) => {
                 trace!(command = ?ld, "Handling delete linkdef command");
                 self.client
-                    .remove_link(&ld.actor_id, &ld.contract_id, &ld.link_name)
+                    .delete_link(
+                        &ld.source_id,
+                        &ld.link_name,
+                        &ld.wit_namespace,
+                        &ld.wit_package,
+                    )
                     .await
-                    .map(|_| CtlOperationAck {
-                        accepted: true,
-                        ..Default::default()
-                    })
             }
         }
         .map_err(|e| anyhow::anyhow!("{e:?}"));
 
         match res {
-            Ok(ack) if !ack.accepted => {
+            Ok(ack) if !ack.success => {
                 message.nack().await;
-                Err(WorkError::Other(anyhow::anyhow!("{}", ack.error).into()))
+                Err(WorkError::Other(anyhow::anyhow!("{}", ack.message).into()))
             }
             Ok(_) => message.ack().await.map_err(WorkError::from),
             Err(e) => {

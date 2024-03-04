@@ -161,36 +161,18 @@ impl<S: Store + Clone + Send + Sync + 'static> Undertaker<S> {
         };
 
         let (actors_to_remove, actors_to_update): (HashMap<String, Actor>, HashMap<String, Actor>) =
+            // TODO(brooksmtownsend): Ensure this is proper
             actors
                 .into_iter()
                 .filter_map(|(id, mut actor)| {
-                    let current_num_hosts = actor.instances.len();
                     // Only keep the instances where the host exists and the actor is in its map
-                    actor
-                        .instances
-                        .retain(|host_id, _| hosts.get(host_id).map(|host| host.actors.contains_key(&actor.id)).unwrap_or(false));
-                    // Now for the remaining instances, make sure the number of instances is equal
-                    // to what is observed on the host, otherwise truncate.
-                    // NOTE: If for some reason we start using instance IDs, than things will need
-                    // to be updated so we can clear the instance ID
-                    let mut did_truncate = false;
-                    for (host_id, instances) in actor.instances.iter_mut() {
-                        if let Some(host) = hosts.get(host_id) {
-                            // This unwrap shouldn't happen because we just retained the instances
-                            // that have the actor ID in their list. If it does, we unwrap to
-                            // current length so it just skips this logic for now
-                            let current_num_instances = *host.actors.get(&actor.id).unwrap_or(&instances.len());
-                            if instances.len() > current_num_instances {
-                                debug!(%id, %host_id, num_instances = %instances.len(), %current_num_instances, "Number of instances for actor is greater than number of instances observed on host. Truncating to correct number");
-                                *instances = instances.drain().take(current_num_instances).collect();
-                                did_truncate = true;
-                            }
-                            // If we have less instances than the host, then it just means the host
-                            // heartbeat will update them down the line
-                        }
-                    }
-                    // If we got rid of something or truncated instances, that means this needs to update
-                    ((current_num_hosts != actor.instances.len()) || did_truncate).then_some((id, actor))
+                    actor.instances.retain(|host_id, _| {
+                        hosts
+                            .get(host_id)
+                            .map(|host| host.actors.contains_key(&actor.id))
+                            .unwrap_or(false)
+                    });
+                    Some((id, actor))
                 })
                 .partition(|(_, actor)| actor.instances.is_empty());
 

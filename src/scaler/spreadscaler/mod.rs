@@ -3,7 +3,7 @@ use std::{cmp::Ordering, cmp::Reverse, collections::HashMap};
 
 use anyhow::Result;
 use async_trait::async_trait;
-use tokio::sync::{OnceCell, RwLock};
+use tokio::sync::RwLock;
 use tracing::{instrument, trace, warn};
 
 use crate::events::HostHeartbeat;
@@ -30,6 +30,8 @@ pub const ACTOR_SPREAD_SCALER_TYPE: &str = "actorspreadscaler";
 struct ActorSpreadConfig {
     /// OCI, Bindle, or File reference for an actor
     actor_reference: String,
+    /// Unique component identifier for an actor
+    actor_id: String,
     /// Lattice ID that this SpreadScaler monitors
     lattice_id: String,
     /// The name of the wadm model this SpreadScaler is under
@@ -46,7 +48,6 @@ struct ActorSpreadConfig {
 pub struct ActorSpreadScaler<S> {
     config: ActorSpreadConfig,
     spread_requirements: Vec<(Spread, usize)>,
-    actor_id: OnceCell<String>,
     store: S,
     id: String,
     status: RwLock<StatusInfo>,
@@ -79,22 +80,10 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
         // the entire reconcile, smart compute exactly what needs to change, but it just
         // requires more code branches and would be fine as a future improvement
         match event {
-            Event::ActorsStarted(actor_started) => {
-                if actor_started.image_ref == self.config.actor_reference {
-                    trace!(image_ref = %actor_started.image_ref, "Found image we care about");
-                    self.reconcile().await
-                } else {
-                    Ok(Vec::new())
-                }
-            }
-            Event::ActorsStopped(actor_stopped) => {
-                let actor_id = self.actor_id().await?;
-                if actor_stopped.public_key == actor_id {
-                    trace!(%actor_id, "Found actor we care about");
-                    self.reconcile().await
-                } else {
-                    Ok(Vec::new())
-                }
+            // TODO: React to ActorScaleFailed with an exponential backoff, can't just immediately retry since that
+            // would cause a very tight loop of failures
+            Event::ActorScaled(evt) if evt.actor_id == self.config.actor_id => {
+                self.reconcile().await
             }
             Event::HostStopped(HostStopped { labels, .. })
             | Event::HostStarted(HostStarted { labels, .. })
@@ -120,16 +109,11 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
     async fn reconcile(&self) -> Result<Vec<Command>> {
         let hosts = self.store.list::<Host>(&self.config.lattice_id).await?;
 
-        let actor = if let Ok(id) = self.actor_id().await {
-            self.store.get::<Actor>(&self.config.lattice_id, id).await?
-        } else {
-            // If this is the first time we have ever loaded the actor, there won't be a way to get
-            // the ID, so an error will occur. We can just return None and let the scaler try to
-            // start stuff
-            None
-        };
-
-        let actor_id = actor.as_ref().map(|actor| actor.id.to_owned());
+        let actor_id = &self.config.actor_id;
+        let actor = self
+            .store
+            .get::<Actor>(&self.config.lattice_id, actor_id)
+            .await?;
 
         let mut spread_status = vec![];
 
@@ -185,7 +169,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
                                 reference: self.config.actor_reference.to_owned(),
                                 // SAFETY: We already checked that the list of hosts is not empty, so we can unwrap here
                                 host_id: eligible_hosts.keys().next().unwrap().to_string(),
-                                count: *count,
+                                count: *count as u32,
                                 model_name: self.config.model_name.to_owned(),
                                 annotations: spreadscaler_annotations(&spread.name, self.id()),
                             })])
@@ -208,7 +192,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
                                         actor_id: actor_id.to_owned(),
                                         reference: self.config.actor_reference.to_owned(),
                                         host_id: host_id.to_owned(),
-                                        count,
+                                        count: count as u32,
                                         model_name: self.config.model_name.to_owned(),
                                         annotations: spreadscaler_annotations(&spread.name, self.id()),
                                     }));
@@ -256,7 +240,6 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
             config: config_clone,
             store: self.store.clone(),
             spread_requirements,
-            actor_id: self.actor_id.clone(),
             id: self.id.clone(),
             status: RwLock::new(StatusInfo::reconciling("")),
         };
@@ -270,6 +253,7 @@ impl<S: ReadStore + Send + Sync> ActorSpreadScaler<S> {
     pub fn new(
         store: S,
         actor_reference: String,
+        actor_id: String,
         lattice_id: String,
         model_name: String,
         spread_config: SpreadScalerProperty,
@@ -280,9 +264,9 @@ impl<S: ReadStore + Send + Sync> ActorSpreadScaler<S> {
         Self {
             store,
             spread_requirements: compute_spread(&spread_config),
-            actor_id: OnceCell::new(),
             config: ActorSpreadConfig {
                 actor_reference,
+                actor_id,
                 lattice_id,
                 spread_config,
                 model_name,
@@ -290,29 +274,6 @@ impl<S: ReadStore + Send + Sync> ActorSpreadScaler<S> {
             id,
             status: RwLock::new(StatusInfo::reconciling("")),
         }
-    }
-
-    /// Helper function to retrieve the actor ID for the configured actor
-    async fn actor_id(&self) -> Result<&str> {
-        self.actor_id
-            .get_or_try_init(|| async {
-                self.store
-                    .list::<Actor>(&self.config.lattice_id)
-                    .await?
-                    .iter()
-                    .find(|(_id, actor)| actor.reference == self.config.actor_reference)
-                    .map(|(id, _actor)| id.to_owned())
-                    // Default here means the below `get` will find zero running actors, which is fine because
-                    // that accurately describes the current lattice having zero instances.
-                    .ok_or_else(|| {
-                        anyhow::anyhow!(
-                            "Couldn't find an actor id for the actor reference {}",
-                            self.config.actor_reference
-                        )
-                    })
-            })
-            .await
-            .map(|id| id.as_str())
     }
 }
 
@@ -429,13 +390,13 @@ mod test {
 
     use anyhow::Result;
     use chrono::Utc;
+    use wasmcloud_control_interface::InterfaceLinkDefinition;
 
     use crate::{
         commands::Command,
         consumers::{manager::Worker, ScopedMessage},
         events::{
-            ActorsStopped, Event, Linkdef, LinkdefDeleted, LinkdefSet, ProviderClaims,
-            ProviderStarted, ProviderStopped,
+            ActorsStopped, Event, LinkdefDeleted, LinkdefSet, ProviderStarted, ProviderStopped,
         },
         model::{Spread, SpreadScalerProperty},
         scaler::{
@@ -604,6 +565,7 @@ mod test {
     async fn can_compute_spread_commands() -> Result<()> {
         let lattice_id = "hoohah_multi_stop_actor";
         let actor_reference = "fakecloud.azurecr.io/echo:0.3.4".to_string();
+        let actor_id = "fakecloud_azurecr_io_echo_0_3_4".to_string();
         let host_id = "NASDASDIMAREALHOST";
 
         let store = Arc::new(TestStore::default());
@@ -660,6 +622,7 @@ mod test {
         let spreadscaler = ActorSpreadScaler::new(
             store.clone(),
             actor_reference.to_string(),
+            actor_id.to_string(),
             lattice_id.to_string(),
             MODEL_NAME.to_string(),
             complex_spread,
@@ -669,7 +632,7 @@ mod test {
         let cmds = spreadscaler.reconcile().await?;
         assert_eq!(cmds.len(), 3);
         assert!(cmds.contains(&Command::ScaleActor(ScaleActor {
-            actor_id: None,
+            actor_id: actor_id.to_string(),
             reference: actor_reference.to_string(),
             host_id: host_id.to_string(),
             count: 10,
@@ -677,7 +640,7 @@ mod test {
             annotations: spreadscaler_annotations("ComplexOne", spreadscaler.id())
         })));
         assert!(cmds.contains(&Command::ScaleActor(ScaleActor {
-            actor_id: None,
+            actor_id: actor_id.to_string(),
             reference: actor_reference.to_string(),
             host_id: host_id.to_string(),
             count: 8,
@@ -685,7 +648,7 @@ mod test {
             annotations: spreadscaler_annotations("ComplexThree", spreadscaler.id())
         })));
         assert!(cmds.contains(&Command::ScaleActor(ScaleActor {
-            actor_id: None,
+            actor_id: actor_id.to_string(),
             reference: actor_reference.to_string(),
             host_id: host_id.to_string(),
             count: 85,
@@ -767,6 +730,7 @@ mod test {
         let echo_spreadscaler = ActorSpreadScaler::new(
             store.clone(),
             echo_ref.to_string(),
+            echo_id.to_string(),
             lattice_id.to_string(),
             MODEL_NAME.to_string(),
             echo_spread_property,
@@ -776,6 +740,7 @@ mod test {
         let blobby_spreadscaler = ActorSpreadScaler::new(
             store.clone(),
             blobby_ref.to_string(),
+            blobby_id.to_string(),
             lattice_id.to_string(),
             MODEL_NAME.to_string(),
             blobby_spread_property,
@@ -793,7 +758,6 @@ mod test {
                     name: "Echo".to_string(),
                     capabilities: vec![],
                     issuer: "AASDASDASDASD".to_string(),
-                    call_alias: None,
                     instances: HashMap::from_iter([
                         (
                             host_id_one.to_string(),
@@ -843,7 +807,6 @@ mod test {
                     name: "Blobby".to_string(),
                     capabilities: vec![],
                     issuer: "AASDASDASDASD".to_string(),
-                    call_alias: None,
                     instances: HashMap::from_iter([
                         (
                             host_id_one.to_string(),
@@ -962,7 +925,7 @@ mod test {
 
                 assert_eq!(scale2.host_id, host_id_three.to_string());
                 assert_eq!(scale2.count, 103);
-                assert_eq!(scale2.actor_id, Some(echo_id.to_string()));
+                assert_eq!(scale2.actor_id, echo_id.to_string());
             }
             _ => panic!("Unexpected commands in spreadscaler list"),
         }
@@ -986,7 +949,7 @@ mod test {
 
                 assert_eq!(scale2.host_id, host_id_two.to_string());
                 assert_eq!(scale2.count, 3);
-                assert_eq!(scale2.actor_id, Some(blobby_id.to_string()));
+                assert_eq!(scale2.actor_id, blobby_id.to_string());
             }
             _ => panic!("Unexpected commands in spreadscaler list"),
         }
@@ -998,7 +961,7 @@ mod test {
     async fn can_handle_multiple_spread_matches() -> Result<()> {
         let lattice_id = "multiple_spread_matches";
         let actor_reference = "fakecloud.azurecr.io/echo:0.3.4".to_string();
-        let actor_id = "MASDASDASDASDASDADSDDAAASDDD".to_string();
+        let actor_id = "fakecloud_azurecr_io_echo_0_3_4".to_string();
         let host_id = "NASDASDIMAREALHOST";
 
         let store = Arc::new(TestStore::default());
@@ -1026,6 +989,7 @@ mod test {
         let spreadscaler = ActorSpreadScaler::new(
             store.clone(),
             actor_reference.to_string(),
+            actor_id.to_string(),
             lattice_id.to_string(),
             MODEL_NAME.to_string(),
             real_spread,
@@ -1062,7 +1026,6 @@ mod test {
                     name: "Faketor".to_string(),
                     capabilities: vec![],
                     issuer: "AASDASDASDASD".to_string(),
-                    call_alias: None,
                     instances: HashMap::from_iter([(
                         host_id.to_string(),
                         // 10 instances on this host under the first spread
@@ -1081,7 +1044,7 @@ mod test {
 
         // Should be enforcing 10 instances per spread
         assert!(cmds.contains(&Command::ScaleActor(ScaleActor {
-            actor_id: Some("MASDASDASDASDASDADSDDAAASDDD".to_string()),
+            actor_id: "fakecloud_azurecr_io_echo_0_3_4".to_string(),
             reference: actor_reference.to_string(),
             host_id: host_id.to_string(),
             count: 15,
@@ -1089,7 +1052,7 @@ mod test {
             annotations: spreadscaler_annotations("SimpleOne", spreadscaler.id())
         })));
         assert!(cmds.contains(&Command::ScaleActor(ScaleActor {
-            actor_id: Some("MASDASDASDASDASDADSDDAAASDDD".to_string()),
+            actor_id: "fakecloud_azurecr_io_echo_0_3_4".to_string(),
             reference: actor_reference.to_string(),
             host_id: host_id.to_string(),
             count: 5,
@@ -1104,7 +1067,7 @@ mod test {
     async fn calculates_proper_scale_commands() -> Result<()> {
         let lattice_id = "calculates_proper_scale_commands";
         let actor_reference = "fakecloud.azurecr.io/echo:0.3.4".to_string();
-        let actor_id = "MASDASDASDASDASDADSDDAAASDDD".to_string();
+        let actor_id = "fakecloud_azurecr_io_echo_0_3_4".to_string();
         let host_id = "NASDASDIMAREALHOST";
         let host_id2 = "NASDASDIMAREALHOST2";
 
@@ -1119,6 +1082,7 @@ mod test {
         let spreadscaler = ActorSpreadScaler::new(
             store.clone(),
             actor_reference.to_string(),
+            actor_id.to_string(),
             lattice_id.to_string(),
             MODEL_NAME.to_string(),
             real_spread,
@@ -1171,7 +1135,6 @@ mod test {
                     name: "Faketor".to_string(),
                     capabilities: vec![],
                     issuer: "AASDASDASDASD".to_string(),
-                    call_alias: None,
                     instances: HashMap::from_iter([
                         (
                             host_id.to_string(),
@@ -1223,7 +1186,7 @@ mod test {
 
         // Should stop 10 on each host
         assert!(cmds.contains(&Command::ScaleActor(ScaleActor {
-            actor_id: Some(actor_id.clone()),
+            actor_id: actor_id.clone(),
             reference: actor_reference.clone(),
             host_id: host_id.to_string(),
             count: 0,
@@ -1231,7 +1194,7 @@ mod test {
             annotations: spreadscaler_annotations("default", spreadscaler.id())
         })));
         assert!(cmds.contains(&Command::ScaleActor(ScaleActor {
-            actor_id: Some(actor_id.clone()),
+            actor_id: actor_id.clone(),
             reference: actor_reference.clone(),
             host_id: host_id2.to_string(),
             count: 0,
@@ -1304,6 +1267,7 @@ mod test {
         let blobby_spreadscaler = ActorSpreadScaler::new(
             store.clone(),
             blobby_ref.to_string(),
+            blobby_id.to_string(),
             lattice_id.to_string(),
             MODEL_NAME.to_string(),
             blobby_spread_property,
@@ -1320,7 +1284,6 @@ mod test {
                     name: "Blobby".to_string(),
                     capabilities: vec![],
                     issuer: "AASDASDASDASD".to_string(),
-                    call_alias: None,
                     instances: HashMap::from_iter([
                         (
                             host_id_one.to_string(),
@@ -1418,13 +1381,10 @@ mod test {
         // Don't care about these events
         assert!(blobby_spreadscaler
             .handle_event(&Event::ProviderStarted(ProviderStarted {
-                claims: ProviderClaims::default(),
+                claims: None,
+                provider_id: "".to_string(),
                 annotations: BTreeMap::default(),
-                contract_id: "".to_string(),
                 image_ref: "".to_string(),
-                instance_id: "".to_string(),
-                link_name: "".to_string(),
-                public_key: "".to_string(),
                 host_id: host_id_one.to_string()
             }))
             .await?
@@ -1432,10 +1392,7 @@ mod test {
         assert!(blobby_spreadscaler
             .handle_event(&Event::ProviderStopped(ProviderStopped {
                 annotations: BTreeMap::default(),
-                contract_id: "".to_string(),
-                instance_id: "".to_string(),
-                link_name: "".to_string(),
-                public_key: "".to_string(),
+                provider_id: "".to_string(),
                 reason: "".to_string(),
                 host_id: host_id_two.to_string()
             }))
@@ -1443,13 +1400,13 @@ mod test {
             .is_empty());
         assert!(blobby_spreadscaler
             .handle_event(&Event::LinkdefSet(LinkdefSet {
-                linkdef: Linkdef::default()
+                linkdef: InterfaceLinkDefinition::default()
             }))
             .await?
             .is_empty());
         assert!(blobby_spreadscaler
             .handle_event(&Event::LinkdefDeleted(LinkdefDeleted {
-                linkdef: Linkdef::default()
+                linkdef: InterfaceLinkDefinition::default()
             }))
             .await?
             .is_empty());
@@ -1473,7 +1430,7 @@ mod test {
 
                 assert_eq!(scale2.host_id, host_id_two.to_string());
                 assert_eq!(scale2.count, 3);
-                assert_eq!(scale2.actor_id, Some(blobby_id.to_string()));
+                assert_eq!(scale2.actor_id, blobby_id.to_string());
             }
             _ => panic!("Unexpected commands in spreadscaler list"),
         }
@@ -1516,7 +1473,7 @@ mod test {
 
                 assert_eq!(scale2.host_id, host_id_two.to_string());
                 assert_eq!(scale2.count, 3);
-                assert_eq!(scale2.actor_id, Some(blobby_id.to_string()));
+                assert_eq!(scale2.actor_id, blobby_id.to_string());
             }
             _ => panic!("Unexpected commands in spreadscaler list"),
         }
