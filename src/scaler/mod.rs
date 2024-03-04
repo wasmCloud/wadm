@@ -10,10 +10,7 @@ use tracing::{instrument, trace, Instrument};
 
 use crate::{
     commands::Command,
-    events::{
-        ActorsStartFailed, ActorsStarted, ActorsStopped, Event, Linkdef, LinkdefSet,
-        ProviderStartFailed, ProviderStarted,
-    },
+    events::{Event, ProviderStartFailed, ProviderStarted},
     model::TraitProperty,
     publisher::Publisher,
     server::StatusInfo,
@@ -344,109 +341,33 @@ where
 fn evt_matches_expected(incoming: &Event, expected: &Event) -> bool {
     match (incoming, expected) {
         (
-            // NOTE(brooksmtownsend): It may be worth it to simply use the count here as
-            // extra information. If we receive the exact event but the count is different, that
-            // may mean some instances failed to start on that host. The cause for this isn't
-            // well known but if we find ourselves missing expected events we should revisit
-            Event::ActorsStarted(ActorsStarted {
-                annotations: a1,
-                image_ref: i1,
-                count: c1,
-                host_id: h1,
-                ..
-            }),
-            Event::ActorsStarted(ActorsStarted {
-                annotations: a2,
-                image_ref: i2,
-                count: c2,
-                host_id: h2,
-                ..
-            }),
-        ) => a1 == a2 && i1 == i2 && c1 == c2 && h1 == h2,
-        (
-            Event::ActorsStartFailed(ActorsStartFailed {
-                annotations: a1,
-                image_ref: i1,
-                host_id: h1,
-                ..
-            }),
-            Event::ActorsStartFailed(ActorsStartFailed {
-                annotations: a2,
-                image_ref: i2,
-                host_id: h2,
-                ..
-            }),
-        ) => a1 == a2 && i1 == i2 && h1 == h2,
-        (
-            Event::ActorsStopped(ActorsStopped {
-                annotations: a1,
-                public_key: p1,
-                count: c1,
-                host_id: h1,
-                ..
-            }),
-            Event::ActorsStopped(ActorsStopped {
-                annotations: a2,
-                public_key: p2,
-                count: c2,
-                host_id: h2,
-                ..
-            }),
-        ) => a1 == a2 && p1 == p2 && c1 == c2 && h1 == h2,
-        (
             Event::ProviderStarted(ProviderStarted {
                 annotations: a1,
                 image_ref: i1,
-                link_name: l1,
                 host_id: h1,
+                provider_id: p1,
                 ..
             }),
             Event::ProviderStarted(ProviderStarted {
                 annotations: a2,
                 image_ref: i2,
-                link_name: l2,
                 host_id: h2,
+                provider_id: p2,
                 ..
             }),
-        ) => a1 == a2 && i1 == i2 && l1 == l2 && h1 == h2,
-        // NOTE(brooksmtownsend): This is a little less information than we really need here.
-        // Image reference + annotations would be nice
+        ) => a1 == a2 && i1 == i2 && p1 == p2 && h1 == h2,
         (
             Event::ProviderStartFailed(ProviderStartFailed {
-                link_name: l1,
+                provider_id: p1,
                 host_id: h1,
                 ..
             }),
             Event::ProviderStartFailed(ProviderStartFailed {
-                link_name: l2,
+                provider_id: p2,
                 host_id: h2,
                 ..
             }),
-        ) => l1 == l2 && h1 == h2,
-        (
-            Event::LinkdefSet(LinkdefSet {
-                linkdef:
-                    Linkdef {
-                        actor_id: a1,
-                        contract_id: c1,
-                        link_name: l1,
-                        provider_id: p1,
-                        values: v1,
-                        ..
-                    },
-            }),
-            Event::LinkdefSet(LinkdefSet {
-                linkdef:
-                    Linkdef {
-                        actor_id: a2,
-                        contract_id: c2,
-                        link_name: l2,
-                        provider_id: p2,
-                        values: v2,
-                        ..
-                    },
-            }),
-        ) => a1 == a2 && c1 == c2 && l1 == l2 && p1 == p2 && v1 == v2,
+        ) => p1 == p2 && h1 == h2,
         _ => false,
     }
 }

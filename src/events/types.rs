@@ -11,7 +11,7 @@ use std::{
 use cloudevents::{AttributesReader, Data, Event as CloudEvent, EventBuilder, EventBuilderV10};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use wasmcloud_control_interface::{ActorDescription, LabelsMap, ProviderDescriptions};
+use wasmcloud_control_interface::{ActorDescription, InterfaceLinkDefinition, ProviderDescription};
 
 use crate::model::Manifest;
 
@@ -363,11 +363,10 @@ event_impl!(
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct ActorScaled {
     pub annotations: BTreeMap<String, String>,
-    pub claims: ActorClaims,
+    pub claims: Option<ActorClaims>,
     pub image_ref: String,
     pub max_instances: usize,
-    // TODO: Parse as nkey?
-    pub public_key: String,
+    pub actor_id: String,
     #[serde(default)]
     pub host_id: String,
 }
@@ -382,10 +381,10 @@ event_impl!(
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct ActorScaleFailed {
     pub annotations: BTreeMap<String, String>,
+    pub claims: Option<ActorClaims>,
     pub image_ref: String,
     pub max_instances: usize,
-    // TODO: Parse as nkey?
-    pub public_key: String,
+    pub actor_id: String,
     #[serde(default)]
     pub host_id: String,
     pub error: String,
@@ -401,14 +400,11 @@ event_impl!(
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct ProviderStarted {
     pub annotations: BTreeMap<String, String>,
-    pub claims: ProviderClaims,
-    pub contract_id: String,
+    #[serde(default)]
+    /// Optional provider claims
+    pub claims: Option<ProviderClaims>,
     pub image_ref: String,
-    // TODO: parse as UUID?
-    pub instance_id: String,
-    pub link_name: String,
-    // TODO: parse as nkey?
-    pub public_key: String,
+    pub provider_id: String,
     #[serde(default)]
     pub host_id: String,
 }
@@ -423,7 +419,7 @@ event_impl!(
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct ProviderStartFailed {
     pub error: String,
-    pub link_name: String,
+    pub provider_id: String,
     pub provider_ref: String,
     #[serde(default)]
     pub host_id: String,
@@ -438,18 +434,8 @@ event_impl!(
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct ProviderStopped {
-    #[serde(default)]
-    // TODO(thomastaylor312): Yep, there was a spelling bug in the host is 0.62.1. Revert this once
-    // 0.62.2 is out
-    #[serde(rename = "annotaions")]
     pub annotations: BTreeMap<String, String>,
-    pub contract_id: String,
-    // TODO: parse as UUID?
-    pub instance_id: String,
-    pub link_name: String,
-    // TODO: parse as nkey?
-    pub public_key: String,
-    // We should probably do an actual enum here, but elixir definitely isn't doing it
+    pub provider_id: String,
     pub reason: String,
     #[serde(default)]
     pub host_id: String,
@@ -510,7 +496,7 @@ event_impl!(
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct LinkdefSet {
     #[serde(flatten)]
-    pub linkdef: Linkdef,
+    pub linkdef: InterfaceLinkDefinition,
 }
 
 event_impl!(LinkdefSet, "com.wasmcloud.lattice.linkdef_set");
@@ -518,7 +504,7 @@ event_impl!(LinkdefSet, "com.wasmcloud.lattice.linkdef_set");
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct LinkdefDeleted {
     #[serde(flatten)]
-    pub linkdef: Linkdef,
+    pub linkdef: InterfaceLinkDefinition,
 }
 
 event_impl!(LinkdefDeleted, "com.wasmcloud.lattice.linkdef_deleted");
@@ -554,28 +540,12 @@ event_impl!(
     id
 );
 
-// TODO(#235): Remove once wasmCloud v0.82 is released
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
-#[serde(untagged)]
-pub enum BackwardsCompatActors {
-    V81(HashMap<String, usize>),
-    V82(Vec<ActorDescription>),
-}
-
-// TODO(#235): Remove once wasmCloud v0.82 is released
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
-#[serde(untagged)]
-pub enum BackwardsCompatProviders {
-    V81(Vec<ProviderInfo>),
-    V82(ProviderDescriptions),
-}
-
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct HostHeartbeat {
     /// Actors running on this host.
-    pub actors: BackwardsCompatActors,
+    pub actors: Vec<ActorDescription>,
     /// Providers running on this host
-    pub providers: BackwardsCompatProviders,
+    pub providers: Vec<ProviderDescription>,
     /// The host's unique ID
     #[serde(default, alias = "id")]
     pub host_id: String,
@@ -585,7 +555,7 @@ pub struct HostHeartbeat {
     /// The host's human-readable friendly name
     pub friendly_name: String,
     /// The host's labels
-    pub labels: LabelsMap,
+    pub labels: HashMap<String, String>,
     /// The host version
     pub version: semver::Version,
     /// The host uptime in human-readable form

@@ -35,7 +35,7 @@ use crate::{
 use super::{
     daemonscaler::{provider::ProviderDaemonScaler, ActorDaemonScaler},
     spreadscaler::{
-        link::LinkScaler,
+        link::{LinkScaler, LinkScalerConfig},
         provider::{ProviderSpreadConfig, ProviderSpreadScaler},
     },
     BackoffAwareScaler,
@@ -581,11 +581,13 @@ where
         match &component.properties {
             Properties::Actor { properties: props } => {
                 scalers.extend(traits.unwrap_or(&EMPTY_TRAIT_VEC).iter().filter_map(|trt| {
+                    let actor_id = component_id(name, props.id.as_ref(), &props.image);
                     match (trt.trait_type.as_str(), &trt.properties) {
                         (SPREADSCALER_TRAIT, TraitProperty::SpreadScaler(p)) => {
                             Some(Box::new(ActorSpreadScaler::new(
                                 snapshot_data.clone(),
                                 props.image.to_owned(),
+                                actor_id,
                                 lattice_id.to_owned(),
                                 name.to_owned(),
                                 p.to_owned(),
@@ -596,6 +598,7 @@ where
                             Some(Box::new(ActorDaemonScaler::new(
                                 snapshot_data.clone(),
                                 props.image.to_owned(),
+                                actor_id,
                                 lattice_id.to_owned(),
                                 name.to_owned(),
                                 p.to_owned(),
@@ -603,6 +606,7 @@ where
                             )) as BoxedScaler)
                         }
                         (LINKDEF_TRAIT, TraitProperty::Linkdef(p)) => {
+                            // TODO: look for actor or provider components
                             components
                                 .iter()
                                 .find_map(|component| match &component.properties {
@@ -611,13 +615,32 @@ where
                                     {
                                         Some(Box::new(LinkScaler::new(
                                             snapshot_data.clone(),
-                                            props.image.to_owned(),
-                                            cappy.image.to_owned(),
-                                            cappy.contract.to_owned(),
-                                            cappy.link_name.to_owned(),
-                                            lattice_id.to_owned(),
-                                            name.to_owned(),
-                                            p.values.to_owned(),
+                                            LinkScalerConfig {
+                                                source_id: actor_id.to_string(),
+                                                target: component_id(
+                                                    name,
+                                                    cappy.id.as_ref(),
+                                                    &cappy.image,
+                                                ),
+                                                wit_namespace: p.namespace.to_owned(),
+                                                wit_package: p.package.to_owned(),
+                                                wit_interfaces: p.interfaces.to_owned(),
+                                                name: p.name.to_owned().unwrap_or_else(|| {
+                                                    DEFAULT_LINK_NAME.to_string()
+                                                }),
+                                                lattice_id: lattice_id.to_owned(),
+                                                model_name: name.to_owned(),
+                                                source_config: p
+                                                    .source_config
+                                                    .iter()
+                                                    .map(|c| c.name.clone())
+                                                    .collect::<Vec<String>>(),
+                                                target_config: p
+                                                    .target_config
+                                                    .iter()
+                                                    .map(|c| c.name.clone())
+                                                    .collect::<Vec<String>>(),
+                                            },
                                             snapshot_data.clone(),
                                         ))
                                             as BoxedScaler)
@@ -630,6 +653,7 @@ where
                 }))
             }
             Properties::Capability { properties: props } => {
+                let provider_id = component_id(name, props.id.as_ref(), &props.image);
                 if let Some(traits) = traits {
                     scalers.extend(traits.iter().filter_map(|trt| {
                         match (trt.trait_type.as_str(), &trt.properties) {
@@ -639,14 +663,9 @@ where
                                         snapshot_data.clone(),
                                         ProviderSpreadConfig {
                                             lattice_id: lattice_id.to_owned(),
+                                            provider_id: provider_id.to_owned(),
                                             provider_reference: props.image.to_owned(),
                                             spread_config: p.to_owned(),
-                                            provider_contract_id: props.contract.to_owned(),
-                                            provider_link_name: props
-                                                .link_name
-                                                .as_deref()
-                                                .unwrap_or(DEFAULT_LINK_NAME)
-                                                .to_owned(),
                                             model_name: name.to_owned(),
                                             provider_config: props.config.to_owned(),
                                         },
@@ -665,14 +684,9 @@ where
                                         snapshot_data.clone(),
                                         ProviderSpreadConfig {
                                             lattice_id: lattice_id.to_owned(),
+                                            provider_id: provider_id.to_owned(),
                                             provider_reference: props.image.to_owned(),
                                             spread_config: p.to_owned(),
-                                            provider_contract_id: props.contract.to_owned(),
-                                            provider_link_name: props
-                                                .link_name
-                                                .as_deref()
-                                                .unwrap_or(DEFAULT_LINK_NAME)
-                                                .to_owned(),
                                             model_name: name.to_owned(),
                                             provider_config: props.config.to_owned(),
                                         },
@@ -696,17 +710,12 @@ where
                             snapshot_data.clone(),
                             ProviderSpreadConfig {
                                 lattice_id: lattice_id.to_owned(),
+                                provider_id,
                                 provider_reference: props.image.to_owned(),
                                 spread_config: SpreadScalerProperty {
                                     instances: 1,
                                     spread: vec![],
                                 },
-                                provider_contract_id: props.contract.to_owned(),
-                                provider_link_name: props
-                                    .link_name
-                                    .as_deref()
-                                    .unwrap_or(DEFAULT_LINK_NAME)
-                                    .to_owned(),
                                 model_name: name.to_owned(),
                                 provider_config: props.config.to_owned(),
                             },
@@ -723,4 +732,34 @@ where
         }
     }
     scalers
+}
+
+/// Based on the name of the model and the optionally provided ID, returns a unique ID for the
+/// component that is a sanitized version of the component reference and model name, separated
+/// by a dash.
+pub(crate) fn component_id(
+    model_name: &str,
+    component_id: Option<&String>,
+    component_ref: &str,
+) -> String {
+    if let Some(id) = component_id {
+        id.to_owned()
+    } else {
+        format!("{model_name}-{component_ref}")
+            .to_lowercase()
+            .replace(|c: char| !c.is_ascii_alphanumeric(), "_")
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::scaler::manager::component_id;
+
+    #[test]
+    fn compute_proper_component_id() {
+        assert_eq!(
+            component_id("mymodel", None, "wasmcloud.azurecr.io/echo:0.3.4"),
+            "mymodel-wasmcloud_azurecr_io_echo_0_3_4"
+        );
+    }
 }
