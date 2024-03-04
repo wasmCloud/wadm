@@ -208,7 +208,7 @@ where
         Ok(())
     }
 
-    #[instrument(level = "debug", skip(self, actor), fields(actor_id = %actor.public_key, host_id = %actor.host_id))]
+    #[instrument(level = "debug", skip(self, actor), fields(actor_id = %actor.actor_id, host_id = %actor.host_id))]
     async fn handle_actor_scaled(
         &self,
         lattice_id: &str,
@@ -220,11 +220,7 @@ where
         // Update actor count in the actor state, adding to the state if it didn't exist or removing
         // if the scale is down to zero.
         let mut actor_data = Actor::from(actor);
-        if let Some(mut current) = self
-            .store
-            .get::<Actor>(lattice_id, &actor.public_key)
-            .await?
-        {
+        if let Some(mut current) = self.store.get::<Actor>(lattice_id, &actor.actor_id).await? {
             trace!(actor = ?current, "Found existing actor data");
 
             match current.instances.get_mut(&actor.host_id) {
@@ -263,10 +259,10 @@ where
             trace!(host = ?host, "Found existing host data");
 
             if actor.max_instances == 0 {
-                host.actors.remove(&actor.public_key);
+                host.actors.remove(&actor.actor_id);
             } else {
                 host.actors
-                    .entry(actor.public_key.clone())
+                    .entry(actor.actor_id.clone())
                     .and_modify(|count| *count = actor.max_instances)
                     .or_insert(actor.max_instances);
             }
@@ -278,12 +274,12 @@ where
 
         if actor_data.instances.is_empty() {
             self.store
-                .delete::<Actor>(lattice_id, &actor.public_key)
+                .delete::<Actor>(lattice_id, &actor.actor_id)
                 .await
                 .map_err(anyhow::Error::from)
         } else {
             self.store
-                .store(lattice_id, actor.public_key.clone(), actor_data)
+                .store(lattice_id, actor.actor_id.clone(), actor_data)
                 .await
                 .map_err(anyhow::Error::from)
         }
@@ -296,72 +292,20 @@ where
         host: &HostHeartbeat,
     ) -> anyhow::Result<()> {
         debug!("Updating store with current host heartbeat information");
-        match (&host.actors, &host.providers) {
-            // New heartbeat format, skip the inventory request and update the store
-            (BackwardsCompatActors::V82(actors), BackwardsCompatProviders::V82(providers)) => {
-                let host_data = Host::from(host);
-                self.store
-                    .store(lattice_id, host.host_id.clone(), host_data)
-                    .await?;
+        let host_data = Host::from(host);
+        self.store
+            .store(lattice_id, host.host_id.clone(), host_data)
+            .await?;
 
-                // NOTE: We can return an error here and then nack because we'll just reupdate the host data
-                // with the exact same host heartbeat entry. There is no possibility of a duplicate
-                self.heartbeat_provider_update(lattice_id, host, providers)
-                    .await?;
+        // NOTE: We can return an error here and then nack because we'll just reupdate the host data
+        // with the exact same host heartbeat entry. There is no possibility of a duplicate
+        self.heartbeat_provider_update(lattice_id, host, &host.providers)
+            .await?;
 
-                // NOTE: We can return an error here and then nack because we'll just reupdate the host data
-                // with the exact same host heartbeat entry. There is no possibility of a duplicate
-                self.heartbeat_actor_update(lattice_id, host, actors)
-                    .await?;
-            }
-            // Old heartbeat format, request inventory for supplemental information and update the store
-            _ => {
-                debug!("Requesting host inventory to supplement heartbeat");
-                // NOTE(brooksmtownsend): Until wasmCloud 0.82, the heartbeat does not tell us the instance IDs or annotations
-                // of actors, or the annotations of providers. We need to make an inventory request to get this
-                // information so we can properly update state.
-                let host_inventory = self.ctl_client.get_inventory(&host.host_id).await?;
-                let mut host_data = Host::from(host);
-                // Supplement host provider annotation data with annotations from inventory
-                host_data.providers = host_data
-                    .providers
-                    .into_iter()
-                    .map(|mut info| {
-                        if info.annotations.is_empty() {
-                            match host_inventory.providers.iter().find(|p| {
-                                p.id == info.public_key
-                                    && p.contract_id == info.contract_id
-                                    && p.link_name == info.link_name
-                            }) {
-                                Some(provider) if provider.annotations.is_some() => {
-                                    info.annotations = provider
-                                        .annotations
-                                        .clone()
-                                        .map(|annotations| annotations.into_iter().collect())
-                                        .unwrap_or_default();
-                                }
-                                _ => (),
-                            }
-                        }
-
-                        info
-                    })
-                    .collect();
-                self.store
-                    .store(lattice_id, host.host_id.clone(), host_data)
-                    .await?;
-
-                // NOTE: We can return an error here and then nack because we'll just reupdate the host data
-                // with the exact same host heartbeat entry. There is no possibility of a duplicate
-                self.heartbeat_provider_update(lattice_id, host, &host_inventory.providers)
-                    .await?;
-
-                // NOTE: We can return an error here and then nack because we'll just reupdate the host data
-                // with the exact same host heartbeat entry. There is no possibility of a duplicate
-                self.heartbeat_actor_update(lattice_id, host, &host_inventory.actors)
-                    .await?;
-            }
-        }
+        // NOTE: We can return an error here and then nack because we'll just reupdate the host data
+        // with the exact same host heartbeat entry. There is no possibility of a duplicate
+        self.heartbeat_actor_update(lattice_id, host, &host.actors)
+            .await?;
 
         Ok(())
     }
@@ -433,7 +377,7 @@ where
             .providers
             .into_iter()
             .filter_map(|info| {
-                let key = crate::storage::provider_id(&info.public_key, &info.link_name);
+                let key = info.provider_id;
                 // NOTE: We can do this without cloning, but it led to some confusing code involving
                 // `remove` from the owned `all_providers` map. This is more readable at the expense of
                 // a clone for few providers
@@ -475,9 +419,8 @@ where
         level = "debug",
         skip(self, provider),
         fields(
-            public_key = %provider.public_key,
-            link_name = %provider.link_name,
-            contract_id = %provider.contract_id
+            provider_id = %provider.provider_id,
+            image_ref = %provider.image_ref,
         )
     )]
     async fn handle_provider_started(
@@ -486,7 +429,7 @@ where
         provider: &ProviderStarted,
     ) -> anyhow::Result<()> {
         debug!("Handling provider started event");
-        let id = crate::storage::provider_id(&provider.public_key, &provider.link_name);
+        let id = &provider.provider_id;
         trace!("Fetching current data from store");
         let mut needs_host_update = false;
         let provider_data = if let Some(mut current) =
@@ -530,9 +473,8 @@ where
             trace!(host = ?host, "Found existing host data");
 
             host.providers.replace(ProviderInfo {
-                contract_id: provider.contract_id.to_owned(),
-                link_name: provider.link_name.to_owned(),
-                public_key: provider.public_key.to_owned(),
+                provider_id: id.to_owned(),
+                provider_ref: provider.image_ref.to_owned(),
                 annotations: provider.annotations.to_owned(),
             });
 
@@ -543,7 +485,7 @@ where
 
         debug!("Storing updated provider in store");
         self.store
-            .store(lattice_id, id, provider_data)
+            .store(lattice_id, id.to_owned(), provider_data)
             .await
             .map_err(anyhow::Error::from)
     }
@@ -552,9 +494,7 @@ where
         level = "debug",
         skip(self, provider),
         fields(
-            public_key = %provider.public_key,
-            link_name = %provider.link_name,
-            contract_id = %provider.contract_id
+            provider_id = %provider.provider_id,
         )
     )]
     async fn handle_provider_stopped(
@@ -563,7 +503,7 @@ where
         provider: &ProviderStopped,
     ) -> anyhow::Result<()> {
         debug!("Handling provider stopped event");
-        let id = crate::storage::provider_id(&provider.public_key, &provider.link_name);
+        let id = &provider.provider_id;
         trace!("Fetching current data from store");
 
         // Remove provider from host map
@@ -575,9 +515,9 @@ where
             trace!(host = ?host, "Found existing host data");
 
             host.providers.remove(&ProviderInfo {
-                contract_id: provider.contract_id.to_owned(),
-                link_name: provider.link_name.to_owned(),
-                public_key: provider.public_key.to_owned(),
+                provider_id: provider.provider_id.to_owned(),
+                // We do not hash based on provider reference, so it can be blank here
+                provider_ref: "".to_string(),
                 // We don't have this information, nor do we need it since we don't hash based
                 // on annotations
                 annotations: BTreeMap::default(),
@@ -602,7 +542,7 @@ where
             } else {
                 debug!("Storing updated provider");
                 self.store
-                    .store(lattice_id, id, current)
+                    .store(lattice_id, id.to_owned(), current)
                     .await
                     .map_err(anyhow::Error::from)
             }
@@ -616,8 +556,7 @@ where
         level = "debug",
         skip(self, provider),
         fields(
-            public_key = %provider.public_key,
-            link_name = %provider.link_name,
+            provider_id = %provider.provider_id,
         )
     )]
     async fn handle_provider_health_check(
@@ -629,14 +568,13 @@ where
     ) -> anyhow::Result<()> {
         debug!("Handling provider health check event");
         trace!("Getting current provider");
-        let id = crate::storage::provider_id(&provider.public_key, &provider.link_name);
+        let id = &provider.provider_id;
         let mut current: Provider = match self.store.get(lattice_id, &id).await? {
             Some(p) => p,
             None => {
                 trace!("Didn't find provider in store. Creating");
                 Provider {
-                    id: provider.public_key.clone(),
-                    link_name: provider.link_name.clone(),
+                    id: id.clone(),
                     ..Default::default()
                 }
             }
@@ -661,7 +599,7 @@ where
         // make it update any empty references with the data from the refmap
 
         self.store
-            .store(lattice_id, id, current)
+            .store(lattice_id, id.to_owned(), current)
             .await
             .map_err(anyhow::Error::from)
     }
@@ -678,34 +616,26 @@ where
         Ok(instance_map
             .into_iter()
             .map(|actor_description| {
-                let instances = actor_description
-                    .instances
-                    .into_iter()
-                    .map(|instance| {
-                        let annotations = instance
-                            .annotations
-                            .map(|a| a.into_iter().collect())
-                            .unwrap_or_default();
-                        WadmActorInfo {
-                            count: instance.max_concurrent as usize,
-                            annotations,
-                        }
-                    })
-                    .collect();
+                let instance = HashSet::from_iter([WadmActorInfo {
+                    count: actor_description.max_instances as usize,
+                    annotations: actor_description
+                        .annotations
+                        .map(|a| a.into_iter().collect())
+                        .unwrap_or_default(),
+                }]);
                 if let Some(actor) = actors.get(&actor_description.id) {
                     // Construct modified Actor with new instances included
                     let mut new_instances = actor.instances.clone();
-                    new_instances.insert(host_id.to_owned(), instances);
+                    new_instances.insert(host_id.to_owned(), instance);
                     let actor = Actor {
                         instances: new_instances,
-                        reference: actor_description
-                            .image_ref
-                            .unwrap_or(actor.reference.clone()),
+                        reference: actor_description.image_ref,
                         name: actor_description.name.unwrap_or(actor.name.clone()),
                         ..actor.clone()
                     };
 
                     (actor_description.id, actor)
+                    // TODO(brooksmtownsend): missing claims isn't dire anymore
                 } else if let Some(claim) = claims.get(&actor_description.id) {
                     (
                         actor_description.id.clone(),
@@ -714,8 +644,8 @@ where
                             name: claim.name.to_owned(),
                             capabilities: claim.capabilities.to_owned(),
                             issuer: claim.issuer.to_owned(),
-                            instances: HashMap::from_iter([(host_id.to_owned(), instances)]),
-                            reference: actor_description.image_ref.unwrap_or_default(),
+                            instances: HashMap::from_iter([(host_id.to_owned(), instance)]),
+                            reference: actor_description.image_ref,
                             ..Default::default()
                         },
                     )
@@ -729,8 +659,8 @@ where
                             name: "".to_owned(),
                             capabilities: Vec::new(),
                             issuer: "".to_owned(),
-                            instances: HashMap::from_iter([(host_id.to_owned(), instances)]),
-                            reference: actor_description.image_ref.unwrap_or_default(),
+                            instances: HashMap::from_iter([(host_id.to_owned(), instance)]),
+                            reference: actor_description.image_ref,
                             ..Default::default()
                         },
                     )
@@ -760,10 +690,7 @@ where
                     // If the actor matches what the heartbeat says, we return None, otherwise we return Some(actor_description).
                     .map(|actor| {
                         // If the stored reference isn't what we receive on the heartbeat, update
-                        actor_description
-                            .image_ref
-                            .as_ref()
-                            .is_some_and(|actor_ref| &actor.reference == actor_ref)
+                        actor_description.image_ref == actor.reference
                             && actor
                                 .instances
                                 .get(&host.host_id)
@@ -773,20 +700,18 @@ where
                                         return false;
                                     }
                                     // Update if annotations or counts are different
-                                    actor_description.instances.iter().all(|instance| {
-                                        let annotations: BTreeMap<String, String> = instance
-                                            .annotations
-                                            .clone()
-                                            .map(|a| a.into_iter().collect())
-                                            .unwrap_or_default();
-                                        store_instances.get(&annotations).map_or(
-                                            false,
-                                            |store_instance| {
-                                                instance.max_concurrent as usize
-                                                    == store_instance.count
-                                            },
-                                        )
-                                    })
+                                    let annotations: BTreeMap<String, String> = actor_description
+                                        .annotations
+                                        .clone()
+                                        .map(|a| a.into_iter().collect())
+                                        .unwrap_or_default();
+                                    store_instances.get(&annotations).map_or(
+                                        false,
+                                        |store_instance| {
+                                            actor_description.max_instances as usize
+                                                == store_instance.count
+                                        },
+                                    )
                                 })
                                 .unwrap_or(false)
                     })
@@ -821,19 +746,12 @@ where
         debug!("Fetching current provider state");
         let providers = self.store.list::<Provider>(lattice_id).await?;
         let providers_to_update = inventory_providers.iter().filter_map(|info| {
-            let provider_id = crate::storage::provider_id(&info.id, &info.link_name);
             // NOTE: We can do this without cloning, but it led to some confusing code involving
             // `remove` from the owned `providers` map. This is more readable at the expense of
             // a clone for few providers
-            match providers.get(&provider_id).cloned() {
+            match providers.get(&info.id).cloned() {
                 Some(mut prov) => {
                     let mut has_changes = false;
-                    // A health check from a provider we hadn't registered doesn't have a contract
-                    // id, so check if that needs to be set
-                    if prov.contract_id.is_empty() {
-                        prov.contract_id = info.contract_id.clone();
-                        has_changes = true;
-                    }
                     if prov.name.is_empty() {
                         prov.name = info.name.clone().unwrap_or_default();
                         has_changes = true;
@@ -847,7 +765,7 @@ where
                         has_changes = true;
                     }
                     if has_changes {
-                        Some((provider_id, prov))
+                        Some((info.id.clone(), prov))
                     } else {
                         None
                     }
@@ -856,11 +774,9 @@ where
                     // If we don't already have the provider, create a basic one so we know it
                     // exists at least. The next provider heartbeat will fix it for us
                     Some((
-                        provider_id,
+                        info.id.clone(),
                         Provider {
                             id: info.id.clone(),
-                            contract_id: info.contract_id.clone(),
-                            link_name: info.link_name.clone(),
                             hosts: [(heartbeat.host_id.clone(), ProviderStatus::default())].into(),
                             name: info.name.clone().unwrap_or_default(),
                             reference: info.image_ref.clone().unwrap_or_default(),
@@ -1253,9 +1169,7 @@ mod test {
     use std::sync::Arc;
 
     use tokio::sync::RwLock;
-    use wasmcloud_control_interface::{
-        ActorDescription, ActorInstance, HostInventory, ProviderDescription,
-    };
+    use wasmcloud_control_interface::{ActorDescription, HostInventory, ProviderDescription};
 
     use super::*;
 
@@ -1467,16 +1381,16 @@ mod test {
         /***********************************************************/
 
         let actor1_scaled = ActorScaled {
-            claims: ActorClaims {
+            claims: Some(ActorClaims {
                 call_alias: Some("Grand Moff".into()),
                 capabilites: vec!["empire:command".into()],
                 issuer: "Sheev Palpatine".into(),
                 name: "Grand Moff Tarkin".into(),
                 version: Some("0.1.0".into()),
                 ..Default::default()
-            },
+            }),
             image_ref: "coruscant.galactic.empire/tarkin:0.1.0".into(),
-            public_key: "TARKIN".into(),
+            actor_id: "TARKIN".into(),
             host_id: host1_id.clone(),
             annotations: BTreeMap::default(),
             max_instances: 500,
@@ -1490,7 +1404,7 @@ mod test {
         let hosts = store.list::<Host>(lattice_id).await.unwrap();
         let host = hosts.get(&host1_id).expect("Host should exist in state");
         assert_eq!(
-            host.actors.get(&actor1_scaled.public_key),
+            host.actors.get(&actor1_scaled.actor_id),
             Some(&500),
             "Actor count in host should be updated"
         );
@@ -1501,16 +1415,16 @@ mod test {
         );
 
         let actor1_scaled = ActorScaled {
-            claims: ActorClaims {
+            claims: Some(ActorClaims {
                 call_alias: Some("Grand Moff".into()),
                 capabilites: vec!["empire:command".into()],
                 issuer: "Sheev Palpatine".into(),
                 name: "Grand Moff Tarkin".into(),
                 version: Some("0.1.0".into()),
                 ..Default::default()
-            },
+            }),
             image_ref: "coruscant.galactic.empire/tarkin:0.1.0".into(),
-            public_key: "TARKIN".into(),
+            actor_id: "TARKIN".into(),
             host_id: host1_id.clone(),
             annotations: BTreeMap::default(),
             max_instances: 200,
@@ -1524,7 +1438,7 @@ mod test {
         let hosts = store.list::<Host>(lattice_id).await.unwrap();
         let host = hosts.get(&host1_id).expect("Host should exist in state");
         assert_eq!(
-            host.actors.get(&actor1_scaled.public_key),
+            host.actors.get(&actor1_scaled.actor_id),
             Some(&200),
             "Actor count in host should be updated"
         );
@@ -1535,16 +1449,16 @@ mod test {
         );
 
         let actor1_scaled = ActorScaled {
-            claims: ActorClaims {
+            claims: Some(ActorClaims {
                 call_alias: Some("Grand Moff".into()),
                 capabilites: vec!["empire:command".into()],
                 issuer: "Sheev Palpatine".into(),
                 name: "Grand Moff Tarkin".into(),
                 version: Some("0.1.0".into()),
                 ..Default::default()
-            },
+            }),
             image_ref: "coruscant.galactic.empire/tarkin:0.1.0".into(),
-            public_key: "TARKIN".into(),
+            actor_id: "TARKIN".into(),
             host_id: host1_id.clone(),
             annotations: BTreeMap::default(),
             max_instances: 0,
@@ -1558,7 +1472,7 @@ mod test {
         let hosts = store.list::<Host>(lattice_id).await.unwrap();
         let host = hosts.get(&host1_id).expect("Host should exist in state");
         assert_eq!(
-            host.actors.get(&actor1_scaled.public_key),
+            host.actors.get(&actor1_scaled.actor_id),
             None,
             "Actor in host should be removed"
         );
@@ -1569,16 +1483,16 @@ mod test {
         );
 
         let actor1_scaled = ActorScaled {
-            claims: ActorClaims {
+            claims: Some(ActorClaims {
                 call_alias: Some("Grand Moff".into()),
                 capabilites: vec!["empire:command".into()],
                 issuer: "Sheev Palpatine".into(),
                 name: "Grand Moff Tarkin".into(),
                 version: Some("0.1.0".into()),
                 ..Default::default()
-            },
+            }),
             image_ref: "coruscant.galactic.empire/tarkin:0.1.0".into(),
-            public_key: "TARKIN".into(),
+            actor_id: "TARKIN".into(),
             host_id: host1_id.clone(),
             annotations: BTreeMap::default(),
             max_instances: 1,
@@ -1592,7 +1506,7 @@ mod test {
         let hosts = store.list::<Host>(lattice_id).await.unwrap();
         let host = hosts.get(&host1_id).expect("Host should exist in state");
         assert_eq!(
-            host.actors.get(&actor1_scaled.public_key),
+            host.actors.get(&actor1_scaled.actor_id),
             Some(&1),
             "Actor in host should be readded from scratch"
         );
@@ -1607,35 +1521,29 @@ mod test {
         /***********************************************************/
 
         let provider1 = ProviderStarted {
-            claims: ProviderClaims {
+            claims: Some(ProviderClaims {
                 issuer: "Sheev Palpatine".into(),
                 name: "Force Choke".into(),
                 version: "0.1.0".into(),
                 ..Default::default()
-            },
+            }),
             image_ref: "coruscant.galactic.empire/force_choke:0.1.0".into(),
-            public_key: "CHOKE".into(),
+            provider_id: "CHOKE".into(),
             host_id: host1_id.clone(),
             annotations: BTreeMap::default(),
-            instance_id: "1".to_string(),
-            contract_id: "force_user:sith".into(),
-            link_name: "default".into(),
         };
 
         let provider2 = ProviderStarted {
-            claims: ProviderClaims {
+            claims: Some(ProviderClaims {
                 issuer: "Sheev Palpatine".into(),
                 name: "Death Star Laser".into(),
                 version: "0.1.0".into(),
                 ..Default::default()
-            },
+            }),
             image_ref: "coruscant.galactic.empire/laser:0.1.0".into(),
-            public_key: "BYEBYEALDERAAN".into(),
+            provider_id: "BYEBYEALDERAAN".into(),
             host_id: host2_id.clone(),
             annotations: BTreeMap::default(),
-            instance_id: "2".to_string(),
-            contract_id: "empire:command".into(),
-            link_name: "default".into(),
         };
 
         worker
@@ -1656,7 +1564,7 @@ mod test {
                 lattice_id,
                 &ProviderStarted {
                     host_id: host1_id.clone(),
-                    instance_id: "3".to_string(),
+                    provider_id: provider2.provider_id.clone(),
                     ..provider2.clone()
                 },
             )
@@ -1708,53 +1616,42 @@ mod test {
                     actors: vec![
                         ActorDescription {
                             id: actor1.public_key.to_string(),
-                            image_ref: None,
-                            // The individual instances of this actor that are running
-                            instances: vec![ActorInstance {
-                                annotations: None,
-                                instance_id: "1".to_string(),
-                                revision: 0,
-                                image_ref: None,
-                                max_concurrent: 2,
-                            }],
+                            image_ref: "ref1".to_string(),
+                            annotations: None,
+                            revision: 0,
                             name: None,
+                            max_instances: 2,
                         },
                         ActorDescription {
                             id: actor2.public_key.to_string(),
-                            image_ref: None,
-                            // The individual instances of this actor that are running
-                            instances: vec![ActorInstance {
-                                annotations: None,
-                                instance_id: "2".to_string(),
-                                revision: 0,
-                                image_ref: None,
-                                max_concurrent: 2,
-                            }],
+                            image_ref: "ref2".to_string(),
+                            annotations: None,
+                            revision: 0,
                             name: None,
+                            max_instances: 2,
                         },
                     ],
                     host_id: host1_id.to_string(),
                     labels: HashMap::new(),
                     providers: vec![
                         ProviderDescription {
-                            contract_id: provider1.contract_id.clone(),
-                            link_name: provider1.link_name.clone(),
-                            id: provider1.public_key.clone(),
+                            id: provider1.provider_id.clone(),
                             annotations: Some(HashMap::new()),
                             image_ref: Some(provider1.image_ref.clone()),
                             name: Some("One".to_string()),
                             revision: 0,
                         },
                         ProviderDescription {
-                            contract_id: provider2.contract_id.clone(),
-                            link_name: provider2.link_name.clone(),
-                            id: provider2.public_key.clone(),
+                            id: provider2.provider_id.clone(),
                             annotations: Some(HashMap::new()),
                             image_ref: Some(provider2.image_ref.clone()),
                             name: Some("Two".to_string()),
                             revision: 0,
                         },
                     ],
+                    version: semver::Version::parse("1.0.0").unwrap().to_string(),
+                    uptime_human: "30s".into(),
+                    uptime_seconds: 30,
                 },
             ),
             (
@@ -1765,42 +1662,33 @@ mod test {
                     actors: vec![
                         ActorDescription {
                             id: actor1.public_key.to_string(),
-                            image_ref: None,
-                            // The individual instances of this actor that are running
-                            instances: vec![ActorInstance {
-                                annotations: None,
-                                instance_id: "3".to_string(),
-                                revision: 0,
-                                image_ref: None,
-                                max_concurrent: 2,
-                            }],
+                            image_ref: "ref1".to_string(),
+                            annotations: None,
+                            revision: 0,
+                            max_instances: 2,
                             name: None,
                         },
                         ActorDescription {
                             id: actor2.public_key.to_string(),
-                            image_ref: None,
-                            // The individual instances of this actor that are running
-                            instances: vec![ActorInstance {
-                                annotations: None,
-                                instance_id: "3".to_string(),
-                                revision: 0,
-                                image_ref: None,
-                                max_concurrent: 2,
-                            }],
+                            image_ref: "ref2".to_string(),
+                            annotations: None,
+                            revision: 0,
+                            max_instances: 2,
                             name: None,
                         },
                     ],
                     host_id: host2_id.to_string(),
                     labels: HashMap::new(),
                     providers: vec![ProviderDescription {
-                        contract_id: provider2.contract_id.clone(),
-                        link_name: provider2.link_name.clone(),
-                        id: provider2.public_key.clone(),
+                        id: provider2.provider_id.clone(),
                         annotations: Some(HashMap::new()),
                         image_ref: Some(provider2.image_ref.clone()),
                         name: Some("Two".to_string()),
                         revision: 0,
                     }],
+                    version: semver::Version::parse("1.0.0").unwrap().to_string(),
+                    uptime_human: "30s".into(),
+                    uptime_seconds: 30,
                 },
             ),
         ]);
@@ -1809,27 +1697,43 @@ mod test {
             .handle_host_heartbeat(
                 lattice_id,
                 &HostHeartbeat {
-                    actors: BackwardsCompatActors::V81(HashMap::from([
-                        (actor1.public_key.clone(), 2),
-                        (actor2.public_key.clone(), 2),
-                    ])),
+                    actors: vec![
+                        ActorDescription {
+                            id: actor1.public_key.to_string(),
+                            image_ref: "ref1".to_string(),
+                            annotations: None,
+                            revision: 0,
+                            max_instances: 2,
+                            name: None,
+                        },
+                        ActorDescription {
+                            id: actor2.public_key.to_string(),
+                            image_ref: "ref2".to_string(),
+                            annotations: None,
+                            revision: 0,
+                            max_instances: 2,
+                            name: None,
+                        },
+                    ],
                     friendly_name: "death-star-42".to_string(),
                     labels: labels.clone(),
                     issuer: "".to_string(),
-                    providers: BackwardsCompatProviders::V81(vec![
-                        ProviderInfo {
-                            contract_id: provider1.contract_id.clone(),
-                            link_name: provider1.link_name.clone(),
-                            public_key: provider1.public_key.clone(),
-                            annotations: BTreeMap::default(),
+                    providers: vec![
+                        ProviderDescription {
+                            id: provider1.provider_id.clone(),
+                            image_ref: Some(provider1.image_ref.clone()),
+                            annotations: None,
+                            revision: 0,
+                            name: None,
                         },
-                        ProviderInfo {
-                            contract_id: provider2.contract_id.clone(),
-                            link_name: provider2.link_name.clone(),
-                            public_key: provider2.public_key.clone(),
-                            annotations: BTreeMap::default(),
+                        ProviderDescription {
+                            id: provider2.provider_id.clone(),
+                            image_ref: Some(provider2.image_ref.clone()),
+                            annotations: None,
+                            revision: 0,
+                            name: None,
                         },
-                    ]),
+                    ],
                     uptime_human: "30s".into(),
                     uptime_seconds: 30,
                     version: semver::Version::parse("0.61.0").unwrap(),
@@ -1843,19 +1747,34 @@ mod test {
             .handle_host_heartbeat(
                 lattice_id,
                 &HostHeartbeat {
-                    actors: BackwardsCompatActors::V81(HashMap::from([
-                        (actor1.public_key.clone(), 2),
-                        (actor2.public_key.clone(), 2),
-                    ])),
+                    actors: vec![
+                        ActorDescription {
+                            id: actor1.public_key.to_string(),
+                            image_ref: "ref1".to_string(),
+                            annotations: None,
+                            revision: 0,
+                            max_instances: 2,
+                            name: None,
+                        },
+                        ActorDescription {
+                            id: actor2.public_key.to_string(),
+                            image_ref: "ref2".to_string(),
+                            annotations: None,
+                            revision: 0,
+                            max_instances: 2,
+                            name: None,
+                        },
+                    ],
                     issuer: "".to_string(),
                     friendly_name: "starkiller-base-2015".to_string(),
                     labels: labels2.clone(),
-                    providers: BackwardsCompatProviders::V81(vec![ProviderInfo {
-                        contract_id: provider2.contract_id.clone(),
-                        link_name: provider2.link_name.clone(),
-                        public_key: provider2.public_key.clone(),
-                        annotations: BTreeMap::default(),
-                    }]),
+                    providers: vec![ProviderDescription {
+                        id: provider2.provider_id.clone(),
+                        image_ref: Some(provider2.image_ref.clone()),
+                        annotations: None,
+                        revision: 0,
+                        name: None,
+                    }],
                     uptime_human: "30s".into(),
                     uptime_seconds: 30,
                     version: semver::Version::parse("0.61.0").unwrap(),
@@ -1933,10 +1852,7 @@ mod test {
                 lattice_id,
                 &ProviderStopped {
                     annotations: BTreeMap::default(),
-                    contract_id: provider2.contract_id.clone(),
-                    instance_id: provider2.instance_id.clone(),
-                    link_name: provider2.link_name.clone(),
-                    public_key: provider2.public_key.clone(),
+                    provider_id: provider2.provider_id.clone(),
                     reason: String::new(),
                     host_id: host1_id.clone(),
                 },
@@ -1977,21 +1893,18 @@ mod test {
                     issuer: "my-issuer-2".to_string(),
                     actors: vec![ActorDescription {
                         id: actor2.public_key.to_string(),
-                        image_ref: None,
-                        // The individual instances of this actor that are running
-                        instances: vec![ActorInstance {
-                            annotations: None,
-                            instance_id: "4".to_string(),
-                            revision: 0,
-                            image_ref: None,
-                            max_concurrent: 2,
-                        }],
+                        image_ref: actor2.image_ref.to_string(),
+                        annotations: None,
+                        revision: 0,
+                        max_instances: 2,
                         name: None,
                     }],
                     host_id: host1_id.to_string(),
                     labels: HashMap::new(),
-                    // Leaving incomplete purposefully, we don't need this info
                     providers: vec![],
+                    version: semver::Version::parse("0.61.0").unwrap().to_string(),
+                    uptime_human: "60s".into(),
+                    uptime_seconds: 60,
                 },
             ),
             (
@@ -2001,21 +1914,18 @@ mod test {
                     issuer: "my-issuer-2".to_string(),
                     actors: vec![ActorDescription {
                         id: actor2.public_key.to_string(),
-                        image_ref: None,
-                        // The individual instances of this actor that are running
-                        instances: vec![ActorInstance {
-                            annotations: None,
-                            instance_id: "5".to_string(),
-                            revision: 0,
-                            image_ref: None,
-                            max_concurrent: 2,
-                        }],
+                        image_ref: actor2.image_ref.to_string(),
+                        annotations: None,
+                        revision: 0,
+                        max_instances: 2,
                         name: None,
                     }],
                     host_id: host2_id.to_string(),
                     labels: HashMap::new(),
-                    // Leaving incomplete purposefully, we don't need this info
                     providers: vec![],
+                    version: semver::Version::parse("1.2.3").unwrap().to_string(),
+                    uptime_human: "100s".into(),
+                    uptime_seconds: 100,
                 },
             ),
         ]);
@@ -2025,19 +1935,24 @@ mod test {
             .handle_host_heartbeat(
                 lattice_id,
                 &HostHeartbeat {
-                    actors: BackwardsCompatActors::V81(HashMap::from([(
-                        actor2.public_key.clone(),
-                        2,
-                    )])),
+                    actors: vec![ActorDescription {
+                        id: actor2.public_key.to_string(),
+                        image_ref: actor2.image_ref.to_string(),
+                        annotations: None,
+                        revision: 0,
+                        max_instances: 2,
+                        name: None,
+                    }],
                     friendly_name: "death-star-42".to_string(),
                     issuer: "".to_string(),
                     labels,
-                    providers: BackwardsCompatProviders::V81(vec![ProviderInfo {
-                        contract_id: provider1.contract_id.clone(),
-                        link_name: provider1.link_name.clone(),
-                        public_key: provider1.public_key.clone(),
-                        annotations: BTreeMap::default(),
-                    }]),
+                    providers: vec![ProviderDescription {
+                        id: provider1.provider_id.clone(),
+                        image_ref: Some(provider1.image_ref.clone()),
+                        name: None,
+                        revision: 1,
+                        annotations: None,
+                    }],
                     uptime_human: "60s".into(),
                     uptime_seconds: 60,
                     version: semver::Version::parse("0.61.0").unwrap(),
@@ -2051,19 +1966,24 @@ mod test {
             .handle_host_heartbeat(
                 lattice_id,
                 &HostHeartbeat {
-                    actors: BackwardsCompatActors::V81(HashMap::from([(
-                        actor2.public_key.clone(),
-                        2,
-                    )])),
+                    actors: vec![ActorDescription {
+                        id: actor2.public_key.to_string(),
+                        image_ref: actor2.image_ref.to_string(),
+                        annotations: None,
+                        revision: 0,
+                        max_instances: 2,
+                        name: None,
+                    }],
                     friendly_name: "starkiller-base-2015".to_string(),
                     labels: labels2,
                     issuer: "".to_string(),
-                    providers: BackwardsCompatProviders::V81(vec![ProviderInfo {
-                        contract_id: provider2.contract_id.clone(),
-                        link_name: provider2.link_name.clone(),
-                        public_key: provider2.public_key.clone(),
-                        annotations: BTreeMap::default(),
-                    }]),
+                    providers: vec![ProviderDescription {
+                        id: provider2.provider_id.clone(),
+                        image_ref: Some(provider2.image_ref.clone()),
+                        revision: 0,
+                        name: None,
+                        annotations: None,
+                    }],
                     uptime_human: "60s".into(),
                     uptime_seconds: 60,
                     version: semver::Version::parse("0.61.0").unwrap(),
@@ -2135,7 +2055,9 @@ mod test {
     #[tokio::test]
     async fn test_discover_running_host() {
         let actor1_id = "SKYWALKER".to_string();
+        let actor1_ref = "fakecloud.io/skywalker:0.1.0".to_string();
         let actor2_id = "ORGANA".to_string();
+        let actor2_ref = "fakecloud.io/organa:0.1.0".to_string();
         let lattice_id = "discover_running_host";
         let claims = HashMap::from([
             (
@@ -2181,7 +2103,6 @@ mod test {
         );
 
         let provider_id = "HYPERDRIVE".to_string();
-        let link_name = "default".to_string();
         let host_id = "WHATAPIECEOFJUNK".to_string();
         // NOTE(brooksmtownsend): Painful manual manipulation of host inventory
         // to satisfy the way we currently query the inventory when handling heartbeats.
@@ -2193,42 +2114,33 @@ mod test {
                 actors: vec![
                     ActorDescription {
                         id: actor1_id.to_string(),
-                        image_ref: None,
-                        // The individual instances of this actor that are running
-                        instances: vec![ActorInstance {
-                            annotations: None,
-                            instance_id: "1".to_string(),
-                            revision: 0,
-                            image_ref: None,
-                            max_concurrent: 2,
-                        }],
+                        image_ref: actor1_ref.to_string(),
+                        annotations: None,
+                        revision: 0,
+                        max_instances: 2,
                         name: None,
                     },
                     ActorDescription {
                         id: actor2_id.to_string(),
-                        image_ref: None,
-                        // The individual instances of this actor that are running
-                        instances: vec![ActorInstance {
-                            annotations: None,
-                            instance_id: "2".to_string(),
-                            revision: 0,
-                            image_ref: None,
-                            max_concurrent: 1,
-                        }],
+                        image_ref: actor2_ref.to_string(),
+                        annotations: None,
+                        revision: 0,
+                        max_instances: 1,
                         name: None,
                     },
                 ],
                 host_id: host_id.to_string(),
                 labels: HashMap::new(),
                 providers: vec![ProviderDescription {
-                    contract_id: "lightspeed".into(),
-                    link_name: link_name.clone(),
                     id: provider_id.clone(),
-                    annotations: Some(HashMap::new()),
-                    image_ref: Some("".to_string()),
-                    name: Some("".to_string()),
+                    annotations: None,
+                    image_ref: None,
+                    name: None,
                     revision: 0,
                 }],
+                version: semver::Version::parse("0.61.0").unwrap().to_string(),
+                uptime_human: "60s".into(),
+                uptime_seconds: 60,
             },
         )]);
 
@@ -2237,19 +2149,34 @@ mod test {
             .handle_host_heartbeat(
                 lattice_id,
                 &HostHeartbeat {
-                    actors: BackwardsCompatActors::V81(HashMap::from([
-                        (actor1_id.clone(), 2),
-                        (actor2_id.clone(), 1),
-                    ])),
+                    actors: vec![
+                        ActorDescription {
+                            id: actor1_id.to_string(),
+                            image_ref: actor1_ref.to_string(),
+                            annotations: None,
+                            revision: 0,
+                            max_instances: 2,
+                            name: None,
+                        },
+                        ActorDescription {
+                            id: actor2_id.to_string(),
+                            image_ref: actor2_ref.to_string(),
+                            annotations: None,
+                            revision: 0,
+                            max_instances: 1,
+                            name: None,
+                        },
+                    ],
                     friendly_name: "millenium_falcon-1977".to_string(),
                     labels: HashMap::default(),
                     issuer: "".to_string(),
-                    providers: BackwardsCompatProviders::V81(vec![ProviderInfo {
-                        contract_id: "lightspeed".into(),
-                        link_name: link_name.clone(),
-                        public_key: provider_id.clone(),
-                        annotations: BTreeMap::default(),
-                    }]),
+                    providers: vec![ProviderDescription {
+                        id: provider_id.clone(),
+                        annotations: None,
+                        image_ref: None,
+                        name: None,
+                        revision: 0,
+                    }],
                     uptime_human: "60s".into(),
                     uptime_seconds: 60,
                     version: semver::Version::parse("0.61.0").unwrap(),
@@ -2303,11 +2230,8 @@ mod test {
 
         let providers = store.list::<Provider>(lattice_id).await.unwrap();
         assert_eq!(providers.len(), 1, "Should have 1 provider in the store");
-        let provider = providers
-            .get(&crate::storage::provider_id(&provider_id, &link_name))
-            .expect("Provider should exist");
+        let provider = providers.get(&provider_id).expect("Provider should exist");
         assert_eq!(provider.id, provider_id, "Data should match");
-        assert_eq!(provider.link_name, link_name, "Data should match");
         assert!(
             provider.hosts.contains_key(&host_id),
             "Should have found host in provider store"
@@ -2341,19 +2265,16 @@ mod test {
 
         // Trigger a provider started and then a health check
         let provider = ProviderStarted {
-            claims: ProviderClaims {
+            claims: Some(ProviderClaims {
                 issuer: "Lando Calrissian".into(),
                 name: "Tibanna Gas Mining".into(),
                 version: "0.1.0".into(),
                 ..Default::default()
-            },
+            }),
             image_ref: "bespin.lando.inc/tibanna:0.1.0".into(),
-            public_key: "GAS".into(),
+            provider_id: "GAS".into(),
             host_id: host_id.clone(),
             annotations: BTreeMap::default(),
-            instance_id: String::new(),
-            contract_id: "mining".into(),
-            link_name: "default".into(),
         };
 
         worker
@@ -2365,9 +2286,8 @@ mod test {
                 lattice_id,
                 &host_id,
                 &ProviderHealthCheckInfo {
-                    link_name: provider.link_name.clone(),
-                    public_key: provider.public_key.clone(),
-                    contract_id: provider.contract_id.clone(),
+                    provider_id: provider.provider_id.clone(),
+                    host_id: host_id.clone(),
                 },
                 Some(false),
             )
@@ -2377,10 +2297,7 @@ mod test {
         let providers = store.list::<Provider>(lattice_id).await.unwrap();
         assert_eq!(providers.len(), 1, "Only 1 provider should exist");
         let prov = providers
-            .get(&crate::storage::provider_id(
-                &provider.public_key,
-                &provider.link_name,
-            ))
+            .get(&provider.provider_id)
             .expect("Provider should exist");
         assert!(
             matches!(
@@ -2398,9 +2315,8 @@ mod test {
                 lattice_id,
                 &host_id,
                 &ProviderHealthCheckInfo {
-                    link_name: provider.link_name.clone(),
-                    public_key: provider.public_key.clone(),
-                    contract_id: provider.contract_id.clone(),
+                    provider_id: provider.provider_id.clone(),
+                    host_id: host_id.clone(),
                 },
                 Some(true),
             )
@@ -2410,10 +2326,7 @@ mod test {
         let providers = store.list::<Provider>(lattice_id).await.unwrap();
         assert_eq!(providers.len(), 1, "Only 1 provider should exist");
         let prov = providers
-            .get(&crate::storage::provider_id(
-                &provider.public_key,
-                &provider.link_name,
-            ))
+            .get(&provider.provider_id)
             .expect("Provider should exist");
         assert!(
             matches!(
@@ -2423,110 +2336,6 @@ mod test {
                 ProviderStatus::Failed
             ),
             "Provider should have a running status"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_provider_contract_id_from_heartbeat() {
-        let store = Arc::new(TestStore::default());
-        let inventory = Arc::new(RwLock::new(HashMap::default()));
-        let lattice_source = TestLatticeSource {
-            inventory: inventory.clone(),
-            ..Default::default()
-        };
-        let lattice_id = "provider_contract_id";
-
-        let command_publisher = CommandPublisher::new(NoopPublisher, "doesntmatter");
-        let status_publisher = StatusPublisher::new(NoopPublisher, None, "doesntmatter");
-        let worker = EventWorker::new(
-            store.clone(),
-            lattice_source.clone(),
-            command_publisher.clone(),
-            status_publisher.clone(),
-            ScalerManager::test_new(
-                NoopPublisher,
-                lattice_id,
-                store.clone(),
-                command_publisher,
-                status_publisher.clone(),
-                lattice_source,
-            )
-            .await,
-        );
-
-        let host_id = "BEGGARSCANYON";
-        let link_name = "default";
-        let public_key = "SKYHOPPER";
-        let contract_id = "blasting:womprats";
-
-        *inventory.write().await = HashMap::from_iter([(
-            host_id.to_string(),
-            HostInventory {
-                friendly_name: "my-host-6".to_string(),
-                issuer: "my-issuer-4".to_string(),
-                actors: vec![],
-                labels: HashMap::new(),
-                host_id: host_id.to_string(),
-                providers: vec![ProviderDescription {
-                    contract_id: contract_id.to_string(),
-                    link_name: link_name.to_string(),
-                    id: public_key.to_string(),
-                    annotations: Some(HashMap::new()),
-                    image_ref: Some("".to_string()),
-                    name: Some("".to_string()),
-                    revision: 0,
-                }],
-            },
-        )]);
-
-        // Health check a provider that we don't have in the store yet
-        worker
-            .handle_provider_health_check(
-                lattice_id,
-                host_id,
-                &ProviderHealthCheckInfo {
-                    link_name: link_name.to_string(),
-                    public_key: public_key.to_string(),
-                    contract_id: contract_id.to_string(),
-                },
-                Some(false),
-            )
-            .await
-            .expect("Should be able to handle a provider health check event");
-
-        // Now heartbeat a host
-        worker
-            .handle_host_heartbeat(
-                lattice_id,
-                &HostHeartbeat {
-                    actors: BackwardsCompatActors::V82(vec![]),
-                    friendly_name: "tatooine-1977".to_string(),
-                    labels: HashMap::default(),
-                    issuer: "".to_string(),
-                    providers: BackwardsCompatProviders::V81(vec![ProviderInfo {
-                        contract_id: contract_id.to_string(),
-                        link_name: link_name.to_string(),
-                        public_key: public_key.to_string(),
-                        annotations: BTreeMap::default(),
-                    }]),
-                    uptime_human: "60s".into(),
-                    uptime_seconds: 60,
-                    version: semver::Version::parse("0.61.0").unwrap(),
-                    host_id: host_id.to_string(),
-                },
-            )
-            .await
-            .expect("Should be able to handle host heartbeat");
-
-        // Now check that our provider exists and has the contract id set
-        let providers = store.list::<Provider>(lattice_id).await.unwrap();
-        assert_eq!(providers.len(), 1, "Only 1 provider should exist");
-        let prov = providers
-            .get(&crate::storage::provider_id(public_key, link_name))
-            .expect("Provider should exist");
-        assert_eq!(
-            prov.contract_id, contract_id,
-            "Provider should have contract id set"
         );
     }
 
@@ -2586,7 +2395,6 @@ mod test {
                 "jabbatheprovider/default".to_string(),
                 Provider {
                     id: "jabbatheprovider".to_string(),
-                    link_name: "default".to_string(),
                     hosts: HashMap::from_iter([(host_id.to_string(), ProviderStatus::Pending)]),
                     ..Default::default()
                 },
@@ -2599,41 +2407,39 @@ mod test {
             HostInventory {
                 friendly_name: "my-host-7".to_string(),
                 issuer: "my-issuer-5".to_string(),
-                actors: vec![ActorDescription {
-                    id: "jabba".to_string(),
-                    image_ref: Some("jabba.tatooinecr.io/jabba:latest".to_string()),
-                    name: Some("Da Hutt".to_string()),
-                    instances: vec![
-                        ActorInstance {
-                            instance_id: "1".to_string(),
-                            annotations: Some(HashMap::from_iter([(
-                                "da".to_string(),
-                                "gobah".to_string(),
-                            )])),
-                            revision: 0,
-                            image_ref: None,
-                            max_concurrent: 1,
-                        },
-                        ActorInstance {
-                            instance_id: "2".to_string(),
-                            annotations: None,
-                            revision: 0,
-                            image_ref: None,
-                            max_concurrent: 1,
-                        },
-                    ],
-                }],
+                actors: vec![
+                    ActorDescription {
+                        id: "jabba".to_string(),
+                        image_ref: "jabba.tatooinecr.io/jabba:latest".to_string(),
+                        name: Some("Da Hutt".to_string()),
+                        annotations: Some(HashMap::from_iter([(
+                            "da".to_string(),
+                            "gobah".to_string(),
+                        )])),
+                        revision: 0,
+                        max_instances: 1,
+                    },
+                    ActorDescription {
+                        id: "jabba2".to_string(),
+                        image_ref: "jabba.tatooinecr.io/jabba:latest".to_string(),
+                        name: Some("Da Hutt".to_string()),
+                        annotations: None,
+                        revision: 0,
+                        max_instances: 1,
+                    },
+                ],
                 labels: HashMap::new(),
                 host_id: host_id.to_string(),
                 providers: vec![ProviderDescription {
                     annotations: Some(HashMap::from_iter([("one".to_string(), "two".to_string())])),
                     id: "jabbatheprovider".to_string(),
                     image_ref: Some("jabba.tatooinecr.io/provider:latest".to_string()),
-                    contract_id: "jabba:jabba".to_string(),
-                    link_name: "default".to_string(),
                     name: Some("Jabba The Provider".to_string()),
                     revision: 0,
                 }],
+                version: semver::Version::parse("0.61.0").unwrap().to_string(),
+                uptime_human: "60s".into(),
+                uptime_seconds: 60,
             },
         )]);
 
@@ -2642,17 +2448,37 @@ mod test {
             .handle_host_heartbeat(
                 lattice_id,
                 &HostHeartbeat {
-                    actors: BackwardsCompatActors::V81(HashMap::from([("jabba".to_string(), 2)])),
+                    actors: vec![
+                        ActorDescription {
+                            id: "jabba".to_string(),
+                            image_ref: "jabba.tatooinecr.io/jabba:latest".to_string(),
+                            name: Some("Da Hutt".to_string()),
+                            annotations: Some(HashMap::from_iter([(
+                                "da".to_string(),
+                                "gobah".to_string(),
+                            )])),
+                            revision: 0,
+                            max_instances: 1,
+                        },
+                        ActorDescription {
+                            id: "jabba2".to_string(),
+                            image_ref: "jabba.tatooinecr.io/jabba:latest".to_string(),
+                            name: Some("Da Hutt".to_string()),
+                            annotations: None,
+                            revision: 0,
+                            max_instances: 1,
+                        },
+                    ],
                     friendly_name: "palace-1983".to_string(),
                     labels: HashMap::default(),
                     issuer: "".to_string(),
-                    providers: BackwardsCompatProviders::V81(vec![ProviderInfo {
-                        contract_id: "jabba:jabba".to_string(),
-                        link_name: "default".to_string(),
-
-                        annotations: BTreeMap::default(),
-                        public_key: "jabbatheprovider".to_string(),
-                    }]),
+                    providers: vec![ProviderDescription {
+                        annotations: None,
+                        image_ref: Some("jabba.tatooinecr.io/provider:latest".to_string()),
+                        name: None,
+                        id: "jabbatheprovider".to_string(),
+                        revision: 0,
+                    }],
                     uptime_human: "60s".into(),
                     uptime_seconds: 60,
                     version: semver::Version::parse("0.61.0").unwrap(),
@@ -2701,11 +2527,6 @@ mod test {
             provider.reference, "jabba.tatooinecr.io/provider:latest",
             "Should have the correct reference"
         );
-        assert_eq!(
-            provider.contract_id, "jabba:jabba",
-            "Should have the correct contract id"
-        );
-
         let hosts = store
             .list::<Host>(lattice_id)
             .await
@@ -2715,9 +2536,8 @@ mod test {
         let host_provider = host
             .providers
             .get(&ProviderInfo {
-                contract_id: "jabba:jabba".to_string(),
-                link_name: "default".to_string(),
-                public_key: "jabbatheprovider".to_string(),
+                provider_id: "jabbatheprovider".to_string(),
+                provider_ref: "jabba.tatooinecr.io/provider:latest".to_string(),
                 annotations: BTreeMap::default(),
             })
             .expect("provider to exist on host");
@@ -2729,7 +2549,6 @@ mod test {
                 .expect("annotation to exist"),
             "two"
         );
-        assert_eq!(host_provider.contract_id, "jabba:jabba");
     }
 
     fn assert_actor(
@@ -2743,10 +2562,6 @@ mod test {
         assert_eq!(
             actor.id, event.public_key,
             "Actor ID stored should be correct"
-        );
-        assert_eq!(
-            actor.call_alias, event.claims.call_alias,
-            "Other data in actor should be correct"
         );
         assert_eq!(
             expected_counts.len(),
@@ -2768,13 +2583,13 @@ mod test {
         running_on_hosts: &[&str],
     ) {
         let provider = providers
-            .get(&crate::storage::provider_id(
-                &event.public_key,
-                &event.link_name,
-            ))
+            .get(&event.provider_id)
             .expect("Correct provider should exist in store");
-        assert_eq!(
-            provider.name, event.claims.name,
+        assert!(
+            event
+                .claims
+                .clone()
+                .is_some_and(|claims| claims.name == provider.name),
             "Provider should have the correct data in state"
         );
         assert!(

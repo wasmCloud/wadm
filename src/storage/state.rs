@@ -10,8 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use super::StateKind;
 use crate::events::{
-    ActorScaled, ActorsStarted, BackwardsCompatActors, BackwardsCompatProviders, HostHeartbeat,
-    HostStarted, ProviderInfo, ProviderStarted,
+    ActorScaled, ActorsStarted, HostHeartbeat, HostStarted, ProviderInfo, ProviderStarted,
 };
 
 /// A wasmCloud Capability provider
@@ -29,14 +28,8 @@ pub struct Provider {
     /// Issuer of the (signed) provider
     pub issuer: String,
 
-    /// Contract ID
-    pub contract_id: String,
-
     /// The reference used to start the provider. Can be empty if it was started from a file
     pub reference: String,
-
-    /// The linkname the provider was started with
-    pub link_name: String,
 
     /// The hosts this provider is running on
     pub hosts: HashMap<String, ProviderStatus>,
@@ -76,13 +69,12 @@ impl StateKind for Provider {
 
 impl From<ProviderStarted> for Provider {
     fn from(value: ProviderStarted) -> Self {
+        let (name, issuer) = value.claims.map(|c| (c.name, c.issuer)).unwrap_or_default();
         Provider {
-            id: value.public_key,
-            name: value.claims.name,
-            issuer: value.claims.issuer,
-            contract_id: value.contract_id,
+            id: value.provider_id,
+            name,
+            issuer,
             reference: value.image_ref,
-            link_name: value.link_name,
             ..Default::default()
         }
     }
@@ -91,12 +83,18 @@ impl From<ProviderStarted> for Provider {
 impl From<&ProviderStarted> for Provider {
     fn from(value: &ProviderStarted) -> Self {
         Provider {
-            id: value.public_key.clone(),
-            name: value.claims.name.clone(),
-            issuer: value.claims.issuer.clone(),
-            contract_id: value.contract_id.clone(),
+            id: value.provider_id.clone(),
+            name: value
+                .claims
+                .as_ref()
+                .map(|c| c.name.clone())
+                .unwrap_or_default(),
+            issuer: value
+                .claims
+                .as_ref()
+                .map(|c| c.issuer.clone())
+                .unwrap_or_default(),
             reference: value.image_ref.clone(),
-            link_name: value.link_name.clone(),
             ..Default::default()
         }
     }
@@ -131,9 +129,6 @@ impl Borrow<BTreeMap<String, String>> for WadmActorInfo {
 }
 
 /// A wasmCloud Actor
-// NOTE: We probably aren't going to use this _right now_ so we've kept it pretty minimal. But it is
-// possible that we could query wadm for more general data about the lattice in the future, so we do
-// want to store this
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct Actor {
     /// ID of the actor, normally a public (n)key
@@ -147,9 +142,6 @@ pub struct Actor {
 
     /// Issuer of the (signed) actor
     pub issuer: String,
-
-    /// Call alias to use for the actor
-    pub call_alias: Option<String>,
 
     /// All instances of this actor running in the lattice, keyed by the host ID and contains a hash
     /// map of annotations -> count for each set of unique annotations
@@ -190,7 +182,6 @@ impl From<ActorsStarted> for Actor {
             name: value.claims.name,
             capabilities: value.claims.capabilites,
             issuer: value.claims.issuer,
-            call_alias: value.claims.call_alias,
             reference: value.image_ref,
             instances: HashMap::from_iter([(
                 value.host_id,
@@ -210,7 +201,6 @@ impl From<&ActorsStarted> for Actor {
             name: value.claims.name.clone(),
             capabilities: value.claims.capabilites.clone(),
             issuer: value.claims.issuer.clone(),
-            call_alias: value.claims.call_alias.clone(),
             reference: value.image_ref.clone(),
             instances: HashMap::from_iter([(
                 value.host_id.clone(),
@@ -225,12 +215,15 @@ impl From<&ActorsStarted> for Actor {
 
 impl From<ActorScaled> for Actor {
     fn from(value: ActorScaled) -> Self {
+        let (name, capabilities, issuer) = value
+            .claims
+            .map(|c| (c.name, c.capabilites, c.issuer))
+            .unwrap_or_default();
         Actor {
-            id: value.public_key,
-            name: value.claims.name,
-            capabilities: value.claims.capabilites,
-            issuer: value.claims.issuer,
-            call_alias: value.claims.call_alias,
+            id: value.actor_id,
+            name,
+            capabilities,
+            issuer,
             reference: value.image_ref,
             instances: HashMap::from_iter([(
                 value.host_id,
@@ -246,11 +239,22 @@ impl From<ActorScaled> for Actor {
 impl From<&ActorScaled> for Actor {
     fn from(value: &ActorScaled) -> Self {
         Actor {
-            id: value.public_key.clone(),
-            name: value.claims.name.clone(),
-            capabilities: value.claims.capabilites.clone(),
-            issuer: value.claims.issuer.clone(),
-            call_alias: value.claims.call_alias.clone(),
+            id: value.actor_id.clone(),
+            name: value
+                .claims
+                .as_ref()
+                .map(|c| c.name.clone())
+                .unwrap_or_default(),
+            capabilities: value
+                .claims
+                .as_ref()
+                .map(|c| c.capabilites.clone())
+                .unwrap_or_default(),
+            issuer: value
+                .claims
+                .as_ref()
+                .map(|c| c.issuer.clone())
+                .unwrap_or_default(),
             reference: value.image_ref.clone(),
             instances: HashMap::from_iter([(
                 value.host_id.clone(),
@@ -327,39 +331,30 @@ impl From<&HostStarted> for Host {
 
 impl From<HostHeartbeat> for Host {
     fn from(value: HostHeartbeat) -> Self {
-        let actors = match value.actors.clone() {
-            BackwardsCompatActors::V81(actors) => actors,
-            // TODO(#235): Change the format of the [Host] to use the new format
-            BackwardsCompatActors::V82(actors) => actors
-                .into_iter()
-                .map(|actor| {
-                    (
-                        actor.id,
-                        actor
-                            .instances
-                            .into_iter()
-                            .map(|instance| instance.max_concurrent as usize)
-                            .sum(),
-                    )
-                })
-                .collect(),
-        };
+        let actors = value
+            .actors
+            .into_iter()
+            .map(|actor| {
+                (
+                    actor.id, // SAFETY: Unlikely to not fit into a usize, but fallback just in case
+                    actor.max_instances.try_into().unwrap_or(usize::MAX),
+                )
+            })
+            .collect();
 
-        let providers = match value.providers {
-            BackwardsCompatProviders::V81(providers) => providers.into_iter().collect(),
-            BackwardsCompatProviders::V82(providers) => providers
-                .into_iter()
-                .map(|provider| ProviderInfo {
-                    public_key: provider.id,
-                    annotations: provider
-                        .annotations
-                        .map(|a| a.into_iter().collect())
-                        .unwrap_or_default(),
-                    contract_id: provider.contract_id,
-                    link_name: provider.link_name,
-                })
-                .collect(),
-        };
+        let providers = value
+            .providers
+            .into_iter()
+            .map(|provider| ProviderInfo {
+                provider_id: provider.id,
+                // NOTE: Provider should _always_ have an image ref. The control interface type should be updated.
+                provider_ref: provider.image_ref.unwrap_or_default(),
+                annotations: provider
+                    .annotations
+                    .map(|a| a.into_iter().collect())
+                    .unwrap_or_default(),
+            })
+            .collect();
 
         Host {
             actors,
@@ -376,39 +371,31 @@ impl From<HostHeartbeat> for Host {
 
 impl From<&HostHeartbeat> for Host {
     fn from(value: &HostHeartbeat) -> Self {
-        let actors = match value.actors.clone() {
-            BackwardsCompatActors::V81(actors) => actors,
-            // TODO(#235): Change the format of the [Host] to use the new format
-            BackwardsCompatActors::V82(actors) => actors
-                .into_iter()
-                .map(|actor| {
-                    (
-                        actor.id,
-                        actor
-                            .instances
-                            .into_iter()
-                            .map(|instance| instance.max_concurrent as usize)
-                            .sum(),
-                    )
-                })
-                .collect(),
-        };
+        let actors = value
+            .actors
+            .iter()
+            .map(|actor| {
+                (
+                    actor.id.to_owned(),
+                    // SAFETY: Unlikely to not fit into a usize, but fallback just in case
+                    actor.max_instances.try_into().unwrap_or(usize::MAX),
+                )
+            })
+            .collect();
 
-        let providers = match value.providers.clone() {
-            BackwardsCompatProviders::V81(providers) => providers.iter().cloned().collect(),
-            BackwardsCompatProviders::V82(providers) => providers
-                .into_iter()
-                .map(|provider| ProviderInfo {
-                    public_key: provider.id,
-                    annotations: provider
-                        .annotations
-                        .map(|a| a.into_iter().collect())
-                        .unwrap_or_default(),
-                    contract_id: provider.contract_id,
-                    link_name: provider.link_name,
-                })
-                .collect(),
-        };
+        let providers = value
+            .providers
+            .iter()
+            .map(|provider| ProviderInfo {
+                provider_id: provider.id.to_owned(),
+                provider_ref: provider.image_ref.to_owned().unwrap_or_default(),
+                annotations: provider
+                    .annotations
+                    .clone()
+                    .map(|a| a.into_iter().collect())
+                    .unwrap_or_default(),
+            })
+            .collect();
 
         Host {
             actors,

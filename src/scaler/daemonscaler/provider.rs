@@ -2,16 +2,15 @@ use std::collections::BTreeMap;
 
 use anyhow::Result;
 use async_trait::async_trait;
-use tokio::sync::{OnceCell, RwLock};
+use tokio::sync::RwLock;
 use tracing::{instrument, trace};
 
 use crate::commands::StopProvider;
-use crate::events::{HostHeartbeat, ProviderInfo};
+use crate::events::{HostHeartbeat, ProviderInfo, ProviderStarted, ProviderStopped};
 use crate::model::{CapabilityConfig, Spread};
 use crate::scaler::spreadscaler::provider::ProviderSpreadConfig;
 use crate::scaler::spreadscaler::{eligible_hosts, spreadscaler_annotations};
 use crate::server::StatusInfo;
-use crate::storage::Provider;
 use crate::{
     commands::{Command, StartProvider},
     events::{Event, HostStarted, HostStopped},
@@ -30,7 +29,6 @@ pub const PROVIDER_DAEMON_SCALER_TYPE: &str = "providerdaemonscaler";
 /// on every available host.
 pub struct ProviderDaemonScaler<S> {
     config: ProviderSpreadConfig,
-    provider_id: OnceCell<String>,
     store: S,
     id: String,
     status: RwLock<StatusInfo>,
@@ -72,18 +70,9 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderDaemonScaler<S> {
         // the entire reconcile, smart compute exactly what needs to change, but it just
         // requires more code branches and would be fine as a future improvement
         match event {
-            Event::ProviderStarted(provider_started)
-                if provider_started.contract_id == self.config.provider_contract_id
-                    && provider_started.image_ref == self.config.provider_reference
-                    && provider_started.link_name == self.config.provider_link_name =>
-            {
-                self.reconcile().await
-            }
-            Event::ProviderStopped(provider_stopped)
-                if provider_stopped.contract_id == self.config.provider_contract_id
-                    && provider_stopped.link_name == self.config.provider_link_name
-                    // If this is None, provider hasn't been started in the lattice yet, so we don't need to reconcile
-                    && self.provider_id().await.map(|id| id == provider_stopped.public_key).unwrap_or(false) =>
+            Event::ProviderStarted(ProviderStarted { provider_id, .. })
+            | Event::ProviderStopped(ProviderStopped { provider_id, .. })
+                if provider_id == &self.config.provider_id =>
             {
                 self.reconcile().await
             }
@@ -108,9 +97,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderDaemonScaler<S> {
     async fn reconcile(&self) -> Result<Vec<Command>> {
         let hosts = self.store.list::<Host>(&self.config.lattice_id).await?;
 
-        let provider_id = self.provider_id().await.unwrap_or_default();
-        let contract_id = &self.config.provider_contract_id;
-        let link_name = &self.config.provider_link_name;
+        let provider_id = &self.config.provider_id;
         let provider_ref = &self.config.provider_reference;
 
         let mut spread_status = vec![];
@@ -129,9 +116,8 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderDaemonScaler<S> {
                         // Filter out hosts that are already running this provider
                         .filter_map(|(_host_id, host)| {
                             let provider_on_host = host.providers.get(&ProviderInfo {
-                                contract_id: contract_id.to_string(),
-                                link_name: link_name.to_string(),
-                                public_key: provider_id.to_string(),
+                                provider_id: provider_id.to_string(),
+                                provider_ref: provider_ref.to_string(),
                                 annotations: BTreeMap::default(),
                             });
                             match (provider_on_host, self.config.spread_config.instances) {
@@ -140,16 +126,14 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderDaemonScaler<S> {
                                 (Some(_), 0) => Some(Command::StopProvider(StopProvider {
                                     provider_id: provider_id.to_owned(),
                                     host_id: host.id.to_string(),
-                                    link_name: Some(self.config.provider_link_name.to_owned()),
-                                    contract_id: self.config.provider_contract_id.to_owned(),
                                     model_name: self.config.model_name.to_owned(),
                                     annotations: spreadscaler_annotations(&spread.name, &self.id),
                                 })),
                                 // Whenever instances > 0, we should start a provider if it's not already running
                                 (None, _n) => Some(Command::StartProvider(StartProvider {
                                     reference: provider_ref.to_owned(),
+                                    provider_id: provider_id.to_owned(),
                                     host_id: host.id.to_string(),
-                                    link_name: Some(link_name.to_owned()),
                                     model_name: self.config.model_name.to_owned(),
                                     annotations: spreadscaler_annotations(&spread.name, &self.id),
                                     config: self.config.provider_config.clone(),
@@ -197,7 +181,6 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderDaemonScaler<S> {
         let cleanerupper = ProviderDaemonScaler {
             config: config_clone,
             store: self.store.clone(),
-            provider_id: self.provider_id.clone(),
             id: self.id.clone(),
             status: RwLock::new(StatusInfo::reconciling("")),
         };
@@ -211,8 +194,8 @@ impl<S: ReadStore + Send + Sync> ProviderDaemonScaler<S> {
     pub fn new(store: S, config: ProviderSpreadConfig, component_name: &str) -> Self {
         let id = {
             let default = format!(
-                "{PROVIDER_DAEMON_SCALER_TYPE}-{}-{component_name}-{}-{}",
-                config.model_name, config.provider_reference, config.provider_link_name,
+                "{PROVIDER_DAEMON_SCALER_TYPE}-{}-{component_name}-{}",
+                config.model_name, config.provider_id,
             );
 
             match &config.provider_config {
@@ -221,11 +204,8 @@ impl<S: ReadStore + Send + Sync> ProviderDaemonScaler<S> {
                         compute_provider_config_hash(provider_config)
                     {
                         format!(
-                            "{PROVIDER_DAEMON_SCALER_TYPE}-{}-{component_name}-{}-{}-{}",
-                            config.model_name,
-                            config.provider_reference,
-                            config.provider_link_name,
-                            provider_config_hash
+                            "{PROVIDER_DAEMON_SCALER_TYPE}-{}-{component_name}-{}-{}",
+                            config.model_name, config.provider_id, provider_config_hash
                         )
                     } else {
                         default
@@ -247,7 +227,6 @@ impl<S: ReadStore + Send + Sync> ProviderDaemonScaler<S> {
         };
         Self {
             store,
-            provider_id: OnceCell::new(),
             config: ProviderSpreadConfig {
                 spread_config,
                 ..config
@@ -255,28 +234,6 @@ impl<S: ReadStore + Send + Sync> ProviderDaemonScaler<S> {
             id,
             status: RwLock::new(StatusInfo::reconciling("")),
         }
-    }
-
-    /// Helper function to retrieve the provider ID for the configured provider
-    async fn provider_id(&self) -> Result<&str> {
-        self.provider_id
-            .get_or_try_init(|| async {
-                self.store
-                    .list::<Provider>(&self.config.lattice_id)
-                    .await
-                    .unwrap_or_default()
-                    .iter()
-                    .find(|(_id, provider)| provider.reference == self.config.provider_reference)
-                    .map(|(_id, provider)| provider.id.to_owned())
-                    .ok_or_else(|| {
-                        anyhow::anyhow!(
-                            "Couldn't find a provider id for the provider reference {}",
-                            self.config.provider_reference
-                        )
-                    })
-            })
-            .await
-            .map(|id| id.as_str())
     }
 }
 
@@ -300,7 +257,6 @@ mod test {
         scaler::{spreadscaler::spreadscaler_annotations, Scaler},
         storage::{Host, Provider, Store},
         test_util::TestStore,
-        DEFAULT_LINK_NAME,
     };
 
     use super::*;
@@ -311,9 +267,8 @@ mod test {
     fn test_id_generator() {
         let config = ProviderSpreadConfig {
             lattice_id: "lattice".to_string(),
-            provider_reference: "provider".to_string(),
-            provider_link_name: "link".to_string(),
-            provider_contract_id: "contract".to_string(),
+            provider_reference: "provider_ref".to_string(),
+            provider_id: "provider_id".to_string(),
             model_name: MODEL_NAME.to_string(),
             spread_config: SpreadScalerProperty {
                 instances: 1,
@@ -326,7 +281,7 @@ mod test {
         assert_eq!(
             scaler.id(),
             format!(
-                "{PROVIDER_DAEMON_SCALER_TYPE}-{}-component-provider-link",
+                "{PROVIDER_DAEMON_SCALER_TYPE}-{}-component-provider_id-link",
                 MODEL_NAME
             ),
             "ProviderDaemonScaler ID should be valid"
@@ -334,9 +289,8 @@ mod test {
 
         let config = ProviderSpreadConfig {
             lattice_id: "lattice".to_string(),
-            provider_reference: "provider".to_string(),
-            provider_link_name: "link".to_string(),
-            provider_contract_id: "contract".to_string(),
+            provider_reference: "provider_ref".to_string(),
+            provider_id: "provider_id".to_string(),
             model_name: MODEL_NAME.to_string(),
             spread_config: SpreadScalerProperty {
                 instances: 1,
@@ -349,7 +303,7 @@ mod test {
         assert_eq!(
             scaler.id(),
             format!(
-                "{PROVIDER_DAEMON_SCALER_TYPE}-{}-component-provider-link-{}",
+                "{PROVIDER_DAEMON_SCALER_TYPE}-{}-component-provider_id-link-{}",
                 MODEL_NAME,
                 compute_provider_config_hash(&CapabilityConfig::Opaque("foobar".to_string()))
                     .unwrap()
@@ -363,7 +317,7 @@ mod test {
         assert_eq!(
             scaler_id_tokens,
             format!(
-                "{PROVIDER_DAEMON_SCALER_TYPE}-{}-component-provider-link",
+                "{PROVIDER_DAEMON_SCALER_TYPE}-{}-component-provider_id-link",
                 MODEL_NAME
             ),
             "ProviderDaemonScaler ID should be valid and depends on provider_config"
@@ -431,9 +385,7 @@ mod test {
                     id: provider_id.to_string(),
                     name: "provider".to_string(),
                     issuer: "issuer".to_string(),
-                    contract_id: "prov:ider".to_string(),
                     reference: provider_ref.to_string(),
-                    link_name: DEFAULT_LINK_NAME.to_string(),
                     hosts: HashMap::new(),
                 },
             )
@@ -454,10 +406,9 @@ mod test {
             store.clone(),
             ProviderSpreadConfig {
                 lattice_id: lattice_id.to_string(),
+                provider_id: provider_id.to_string(),
                 provider_reference: provider_ref.to_string(),
                 spread_config: multi_spread_even,
-                provider_contract_id: "prov:ider".to_string(),
-                provider_link_name: DEFAULT_LINK_NAME.to_string(),
                 model_name: MODEL_NAME.to_string(),
                 provider_config: Some(CapabilityConfig::Opaque("foobar".to_string())),
             },
@@ -480,8 +431,8 @@ mod test {
                     start,
                     StartProvider {
                         reference: provider_ref.to_string(),
+                        provider_id: provider_id.to_string(),
                         host_id: host_id_one.to_string(),
-                        link_name: Some(DEFAULT_LINK_NAME.to_string()),
                         model_name: MODEL_NAME.to_string(),
                         annotations: spreadscaler_annotations("SimpleOne", spreadscaler.id()),
                         config: Some(CapabilityConfig::Opaque("foobar".to_string())),
@@ -505,8 +456,8 @@ mod test {
                     start,
                     StartProvider {
                         reference: provider_ref.to_string(),
+                        provider_id: provider_id.to_string(),
                         host_id: host_id_two.to_string(),
-                        link_name: Some(DEFAULT_LINK_NAME.to_string()),
                         model_name: MODEL_NAME.to_string(),
                         annotations: spreadscaler_annotations("SimpleTwo", spreadscaler.id()),
                         config: Some(CapabilityConfig::Opaque("foobar".to_string())),

@@ -1,5 +1,5 @@
 use core::hash::{Hash, Hasher};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
@@ -7,19 +7,15 @@ use serde::{Deserialize, Serialize};
 /// and Hash since it can serve as a key
 #[derive(Debug, Serialize, Deserialize, Default, Clone, Eq)]
 pub struct ProviderInfo {
-    pub contract_id: String,
-    pub link_name: String,
-    // TODO: Should we actually parse the nkey?
-    pub public_key: String,
+    pub provider_id: String,
+    pub provider_ref: String,
     #[serde(default)]
     pub annotations: BTreeMap<String, String>,
 }
 
 impl PartialEq for ProviderInfo {
     fn eq(&self, other: &Self) -> bool {
-        self.public_key == other.public_key
-            && self.contract_id == other.contract_id
-            && self.link_name == other.link_name
+        self.provider_id == other.provider_id
     }
 }
 
@@ -27,9 +23,7 @@ impl PartialEq for ProviderInfo {
 // inventory where these three pieces need to be unique regardless of annotations
 impl Hash for ProviderInfo {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.public_key.hash(state);
-        self.contract_id.hash(state);
-        self.link_name.hash(state);
+        self.provider_id.hash(state);
     }
 }
 
@@ -50,10 +44,8 @@ pub struct ProviderClaims {
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq)]
 pub struct ProviderHealthCheckInfo {
-    pub link_name: String,
-    // TODO: Should we make this a parsed nkey?
-    pub public_key: String,
-    pub contract_id: String,
+    pub provider_id: String,
+    pub host_id: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq)]
@@ -71,16 +63,4 @@ pub struct ActorClaims {
     // in an array
     pub tags: Option<Vec<String>>,
     pub version: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Default, Eq, PartialEq, Clone)]
-pub struct Linkdef {
-    // TODO: parse as an nkey?
-    pub actor_id: String,
-    pub contract_id: String,
-    pub id: String,
-    pub link_name: String,
-    // TODO: parse as an nkey?
-    pub provider_id: String,
-    pub values: HashMap<String, String>,
 }

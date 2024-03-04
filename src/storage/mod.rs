@@ -246,10 +246,3 @@ impl<S: Store + Sync> ScopedStore<S> {
             .await
     }
 }
-
-/// A helper function for generating a unique ID for any given provider. This is exposed purely to
-/// be a common way of creating a key to access/store provider information
-pub fn provider_id(public_key: &str, link_name: &str) -> String {
-    // TODO: Update this to also use contract ID when 0.62 comes out
-    format!("{}/{}", public_key, link_name)
-}
