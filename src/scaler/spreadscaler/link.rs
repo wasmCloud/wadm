@@ -47,6 +47,8 @@ pub struct LinkScalerConfig {
 /// The LinkSpreadScaler ensures that link configuration exists on a specified lattice.
 pub struct LinkScaler<S, L> {
     pub config: LinkScalerConfig,
+    // TODO: Reenable once we figure out https://github.com/wasmCloud/wadm/issues/123
+    #[allow(unused)]
     store: S,
     ctl_client: L,
     id: String,
@@ -93,10 +95,15 @@ where
                 // where a provider is started by the host
                 self.reconcile().await
             }
-            Event::LinkdefDeleted(LinkdefDeleted { linkdef })
-                if linkdef.source_id == self.config.source_id
-                    && linkdef.target == self.config.target
-                    && linkdef.name == self.config.name =>
+            Event::LinkdefDeleted(LinkdefDeleted {
+                source_id,
+                wit_namespace,
+                wit_package,
+                name,
+            }) if source_id == &self.config.source_id
+                && name == &self.config.name
+                && wit_namespace == &self.config.wit_namespace
+                && wit_package == &self.config.wit_namespace =>
             {
                 self.reconcile().await
             }
@@ -643,7 +650,6 @@ mod test {
                         provider_id: "VASDASD".to_string(),
                         host_id: host_id_one.to_string(),
                     },
-                    host_id: host_id_one.to_string(),
                 },
             ))
             .await

@@ -9,7 +9,6 @@
     "data": {
       "annotations": {},
       "claims": {
-        "call_alias": null,
         "caps": ["wasmcloud:httpserver"],
         "expires_human": "TODO",
         "issuer": "ACOJJN6WUP4ODD75XEBKKTCCUJJCY5ZKQ56XVKYK4BEJWGVAOOQHZMCW",
@@ -21,8 +20,8 @@
       },
       "host_id": "NCBAWBHRT6JNSQIYQEURM3AQZ74I6HTQRRCFMTVPC3OAX4BUTCNTYADZ",
       "image_ref": "wasmcloud.azurecr.io/echo:0.3.4",
-      "max_instances": 10,
-      "public_key": "MBCFOPM6JW2APJLXJD3Z5O4CN7CPYJ2B4FTKLJUR5YR5MITIU7HD3WD5"
+      "actor_id": "wasmcloud_azurecr_io_echo_0_3_4",
+      "max_instances": 10
     }
   },
   {
@@ -37,6 +36,7 @@
       "error": "actor is already running with a different image reference `wasmcloud.azurecr.io/echo:0.3.4`",
       "host_id": "NCBAWBHRT6JNSQIYQEURM3AQZ74I6HTQRRCFMTVPC3OAX4BUTCNTYADZ",
       "image_ref": "wasmcloud.azurecr.io/echo:0.3.8",
+      "actor_id": "wasmcloud_azurecr_io_echo_0_3_4",
       "max_instances": 11,
       "public_key": "MBCFOPM6JW2APJLXJD3Z5O4CN7CPYJ2B4FTKLJUR5YR5MITIU7HD3WD5"
     }
@@ -52,11 +52,9 @@
         "tags": null,
         "version": "0.16.0"
       },
-      "contract_id": "wasmcloud:httpserver",
+      "host_id": "NB6PMW4RGLBP3NAVUVO2IH34VFJFSX7LF7TJOQCDU4GGUGF3P57SZLPX",
       "image_ref": "wasmcloud.azurecr.io/httpserver:0.16.0",
-      "instance_id": "a518251a-01f6-4ba6-b7f0-5d8458bc875e",
-      "link_name": "default",
-      "public_key": "VAG3QITQQ2ODAOWB5TTQSDJ53XK3SHBEIFNK4AYJ5RKAX2UNSCAPHA5M"
+      "provider_id": "wasmcloud_azurecr_io_httpserver_0_16_0"
     },
     "datacontenttype": "application/json",
     "id": "5613ee03-8645-4ad8-a3aa-3428a33b7e96",
@@ -67,9 +65,8 @@
   },
   {
     "data": {
-      "link_name": "default",
-      "public_key": "VAG3QITQQ2ODAOWB5TTQSDJ53XK3SHBEIFNK4AYJ5RKAX2UNSCAPHA5M",
-      "contract_id": "wasmcloud:httpserver"
+      "host_id": "NB6PMW4RGLBP3NAVUVO2IH34VFJFSX7LF7TJOQCDU4GGUGF3P57SZLPX",
+      "provider_id": "VAG3QITQQ2ODAOWB5TTQSDJ53XK3SHBEIFNK4AYJ5RKAX2UNSCAPHA5M"
     },
     "datacontenttype": "application/json",
     "id": "04369697-9397-46e3-99d7-277d867f9acc",
@@ -80,9 +77,8 @@
   },
   {
     "data": {
-      "link_name": "default",
-      "public_key": "VAG3QITQQ2ODAOWB5TTQSDJ53XK3SHBEIFNK4AYJ5RKAX2UNSCAPHA5M",
-      "contract_id": "wasmcloud:httpserver"
+      "host_id": "NB6PMW4RGLBP3NAVUVO2IH34VFJFSX7LF7TJOQCDU4GGUGF3P57SZLPX",
+      "provider_id": "VAG3QITQQ2ODAOWB5TTQSDJ53XK3SHBEIFNK4AYJ5RKAX2UNSCAPHA5M"
     },
     "datacontenttype": "application/json",
     "id": "04369697-9397-46e3-99d7-277d867f9acc",
@@ -93,9 +89,8 @@
   },
   {
     "data": {
-      "link_name": "default",
-      "public_key": "VAG3QITQQ2ODAOWB5TTQSDJ53XK3SHBEIFNK4AYJ5RKAX2UNSCAPHA5M",
-      "contract_id": "wasmcloud:httpserver"
+      "host_id": "NB6PMW4RGLBP3NAVUVO2IH34VFJFSX7LF7TJOQCDU4GGUGF3P57SZLPX",
+      "provider_id": "VAG3QITQQ2ODAOWB5TTQSDJ53XK3SHBEIFNK4AYJ5RKAX2UNSCAPHA5M"
     },
     "datacontenttype": "application/json",
     "id": "04369697-9397-46e3-99d7-277d867f9acc",
@@ -105,61 +100,26 @@
     "type": "com.wasmcloud.lattice.health_check_status"
   },
   {
-    "data": {
-      "actors": {
-        "MBCFOPM6JW2APJLXJD3Z5O4CN7CPYJ2B4FTKLJUR5YR5MITIU7HD3WD5": 1
-      },
-      "friendly_name": "fragrant-flower-3913",
-      "labels": {
-        "hostcore.arch": "aarch64",
-        "hostcore.os": "macos",
-        "hostcore.osfamily": "unix"
-      },
-      "providers": [
-        {
-          "contract_id": "wasmcloud:httpserver",
-          "link_name": "default",
-          "public_key": "VAG3QITQQ2ODAOWB5TTQSDJ53XK3SHBEIFNK4AYJ5RKAX2UNSCAPHA5M"
-        }
-      ],
-      "uptime_human": "3 minutes, 2 seconds",
-      "uptime_seconds": 182,
-      "version": "0.81.0"
-    },
-    "datacontenttype": "application/json",
-    "id": "ebd7b0d3-36a0-4011-b32a-ebccb9f270e3",
-    "source": "NB6PMW4RGLBP3NAVUVO2IH34VFJFSX7LF7TJOQCDU4GGUGF3P57SZLPX",
     "specversion": "1.0",
-    "time": "2023-02-14T19:21:48.838573Z",
-    "type": "com.wasmcloud.lattice.host_heartbeat"
-  },
-  {
-    "specversion": "1.0",
-    "id": "018cf459-24e3-c4fe-46f8-c68f5a3ea6bc",
+    "id": "018e15ae-60dd-2467-4ce1-7d96b38beced",
     "type": "com.wasmcloud.lattice.host_heartbeat",
-    "source": "ND4OAUIBDT4HITUV4UW7VJUUTVMDJJIH5FA3YKP6D6REASBU3ZNUKMEM",
+    "source": "NCRXKSKEDK3Z775IRSNBKTFCRAEB7WBQNSREZ4DMFN2TKYRYXNV7UPRT",
     "datacontenttype": "application/json",
-    "time": "2024-01-10T17:08:52.067116Z",
+    "time": "2024-03-06T21:32:13.405311Z",
     "data": {
       "actors": [
         {
-          "id": "MBCFOPM6JW2APJLXJD3Z5O4CN7CPYJ2B4FTKLJUR5YR5MITIU7HD3WD5",
-          "image_ref": "wasmcloud.azurecr.io/echo:0.3.4",
-          "instances": [
-            {
-              "annotations": {},
-              "image_ref": "wasmcloud.azurecr.io/echo:0.3.4",
-              "instance_id": "018cf458-073b-cd5f-87d5-f5e021b8aab1",
-              "max_instances": 1,
-              "revision": 4
-            }
-          ],
-          "name": "Echo"
+          "annotations": {},
+          "id": "hello_world",
+          "image_ref": "ghcr.io/brooksmtownsend/http-hello-world-rust:0.1.0",
+          "max_instances": 1,
+          "name": "http-hello-world",
+          "revision": 0
         }
       ],
-      "friendly_name": "nameless-pine-6843",
-      "host_id": "ND4OAUIBDT4HITUV4UW7VJUUTVMDJJIH5FA3YKP6D6REASBU3ZNUKMEM",
-      "issuer": "CCKN5TESAQV2UUBNHLEHTZDNWXKDHWJTFDBTUSMPCTUB5UI47FNV4NZK",
+      "friendly_name": "floral-forest-3510",
+      "host_id": "NCRXKSKEDK3Z775IRSNBKTFCRAEB7WBQNSREZ4DMFN2TKYRYXNV7UPRT",
+      "issuer": "CDCCCTSNYF7RV4HAODDDAUMH2RLUXSKU6NJNBXMEKUJWAPTD5AUH5GGB",
       "labels": {
         "hostcore.arch": "aarch64",
         "hostcore.os": "macos",
@@ -168,62 +128,55 @@
       "providers": [
         {
           "annotations": {},
-          "contract_id": "wasmcloud:httpserver",
-          "id": "VAG3QITQQ2ODAOWB5TTQSDJ53XK3SHBEIFNK4AYJ5RKAX2UNSCAPHA5M",
+          "id": "httpserver",
           "image_ref": "wasmcloud.azurecr.io/httpserver:0.19.1",
-          "link_name": "default",
           "name": "HTTP Server",
           "revision": 0
         }
       ],
-      "uptime_human": "1m 30s",
-      "uptime_seconds": 90,
+      "uptime_human": "30s",
+      "uptime_seconds": 30,
       "version": "0.82.0"
     }
   },
   {
-    "data": {
-      "actor_id": "MBCFOPM6JW2APJLXJD3Z5O4CN7CPYJ2B4FTKLJUR5YR5MITIU7HD3WD5",
-      "contract_id": "wasmcloud:httpserver",
-      "id": "EC986307FC72C45DBA4699F5AD52702B09800138ACA24BC53339B929423947B6",
-      "link_name": "default",
-      "provider_id": "VAG3QITQQ2ODAOWB5TTQSDJ53XK3SHBEIFNK4AYJ5RKAX2UNSCAPHA5M",
-      "values": {
-        "address": "0.0.0.0:8080"
-      }
-    },
-    "datacontenttype": "application/json",
-    "id": "1d2ea745-5ae6-42f7-887b-f1a25bd7c19d",
-    "source": "n/a",
     "specversion": "1.0",
-    "time": "2023-02-14T19:22:25.662024Z",
-    "type": "com.wasmcloud.lattice.linkdef_set"
+    "id": "018e15b0-b9e0-e78e-fa68-88def538a3ef",
+    "type": "com.wasmcloud.lattice.linkdef_set",
+    "source": "NCRXKSKEDK3Z775IRSNBKTFCRAEB7WBQNSREZ4DMFN2TKYRYXNV7UPRT",
+    "datacontenttype": "application/json",
+    "time": "2024-03-06T21:34:47.264899Z",
+    "data": {
+      "interfaces": ["pingpong", "busybox"],
+      "name": "default",
+      "source_config": [],
+      "source_id": "hello_world",
+      "target": "header",
+      "target_config": [],
+      "wit_namespace": "wasmcloud",
+      "wit_package": "testing"
+    }
+  },
+  {
+    "specversion": "1.0",
+    "id": "018e15b1-26b5-90ee-7949-c8f784996bd4",
+    "type": "com.wasmcloud.lattice.linkdef_deleted",
+    "source": "NCRXKSKEDK3Z775IRSNBKTFCRAEB7WBQNSREZ4DMFN2TKYRYXNV7UPRT",
+    "datacontenttype": "application/json",
+    "time": "2024-03-06T21:35:15.125679Z",
+    "data": {
+      "name": "default",
+      "source_id": "hello_world",
+      "wit_namespace": "wasmcloud",
+      "wit_package": "testing"
+    }
   },
   {
     "data": {
-      "actor_id": "MBCFOPM6JW2APJLXJD3Z5O4CN7CPYJ2B4FTKLJUR5YR5MITIU7HD3WD5",
-      "contract_id": "wasmcloud:httpserver",
-      "id": "EC986307FC72C45DBA4699F5AD52702B09800138ACA24BC53339B929423947B6",
-      "link_name": "default",
+      "host_id": "NB6PMW4RGLBP3NAVUVO2IH34VFJFSX7LF7TJOQCDU4GGUGF3P57SZLPX",
       "provider_id": "VAG3QITQQ2ODAOWB5TTQSDJ53XK3SHBEIFNK4AYJ5RKAX2UNSCAPHA5M",
-      "values": {
-        "address": "0.0.0.0:8080"
-      }
-    },
-    "datacontenttype": "application/json",
-    "id": "e3169b21-1e16-48f8-baf4-337eafcf35ca",
-    "source": "n/a",
-    "specversion": "1.0",
-    "time": "2023-02-14T19:22:57.131368Z",
-    "type": "com.wasmcloud.lattice.linkdef_deleted"
-  },
-  {
-    "data": {
-      "contract_id": "wasmcloud:httpserver",
-      "instance_id": "a518251a-01f6-4ba6-b7f0-5d8458bc875e",
-      "link_name": "default",
-      "public_key": "VAG3QITQQ2ODAOWB5TTQSDJ53XK3SHBEIFNK4AYJ5RKAX2UNSCAPHA5M",
-      "reason": "normal"
+      "reason": "normal",
+      "annotations": {}
     },
     "datacontenttype": "application/json",
     "id": "ff992d44-d873-45cf-bf34-b07f9db530f3",
@@ -266,8 +219,8 @@
   {
     "data": {
       "error": "\"Failed to fetch OCI bytes: Registry error: url https://wasmcloud.azurecr.io/v2/httpserver/manifests/latest, envelope: OCI API errors: [OCI API error: manifest tagged by \\\"latest\\\" is not found]\"",
-      "link_name": "default",
-      "provider_ref": "wasmcloud.azurecr.io/httpserver"
+      "provider_ref": "wasmcloud.azurecr.io/httpserver",
+      "provider_id": "wasmcloud_azurecr_io_httpserver"
     },
     "datacontenttype": "application/json",
     "id": "5a55cf82-713a-4043-be51-ab532d1c8a4d",
