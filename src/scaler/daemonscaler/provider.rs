@@ -277,11 +277,12 @@ mod test {
             provider_config: None,
         };
 
-        let scaler = ProviderDaemonScaler::new(Arc::new(TestStore::default()), config, "component");
+        let scaler =
+            ProviderDaemonScaler::new(Arc::new(TestStore::default()), config, "myprovider");
         assert_eq!(
             scaler.id(),
             format!(
-                "{PROVIDER_DAEMON_SCALER_TYPE}-{}-component-provider_id-link",
+                "{PROVIDER_DAEMON_SCALER_TYPE}-{}-myprovider-provider_id",
                 MODEL_NAME
             ),
             "ProviderDaemonScaler ID should be valid"
@@ -299,11 +300,12 @@ mod test {
             provider_config: Some(CapabilityConfig::Opaque("foobar".to_string())),
         };
 
-        let scaler = ProviderDaemonScaler::new(Arc::new(TestStore::default()), config, "component");
+        let scaler =
+            ProviderDaemonScaler::new(Arc::new(TestStore::default()), config, "myprovider");
         assert_eq!(
             scaler.id(),
             format!(
-                "{PROVIDER_DAEMON_SCALER_TYPE}-{}-component-provider_id-link-{}",
+                "{PROVIDER_DAEMON_SCALER_TYPE}-{}-myprovider-provider_id-{}",
                 MODEL_NAME,
                 compute_provider_config_hash(&CapabilityConfig::Opaque("foobar".to_string()))
                     .unwrap()
@@ -317,7 +319,7 @@ mod test {
         assert_eq!(
             scaler_id_tokens,
             format!(
-                "{PROVIDER_DAEMON_SCALER_TYPE}-{}-component-provider_id-link",
+                "{PROVIDER_DAEMON_SCALER_TYPE}-{}-myprovider-provider_id",
                 MODEL_NAME
             ),
             "ProviderDaemonScaler ID should be valid and depends on provider_config"

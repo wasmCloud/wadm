@@ -396,7 +396,7 @@ mod test {
         commands::Command,
         consumers::{manager::Worker, ScopedMessage},
         events::{
-            ActorsStopped, Event, LinkdefDeleted, LinkdefSet, ProviderStarted, ProviderStopped,
+            ActorScaled, Event, LinkdefDeleted, LinkdefSet, ProviderStarted, ProviderStopped,
         },
         model::{Spread, SpreadScalerProperty},
         scaler::{
@@ -1438,25 +1438,26 @@ mod test {
             _ => panic!("Unexpected commands in spreadscaler list"),
         }
 
-        let modifying_event = ActorsStopped {
+        let modifying_event = ActorScaled {
             annotations: spreadscaler_annotations("CrossRegionReal", blobby_spreadscaler.id()),
-            public_key: blobby_id.to_string(),
+            actor_id: blobby_id.to_string(),
+            image_ref: blobby_ref.to_string(),
             host_id: host_id_two.to_string(),
-            count: 1,
-            remaining: 15,
+            max_instances: 0,
+            claims: None,
         };
 
         worker
             .do_work(ScopedMessage::<Event> {
                 lattice_id: lattice_id.to_string(),
-                inner: Event::ActorsStopped(modifying_event.clone()),
+                inner: Event::ActorScaled(modifying_event.clone()),
                 acker: None,
             })
             .await
             .expect("should be able to handle an event");
 
         let mut cmds = blobby_spreadscaler
-            .handle_event(&Event::ActorsStopped(modifying_event))
+            .handle_event(&Event::ActorScaled(modifying_event))
             .await?;
         assert_eq!(cmds.len(), 2);
         cmds.sort_by(|a, b| match (a, b) {
