@@ -562,13 +562,13 @@ where
     async fn handle_provider_health_check(
         &self,
         lattice_id: &str,
-        host_id: &str,
         provider: &ProviderHealthCheckInfo,
         failed: Option<bool>,
     ) -> anyhow::Result<()> {
         debug!("Handling provider health check event");
         trace!("Getting current provider");
         let id = &provider.provider_id;
+        let host_id = &provider.host_id;
         let mut current: Provider = match self.store.get(lattice_id, &id).await? {
             Some(p) => p,
             None => {
@@ -1047,16 +1047,16 @@ where
                 .handle_provider_stopped(&message.lattice_id, provider)
                 .await
                 .map(|_| None),
-            Event::ProviderHealthCheckStatus(ProviderHealthCheckStatus { data, host_id }) => self
-                .handle_provider_health_check(&message.lattice_id, host_id, data, None)
+            Event::ProviderHealthCheckStatus(ProviderHealthCheckStatus { data }) => self
+                .handle_provider_health_check(&message.lattice_id, data, None)
                 .await
                 .map(|_| None),
-            Event::ProviderHealthCheckPassed(ProviderHealthCheckPassed { data, host_id }) => self
-                .handle_provider_health_check(&message.lattice_id, host_id, data, Some(false))
+            Event::ProviderHealthCheckPassed(ProviderHealthCheckPassed { data }) => self
+                .handle_provider_health_check(&message.lattice_id, data, Some(false))
                 .await
                 .map(|_| None),
-            Event::ProviderHealthCheckFailed(ProviderHealthCheckFailed { data, host_id }) => self
-                .handle_provider_health_check(&message.lattice_id, host_id, data, Some(true))
+            Event::ProviderHealthCheckFailed(ProviderHealthCheckFailed { data }) => self
+                .handle_provider_health_check(&message.lattice_id, data, Some(true))
                 .await
                 .map(|_| None),
             Event::ManifestPublished(data) => self
@@ -2284,7 +2284,6 @@ mod test {
         worker
             .handle_provider_health_check(
                 lattice_id,
-                &host_id,
                 &ProviderHealthCheckInfo {
                     provider_id: provider.provider_id.clone(),
                     host_id: host_id.clone(),
@@ -2313,7 +2312,6 @@ mod test {
         worker
             .handle_provider_health_check(
                 lattice_id,
-                &host_id,
                 &ProviderHealthCheckInfo {
                     provider_id: provider.provider_id.clone(),
                     host_id: host_id.clone(),
