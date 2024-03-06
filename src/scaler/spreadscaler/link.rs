@@ -308,7 +308,7 @@ mod test {
                 wit_namespace: "wit_namespace".to_string(),
                 wit_package: "wit_package".to_string(),
                 wit_interfaces: vec!["wit_interface".to_string()],
-                name: "link_name".to_string(),
+                name: "default".to_string(),
                 lattice_id: lattice_id.clone(),
                 model_name: "model".to_string(),
                 source_config: source_config.clone(),
@@ -318,24 +318,20 @@ mod test {
         );
 
         let id = format!(
-            "{LINK_SCALER_TYPE}-{model_name}-{provider_link_name}-{actor_reference}-{provider_reference}-{linkscaler_values_hash}",
+            "{LINK_SCALER_TYPE}-{model_name}-{link_name}-{provider_id}-{actor_id}-{linkscaler_values_hash}",
             LINK_SCALER_TYPE = LINK_SCALER_TYPE,
             model_name = "model",
-            provider_link_name = "default",
-            actor_reference = actor_ref,
-            provider_reference = provider_ref,
+            link_name = "default",
             linkscaler_values_hash = compute_linkscaler_config_hash(&source_config, &target_config)
         );
 
         assert_eq!(scaler.id(), id, "LinkScaler ID should be the same when scalers have the same type, model name, provider link name, actor reference, provider reference, and values");
 
         let id = format!(
-            "{LINK_SCALER_TYPE}-{model_name}-{provider_link_name}-{actor_reference}-{provider_reference}-{linkscaler_values_hash}",
+            "{LINK_SCALER_TYPE}-{model_name}-{link_name}-{actor_id}-{provider_id}-{linkscaler_values_hash}",
             LINK_SCALER_TYPE = LINK_SCALER_TYPE,
             model_name = "model",
-            provider_link_name = "default",
-            actor_reference = actor_ref,
-            provider_reference = provider_ref,
+            link_name = "default",
             linkscaler_values_hash = compute_linkscaler_config_hash(&vec!["foo".to_string()], &vec!["bar".to_string()])
         );
 
@@ -363,12 +359,11 @@ mod test {
         );
 
         let id = format!(
-            "{LINK_SCALER_TYPE}-{model_name}-{provider_link_name}-{actor_reference}-{provider_reference}",
+            "{LINK_SCALER_TYPE}-{model_name}-{link_name}-{actor_id}-{provider_id}-{linkscaler_values_hash}",
             LINK_SCALER_TYPE = LINK_SCALER_TYPE,
             model_name = "model",
-            provider_link_name = "default",
-            actor_reference = actor_ref,
-            provider_reference = provider_ref,
+            link_name = "default",
+            linkscaler_values_hash = compute_linkscaler_config_hash(&vec![], &vec![])
         );
 
         assert_eq!(scaler.id(), id, "LinkScaler ID should be the same when their type, model name, provider link name, actor reference, and provider reference are the same and they both have no values configured");
@@ -384,17 +379,13 @@ mod test {
                 name: "default".to_string(),
                 lattice_id: lattice_id.clone(),
                 model_name: "model".to_string(),
-                source_config: vec![],
-                target_config: vec![],
+                source_config: vec!["default-http".to_string()],
+                target_config: vec!["outbound-cert".to_string()],
             },
             TestLatticeSource::default(),
         );
 
         assert_ne!(scaler.id(), id, "Expected LinkScaler values hash to differiantiate scalers with the same type, model name, provider link name, actor reference, and provider reference");
-        let mut scaler_id_tokens = scaler.id().split('-');
-        scaler_id_tokens.next_back();
-        let scaler_id_tokens = scaler_id_tokens.collect::<Vec<&str>>().join("-");
-        assert_eq!(scaler_id_tokens, id, "Excluding the values hash, the LinkScaler ID should be the same when scalers have the same type, model name, provider link name, actor reference, and provider reference");
     }
 
     #[tokio::test]
@@ -531,7 +522,6 @@ mod test {
                 lattice_id,
                 host_id_one.to_string(),
                 Host {
-                    // actors: HashMap::new(),
                     actors: HashMap::from_iter([(echo_id.to_string(), 1)]),
                     friendly_name: "hey".to_string(),
                     labels: HashMap::from_iter([
@@ -592,6 +582,7 @@ mod test {
             .reconcile()
             .await
             .expect("link scaler to handle reconcile");
+        // TODO(brooksmtownsend): link scaler should? wait until the source is running before creating the link
         assert!(commands.is_empty());
 
         // Actor starts, put into state and then handle event

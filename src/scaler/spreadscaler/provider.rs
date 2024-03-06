@@ -347,7 +347,7 @@ mod test {
         assert_eq!(
             scaler.id(),
             format!(
-                "{PROVIDER_SPREAD_SCALER_TYPE}-{}-component-provider-link",
+                "{PROVIDER_SPREAD_SCALER_TYPE}-{}-component-provider_id",
                 MODEL_NAME
             ),
             "ProviderSpreadScaler ID should be valid"
@@ -369,7 +369,7 @@ mod test {
         assert_eq!(
             scaler.id(),
             format!(
-                "{PROVIDER_SPREAD_SCALER_TYPE}-{}-component-provider-link-{}",
+                "{PROVIDER_SPREAD_SCALER_TYPE}-{}-component-provider_id-{}",
                 MODEL_NAME,
                 compute_provider_config_hash(&CapabilityConfig::Opaque("foobar".to_string()))
                     .unwrap()
@@ -383,7 +383,7 @@ mod test {
         assert_eq!(
             scaler_id_tokens,
             format!(
-                "{PROVIDER_SPREAD_SCALER_TYPE}-{}-component-provider-link",
+                "{PROVIDER_SPREAD_SCALER_TYPE}-{}-component-provider_id",
                 MODEL_NAME
             ),
             "ProviderSpreadScaler ID should be valid and depends on provider_config"
