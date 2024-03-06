@@ -745,9 +745,15 @@ pub(crate) fn component_id(
     if let Some(id) = component_id {
         id.to_owned()
     } else {
-        format!("{model_name}-{component_ref}")
-            .to_lowercase()
-            .replace(|c: char| !c.is_ascii_alphanumeric(), "_")
+        format!(
+            "{}-{}",
+            model_name
+                .to_lowercase()
+                .replace(|c: char| !c.is_ascii_alphanumeric(), "_"),
+            component_ref
+                .to_lowercase()
+                .replace(|c: char| !c.is_ascii_alphanumeric(), "_")
+        )
     }
 }
 
@@ -757,9 +763,42 @@ mod test {
 
     #[test]
     fn compute_proper_component_id() {
+        // User supplied ID always takes precedence
+        assert_eq!(
+            component_id(
+                "mymodel",
+                Some(&"myid".to_string()),
+                "wasmcloud.azurecr.io/echo:0.3.4"
+            ),
+            "myid"
+        );
+        assert_eq!(
+            component_id(
+                "some model name with spaces cause yaml",
+                Some(&"myid".to_string()),
+                "wasmcloud.azurecr.io/echo:0.3.4"
+            ),
+            "myid"
+        );
+        // Sanitize component reference
         assert_eq!(
             component_id("mymodel", None, "wasmcloud.azurecr.io/echo:0.3.4"),
             "mymodel-wasmcloud_azurecr_io_echo_0_3_4"
+        );
+        // Ensure we can support spaces in the model name, because YAML strings
+        assert_eq!(
+            component_id(
+                "some model name with spaces cause yaml",
+                None,
+                "wasmcloud.azurecr.io/echo:0.3.4"
+            ),
+            "some_model_name_with_spaces_cause_yaml-wasmcloud_azurecr_io_echo_0_3_4"
+        );
+        // Ensure we can support spaces in the model name, because YAML strings
+        // Ensure we can support lowercasing the reference as well, just in case
+        assert_eq!(
+            component_id("My ThInG", None, "file:///Users/me/thing.wasm"),
+            "my_thing-file____users_me_thing_wasm"
         );
     }
 }
