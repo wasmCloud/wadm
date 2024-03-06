@@ -1600,99 +1600,6 @@ mod test {
             "Should have a single provider running"
         );
 
-        /***********************************************************/
-        /******************* Host Heartbeat Test *******************/
-        /***********************************************************/
-
-        // NOTE(brooksmtownsend): Painful manual manipulation of host inventory
-        // to satisfy the way we currently query the inventory when handling heartbeats.
-        // TODO(#235): Remove this as we no longer need the inventory to handle a heartbeat
-        *inventory.write().await = HashMap::from_iter([
-            (
-                host1_id.to_string(),
-                HostInventory {
-                    friendly_name: "my-host-1".to_string(),
-                    issuer: "my-issuer-1".to_string(),
-                    actors: vec![
-                        ActorDescription {
-                            id: actor1.public_key.to_string(),
-                            image_ref: "ref1".to_string(),
-                            annotations: None,
-                            revision: 0,
-                            name: None,
-                            max_instances: 2,
-                        },
-                        ActorDescription {
-                            id: actor2.public_key.to_string(),
-                            image_ref: "ref2".to_string(),
-                            annotations: None,
-                            revision: 0,
-                            name: None,
-                            max_instances: 2,
-                        },
-                    ],
-                    host_id: host1_id.to_string(),
-                    labels: HashMap::new(),
-                    providers: vec![
-                        ProviderDescription {
-                            id: provider1.provider_id.clone(),
-                            annotations: Some(HashMap::new()),
-                            image_ref: Some(provider1.image_ref.clone()),
-                            name: Some("One".to_string()),
-                            revision: 0,
-                        },
-                        ProviderDescription {
-                            id: provider2.provider_id.clone(),
-                            annotations: Some(HashMap::new()),
-                            image_ref: Some(provider2.image_ref.clone()),
-                            name: Some("Two".to_string()),
-                            revision: 0,
-                        },
-                    ],
-                    version: semver::Version::parse("1.0.0").unwrap().to_string(),
-                    uptime_human: "30s".into(),
-                    uptime_seconds: 30,
-                },
-            ),
-            (
-                host2_id.to_string(),
-                HostInventory {
-                    friendly_name: "my-host-2".to_string(),
-                    issuer: "my-issuer-1".to_string(),
-                    actors: vec![
-                        ActorDescription {
-                            id: actor1.public_key.to_string(),
-                            image_ref: "ref1".to_string(),
-                            annotations: None,
-                            revision: 0,
-                            max_instances: 2,
-                            name: None,
-                        },
-                        ActorDescription {
-                            id: actor2.public_key.to_string(),
-                            image_ref: "ref2".to_string(),
-                            annotations: None,
-                            revision: 0,
-                            max_instances: 2,
-                            name: None,
-                        },
-                    ],
-                    host_id: host2_id.to_string(),
-                    labels: HashMap::new(),
-                    providers: vec![ProviderDescription {
-                        id: provider2.provider_id.clone(),
-                        annotations: Some(HashMap::new()),
-                        image_ref: Some(provider2.image_ref.clone()),
-                        name: Some("Two".to_string()),
-                        revision: 0,
-                    }],
-                    version: semver::Version::parse("1.0.0").unwrap().to_string(),
-                    uptime_human: "30s".into(),
-                    uptime_seconds: 30,
-                },
-            ),
-        ]);
-
         worker
             .handle_host_heartbeat(
                 lattice_id,
@@ -2390,7 +2297,7 @@ mod test {
         store
             .store(
                 lattice_id,
-                "jabbatheprovider/default".to_string(),
+                "jabbatheprovider".to_string(),
                 Provider {
                     id: "jabbatheprovider".to_string(),
                     hosts: HashMap::from_iter([(host_id.to_string(), ProviderStatus::Pending)]),
@@ -2399,47 +2306,6 @@ mod test {
             )
             .await
             .unwrap();
-
-        *inventory.write().await = HashMap::from_iter([(
-            host_id.to_string(),
-            HostInventory {
-                friendly_name: "my-host-7".to_string(),
-                issuer: "my-issuer-5".to_string(),
-                actors: vec![
-                    ActorDescription {
-                        id: "jabba".to_string(),
-                        image_ref: "jabba.tatooinecr.io/jabba:latest".to_string(),
-                        name: Some("Da Hutt".to_string()),
-                        annotations: Some(HashMap::from_iter([(
-                            "da".to_string(),
-                            "gobah".to_string(),
-                        )])),
-                        revision: 0,
-                        max_instances: 1,
-                    },
-                    ActorDescription {
-                        id: "jabba2".to_string(),
-                        image_ref: "jabba.tatooinecr.io/jabba:latest".to_string(),
-                        name: Some("Da Hutt".to_string()),
-                        annotations: None,
-                        revision: 0,
-                        max_instances: 1,
-                    },
-                ],
-                labels: HashMap::new(),
-                host_id: host_id.to_string(),
-                providers: vec![ProviderDescription {
-                    annotations: Some(HashMap::from_iter([("one".to_string(), "two".to_string())])),
-                    id: "jabbatheprovider".to_string(),
-                    image_ref: Some("jabba.tatooinecr.io/provider:latest".to_string()),
-                    name: Some("Jabba The Provider".to_string()),
-                    revision: 0,
-                }],
-                version: semver::Version::parse("0.61.0").unwrap().to_string(),
-                uptime_human: "60s".into(),
-                uptime_seconds: 60,
-            },
-        )]);
 
         // Now heartbeat and make sure stuff that isn't running is removed
         worker
@@ -2456,7 +2322,7 @@ mod test {
                                 "gobah".to_string(),
                             )])),
                             revision: 0,
-                            max_instances: 1,
+                            max_instances: 5,
                         },
                         ActorDescription {
                             id: "jabba2".to_string(),
@@ -2471,10 +2337,13 @@ mod test {
                     labels: HashMap::default(),
                     issuer: "".to_string(),
                     providers: vec![ProviderDescription {
-                        annotations: None,
-                        image_ref: Some("jabba.tatooinecr.io/provider:latest".to_string()),
-                        name: None,
+                        annotations: Some(HashMap::from_iter([(
+                            "one".to_string(),
+                            "two".to_string(),
+                        )])),
                         id: "jabbatheprovider".to_string(),
+                        image_ref: Some("jabba.tatooinecr.io/provider:latest".to_string()),
+                        name: Some("Jabba The Provider".to_string()),
                         revision: 0,
                     }],
                     uptime_human: "60s".into(),
@@ -2487,9 +2356,13 @@ mod test {
             .expect("Should be able to handle host heartbeat");
 
         let actors = store.list::<Actor>(lattice_id).await.unwrap();
-        assert_eq!(actors.len(), 1, "Should have 1 actor in the store");
+        assert_eq!(actors.len(), 2, "Should have 2 actors in the store");
         let actor = actors.get("jabba").expect("Actor should exist");
-        assert_eq!(actor.count(), 2, "Should now have 2 actors");
+        assert_eq!(
+            actor.count(),
+            5,
+            "Actor should have the correct number of instances"
+        );
         assert_eq!(actor.name, "Da Hutt", "Should have the correct name");
         assert_eq!(
             actor.reference, "jabba.tatooinecr.io/jabba:latest",
@@ -2515,7 +2388,7 @@ mod test {
             .expect("should be able to grab providers from store");
         assert_eq!(providers.len(), 1, "Should have 1 provider in the store");
         let provider = providers
-            .get("jabbatheprovider/default")
+            .get("jabbatheprovider")
             .expect("Provider should exist");
         assert_eq!(
             provider.name, "Jabba The Provider",
