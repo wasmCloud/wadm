@@ -1406,7 +1406,10 @@ mod test {
             .is_empty());
         assert!(blobby_spreadscaler
             .handle_event(&Event::LinkdefDeleted(LinkdefDeleted {
-                linkdef: InterfaceLinkDefinition::default()
+                source_id: "source".to_string(),
+                name: "name".to_string(),
+                wit_namespace: "wasi".to_string(),
+                wit_package: "testy".to_string()
             }))
             .await?
             .is_empty());

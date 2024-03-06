@@ -452,45 +452,33 @@ event_impl!(
 pub struct ProviderHealthCheckPassed {
     #[serde(flatten)]
     pub data: ProviderHealthCheckInfo,
-    #[serde(default)]
-    pub host_id: String,
 }
 
 event_impl!(
     ProviderHealthCheckPassed,
-    "com.wasmcloud.lattice.health_check_passed",
-    source,
-    host_id
+    "com.wasmcloud.lattice.health_check_passed"
 );
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct ProviderHealthCheckFailed {
     #[serde(flatten)]
     pub data: ProviderHealthCheckInfo,
-    #[serde(default)]
-    pub host_id: String,
 }
 
 event_impl!(
     ProviderHealthCheckFailed,
-    "com.wasmcloud.lattice.health_check_failed",
-    source,
-    host_id
+    "com.wasmcloud.lattice.health_check_failed"
 );
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct ProviderHealthCheckStatus {
     #[serde(flatten)]
     pub data: ProviderHealthCheckInfo,
-    #[serde(default)]
-    pub host_id: String,
 }
 
 event_impl!(
     ProviderHealthCheckStatus,
-    "com.wasmcloud.lattice.health_check_status",
-    source,
-    host_id
+    "com.wasmcloud.lattice.health_check_status"
 );
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -503,8 +491,10 @@ event_impl!(LinkdefSet, "com.wasmcloud.lattice.linkdef_set");
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct LinkdefDeleted {
-    #[serde(flatten)]
-    pub linkdef: InterfaceLinkDefinition,
+    pub source_id: String,
+    pub name: String,
+    pub wit_namespace: String,
+    pub wit_package: String,
 }
 
 event_impl!(LinkdefDeleted, "com.wasmcloud.lattice.linkdef_deleted");
