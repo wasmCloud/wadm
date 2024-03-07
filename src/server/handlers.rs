@@ -1119,24 +1119,26 @@ mod test {
                 .contains("Duplicate component name in manifest")),
         }
 
-        let manifest = deserialize_yaml("./test/data/duplicate_imageref1.yaml")
-            .expect("Should be able to parse");
+        let manifest =
+            deserialize_yaml("./test/data/duplicate_id1.yaml").expect("Should be able to parse");
 
         match validate_manifest(manifest).await {
-            Ok(()) => panic!("Should have detected duplicate image reference for link name in provider properties"),
+            Ok(()) => {
+                panic!("Should have detected duplicate component ID in provider properties")
+            }
             Err(e) => assert!(e
                 .to_string()
-                .contains("Duplicate image reference")),
+                .contains("Duplicate component identifier in manifest")),
         }
 
-        let manifest = deserialize_yaml("./test/data/duplicate_imageref2.yaml")
-            .expect("Should be able to parse");
+        let manifest =
+            deserialize_yaml("./test/data/duplicate_id2.yaml").expect("Should be able to parse");
 
         match validate_manifest(manifest).await {
-            Ok(()) => panic!("Should have detected duplicate image reference for actor"),
+            Ok(()) => panic!("Should have detected duplicate component ID in actor properties"),
             Err(e) => assert!(e
                 .to_string()
-                .contains("Duplicate image reference in manifest")),
+                .contains("Duplicate component identifier in manifest")),
         }
 
         let manifest = deserialize_yaml("./test/data/duplicate_linkdef.yaml")
