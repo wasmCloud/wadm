@@ -38,15 +38,6 @@
                 }
               ]
             }
-          },
-          {
-            "type": "linkdef",
-            "properties": {
-              "target": "webcap",
-              "values": {
-                "port": "8080"
-              }
-            }
           }
         ]
       },
@@ -54,17 +45,26 @@
         "name": "webcap",
         "type": "capability",
         "properties": {
-          "contract": "wasmcloud:httpserver",
-          "image": "wasmcloud.azurecr.io/httpserver:0.13.1",
-          "link_name": "default"
-        }
+          "image": "wasmcloud.azurecr.io/httpserver:0.13.1"
+        },
+        "traits": [
+          {
+            "type": "link",
+            "properties": {
+              "target": "webcap",
+              "namespace": "wasi",
+              "package": "http",
+              "interfaces": ["incoming-handler"],
+              "name": "default"
+            }
+          }
+        ]
       },
       {
         "name": "ledblinky",
         "type": "capability",
         "properties": {
-          "image": "wasmcloud.azurecr.io/ledblinky:0.0.1",
-          "contract": "wasmcloud:blinkenlights"
+          "image": "wasmcloud.azurecr.io/ledblinky:0.0.1"
         },
         "traits": [
           {

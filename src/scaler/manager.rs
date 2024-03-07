@@ -22,7 +22,7 @@ use crate::{
     events::Event,
     model::{
         Component, Manifest, Properties, SpreadScalerProperty, Trait, TraitProperty,
-        DAEMONSCALER_TRAIT, LINKDEF_TRAIT, SPREADSCALER_TRAIT,
+        DAEMONSCALER_TRAIT, LINK_TRAIT, SPREADSCALER_TRAIT,
     },
     publisher::Publisher,
     scaler::{spreadscaler::ActorSpreadScaler, Command, Scaler},
@@ -605,7 +605,7 @@ where
                                 &component.name,
                             )) as BoxedScaler)
                         }
-                        (LINKDEF_TRAIT, TraitProperty::Linkdef(p)) => {
+                        (LINK_TRAIT, TraitProperty::Link(p)) => {
                             // TODO: look for actor or provider components
                             components
                                 .iter()
