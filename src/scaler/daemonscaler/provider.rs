@@ -425,7 +425,7 @@ mod test {
             _ => panic!("Should have been start providers"),
         });
 
-        let cmd_one = commands.get(0).cloned();
+        let cmd_one = commands.first().cloned();
         match cmd_one {
             None => panic!("command should have existed"),
             Some(Command::StartProvider(start)) => {
