@@ -1028,7 +1028,7 @@ pub(crate) async fn validate_manifest(manifest: Manifest) -> anyhow::Result<()> 
                 if let Trait {
                     // TODO : add trait type validation after custom types are done. See TraitProperty enum.
                     properties:
-                        TraitProperty::Linkdef(LinkProperty {
+                        TraitProperty::Link(LinkProperty {
                             target: target_name,
                             ..
                         }),

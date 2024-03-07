@@ -14,7 +14,7 @@ spec:
       traits:
         - type: spreadscaler
           properties:
-            replicas: 4
+            instances: 4
             spread:
               - name: eastcoast
                 requirements:
@@ -24,31 +24,29 @@ spec:
                 requirements:
                   zone: us-west-1
                 weight: 20
-        - type: linkdef
-          properties:
-            target: webcap
-            values:
-              port: "8080"
 
     - name: webcap
       type: capability
       properties:
-        contract: wasmcloud:httpserver
         image: wasmcloud.azurecr.io/httpserver:0.13.1
-        link_name: default
+      traits:
+        - type: link
+          properties:
+            target: webcap
+            namespace: wasi
+            package: http
+            interfaces: ["incoming-handler"]
+            name: default
 
     - name: ledblinky
       type: capability
       properties:
         image: wasmcloud.azurecr.io/ledblinky:0.0.1
-        contract: wasmcloud:blinkenlights
-        # default link name is "default"
       traits:
         - type: spreadscaler
           properties:
-            replicas: 1
+            instances: 1
             spread:
               - name: haslights
                 requirements:
                   ledenabled: "true"
-                # default weight is 100

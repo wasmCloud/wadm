@@ -30,7 +30,7 @@ pub const SPREADSCALER_TRAIT: &str = "spreadscaler";
 /// The identifier for the builtin daemonscaler trait type
 pub const DAEMONSCALER_TRAIT: &str = "daemonscaler";
 /// The identifier for the builtin linkdef trait type
-pub const LINKDEF_TRAIT: &str = "link";
+pub const LINK_TRAIT: &str = "link";
 /// The string used for indicating a latest version. It is explicitly forbidden to use as a version
 /// for a manifest
 pub const LATEST_VERSION: &str = "latest";
@@ -71,7 +71,7 @@ impl Manifest {
 /// The metadata describing the manifest
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct Metadata {
-    /// The name of the manifest. This should be unique
+    /// The name of the manifest. This must be unique per lattice
     pub name: String,
     /// Optional data for annotating this manifest
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
@@ -117,6 +117,7 @@ pub struct ActorProperties {
     pub image: String,
     /// The component ID to use for this actor. If not supplied, it will be generated
     /// as a combination of the [Metadata::name] and the image reference.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
 }
 
@@ -126,9 +127,8 @@ pub struct CapabilityProperties {
     pub image: String,
     /// The component ID to use for this provider. If not supplied, it will be generated
     /// as a combination of the [Metadata::name] and the image reference.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
-    /// The contract ID of this capability
-    pub contract: String,
     /// Optional config to pass to the provider. This can be either a raw string encoded config, or
     /// a JSON or YAML object
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -221,8 +221,8 @@ impl Trait {
     /// Helper that creates a new linkdef type trait with the given properties
     pub fn new_linkdef(props: LinkProperty) -> Trait {
         Trait {
-            trait_type: LINKDEF_TRAIT.to_owned(),
-            properties: TraitProperty::Linkdef(props),
+            trait_type: LINK_TRAIT.to_owned(),
+            properties: TraitProperty::Link(props),
         }
     }
 
@@ -246,7 +246,7 @@ impl Trait {
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum TraitProperty {
-    Linkdef(LinkProperty),
+    Link(LinkProperty),
     SpreadScaler(SpreadScalerProperty),
     // TODO(thomastaylor312): This is still broken right now with deserializing. If the incoming
     // type specifies instances, it matches with spreadscaler first. So we need to implement a custom
@@ -256,7 +256,7 @@ pub enum TraitProperty {
 
 impl From<LinkProperty> for TraitProperty {
     fn from(value: LinkProperty) -> Self {
-        Self::Linkdef(value)
+        Self::Link(value)
     }
 }
 
@@ -301,21 +301,20 @@ pub struct ConfigProperty {
 /// Properties for links
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct LinkProperty {
-    /// The target this linkdef applies to. This should be the name of an actor component
+    /// The target this link applies to. This should be the name of a component in the manifest
     pub target: String,
     /// WIT namespace for the link
     pub namespace: String,
     /// WIT package for the link
     pub package: String,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
     /// WIT interfaces for the link
     pub interfaces: Vec<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub source_config: Vec<ConfigProperty>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub target_config: Vec<ConfigProperty>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     /// The name of this link
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
 }
 
@@ -326,7 +325,7 @@ pub struct SpreadScalerProperty {
     #[serde(alias = "replicas")]
     pub instances: usize,
     /// Requirements for spreading those instances
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub spread: Vec<Spread>,
 }
 
@@ -507,26 +506,45 @@ mod test {
     #[test]
     fn test_trait_matching() {
         let manifest = deserialize_yaml("./oam/simple2.yaml").expect("Should be able to parse");
+        // Validate actor component traits
         let traits = manifest
             .spec
             .components
+            .clone()
             .into_iter()
             .find(|component| matches!(component.properties, Properties::Actor { .. }))
             .expect("Should find actor component")
             .traits
             .expect("Should have traits object");
-        assert_eq!(traits.len(), 2, "Should have 2 traits");
+        assert_eq!(traits.len(), 1, "Should have 1 trait");
         assert!(
             matches!(traits[0].properties, TraitProperty::SpreadScaler(_)),
             "Should have spreadscaler properties"
         );
+        // Validate capability component traits
+        let traits = manifest
+            .spec
+            .components
+            .into_iter()
+            .find(|component| {
+                matches!(
+                    &component.properties,
+                    Properties::Capability {
+                        properties: CapabilityProperties { image, .. }
+                    } if image == "wasmcloud.azurecr.io/httpserver:0.13.1"
+                )
+            })
+            .expect("Should find capability component")
+            .traits
+            .expect("Should have traits object");
+        assert_eq!(traits.len(), 1, "Should have 1 trait");
         assert!(
-            matches!(traits[1].properties, TraitProperty::Linkdef(_)),
-            "Should have linkdef properties"
+            matches!(traits[0].properties, TraitProperty::Link(_)),
+            "Should have link property"
         );
-        if let TraitProperty::Linkdef(ld) = &traits[1].properties {
+        if let TraitProperty::Link(ld) = &traits[0].properties {
             assert_eq!(ld.source_config, vec![]);
-            assert_eq!(ld.target, "webcap".to_string());
+            assert_eq!(ld.target, "userinfo".to_string());
         } else {
             panic!("trait property was not a link definition");
         }
@@ -586,7 +604,6 @@ mod test {
                 properties: CapabilityProperties {
                     image: "wasmcloud.azurecr.io/httpserver:0.13.1".to_string(),
                     id: None,
-                    contract: "wasmcloud:httpserver".to_string(),
                     config: None,
                 },
             },
@@ -614,7 +631,6 @@ mod test {
                 properties: CapabilityProperties {
                     image: "wasmcloud.azurecr.io/ledblinky:0.0.1".to_string(),
                     id: None,
-                    contract: "wasmcloud:blinkenlights".to_string(),
                     config: None,
                 },
             },

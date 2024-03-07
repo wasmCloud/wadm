@@ -24,22 +24,26 @@ spec:
                 requirements:
                   zone: us-west-1
                 weight: 20
-        - type: linkdef
-          properties:
-            target: webcap
 
     - name: webcap
       type: capability
       properties:
-        contract: wasmcloud:httpserver
         image: wasmcloud.azurecr.io/httpserver:0.13.1
-        link_name: default
+      traits:
+        - type: link
+          properties:
+            target: userinfo
+            namespace: wasi
+            package: http
+            interfaces:
+              - incoming-handler
+            source_config: []
+            target_config: []
 
     - name: ledblinky
       type: capability
       properties:
         image: wasmcloud.azurecr.io/ledblinky:0.0.1
-        contract: wasmcloud:blinkenlights
       traits:
         - type: spreadscaler
           properties:
