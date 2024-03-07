@@ -488,7 +488,7 @@ mod test {
         let commands = spreadscaler.reconcile().await?;
         assert_eq!(commands.len(), 2);
 
-        let cmd_one = commands.get(0).cloned();
+        let cmd_one = commands.first().cloned();
         match cmd_one {
             None => panic!("command should have existed"),
             Some(Command::StartProvider(start)) => {
@@ -908,7 +908,7 @@ mod test {
         let commands = spreadscaler.reconcile().await?;
         assert_eq!(commands.len(), 1);
 
-        let cmd_one = commands.get(0).cloned();
+        let cmd_one = commands.first().cloned();
         match cmd_one {
             None => panic!("command should have existed"),
             Some(Command::StartProvider(start)) => {
@@ -1150,7 +1150,7 @@ mod test {
         let commands = spreadscaler.reconcile().await?;
         assert_eq!(commands.len(), 1);
 
-        let cmd = commands.get(0).cloned();
+        let cmd = commands.first().cloned();
         match cmd {
             None => panic!("command should have existed"),
             Some(Command::StopProvider(stop)) => {
