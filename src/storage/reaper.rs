@@ -161,10 +161,9 @@ impl<S: Store + Clone + Send + Sync + 'static> Undertaker<S> {
         };
 
         let (actors_to_remove, actors_to_update): (HashMap<String, Actor>, HashMap<String, Actor>) =
-            // TODO(brooksmtownsend): Ensure this is proper
             actors
                 .into_iter()
-                .filter_map(|(id, mut actor)| {
+                .map(|(id, mut actor)| {
                     // Only keep the instances where the host exists and the actor is in its map
                     actor.instances.retain(|host_id, _| {
                         hosts
@@ -172,7 +171,7 @@ impl<S: Store + Clone + Send + Sync + 'static> Undertaker<S> {
                             .map(|host| host.actors.contains_key(&actor.id))
                             .unwrap_or(false)
                     });
-                    Some((id, actor))
+                    (id, actor)
                 })
                 .partition(|(_, actor)| actor.instances.is_empty());
 

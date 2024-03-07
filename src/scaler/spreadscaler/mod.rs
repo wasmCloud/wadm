@@ -301,7 +301,6 @@ pub(crate) fn eligible_hosts<'a>(
                 .iter()
                 .all(|(key, value)| host.labels.get(key).map(|v| v.eq(value)).unwrap_or(false))
         })
-        .map(|(id, host)| (id, host))
         .collect()
 }
 

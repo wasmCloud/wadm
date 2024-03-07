@@ -433,7 +433,7 @@ where
         trace!("Fetching current data from store");
         let mut needs_host_update = false;
         let provider_data = if let Some(mut current) =
-            self.store.get::<Provider>(lattice_id, &id).await?
+            self.store.get::<Provider>(lattice_id, id).await?
         {
             // Using the entry api is a bit more efficient because we do a single key lookup
             let mut prov = match current.hosts.entry(provider.host_id.clone()) {
@@ -528,7 +528,7 @@ where
                 .await?
         }
 
-        if let Some(mut current) = self.store.get::<Provider>(lattice_id, &id).await? {
+        if let Some(mut current) = self.store.get::<Provider>(lattice_id, id).await? {
             if current.hosts.remove(&provider.host_id).is_none() {
                 trace!(host_id = %provider.host_id, "Did not find host entry in provider");
                 return Ok(());
@@ -536,7 +536,7 @@ where
             if current.hosts.is_empty() {
                 debug!("Provider is no longer running on any hosts. Removing from store");
                 self.store
-                    .delete::<Provider>(lattice_id, &id)
+                    .delete::<Provider>(lattice_id, id)
                     .await
                     .map_err(anyhow::Error::from)
             } else {
@@ -569,7 +569,7 @@ where
         trace!("Getting current provider");
         let id = &provider.provider_id;
         let host_id = &provider.host_id;
-        let mut current: Provider = match self.store.get(lattice_id, &id).await? {
+        let mut current: Provider = match self.store.get(lattice_id, id).await? {
             Some(p) => p,
             None => {
                 trace!("Didn't find provider in store. Creating");
@@ -646,7 +646,6 @@ where
                             issuer: claim.issuer.to_owned(),
                             instances: HashMap::from_iter([(host_id.to_owned(), instance)]),
                             reference: actor_description.image_ref,
-                            ..Default::default()
                         },
                     )
                 } else {
@@ -661,7 +660,6 @@ where
                             issuer: "".to_owned(),
                             instances: HashMap::from_iter([(host_id.to_owned(), instance)]),
                             reference: actor_description.image_ref,
-                            ..Default::default()
                         },
                     )
                 }

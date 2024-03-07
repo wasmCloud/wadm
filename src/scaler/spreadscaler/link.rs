@@ -231,7 +231,7 @@ impl<S: ReadStore + Send + Sync, L: LinkSource> LinkScaler<S, L> {
     }
 }
 
-fn compute_linkscaler_config_hash(source: &Vec<String>, target: &Vec<String>) -> u64 {
+fn compute_linkscaler_config_hash(source: &[String], target: &[String]) -> u64 {
     let mut linkscaler_config_hasher = std::collections::hash_map::DefaultHasher::new();
     source
         .iter()
@@ -335,7 +335,7 @@ mod test {
             LINK_SCALER_TYPE = LINK_SCALER_TYPE,
             model_name = "model",
             link_name = "default",
-            linkscaler_values_hash = compute_linkscaler_config_hash(&vec!["foo".to_string()], &vec!["bar".to_string()])
+            linkscaler_values_hash = compute_linkscaler_config_hash(&["foo".to_string()], &["bar".to_string()])
         );
 
         assert_ne!(
@@ -366,7 +366,7 @@ mod test {
             LINK_SCALER_TYPE = LINK_SCALER_TYPE,
             model_name = "model",
             link_name = "default",
-            linkscaler_values_hash = compute_linkscaler_config_hash(&vec![], &vec![])
+            linkscaler_values_hash = compute_linkscaler_config_hash(&[], &[])
         );
 
         assert_eq!(scaler.id(), id, "LinkScaler ID should be the same when their type, model name, provider link name, actor reference, and provider reference are the same and they both have no values configured");
