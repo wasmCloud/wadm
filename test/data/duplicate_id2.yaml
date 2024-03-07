@@ -11,6 +11,7 @@ spec:
       type: actor
       properties:
         image: wasmcloud.azurecr.io/ui:0.3.2
+        id: ui
       traits:
         - type: spreadscaler
           properties:
@@ -24,6 +25,7 @@ spec:
       type: actor
       properties:
         image: wasmcloud.azurecr.io/ui:0.3.2
+        id: ui
       traits:
         - type: spreadscaler
           properties:

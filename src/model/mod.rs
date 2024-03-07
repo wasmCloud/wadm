@@ -90,7 +90,6 @@ pub struct Specification {
 pub struct Component {
     /// The name of this component
     pub name: String,
-    /// The type of component
     /// The properties for this component
     // NOTE(thomastaylor312): It would probably be better for us to implement a custom deserialze
     // and serialize that combines this and the component type. This is good enough for first draft
