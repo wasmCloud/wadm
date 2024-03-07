@@ -90,7 +90,10 @@ where
             | Event::ProviderHealthCheckStatus(ProviderHealthCheckStatus {
                 data: ProviderHealthCheckInfo { provider_id, .. },
                 ..
-            }) if provider_id == &self.config.source_id => {
+            // NOTE(brooksmtownsend): Ideally we shouldn't actually care about the target being healthy, but
+            // I'm leaving this part in for now to avoid strange conditions in the future where we might want
+            // to re-put a link or at least reconcile if the target changes health status.
+            }) if provider_id == &self.config.source_id || provider_id == &self.config.target => {
                 // Wait until we know the provider is healthy before we link. This also avoids the race condition
                 // where a provider is started by the host
                 self.reconcile().await
@@ -254,7 +257,7 @@ mod test {
     use super::*;
 
     use crate::{
-        events::{ActorClaims, ActorsStarted, ProviderHealthCheckInfo, ProviderInfo},
+        events::{ActorScaled, ProviderHealthCheckInfo, ProviderInfo},
         storage::{Actor, Host, Provider, Store},
         test_util::{TestLatticeSource, TestStore},
         APP_SPEC_ANNOTATION,
@@ -582,8 +585,8 @@ mod test {
             .reconcile()
             .await
             .expect("link scaler to handle reconcile");
-        // TODO(brooksmtownsend): link scaler should? wait until the source is running before creating the link
-        assert!(commands.is_empty());
+        // Since no link exists, we should expect a put link command
+        assert_eq!(commands.len(), 1);
 
         // Actor starts, put into state and then handle event
         store
@@ -600,15 +603,15 @@ mod test {
             .expect("should be able to store actor");
 
         let commands = link_scaler
-            .handle_event(&Event::ActorsStarted(ActorsStarted {
+            .handle_event(&Event::ActorScaled(ActorScaled {
                 annotations: BTreeMap::from_iter([(
                     APP_SPEC_ANNOTATION.to_string(),
                     "foobar".to_string(),
                 )]),
-                claims: ActorClaims::default(),
+                claims: None,
                 image_ref: echo_ref,
-                count: 1,
-                public_key: echo_id.to_string(),
+                actor_id: echo_id.to_string(),
+                max_instances: 1,
                 host_id: host_id_one.to_string(),
             }))
             .await
