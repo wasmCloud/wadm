@@ -1,4 +1,3 @@
----
 apiVersion: core.oam.dev/v1beta1
 kind: Application
 metadata:
@@ -15,7 +14,6 @@ spec:
     - name: httpserver
       type: capability
       properties:
-        contract: wasmcloud:httpserver
         image: file:///some/path/to/another/path/that/is/very/long/and/would/normally/crash/the/thing/but/in/this/case/doesnt/because/the/size/is/changed.exe
       traits:
         - type: spreadscaler

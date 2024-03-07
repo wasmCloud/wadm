@@ -17,16 +17,16 @@ spec:
             instances: 4
         - type: linkdef
           properties:
-            # This is a simple typo which should be caught by validation: there is no capability component named "httpservr"
-            target: httpservr
-            values:
-              address: 0.0.0.0:8080
+            # This is a simple typo which should be caught by validation: there is no capability component named "httpclyent"
+            target: httpclyent
+            namespace: wasi
+            package: http
+            interfaces: ["outgoing-handler"]
 
-    - name: httpserver
+    - name: httpclient
       type: capability
       properties:
-        contract: wasmcloud:httpserver
-        image: wasmcloud.azurecr.io/httpserver:0.17.0
+        image: wasmcloud.azurecr.io/httpclient:0.17.0
       traits:
         - type: spreadscaler
           properties:
