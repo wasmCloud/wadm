@@ -326,7 +326,7 @@ pub struct SpreadScalerProperty {
     #[serde(alias = "replicas")]
     pub instances: usize,
     /// Requirements for spreading those instances
-    #[serde(default)]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub spread: Vec<Spread>,
 }
 
