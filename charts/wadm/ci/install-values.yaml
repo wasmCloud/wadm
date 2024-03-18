@@ -1,0 +1,4 @@
+wadm:
+  config:
+    nats:
+      server: "nats.default.svc.cluster.local:4222"

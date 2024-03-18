@@ -1,0 +1,116 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "wadm.fullname" . }}
+  labels:
+    {{- include "wadm.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "wadm.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "wadm.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.wadm.image.repository }}:{{ .Values.wadm.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.wadm.image.pullPolicy }}
+          env:
+            - name: WADM_NATS_SERVER
+              value: {{ .Values.wadm.config.nats.server | quote }}
+          {{- if .Values.wadm.config.nats.seed }}
+            - name: WADM_NATS_NKEY
+              value: {{ .Values.wadm.config.nats.seed | quote }}
+          {{- end }}
+          {{- if .Values.wadm.config.nats.jwt }}
+            - name: WADM_NATS_JWT
+              value: {{ .Values.wadm.config.nats.jwt | quote }}
+          {{- end }}
+          {{- if .Values.wadm.config.nats.credsFile }}
+            - name: WADM_NATS_CREDS_FILE
+              value: {{ .Values.wadm.config.nats.credsFile | quote }}
+          {{- end }}
+          {{- if .Values.wadm.config.nats.tlsCaFile }}
+            - name: WADM_NATS_TLS_CA_FILE
+              value: {{ .Values.wadm.config.nats.tlsCaFile | quote }}
+          {{- end }}
+          {{- if .Values.wadm.config.hostId }}
+            - name: WADM_HOST_ID
+              value: {{ .Values.wadm.config.hostId | quote }}
+          {{- end }}
+          {{- if .Values.wadm.config.structuredLogging }}
+            - name: WADM_STRUCTURED_LOGGING
+              value: {{ .Values.wadm.config.structuredLogging | quote }}
+          {{- end }}
+          {{- if .Values.wadm.config.tracing }}
+            - name: WADM_TRACING_ENABLED
+              value: {{ .Values.wadm.config.tracing | quote }}
+          {{- end }}
+          {{- if .Values.wadm.config.tracingEndpoint }}
+            - name: WADM_TRACING_ENDPOINT
+              value: {{ .Values.wadm.config.tracingEndpoint | quote }}
+          {{- end }}
+          {{- if .Values.wadm.config.jetstreamDomain }}
+            - name: WADM_JETSTREAM_DOMAIN
+              value: {{ .Values.wadm.config.jetstreamDomain | quote }}
+          {{- end }}
+          {{- if .Values.wadm.config.maxJobs }}
+            - name: WADM_MAX_JOBS
+              value: {{ .Values.wadm.config.maxJobs }}
+          {{- end }}
+          {{- if .Values.wadm.config.stateBucket }}
+            - name: WADM_STATE_BUCKET_NAME
+              value: {{ .Values.wadm.config.stateBucket | quote }}
+          {{- end }}
+          {{- if .Values.wadm.config.manifestBucket }}
+            - name: WADM_MANIFEST_BUCKET_NAME
+              value: {{ .Values.wadm.config.manifestBucket | quote }}
+          {{- end }}
+          {{- if .Values.wadm.config.cleanupInterval }}
+            - name: WADM_CLEANUP_INTERVAL
+              value: {{ .Values.wadm.config.cleanupInterval }}
+          {{- end }}
+          {{- if .Values.wadm.config.apiPrefix }}
+            - name: WADM_API_PREFIX
+              value: {{ .Values.wadm.config.apiPrefix }}
+          {{- end }}
+          {{- if .Values.wadm.config.streamPrefix }}
+            - name: WADM_STREAM_PREFIX
+              value: {{ .Values.wadm.config.streamPrefix }}
+          {{- end }}
+          {{- if .Values.wadm.config.multitenant }}
+            - name: WADM_MULTITENANT
+              value: {{ .Values.wadm.config.multitenant | quote }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
