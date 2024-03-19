@@ -12,7 +12,7 @@ use crate::{
     commands::{Command, DeleteLink, PutConfig, PutLink},
     events::{
         Event, LinkdefDeleted, LinkdefSet, ProviderHealthCheckInfo, ProviderHealthCheckPassed,
-        ProviderHealthCheckStatus,
+        ProviderHealthCheckStatus, ProviderStarted,
     },
     model::{ConfigProperty, TraitProperty},
     scaler::Scaler,
@@ -86,6 +86,33 @@ where
             Event::ActorScaled(evt) if evt.actor_id == self.config.source_id => {
                 self.reconcile().await
             }
+            // TODO: remove hack to re-put link when target starts
+            Event::ProviderStarted(ProviderStarted {
+                provider_id,
+                ..
+            }) if provider_id == &self.config.target => {
+                    Ok(vec![Command::PutLink(PutLink {
+                        source_id: self.config.source_id.to_owned(),
+                        target: self.config.target.to_owned(),
+                        name: self.config.name.to_owned(),
+                        wit_namespace: self.config.wit_namespace.to_owned(),
+                        wit_package: self.config.wit_package.to_owned(),
+                        interfaces: self.config.wit_interfaces.to_owned(),
+                        source_config: self
+                            .config
+                            .source_config
+                            .iter()
+                            .map(|c| c.name.clone())
+                            .collect::<Vec<_>>(),
+                        target_config: self
+                            .config
+                            .target_config
+                            .iter()
+                            .map(|c| c.name.clone())
+                            .collect::<Vec<_>>(),
+                        model_name: self.config.model_name.to_owned(),
+                    })])
+            },
             Event::ProviderHealthCheckPassed(ProviderHealthCheckPassed {
                 data: ProviderHealthCheckInfo { provider_id, .. },
                 ..
