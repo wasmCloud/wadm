@@ -21,8 +21,9 @@ use tracing::{debug, error, instrument, trace, warn};
 use crate::{
     events::Event,
     model::{
-        Component, Manifest, Properties, SpreadScalerProperty, Trait, TraitProperty,
-        DAEMONSCALER_TRAIT, LINK_TRAIT, SPREADSCALER_TRAIT,
+        ActorProperties, CapabilityProperties, Component, Manifest, Properties,
+        SpreadScalerProperty, Trait, TraitProperty, DAEMONSCALER_TRAIT, LINK_TRAIT,
+        SPREADSCALER_TRAIT,
     },
     publisher::Publisher,
     scaler::{spreadscaler::ActorSpreadScaler, Command, Scaler},
@@ -609,18 +610,17 @@ where
                             components
                                 .iter()
                                 .find_map(|component| match &component.properties {
-                                    Properties::Capability { properties: cappy }
-                                        if component.name == p.target =>
-                                    {
+                                    Properties::Capability {
+                                        properties: CapabilityProperties { id, image, .. },
+                                    }
+                                    | Properties::Actor {
+                                        properties: ActorProperties { id, image },
+                                    } if component.name == p.target => {
                                         Some(Box::new(LinkScaler::new(
                                             snapshot_data.clone(),
                                             LinkScalerConfig {
                                                 source_id: actor_id.to_string(),
-                                                target: component_id(
-                                                    name,
-                                                    cappy.id.as_ref(),
-                                                    &cappy.image,
-                                                ),
+                                                target: component_id(name, id.as_ref(), &image),
                                                 wit_namespace: p.namespace.to_owned(),
                                                 wit_package: p.package.to_owned(),
                                                 wit_interfaces: p.interfaces.to_owned(),
