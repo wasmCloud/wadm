@@ -31,7 +31,7 @@ impl ControlClientConstructor {
 
     /// Get the client for the given lattice ID
     pub fn get_connection(&self, id: &str, multitenant_prefix: Option<&str>) -> Client {
-        let builder = ClientBuilder::new(self.client.clone()).lattice_prefix(id);
+        let builder = ClientBuilder::new(self.client.clone()).lattice(id);
 
         let builder = builder.topic_prefix(topic_prefix(
             multitenant_prefix,

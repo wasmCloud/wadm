@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use tokio::sync::RwLock;
-use wasmcloud_control_interface::LinkDefinition;
+use wasmcloud_control_interface::InterfaceLinkDefinition;
 
 use crate::storage::{Actor, Host, Provider, ReadStore, StateKind};
 use crate::workers::LinkSource;
@@ -23,7 +23,7 @@ pub struct SnapshotStore<S, L> {
     link_source: L,
     lattice_id: String,
     stored_state: Arc<RwLock<InMemoryData>>,
-    links: Arc<RwLock<Vec<LinkDefinition>>>,
+    links: Arc<RwLock<Vec<InterfaceLinkDefinition>>>,
 }
 
 impl<S, L> Clone for SnapshotStore<S, L>
@@ -155,7 +155,7 @@ where
     S: Send + Sync,
     L: Send + Sync,
 {
-    async fn get_links(&self) -> anyhow::Result<Vec<LinkDefinition>> {
+    async fn get_links(&self) -> anyhow::Result<Vec<InterfaceLinkDefinition>> {
         Ok(self.links.read().await.clone())
     }
 }

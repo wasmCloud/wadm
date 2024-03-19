@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
 
 use tracing::{instrument, trace, warn};
-use wasmcloud_control_interface::{HostInventory, LinkDefinition};
+use wasmcloud_control_interface::{CtlResponse, HostInventory, InterfaceLinkDefinition};
 
 use crate::{commands::Command, publisher::Publisher, server::StatusInfo, APP_SPEC_ANNOTATION};
 
@@ -40,45 +40,61 @@ pub trait InventorySource {
 /// due to testing, but it does allow us to abstract away the concrete type of the client
 #[async_trait::async_trait]
 pub trait LinkSource {
-    async fn get_links(&self) -> anyhow::Result<Vec<LinkDefinition>>;
+    async fn get_links(&self) -> anyhow::Result<Vec<InterfaceLinkDefinition>>;
 }
 
 #[async_trait::async_trait]
 impl ClaimsSource for wasmcloud_control_interface::Client {
     async fn get_claims(&self) -> anyhow::Result<HashMap<String, Claims>> {
-        Ok(self
-            .get_claims()
-            .await
-            .map_err(|e| anyhow::anyhow!("{e}"))?
-            .into_iter()
-            .filter_map(|mut claim| {
-                // NOTE(thomastaylor312): I'm removing instead of getting since we own the data and I
-                // don't want to clone every time we do this
+        match self.get_claims().await.map_err(|e| anyhow::anyhow!("{e}")) {
+            Ok(CtlResponse {
+                success: true,
+                response: Some(claims),
+                ..
+            }) => {
+                Ok(claims
+                    .into_iter()
+                    .filter_map(|mut claim| {
+                        // NOTE(thomastaylor312): I'm removing instead of getting since we own the data and I
+                        // don't want to clone every time we do this
 
-                // If we don't find a subject, we can't actually get the actor ID, so skip this one
-                Some((
-                    claim.remove("sub")?,
-                    Claims {
-                        name: claim.remove("name").unwrap_or_default(),
-                        capabilities: claim
-                            .remove("caps")
-                            .map(|raw| raw.split(',').map(|s| s.to_owned()).collect())
-                            .unwrap_or_default(),
-                        issuer: claim.remove("iss").unwrap_or_default(),
-                    },
-                ))
-            })
-            .collect())
+                        // If we don't find a subject, we can't actually get the actor ID, so skip this one
+                        Some((
+                            claim.remove("sub")?,
+                            Claims {
+                                name: claim.remove("name").unwrap_or_default(),
+                                capabilities: claim
+                                    .remove("caps")
+                                    .map(|raw| raw.split(',').map(|s| s.to_owned()).collect())
+                                    .unwrap_or_default(),
+                                issuer: claim.remove("iss").unwrap_or_default(),
+                            },
+                        ))
+                    })
+                    .collect())
+            }
+            _ => Err(anyhow::anyhow!("Failed to get claims")),
+        }
     }
 }
 
 #[async_trait::async_trait]
 impl InventorySource for wasmcloud_control_interface::Client {
     async fn get_inventory(&self, host_id: &str) -> anyhow::Result<HostInventory> {
-        Ok(self
+        match self
             .get_host_inventory(host_id)
             .await
-            .map_err(|e| anyhow::anyhow!("{e}"))?)
+            .map_err(|e| anyhow::anyhow!("{e:?}"))?
+        {
+            CtlResponse {
+                success: true,
+                response: Some(host_inventory),
+                ..
+            } => Ok(host_inventory),
+            CtlResponse { message, .. } => Err(anyhow::anyhow!(
+                "Failed to get inventory for host {host_id}, {message}"
+            )),
+        }
     }
 }
 
@@ -88,10 +104,19 @@ impl InventorySource for wasmcloud_control_interface::Client {
 // links
 #[async_trait::async_trait]
 impl LinkSource for wasmcloud_control_interface::Client {
-    async fn get_links(&self) -> anyhow::Result<Vec<LinkDefinition>> {
-        self.query_links()
+    async fn get_links(&self) -> anyhow::Result<Vec<InterfaceLinkDefinition>> {
+        match self
+            .get_links()
             .await
-            .map_err(|e| anyhow::anyhow!("{e:?}"))
+            .map_err(|e| anyhow::anyhow!("{e:?}"))?
+        {
+            CtlResponse {
+                success: true,
+                response: Some(links),
+                ..
+            } => Ok(links),
+            CtlResponse { message, .. } => Err(anyhow::anyhow!("Failed to get links, {message}")),
+        }
     }
 }
 
