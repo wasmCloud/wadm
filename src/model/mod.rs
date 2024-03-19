@@ -297,6 +297,13 @@ pub struct ConfigProperty {
     pub properties: Option<HashMap<String, String>>,
 }
 
+/// This impl is a helper to help compare a `Vec<String>` to a `Vec<ConfigProperty>`
+impl PartialEq<ConfigProperty> for String {
+    fn eq(&self, other: &ConfigProperty) -> bool {
+        self == &other.name
+    }
+}
+
 /// Properties for links
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct LinkProperty {

@@ -1,7 +1,7 @@
 //! Type implementations for commands issued to compensate for state changes
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashMap},
     hash::{Hash, Hasher},
 };
 
@@ -30,8 +30,10 @@ pub enum Command {
     ScaleActor(ScaleActor),
     StartProvider(StartProvider),
     StopProvider(StopProvider),
-    PutLinkdef(PutLinkdef),
-    DeleteLinkdef(DeleteLinkdef),
+    PutLink(PutLink),
+    DeleteLink(DeleteLink),
+    PutConfig(PutConfig),
+    DeleteConfig(String),
 }
 
 impl Command {
@@ -174,7 +176,7 @@ impl Hash for StopProvider {
 
 /// Struct for the PutLinkdef command
 #[derive(Clone, Debug, Eq, Serialize, Deserialize, Default, PartialEq, Hash)]
-pub struct PutLinkdef {
+pub struct PutLink {
     /// Source identifier for the link
     pub source_id: String,
     /// Target for the link, which can be a unique identifier or (future) a routing group
@@ -197,8 +199,8 @@ pub struct PutLinkdef {
     pub model_name: String,
 }
 
-impl From<PutLinkdef> for InterfaceLinkDefinition {
-    fn from(value: PutLinkdef) -> InterfaceLinkDefinition {
+impl From<PutLink> for InterfaceLinkDefinition {
+    fn from(value: PutLink) -> InterfaceLinkDefinition {
         InterfaceLinkDefinition {
             source_id: value.source_id,
             target: value.target,
@@ -212,11 +214,11 @@ impl From<PutLinkdef> for InterfaceLinkDefinition {
     }
 }
 
-from_impl!(PutLinkdef);
+from_impl!(PutLink);
 
 /// Struct for the DeleteLinkdef command
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, Default)]
-pub struct DeleteLinkdef {
+pub struct DeleteLink {
     /// The ID of the component to unlink
     pub source_id: String,
     /// The WIT namespace of the component to unlink
@@ -229,4 +231,15 @@ pub struct DeleteLinkdef {
     pub model_name: String,
 }
 
-from_impl!(DeleteLinkdef);
+from_impl!(DeleteLink);
+
+/// Struct for the PutConfig command
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Default)]
+pub struct PutConfig {
+    /// The name of the configuration to put
+    pub config_name: String,
+    /// The configuration properties to put
+    pub config: HashMap<String, String>,
+}
+
+from_impl!(PutConfig);
