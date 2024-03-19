@@ -606,7 +606,6 @@ where
                             )) as BoxedScaler)
                         }
                         (LINK_TRAIT, TraitProperty::Link(p)) => {
-                            // TODO: look for actor or provider components
                             components
                                 .iter()
                                 .find_map(|component| match &component.properties {
@@ -630,16 +629,8 @@ where
                                                 }),
                                                 lattice_id: lattice_id.to_owned(),
                                                 model_name: name.to_owned(),
-                                                source_config: p
-                                                    .source_config
-                                                    .iter()
-                                                    .map(|c| c.name.clone())
-                                                    .collect::<Vec<String>>(),
-                                                target_config: p
-                                                    .target_config
-                                                    .iter()
-                                                    .map(|c| c.name.clone())
-                                                    .collect::<Vec<String>>(),
+                                                source_config: p.source_config.clone(),
+                                                target_config: p.target_config.clone(),
                                             },
                                             snapshot_data.clone(),
                                         ))
@@ -654,10 +645,13 @@ where
             }
             Properties::Capability { properties: props } => {
                 let provider_id = component_id(name, props.id.as_ref(), &props.image);
+                // TODO: better check
+                let mut has_scaler = false;
                 if let Some(traits) = traits {
                     scalers.extend(traits.iter().filter_map(|trt| {
                         match (trt.trait_type.as_str(), &trt.properties) {
                             (SPREADSCALER_TRAIT, TraitProperty::SpreadScaler(p)) => {
+                                has_scaler = true;
                                 Some(Box::new(BackoffAwareScaler::new(
                                     ProviderSpreadScaler::new(
                                         snapshot_data.clone(),
@@ -679,6 +673,7 @@ where
                                 )) as BoxedScaler)
                             }
                             (DAEMONSCALER_TRAIT, TraitProperty::SpreadScaler(p)) => {
+                                has_scaler = true;
                                 Some(Box::new(BackoffAwareScaler::new(
                                     ProviderDaemonScaler::new(
                                         snapshot_data.clone(),
@@ -699,12 +694,46 @@ where
                                     Some(Duration::from_secs(60)),
                                 )) as BoxedScaler)
                             }
-
+                            (LINK_TRAIT, TraitProperty::Link(p)) => {
+                                components.iter().find_map(|component| {
+                                    match &component.properties {
+                                        Properties::Actor { properties: cappy }
+                                            if component.name == p.target =>
+                                        {
+                                            Some(Box::new(LinkScaler::new(
+                                                snapshot_data.clone(),
+                                                LinkScalerConfig {
+                                                    source_id: provider_id.to_string(),
+                                                    target: component_id(
+                                                        name,
+                                                        cappy.id.as_ref(),
+                                                        &cappy.image,
+                                                    ),
+                                                    wit_namespace: p.namespace.to_owned(),
+                                                    wit_package: p.package.to_owned(),
+                                                    wit_interfaces: p.interfaces.to_owned(),
+                                                    name: p.name.to_owned().unwrap_or_else(|| {
+                                                        DEFAULT_LINK_NAME.to_string()
+                                                    }),
+                                                    lattice_id: lattice_id.to_owned(),
+                                                    model_name: name.to_owned(),
+                                                    source_config: p.source_config.clone(),
+                                                    target_config: p.target_config.clone(),
+                                                },
+                                                snapshot_data.clone(),
+                                            ))
+                                                as BoxedScaler)
+                                        }
+                                        _ => None,
+                                    }
+                                })
+                            }
                             _ => None,
                         }
                     }))
-                } else {
-                    // Allow providers to omit the scaler entirely for simplicity
+                }
+                // Allow providers to omit the scaler entirely for simplicity
+                if !has_scaler {
                     scalers.push(Box::new(BackoffAwareScaler::new(
                         ProviderSpreadScaler::new(
                             snapshot_data.clone(),
