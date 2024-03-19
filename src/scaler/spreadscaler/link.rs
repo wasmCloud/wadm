@@ -1,4 +1,7 @@
-use std::hash::{Hash, Hasher};
+use std::{
+    collections::BTreeMap,
+    hash::{Hash, Hasher},
+};
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -6,12 +9,12 @@ use tokio::sync::RwLock;
 use tracing::instrument;
 
 use crate::{
-    commands::{Command, DeleteLinkdef, PutLinkdef},
+    commands::{Command, DeleteLink, PutConfig, PutLink},
     events::{
         Event, LinkdefDeleted, LinkdefSet, ProviderHealthCheckInfo, ProviderHealthCheckPassed,
         ProviderHealthCheckStatus,
     },
-    model::TraitProperty,
+    model::{ConfigProperty, TraitProperty},
     scaler::Scaler,
     server::StatusInfo,
     storage::ReadStore,
@@ -38,10 +41,10 @@ pub struct LinkScalerConfig {
     pub lattice_id: String,
     /// The name of the wadm model this SpreadScaler is under
     pub model_name: String,
-    /// List of named configurations for the source of this link
-    pub source_config: Vec<String>,
-    /// List of named configurations for the target of this link
-    pub target_config: Vec<String>,
+    /// List of configurations for the source of this link
+    pub source_config: Vec<ConfigProperty>,
+    /// List of configurations for the target of this link
+    pub target_config: Vec<ConfigProperty>,
 }
 
 /// The LinkSpreadScaler ensures that link configuration exists on a specified lattice.
@@ -137,8 +140,19 @@ where
             .map(|linkdef| {
                 (
                     true,
-                    linkdef.source_config != self.config.source_config
-                        || linkdef.target_config != self.config.target_config,
+                    // TODO: reverse compare too
+                    // Ensure all named configs are the same
+                    linkdef.source_config.iter().all(|config_name| {
+                        self.config
+                            .source_config
+                            .iter()
+                            .any(|c| &c.name == config_name)
+                    }) || linkdef.target_config.iter().all(|config_name| {
+                        self.config
+                            .target_config
+                            .iter()
+                            .any(|c| &c.name == config_name)
+                    }),
                 )
             })
             .unwrap_or((false, false));
@@ -175,19 +189,57 @@ where
         //     }))
         // };
 
+        // TODO: put these
+        let _source_config_commands = self
+            .config
+            .source_config
+            .iter()
+            .filter_map(|config| {
+                config.properties.as_ref().map(|properties| {
+                    Command::PutConfig(PutConfig {
+                        config_name: config.name.clone(),
+                        config: properties.clone(),
+                    })
+                })
+            })
+            .collect::<Vec<_>>();
+        let _target_config_commands = self
+            .config
+            .source_config
+            .iter()
+            .filter_map(|config| {
+                config.properties.as_ref().map(|properties| {
+                    Command::PutConfig(PutConfig {
+                        config_name: config.name.clone(),
+                        config: properties.clone(),
+                    })
+                })
+            })
+            .collect::<Vec<_>>();
+
         let commands = if !exists {
             *self.status.write().await = StatusInfo::reconciling(&format!(
                 "Putting link definition between {source_id} and {target}"
             ));
-            vec![Command::PutLinkdef(PutLinkdef {
+            vec![Command::PutLink(PutLink {
                 source_id: self.config.source_id.to_owned(),
                 target: self.config.target.to_owned(),
                 name: self.config.name.to_owned(),
                 wit_namespace: self.config.wit_namespace.to_owned(),
                 wit_package: self.config.wit_package.to_owned(),
                 interfaces: self.config.wit_interfaces.to_owned(),
-                source_config: self.config.source_config.to_owned(),
-                target_config: self.config.target_config.to_owned(),
+                source_config: self
+                    .config
+                    .source_config
+                    .iter()
+                    .map(|c| c.name.clone())
+                    .collect::<Vec<_>>(),
+                target_config: self
+                    .config
+                    .target_config
+                    .iter()
+                    .map(|c| c.name.clone())
+                    .collect::<Vec<_>>(),
                 model_name: self.config.model_name.to_owned(),
             })]
         } else {
@@ -198,7 +250,7 @@ where
     }
 
     async fn cleanup(&self) -> Result<Vec<Command>> {
-        Ok(vec![Command::DeleteLinkdef(DeleteLinkdef {
+        Ok(vec![Command::DeleteLink(DeleteLink {
             model_name: self.config.model_name.to_owned(),
             source_id: self.config.source_id.to_owned(),
             link_name: self.config.name.to_owned(),
@@ -231,14 +283,21 @@ impl<S: ReadStore + Send + Sync, L: LinkSource> LinkScaler<S, L> {
     }
 }
 
-fn compute_linkscaler_config_hash(source: &[String], target: &[String]) -> u64 {
+fn compute_linkscaler_config_hash(source: &[ConfigProperty], target: &[ConfigProperty]) -> u64 {
     let mut linkscaler_config_hasher = std::collections::hash_map::DefaultHasher::new();
-    source
-        .iter()
-        .for_each(|s| s.hash(&mut linkscaler_config_hasher));
-    target
-        .iter()
-        .for_each(|t| t.hash(&mut linkscaler_config_hasher));
+    // Hash each of the properties in the source and target
+    source.iter().for_each(|s| {
+        s.name.hash(&mut linkscaler_config_hasher);
+        if let Some(ref properties) = s.properties {
+            BTreeMap::from_iter(properties.iter()).hash(&mut linkscaler_config_hasher)
+        }
+    });
+    target.iter().for_each(|t| {
+        t.name.hash(&mut linkscaler_config_hasher);
+        if let Some(ref properties) = t.properties {
+            BTreeMap::from_iter(properties.iter()).hash(&mut linkscaler_config_hasher)
+        }
+    });
     linkscaler_config_hasher.finish()
 }
 
@@ -300,8 +359,14 @@ mod test {
         let provider_ref = "provider_ref".to_string();
         let provider_id = "provider_id".to_string();
 
-        let source_config = vec!["source_config".to_string()];
-        let target_config = vec!["target_config".to_string()];
+        let source_config = vec![ConfigProperty {
+            name: "source_config".to_string(),
+            properties: None,
+        }];
+        let target_config = vec![ConfigProperty {
+            name: "target_config".to_string(),
+            properties: None,
+        }];
 
         let scaler = LinkScaler::new(
             create_store(&lattice_id, &actor_ref, &provider_ref).await,
@@ -335,7 +400,7 @@ mod test {
             LINK_SCALER_TYPE = LINK_SCALER_TYPE,
             model_name = "model",
             link_name = "default",
-            linkscaler_values_hash = compute_linkscaler_config_hash(&["foo".to_string()], &["bar".to_string()])
+            linkscaler_values_hash = compute_linkscaler_config_hash(&[ConfigProperty { name: "foo".to_string(), properties: None }], &[ConfigProperty { name: "bar".to_string(), properties: None}])
         );
 
         assert_ne!(
@@ -382,8 +447,14 @@ mod test {
                 name: "default".to_string(),
                 lattice_id: lattice_id.clone(),
                 model_name: "model".to_string(),
-                source_config: vec!["default-http".to_string()],
-                target_config: vec!["outbound-cert".to_string()],
+                source_config: vec![ConfigProperty {
+                    name: "default-http".to_string(),
+                    properties: None,
+                }],
+                target_config: vec![ConfigProperty {
+                    name: "outbound-cert".to_string(),
+                    properties: None,
+                }],
             },
             TestLatticeSource::default(),
         );
@@ -419,7 +490,7 @@ mod test {
         // Run a reconcile and make sure it returns a single put linkdef command
         let commands = scaler.reconcile().await.expect("Couldn't reconcile");
         assert_eq!(commands.len(), 1, "Expected 1 command, got {commands:?}");
-        assert!(matches!(commands[0], Command::PutLinkdef(_)));
+        assert!(matches!(commands[0], Command::PutLink(_)));
     }
 
     // TODO: Uncomment once https://github.com/wasmCloud/wadm/issues/123 is fixed
@@ -488,8 +559,8 @@ mod test {
                 wit_package: linkdef.wit_package.clone(),
                 wit_interfaces: linkdef.interfaces.clone(),
                 name: linkdef.name.clone(),
-                source_config: linkdef.source_config.clone(),
-                target_config: linkdef.target_config.clone(),
+                source_config: vec![],
+                target_config: vec![],
                 lattice_id: lattice_id.clone(),
                 model_name: "model".to_string(),
             },

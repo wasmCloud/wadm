@@ -928,6 +928,7 @@ impl<P: Publisher> Handler<P> {
 // Manifest validation
 pub(crate) async fn validate_manifest(manifest: Manifest) -> anyhow::Result<()> {
     let mut name_registry: HashSet<String> = HashSet::new();
+    let mut id_registry: HashSet<String> = HashSet::new();
     let mut required_capability_components: HashSet<String> = HashSet::new();
     JSON_SCHEMA_VALUE
         .get_or_try_init(|| async {
@@ -1005,7 +1006,7 @@ pub(crate) async fn validate_manifest(manifest: Manifest) -> anyhow::Result<()> 
             }
 
             if let Some(component_id) = id {
-                if !name_registry.insert(component_id.to_string()) {
+                if !id_registry.insert(component_id.to_string()) {
                     bail!("Duplicate component identifier in manifest: {component_id}");
                 }
             }
@@ -1016,7 +1017,7 @@ pub(crate) async fn validate_manifest(manifest: Manifest) -> anyhow::Result<()> 
             properties: ActorProperties { id: Some(id), .. },
         } = &component.properties
         {
-            if !name_registry.insert(id.to_string()) {
+            if !id_registry.insert(id.to_string()) {
                 bail!("Duplicate component identifier in manifest: {id}");
             }
         }

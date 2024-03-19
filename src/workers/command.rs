@@ -78,13 +78,13 @@ impl Worker for CommandWorker {
                     .stop_provider(&prov.host_id, &prov.provider_id)
                     .await
             }
-            Command::PutLinkdef(ld) => {
+            Command::PutLink(ld) => {
                 trace!(command = ?ld, "Handling put linkdef command");
                 // TODO(thomastaylor312): We should probably change ScopedMessage to allow us `pub`
                 // access to the inner type so we don't have to clone, but no need to worry for now
                 self.client.put_link(ld.clone().into()).await
             }
-            Command::DeleteLinkdef(ld) => {
+            Command::DeleteLink(ld) => {
                 trace!(command = ?ld, "Handling delete linkdef command");
                 self.client
                     .delete_link(
@@ -94,6 +94,16 @@ impl Worker for CommandWorker {
                         &ld.wit_package,
                     )
                     .await
+            }
+            Command::PutConfig(put_config) => {
+                trace!(command = ?put_config, "Handling put config command");
+                self.client
+                    .put_config(&put_config.config_name, put_config.config.clone())
+                    .await
+            }
+            Command::DeleteConfig(config_name) => {
+                trace!("Handling delete config command");
+                self.client.delete_config(config_name).await
             }
         }
         .map_err(|e| anyhow::anyhow!("{e:?}"));
