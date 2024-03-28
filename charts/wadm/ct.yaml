@@ -1,0 +1,2 @@
+validate-maintainers: false
+target-branch: main # TODO: Remove this once chart-testing 3.10.1+ is released
