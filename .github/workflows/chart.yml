@@ -19,6 +19,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Fetch main branch for chart-testing
+        run: |
+          git fetch origin main:main
+
       - name: Set up Helm
         uses: azure/setup-helm@v4
         with:
