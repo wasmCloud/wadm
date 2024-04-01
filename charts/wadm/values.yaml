@@ -1,0 +1,80 @@
+wadm:
+  # replicas represents the number of copies of wadm to run
+  replicas: 1
+  # image represents the image and tag for running wadm
+  image:
+    repository: ghcr.io/wasmcloud/wadm
+    pullPolicy: IfNotPresent
+    # Overrides the image tag whose default is the chart appVersion.
+    tag: ""
+  config:
+    apiPrefix: ""
+    streamPrefix: ""
+    cleanupInterval: ""
+    hostId: ""
+    logLevel: ""
+    nats:
+      credsFile: ""
+      jetstreamDomain: ""
+      jwt: ""
+      seed: ""
+      server: "127.0.0.1:4222"
+      tlsCaFile: ""
+    maxJobs: ""
+    stateBucket: ""
+    manifestBucket: ""
+    multitenant: false
+    structuredLogging: false
+    tracing: false
+    tracingEndpoint: ""
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Automatically mount a ServiceAccount's API credentials?
+  automount: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext: {}
+  # fsGroup: 1000
+
+securityContext:
+  runAsUser: 1000
+  runAsGroup: 1000
+  runAsNonRoot: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - "ALL"
+  seccompProfile:
+    type: "RuntimeDefault"
+
+
+resources: {}
+  # We usually recommend not to specify default resources and to leave this as a conscious
+  # choice for the user. This also increases chances charts run on environments with little
+  # resources, such as Minikube. If you do want to specify resources, uncomment the following
+  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+  # limits:
+  #   cpu: 100m
+  #   memory: 128Mi
+  # requests:
+  #   cpu: 100m
+  #   memory: 128Mi
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
