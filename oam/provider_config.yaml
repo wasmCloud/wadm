@@ -10,9 +10,7 @@ spec:
     - name: webcap
       type: capability
       properties:
-        contract: wasmcloud:httpserver
         image: wasmcloud.azurecr.io/httpserver:0.17.0
-        link_name: default
         # You can pass any config data you'd like sent to your provider as a string. This can be any
         # format you desire. Here it is encoded JSON
         config: '{"raw": "json", "data": {}}'
@@ -21,7 +19,6 @@ spec:
       type: capability
       properties:
         image: wasmcloud.azurecr.io/ledblinky:0.0.1
-        contract: wasmcloud:blinkenlights
         # You can also pass in any structured data that can be represented in JSON. This example is YAML
         config:
           some: config
@@ -31,6 +28,5 @@ spec:
       type: capability
       properties:
         image: wasmcloud.azurecr.io/bot:0.0.1
-        contract: wasmcloud:bot
         # One more example using JSON
         config: { "some": "config", "number": 1 }

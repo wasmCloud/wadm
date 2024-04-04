@@ -1,12 +1,12 @@
 services:
   nats:
-    image: nats:2.9-alpine
+    image: nats:2.10-alpine
     command: ["-js"]
     ports:
       - 4222:4222
   # Have hosts in 3 different "regions"
   wasmcloud_east:
-    image: wasmcloud/wasmcloud:0.81.0
+    image: wasmcloud/wasmcloud:1.0.0-alpha.4
     depends_on:
       - nats
     deploy:
@@ -14,11 +14,11 @@ services:
     environment:
       LC_ALL: en_US.UTF-8
       RUST_LOG: debug,hyper=info
-      NATS_HOST: nats
+      WASMCLOUD_NATS_HOST: nats
       WASMCLOUD_CLUSTER_SEED: SCAOGJWX53TGI4233T6GAXWYWBIB5ZDGPTCO6ODJQYELS52YCQCBQSRPA4
-      HOST_region: us-brooks-east
+      WASMCLOUD_LABEL_region: us-brooks-east
   wasmcloud_west:
-    image: wasmcloud/wasmcloud:0.81.0
+    image: wasmcloud/wasmcloud:1.0.0-alpha.4
     depends_on:
       - nats
     deploy:
@@ -26,21 +26,18 @@ services:
     environment:
       LC_ALL: en_US.UTF-8
       RUST_LOG: debug,hyper=info
-      NATS_HOST: nats
+      WASMCLOUD_NATS_HOST: nats
       WASMCLOUD_CLUSTER_SEED: SCAOGJWX53TGI4233T6GAXWYWBIB5ZDGPTCO6ODJQYELS52YCQCBQSRPA4
-      HOST_region: us-taylor-west
+      WASMCLOUD_LABEL_region: us-taylor-west
   wasmcloud_moon:
-    image: wasmcloud/wasmcloud:0.81.0
+    image: wasmcloud/wasmcloud:1.0.0-alpha.4
     depends_on:
       - nats
     deploy:
       replicas: 1
-    # Expose the washboard in case you want to observe the tasks in progress
-    ports:
-      - 40000:4000
     environment:
       LC_ALL: en_US.UTF-8
       RUST_LOG: debug,hyper=info
-      NATS_HOST: nats
+      WASMCLOUD_NATS_HOST: nats
       WASMCLOUD_CLUSTER_SEED: SCAOGJWX53TGI4233T6GAXWYWBIB5ZDGPTCO6ODJQYELS52YCQCBQSRPA4
-      HOST_region: moon
+      WASMCLOUD_LABEL_region: moon

@@ -1,16 +1,38 @@
 apiVersion: core.oam.dev/v1beta1
 kind: Application
 metadata:
-  name: echo-all-hosts
+  name: hello-all-hosts
   annotations:
     version: v0.0.1
     description: "This is my app"
 spec:
   components:
-    - name: echo
+    - name: hello
       type: actor
       properties:
-        image: wasmcloud.azurecr.io/echo:0.3.7
+        image: wasmcloud.azurecr.io/http-hello-world:0.1.0
+      traits:
+        - type: spreadscaler
+          properties:
+            instances: 5
+            spread:
+              - name: eastcoast
+                requirements:
+                  region: us-brooks-east
+                weight: 40
+              - name: westcoast
+                requirements:
+                  region: us-taylor-west
+                weight: 40
+              - name: the-moon
+                requirements:
+                  region: moon
+                weight: 20
+
+    - name: httpserver
+      type: capability
+      properties:
+        image: ghcr.io/wasmcloud/http-server:0.20.0
       traits:
         - type: spreadscaler
           properties:
@@ -30,29 +52,7 @@ spec:
                 weight: 20
         - type: link
           properties:
-            target: httpserver
+            target: hello
             namespace: wasi
             package: http
             interfaces: ["incoming-handler"]
-
-    - name: httpserver
-      type: capability
-      properties:
-        image: wasmcloud.azurecr.io/httpserver:0.17.0
-      traits:
-        - type: spreadscaler
-          properties:
-            instances: 5
-            spread:
-              - name: eastcoast
-                requirements:
-                  region: us-brooks-east
-                weight: 40
-              - name: westcoast
-                requirements:
-                  region: us-taylor-west
-                weight: 40
-              - name: the-moon
-                requirements:
-                  region: moon
-                weight: 20

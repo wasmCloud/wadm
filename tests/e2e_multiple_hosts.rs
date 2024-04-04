@@ -9,15 +9,19 @@ mod e2e;
 mod helpers;
 
 use e2e::{assert_status, check_actors, check_providers, ClientInfo, ExpectedCount};
-use helpers::{ECHO_ACTOR_ID, HTTP_SERVER_PROVIDER_ID};
+use helpers::{HELLO_COMPONENT_ID, HTTP_SERVER_COMPONENT_ID};
 
-use crate::e2e::check_status;
+use crate::{
+    e2e::check_status,
+    helpers::{HELLO_IMAGE_REF, HTTP_SERVER_IMAGE_REF},
+};
 
 const MANIFESTS_PATH: &str = "test/data";
 const DOCKER_COMPOSE_FILE: &str = "test/docker-compose-e2e.yaml";
-const BLOBSTORE_FS_PROVIDER_ID: &str = "VBBQNNCGUKIXEWLL5HL5XJE57BS3GU5DMDOKZS6ROEWPQFHEDP6NGVZM";
-const BLOBBY_ACTOR_ID: &str = "MBY3COMRDLQYTX2AUTNB5D2WYAH5TUKNIMELDSQ5BUFZVV7CBUUIKEDR";
-const KV_COUNTER_ACTOR_ID: &str = "MCFMFDWFHGKELOXPCNCDXKK5OFLHBVEWRAOXR5JSQUD2TOFRE3DFPM7E";
+const BLOBSTORE_FS_IMAGE_REF: &str = "ghcr.io/wasmcloud/blobstore-fs:0.6.0";
+const BLOBSTORE_FS_PROVIDER_ID: &str = "fileserver";
+const BLOBBY_IMAGE_REF: &str = "wasmcloud.azurecr.io/blobby:0.1.0";
+const BLOBBY_COMPONENT_ID: &str = "littleblobbytables";
 
 // NOTE(thomastaylor312): This exists because we need to have setup happen only once for all tests
 // and then we want cleanup to run with `Drop`. I tried doing this with a `OnceCell`, but `static`s
@@ -84,8 +88,7 @@ async fn run_multiple_host_tests() {
     // The futures must be boxed or they're technically different types
     let tests = [
         test_spread_all_hosts(&client_info).boxed(),
-        // See the comment on the function below
-        // test_lotta_actors(&client_info).boxed(),
+        test_lotta_actors(&client_info).boxed(),
         test_complex_app(&client_info).boxed(),
     ];
     futures::future::join_all(tests).await;
@@ -112,7 +115,7 @@ async fn test_no_requirements(client_info: &ClientInfo) {
     );
 
     let resp = client_info
-        .deploy_manifest("echo-simple", None, None, None)
+        .deploy_manifest("hello-simple", None, None, None)
         .await;
     assert_ne!(
         resp.result,
@@ -120,52 +123,37 @@ async fn test_no_requirements(client_info: &ClientInfo) {
         "Shouldn't have errored when deploying manifest: {resp:?}"
     );
 
-    // Once manifest is deployed, first status should be compensating
-    check_status(&stream, "default", "echo-simple", StatusType::Reconciling)
-        .await
-        .unwrap();
-
     // NOTE: This runs for a while, but it's because we're waiting for the provider to download,
     // which can take a bit
     assert_status(None, Some(7), || async {
         let inventory = client_info.get_all_inventory("default").await?;
 
-        check_actors(
-            &inventory,
-            "wasmcloud.azurecr.io/echo:0.3.7",
-            "echo-simple",
-            4,
-        )?;
-        check_providers(
-            &inventory,
-            "wasmcloud.azurecr.io/httpserver:0.17.0",
-            ExpectedCount::Exactly(1),
-        )?;
+        check_actors(&inventory, HELLO_IMAGE_REF, "hello-simple", 4)?;
+        check_providers(&inventory, HTTP_SERVER_IMAGE_REF, ExpectedCount::Exactly(1))?;
 
-        // Oh no a sleep! How horrible!
-        // Actually, this is a good thing! If we reach this point because the httpserver
-        // provider upgraded really quickly, that means we still have to wait 5 seconds
-        // for the provider health check to trigger linkdef creation. So, after everything
-        // gets created, give the linkdef scaler time to react to the provider health check.
-        tokio::time::sleep(Duration::from_secs(5)).await;
         let links = client_info
             .ctl_client("default")
-            .query_links()
+            .get_links()
             .await
-            .map_err(|e| anyhow::anyhow!("{e:?}"))?;
+            .map_err(|e| anyhow::anyhow!("{e:?}"))?
+            .response
+            .expect("Should have links");
 
         if !links.iter().any(|ld| {
-            ld.actor_id == ECHO_ACTOR_ID
-                && ld.provider_id == HTTP_SERVER_PROVIDER_ID
-                && ld.contract_id == "wasmcloud:httpserver"
+            ld.source_id == HTTP_SERVER_COMPONENT_ID
+                && ld.target == HELLO_COMPONENT_ID
+                && ld.wit_namespace == "wasi"
+                && ld.wit_package == "http"
+                && ld.interfaces == vec!["incoming-handler"]
+                && ld.name == "default".to_string()
         }) {
             anyhow::bail!(
-                "Link between echo actor and http provider should exist: {:#?}",
+                "Link between http provider and hello component should exist: {:#?}",
                 links
             )
         }
 
-        check_status(&stream, "default", "echo-simple", StatusType::Deployed)
+        check_status(&stream, "default", "hello-simple", StatusType::Deployed)
             .await
             .unwrap();
 
@@ -175,7 +163,7 @@ async fn test_no_requirements(client_info: &ClientInfo) {
 
     // Undeploy manifest
     let resp = client_info
-        .undeploy_manifest("echo-simple", None, None)
+        .undeploy_manifest("hello-simple", None, None)
         .await;
 
     assert_ne!(
@@ -185,27 +173,31 @@ async fn test_no_requirements(client_info: &ClientInfo) {
     );
 
     // Once manifest is undeployed, status should be undeployed
-    check_status(&stream, "default", "echo-simple", StatusType::Undeployed)
+    check_status(&stream, "default", "hello-simple", StatusType::Undeployed)
         .await
         .unwrap();
 
-    // assert that no actors or providers with annotations exist
+    // assert that no components or providers with annotations exist
     assert_status(None, None, || async {
         let inventory = client_info.get_all_inventory("default").await?;
 
-        check_actors(
-            &inventory,
-            "wasmcloud.azurecr.io/echo:0.3.7",
-            "echo-simple",
-            0,
-        )?;
-        check_providers(
-            &inventory,
-            "wasmcloud.azurecr.io/httpserver:0.17.0",
-            ExpectedCount::Exactly(0),
-        )?;
+        check_actors(&inventory, HELLO_IMAGE_REF, "hello-simple", 0)?;
+        check_providers(&inventory, HTTP_SERVER_IMAGE_REF, ExpectedCount::Exactly(0))?;
 
-        check_status(&stream, "default", "echo-simple", StatusType::Undeployed)
+        let links = client_info
+            .ctl_client("default")
+            .get_links()
+            .await
+            .map_err(|e| anyhow::anyhow!("{e:?}"))?
+            .response
+            .expect("Should have links");
+
+        assert!(
+            links.is_empty(),
+            "The link between the http provider and hello component should be removed"
+        );
+
+        check_status(&stream, "default", "hello-simple", StatusType::Undeployed)
             .await
             .unwrap();
 
@@ -214,50 +206,38 @@ async fn test_no_requirements(client_info: &ClientInfo) {
     .await;
 }
 
-// This test does work locally but on CI it flakes consistently due to
-// https://github.com/wasmCloud/wadm/issues/125. We will address this as a follow up once 0.4 is
-// released
-// async fn test_lotta_actors(client_info: &ClientInfo) {
-//     let resp = client_info
-//         .put_manifest_from_file("lotta_actors.yaml", None)
-//         .await;
+async fn test_lotta_actors(client_info: &ClientInfo) {
+    let resp = client_info
+        .put_manifest_from_file("lotta_actors.yaml", None, None)
+        .await;
 
-//     assert_ne!(
-//         resp.result,
-//         PutResult::Error,
-//         "Shouldn't have errored when creating manifest: {resp:?}"
-//     );
+    assert_ne!(
+        resp.result,
+        PutResult::Error,
+        "Shouldn't have errored when creating manifest: {resp:?}"
+    );
 
-//     let resp = client_info
-//         .deploy_manifest("lotta-actors", None, None)
-//         .await;
-//     assert_ne!(
-//         resp.result,
-//         DeployResult::Error,
-//         "Shouldn't have errored when deploying manifest: {resp:?}"
-//     );
+    let resp = client_info
+        .deploy_manifest("lotta-actors", None, None, None)
+        .await;
+    assert_ne!(
+        resp.result,
+        DeployResult::Error,
+        "Shouldn't have errored when deploying manifest: {resp:?}"
+    );
 
-//     // NOTE: This runs for a while, but it's because we're waiting for the provider to download,
-//     // which can take a bit
-//     assert_status(None, Some(7), || async {
-//         let inventory = client_info.get_all_inventory("default").await?;
+    // NOTE: This runs for a while, but it's because we're waiting for the provider to download,
+    // which can take a bit
+    assert_status(None, Some(7), || async {
+        let inventory = client_info.get_all_inventory("default").await?;
 
-//         check_actors(
-//             &inventory,
-//             "wasmcloud.azurecr.io/echo:0.3.7",
-//             "lotta-actors",
-//             200,
-//         )?;
-//         check_providers(
-//             &inventory,
-//             "wasmcloud.azurecr.io/httpserver:0.17.0",
-//             ExpectedCount::AtLeast(1),
-//         )?;
+        check_actors(&inventory, HELLO_IMAGE_REF, "lotta-actors", 9001)?;
+        check_providers(&inventory, HTTP_SERVER_IMAGE_REF, ExpectedCount::AtLeast(1))?;
 
-//         Ok(())
-//     })
-//     .await;
-// }
+        Ok(())
+    })
+    .await;
+}
 
 async fn test_spread_all_hosts(client_info: &ClientInfo) {
     let resp = client_info
@@ -272,7 +252,7 @@ async fn test_spread_all_hosts(client_info: &ClientInfo) {
 
     // Deploy manifest
     let resp = client_info
-        .deploy_manifest("echo-all-hosts", None, None, None)
+        .deploy_manifest("hello-all-hosts", None, None, None)
         .await;
     assert_ne!(
         resp.result,
@@ -283,17 +263,8 @@ async fn test_spread_all_hosts(client_info: &ClientInfo) {
     assert_status(None, Some(7), || async {
         let inventory = client_info.get_all_inventory("default").await?;
 
-        check_actors(
-            &inventory,
-            "wasmcloud.azurecr.io/echo:0.3.7",
-            "echo-all-hosts",
-            5,
-        )?;
-        check_providers(
-            &inventory,
-            "wasmcloud.azurecr.io/httpserver:0.17.0",
-            ExpectedCount::Exactly(5),
-        )?;
+        check_actors(&inventory, HELLO_IMAGE_REF, "hello-all-hosts", 5)?;
+        check_providers(&inventory, HTTP_SERVER_IMAGE_REF, ExpectedCount::AtLeast(5))?;
 
         Ok(())
     })
@@ -324,53 +295,46 @@ async fn test_complex_app(client_info: &ClientInfo) {
     assert_status(None, Some(7), || async {
         let inventory = client_info.get_all_inventory("default").await?;
 
-        check_actors(
-            &inventory,
-            "wasmcloud.azurecr.io/blobby:0.2.0",
-            "complex",
-            5,
-        )?;
+        check_actors(&inventory, BLOBBY_IMAGE_REF, "complex", 5)?;
+        check_providers(&inventory, HTTP_SERVER_IMAGE_REF, ExpectedCount::AtLeast(3))?;
         check_providers(
             &inventory,
-            "wasmcloud.azurecr.io/httpserver:0.17.0",
-            ExpectedCount::AtLeast(3),
-        )?;
-        check_providers(
-            &inventory,
-            "wasmcloud.azurecr.io/blobstore_fs:0.3.2",
+            BLOBSTORE_FS_IMAGE_REF,
             ExpectedCount::Exactly(1),
         )?;
 
-        // Oh no a sleep! How horrible!
-        // Actually, this is a good thing! If we reach this point because the httpserver
-        // provider upgraded really quickly, that means we still have to wait 5 seconds
-        // for the provider health check to trigger linkdef creation. So, after everything
-        // gets created, give the linkdef scaler time to react to the provider health check.
-        tokio::time::sleep(Duration::from_secs(5)).await;
         let links = client_info
             .ctl_client("default")
-            .query_links()
+            .get_links()
             .await
-            .map_err(|e| anyhow::anyhow!("{e:?}"))?;
+            .map_err(|e| anyhow::anyhow!("{e:?}"))?
+            .response
+            .expect("Should have links");
 
         if !links.iter().any(|ld| {
-            ld.actor_id == BLOBBY_ACTOR_ID
-                && ld.provider_id == HTTP_SERVER_PROVIDER_ID
-                && ld.contract_id == "wasmcloud:httpserver"
+            ld.source_id == HTTP_SERVER_COMPONENT_ID
+                && ld.target == BLOBBY_COMPONENT_ID
+                && ld.wit_namespace == "wasi"
+                && ld.wit_package == "http"
+                && ld.interfaces == vec!["incoming-handler"]
+                && ld.name == "default"
         }) {
             anyhow::bail!(
-                "Link between blobby actor and http provider should exist: {:#?}",
+                "Link between blobby component and http provider should exist: {:#?}",
                 links
             );
         }
 
         if !links.iter().any(|ld| {
-            ld.actor_id == BLOBBY_ACTOR_ID
-                && ld.provider_id == BLOBSTORE_FS_PROVIDER_ID
-                && ld.contract_id == "wasmcloud:blobstore"
+            ld.source_id == BLOBBY_COMPONENT_ID
+                && ld.target == BLOBSTORE_FS_PROVIDER_ID
+                && ld.wit_namespace == "wasi"
+                && ld.wit_package == "blobstore"
+                && ld.interfaces == vec!["blobstore"]
+                && ld.name == "default"
         }) {
             anyhow::bail!(
-                "Link between blobby actor and blobstore-fs provider should not exist: {:#?}",
+                "Link between blobby component and blobstore-fs provider should exist: {:#?}",
                 links
             );
         }
@@ -399,9 +363,9 @@ async fn test_complex_app(client_info: &ClientInfo) {
             .unwrap();
 
         if moon_inventory
-            .actors
+            .components
             .iter()
-            .any(|actor| actor.id == BLOBBY_ACTOR_ID)
+            .any(|actor| actor.id == BLOBBY_COMPONENT_ID)
         {
             anyhow::bail!("Actors shouldn't be running on the moon");
         }
@@ -437,12 +401,7 @@ async fn test_stop_host_rebalance(client_info: &ClientInfo) {
     assert_status(None, Some(7), || async {
         let inventory = client_info.get_all_inventory("default").await?;
 
-        check_actors(
-            &inventory,
-            "wasmcloud.azurecr.io/kvcounter:0.4.2",
-            "host-stop",
-            5,
-        )?;
+        check_actors(&inventory, HELLO_IMAGE_REF, "host-stop", 5)?;
 
         Ok(())
     })
@@ -462,10 +421,10 @@ async fn test_stop_host_rebalance(client_info: &ClientInfo) {
                 .unwrap_or(false)
         })
         .max_by_key(|(_, inv)| {
-            inv.actors
+            inv.components
                 .iter()
-                .find(|actor| actor.id == KV_COUNTER_ACTOR_ID)
-                .map(|desc| desc.instances.len())
+                .find(|actor| actor.id == HELLO_COMPONENT_ID)
+                .map(|desc| desc.max_instances)
                 .unwrap_or(0)
         })
         .map(|(host_id, _)| host_id)
@@ -485,12 +444,7 @@ async fn test_stop_host_rebalance(client_info: &ClientInfo) {
     assert_status(None, Some(7), || async {
         let inventory = client_info.get_all_inventory("default").await?;
 
-        check_actors(
-            &inventory,
-            "wasmcloud.azurecr.io/kvcounter:0.4.2",
-            "host-stop",
-            5,
-        )?;
+        check_actors(&inventory, HELLO_IMAGE_REF, "host-stop", 5)?;
 
         Ok(())
     })
