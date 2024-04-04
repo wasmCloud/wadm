@@ -23,7 +23,6 @@ async fn test_round_trip() {
     let actor1 = Actor {
         id: "testactor".to_string(),
         name: "Test Actor".to_string(),
-        capabilities: vec!["wasmcloud:httpserver".to_string()],
         issuer: "afakekey".to_string(),
         instances: HashMap::from([(
             "testhost".to_string(),
@@ -39,7 +38,6 @@ async fn test_round_trip() {
     let actor2 = Actor {
         id: "anotheractor".to_string(),
         name: "Another Actor".to_string(),
-        capabilities: vec!["wasmcloud:httpserver".to_string()],
         issuer: "afakekey".to_string(),
         instances: HashMap::from([(
             "testhost".to_string(),
@@ -207,7 +205,6 @@ async fn test_multiple_lattice() {
     let actor1 = Actor {
         id: "testactor".to_string(),
         name: "Test Actor".to_string(),
-        capabilities: vec!["wasmcloud:httpserver".to_string()],
         issuer: "afakekey".to_string(),
         instances: HashMap::from([(
             "testhost".to_string(),
@@ -223,7 +220,6 @@ async fn test_multiple_lattice() {
     let actor2 = Actor {
         id: "anotheractor".to_string(),
         name: "Another Actor".to_string(),
-        capabilities: vec!["wasmcloud:httpserver".to_string()],
         issuer: "afakekey".to_string(),
         instances: HashMap::from([(
             "testhost".to_string(),
@@ -286,7 +282,6 @@ async fn test_store_and_delete_many() {
     let actor1 = Actor {
         id: "testactor".to_string(),
         name: "Test Actor".to_string(),
-        capabilities: vec!["wasmcloud:httpserver".to_string()],
         issuer: "afakekey".to_string(),
         instances: HashMap::from([(
             "testhost".to_string(),
@@ -302,7 +297,6 @@ async fn test_store_and_delete_many() {
     let actor2 = Actor {
         id: "anotheractor".to_string(),
         name: "Another Actor".to_string(),
-        capabilities: vec!["wasmcloud:httpserver".to_string()],
         issuer: "afakekey".to_string(),
         instances: HashMap::from([(
             "testhost".to_string(),

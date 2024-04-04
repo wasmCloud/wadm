@@ -645,13 +645,12 @@ where
             }
             Properties::Capability { properties: props } => {
                 let provider_id = component_id(name, props.id.as_ref(), &props.image);
-                // TODO: better check
-                let mut has_scaler = false;
+                let mut scaler_specified = false;
                 if let Some(traits) = traits {
                     scalers.extend(traits.iter().filter_map(|trt| {
                         match (trt.trait_type.as_str(), &trt.properties) {
                             (SPREADSCALER_TRAIT, TraitProperty::SpreadScaler(p)) => {
-                                has_scaler = true;
+                                scaler_specified = true;
                                 Some(Box::new(BackoffAwareScaler::new(
                                     ProviderSpreadScaler::new(
                                         snapshot_data.clone(),
@@ -673,7 +672,7 @@ where
                                 )) as BoxedScaler)
                             }
                             (DAEMONSCALER_TRAIT, TraitProperty::SpreadScaler(p)) => {
-                                has_scaler = true;
+                                scaler_specified = true;
                                 Some(Box::new(BackoffAwareScaler::new(
                                     ProviderDaemonScaler::new(
                                         snapshot_data.clone(),
@@ -733,7 +732,7 @@ where
                     }))
                 }
                 // Allow providers to omit the scaler entirely for simplicity
-                if !has_scaler {
+                if !scaler_specified {
                     scalers.push(Box::new(BackoffAwareScaler::new(
                         ProviderSpreadScaler::new(
                             snapshot_data.clone(),

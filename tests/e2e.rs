@@ -117,7 +117,7 @@ impl ClientInfo {
 
     pub async fn add_ctl_client(&mut self, lattice_prefix: &str, topic_prefix: Option<&str>) {
         let builder = wasmcloud_control_interface::ClientBuilder::new(self.client.clone())
-            .lattice_prefix(lattice_prefix);
+            .lattice(lattice_prefix);
 
         let builder = if let Some(topic_prefix) = topic_prefix {
             builder.topic_prefix(topic_prefix)
@@ -343,13 +343,21 @@ impl ClientInfo {
             .await
             .expect("Should be able to fetch hosts")
             .into_iter()
-            .map(|host| (self.ctl_client(lattice_prefix).clone(), host.id))
+            .filter_map(|host| {
+                host.response
+                    .map(|resp| (self.ctl_client(lattice_prefix).clone(), resp.id))
+            })
             .map(|(client, host_id)| async move {
                 let inventory = client
                     .get_host_inventory(&host_id)
                     .await
                     .map_err(|e| anyhow::anyhow!("{e:?}"))?;
-                Ok((host_id, inventory))
+                Ok((
+                    host_id,
+                    inventory
+                        .response
+                        .expect("Should have host inventory response"),
+                ))
             });
         futures::future::join_all(futs).await.into_iter().collect()
     }
@@ -422,27 +430,21 @@ pub fn check_actors(
     manifest_name: &str,
     expected_count: usize,
 ) -> anyhow::Result<()> {
-    let all_actors = inventory
-        .values()
-        .flat_map(|inv| &inv.actors)
-        .filter_map(|actor| {
-            (actor.image_ref.as_deref().unwrap_or_default() == image_ref)
-                .then_some(&actor.instances)
-        })
-        .flatten();
+    let all_actors = inventory.values().flat_map(|inv| &inv.components);
     let actor_count: usize = all_actors
         .filter(|actor| {
-            actor
-                .annotations
-                .as_ref()
-                .and_then(|annotations| {
-                    annotations
-                        .get(APP_SPEC_ANNOTATION)
-                        .map(|val| val == manifest_name)
-                })
-                .unwrap_or(false)
+            actor.image_ref == image_ref
+                && actor
+                    .annotations
+                    .as_ref()
+                    .and_then(|annotations| {
+                        annotations
+                            .get(APP_SPEC_ANNOTATION)
+                            .map(|val| val == manifest_name)
+                    })
+                    .unwrap_or(false)
         })
-        .map(|actor| actor.max_concurrent as usize)
+        .map(|actor| actor.max_instances as usize)
         .sum();
     if actor_count != expected_count {
         anyhow::bail!(

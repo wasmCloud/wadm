@@ -7,10 +7,10 @@ metadata:
     description: "This is my app"
 spec:
   components:
-    - name: echo
+    - name: hello
       type: actor
       properties:
-        image: wasmcloud.azurecr.io/kvcounter:0.4.2
+        image: wasmcloud.azurecr.io/http-hello-world:0.1.0
       traits:
         - type: spreadscaler
           properties:

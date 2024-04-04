@@ -20,15 +20,20 @@ spec:
               - aws
               - azure
             scale_profile: mini
-        - type: linkdef
-          properties:
-            target: webcap
-            values:
-              port: "8080"
 
     - name: webcap
       type: capability
       properties:
-        contract: wasmcloud:httpserver
         image: wasmcloud.azurecr.io/httpserver:0.13.1
-        link_name: default
+      traits:
+        - type: link
+          properties:
+            target: userinfo
+            namespace: wasi
+            package: http
+            interfaces:
+              - incoming-handler
+            source_config:
+              - name: default-port
+                properties:
+                  port: "8080"
