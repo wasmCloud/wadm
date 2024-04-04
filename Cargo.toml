@@ -61,7 +61,8 @@ tracing-subscriber = { version = "0.3.7", features = [
     "json",
 ], optional = true }
 uuid = "1"
-wasmcloud-control-interface = { git = "https://github.com/wasmcloud/wasmcloud", branch = "feat/wrpc"}
+# wasmcloud-control-interface = { version = "1.0.0-alpha.3" }
+wasmcloud-control-interface = { git = "https://github.com/wasmcloud/wasmcloud", branch = "main" }
 
 [dev-dependencies]
 serial_test = "1"

@@ -51,12 +51,14 @@ pub struct ProviderHealthCheckInfo {
 #[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq)]
 pub struct ActorClaims {
     pub call_alias: Option<String>,
-    #[serde(rename = "caps")]
-    pub capabilites: Vec<String>,
+    #[serde(default)]
     pub expires_human: String,
     // TODO: parse as nkey?
+    #[serde(default)]
     pub issuer: String,
+    #[serde(default)]
     pub name: String,
+    #[serde(default)]
     pub not_before_human: String,
     pub revision: Option<usize>,
     // NOTE: This doesn't need a custom deserialize because unlike provider claims, these come out

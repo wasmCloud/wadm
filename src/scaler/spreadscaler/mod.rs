@@ -80,9 +80,9 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
         // the entire reconcile, smart compute exactly what needs to change, but it just
         // requires more code branches and would be fine as a future improvement
         match event {
-            // TODO: React to ActorScaleFailed with an exponential backoff, can't just immediately retry since that
+            // TODO: React to ComponentScaleFailed with an exponential backoff, can't just immediately retry since that
             // would cause a very tight loop of failures
-            Event::ActorScaled(evt) if evt.actor_id == self.config.actor_id => {
+            Event::ComponentScaled(evt) if evt.actor_id == self.config.actor_id => {
                 self.reconcile().await
             }
             Event::HostStopped(HostStopped { labels, .. })
@@ -395,7 +395,7 @@ mod test {
         commands::Command,
         consumers::{manager::Worker, ScopedMessage},
         events::{
-            ActorScaled, Event, LinkdefDeleted, LinkdefSet, ProviderStarted, ProviderStopped,
+            ComponentScaled, Event, LinkdefDeleted, LinkdefSet, ProviderStarted, ProviderStopped,
         },
         model::{Spread, SpreadScalerProperty},
         scaler::{
@@ -755,7 +755,6 @@ mod test {
                 Actor {
                     id: echo_id.to_string(),
                     name: "Echo".to_string(),
-                    capabilities: vec![],
                     issuer: "AASDASDASDASD".to_string(),
                     instances: HashMap::from_iter([
                         (
@@ -804,7 +803,6 @@ mod test {
                 Actor {
                     id: blobby_id.to_string(),
                     name: "Blobby".to_string(),
-                    capabilities: vec![],
                     issuer: "AASDASDASDASD".to_string(),
                     instances: HashMap::from_iter([
                         (
@@ -1023,7 +1021,6 @@ mod test {
                 Actor {
                     id: actor_id.to_string(),
                     name: "Faketor".to_string(),
-                    capabilities: vec![],
                     issuer: "AASDASDASDASD".to_string(),
                     instances: HashMap::from_iter([(
                         host_id.to_string(),
@@ -1132,7 +1129,6 @@ mod test {
                 Actor {
                     id: actor_id.to_string(),
                     name: "Faketor".to_string(),
-                    capabilities: vec![],
                     issuer: "AASDASDASDASD".to_string(),
                     instances: HashMap::from_iter([
                         (
@@ -1281,7 +1277,6 @@ mod test {
                 Actor {
                     id: blobby_id.to_string(),
                     name: "Blobby".to_string(),
-                    capabilities: vec![],
                     issuer: "AASDASDASDASD".to_string(),
                     instances: HashMap::from_iter([
                         (
@@ -1437,7 +1432,7 @@ mod test {
             _ => panic!("Unexpected commands in spreadscaler list"),
         }
 
-        let modifying_event = ActorScaled {
+        let modifying_event = ComponentScaled {
             annotations: spreadscaler_annotations("CrossRegionReal", blobby_spreadscaler.id()),
             actor_id: blobby_id.to_string(),
             image_ref: blobby_ref.to_string(),
@@ -1449,14 +1444,14 @@ mod test {
         worker
             .do_work(ScopedMessage::<Event> {
                 lattice_id: lattice_id.to_string(),
-                inner: Event::ActorScaled(modifying_event.clone()),
+                inner: Event::ComponentScaled(modifying_event.clone()),
                 acker: None,
             })
             .await
             .expect("should be able to handle an event");
 
         let mut cmds = blobby_spreadscaler
-            .handle_event(&Event::ActorScaled(modifying_event))
+            .handle_event(&Event::ComponentScaled(modifying_event))
             .await?;
         assert_eq!(cmds.len(), 2);
         cmds.sort_by(|a, b| match (a, b) {

@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use super::StateKind;
 use crate::events::{
-    ActorScaled, ActorsStarted, HostHeartbeat, HostStarted, ProviderInfo, ProviderStarted,
+    ActorsStarted, ComponentScaled, HostHeartbeat, HostStarted, ProviderInfo, ProviderStarted,
 };
 
 /// A wasmCloud Capability provider
@@ -134,11 +134,8 @@ pub struct Actor {
     /// ID of the actor, normally a public (n)key
     pub id: String,
 
-    /// Name of the provider
+    /// Name of the actor
     pub name: String,
-
-    /// Capabilities that the actor requires
-    pub capabilities: Vec<String>,
 
     /// Issuer of the (signed) actor
     pub issuer: String,
@@ -180,7 +177,6 @@ impl From<ActorsStarted> for Actor {
         Actor {
             id: value.public_key,
             name: value.claims.name,
-            capabilities: value.claims.capabilites,
             issuer: value.claims.issuer,
             reference: value.image_ref,
             instances: HashMap::from_iter([(
@@ -199,7 +195,6 @@ impl From<&ActorsStarted> for Actor {
         Actor {
             id: value.public_key.clone(),
             name: value.claims.name.clone(),
-            capabilities: value.claims.capabilites.clone(),
             issuer: value.claims.issuer.clone(),
             reference: value.image_ref.clone(),
             instances: HashMap::from_iter([(
@@ -213,16 +208,12 @@ impl From<&ActorsStarted> for Actor {
     }
 }
 
-impl From<ActorScaled> for Actor {
-    fn from(value: ActorScaled) -> Self {
-        let (name, capabilities, issuer) = value
-            .claims
-            .map(|c| (c.name, c.capabilites, c.issuer))
-            .unwrap_or_default();
+impl From<ComponentScaled> for Actor {
+    fn from(value: ComponentScaled) -> Self {
+        let (name, issuer) = value.claims.map(|c| (c.name, c.issuer)).unwrap_or_default();
         Actor {
             id: value.actor_id,
             name,
-            capabilities,
             issuer,
             reference: value.image_ref,
             instances: HashMap::from_iter([(
@@ -236,19 +227,14 @@ impl From<ActorScaled> for Actor {
     }
 }
 
-impl From<&ActorScaled> for Actor {
-    fn from(value: &ActorScaled) -> Self {
+impl From<&ComponentScaled> for Actor {
+    fn from(value: &ComponentScaled) -> Self {
         Actor {
             id: value.actor_id.clone(),
             name: value
                 .claims
                 .as_ref()
                 .map(|c| c.name.clone())
-                .unwrap_or_default(),
-            capabilities: value
-                .claims
-                .as_ref()
-                .map(|c| c.capabilites.clone())
                 .unwrap_or_default(),
             issuer: value
                 .claims
@@ -332,7 +318,7 @@ impl From<&HostStarted> for Host {
 impl From<HostHeartbeat> for Host {
     fn from(value: HostHeartbeat) -> Self {
         let actors = value
-            .actors
+            .components
             .into_iter()
             .map(|actor| {
                 (
@@ -372,7 +358,7 @@ impl From<HostHeartbeat> for Host {
 impl From<&HostHeartbeat> for Host {
     fn from(value: &HostHeartbeat) -> Self {
         let actors = value
-            .actors
+            .components
             .iter()
             .map(|actor| {
                 (

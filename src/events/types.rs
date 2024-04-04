@@ -11,7 +11,9 @@ use std::{
 use cloudevents::{AttributesReader, Data, Event as CloudEvent, EventBuilder, EventBuilderV10};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use wasmcloud_control_interface::{ActorDescription, InterfaceLinkDefinition, ProviderDescription};
+use wasmcloud_control_interface::{
+    ComponentDescription, InterfaceLinkDefinition, ProviderDescription,
+};
 
 use crate::model::Manifest;
 
@@ -96,8 +98,8 @@ pub enum Event {
     ActorsStarted(ActorsStarted),
     ActorsStartFailed(ActorsStartFailed),
     ActorsStopped(ActorsStopped),
-    ActorScaled(ActorScaled),
-    ActorScaleFailed(ActorScaleFailed),
+    ComponentScaled(ComponentScaled),
+    ComponentScaleFailed(ComponentScaleFailed),
     ProviderStarted(ProviderStarted),
     ProviderStopped(ProviderStopped),
     ProviderStartFailed(ProviderStartFailed),
@@ -121,8 +123,8 @@ impl Display for Event {
             Event::ActorsStarted(_) => write!(f, "ActorsStarted"),
             Event::ActorsStartFailed(_) => write!(f, "ActorsStartFailed"),
             Event::ActorsStopped(_) => write!(f, "ActorsStopped"),
-            Event::ActorScaled(_) => write!(f, "ActorScaled"),
-            Event::ActorScaleFailed(_) => write!(f, "ActorScaleFailed"),
+            Event::ComponentScaled(_) => write!(f, "ComponentScaled"),
+            Event::ComponentScaleFailed(_) => write!(f, "ComponentScaleFailed"),
             Event::ProviderStarted(_) => write!(f, "ProviderStarted"),
             Event::ProviderStopped(_) => write!(f, "ProviderStopped"),
             Event::ProviderStartFailed(_) => write!(f, "ProviderStartFailed"),
@@ -150,9 +152,9 @@ impl TryFrom<CloudEvent> for Event {
                 ActorsStartFailed::try_from(value).map(Event::ActorsStartFailed)
             }
             ActorsStopped::TYPE => ActorsStopped::try_from(value).map(Event::ActorsStopped),
-            ActorScaled::TYPE => ActorScaled::try_from(value).map(Event::ActorScaled),
-            ActorScaleFailed::TYPE => {
-                ActorScaleFailed::try_from(value).map(Event::ActorScaleFailed)
+            ComponentScaled::TYPE => ComponentScaled::try_from(value).map(Event::ComponentScaled),
+            ComponentScaleFailed::TYPE => {
+                ComponentScaleFailed::try_from(value).map(Event::ComponentScaleFailed)
             }
             ProviderStarted::TYPE => ProviderStarted::try_from(value).map(Event::ProviderStarted),
             ProviderStopped::TYPE => ProviderStopped::try_from(value).map(Event::ProviderStopped),
@@ -192,8 +194,8 @@ impl TryFrom<Event> for CloudEvent {
             Event::ActorsStarted(_) => ActorsStarted::TYPE,
             Event::ActorsStartFailed(_) => ActorsStartFailed::TYPE,
             Event::ActorsStopped(_) => ActorsStopped::TYPE,
-            Event::ActorScaled(_) => ActorScaled::TYPE,
-            Event::ActorScaleFailed(_) => ActorScaleFailed::TYPE,
+            Event::ComponentScaled(_) => ComponentScaled::TYPE,
+            Event::ComponentScaleFailed(_) => ComponentScaleFailed::TYPE,
             Event::ProviderStarted(_) => ProviderStarted::TYPE,
             Event::ProviderStopped(_) => ProviderStopped::TYPE,
             Event::ProviderStartFailed(_) => ProviderStartFailed::TYPE,
@@ -230,8 +232,8 @@ impl Serialize for Event {
             Event::ActorsStarted(evt) => evt.serialize(serializer),
             Event::ActorsStartFailed(evt) => evt.serialize(serializer),
             Event::ActorsStopped(evt) => evt.serialize(serializer),
-            Event::ActorScaled(evt) => evt.serialize(serializer),
-            Event::ActorScaleFailed(evt) => evt.serialize(serializer),
+            Event::ComponentScaled(evt) => evt.serialize(serializer),
+            Event::ComponentScaleFailed(evt) => evt.serialize(serializer),
             Event::ProviderStarted(evt) => evt.serialize(serializer),
             Event::ProviderStopped(evt) => evt.serialize(serializer),
             Event::ProviderStartFailed(evt) => evt.serialize(serializer),
@@ -261,8 +263,8 @@ impl Event {
             Event::ActorsStarted(_) => ActorsStarted::TYPE,
             Event::ActorsStartFailed(_) => ActorsStartFailed::TYPE,
             Event::ActorsStopped(_) => ActorsStopped::TYPE,
-            Event::ActorScaled(_) => ActorScaled::TYPE,
-            Event::ActorScaleFailed(_) => ActorScaleFailed::TYPE,
+            Event::ComponentScaled(_) => ComponentScaled::TYPE,
+            Event::ComponentScaleFailed(_) => ComponentScaleFailed::TYPE,
             Event::ProviderStarted(_) => ProviderStarted::TYPE,
             Event::ProviderStopped(_) => ProviderStopped::TYPE,
             Event::ProviderStartFailed(_) => ProviderStopped::TYPE,
@@ -361,7 +363,7 @@ event_impl!(
 );
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
-pub struct ActorScaled {
+pub struct ComponentScaled {
     pub annotations: BTreeMap<String, String>,
     pub claims: Option<ActorClaims>,
     pub image_ref: String,
@@ -372,14 +374,14 @@ pub struct ActorScaled {
 }
 
 event_impl!(
-    ActorScaled,
-    "com.wasmcloud.lattice.actor_scaled",
+    ComponentScaled,
+    "com.wasmcloud.lattice.component_scaled",
     source,
     host_id
 );
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
-pub struct ActorScaleFailed {
+pub struct ComponentScaleFailed {
     pub annotations: BTreeMap<String, String>,
     pub claims: Option<ActorClaims>,
     pub image_ref: String,
@@ -391,8 +393,8 @@ pub struct ActorScaleFailed {
 }
 
 event_impl!(
-    ActorScaleFailed,
-    "com.wasmcloud.lattice.actor_scale_failed",
+    ComponentScaleFailed,
+    "com.wasmcloud.lattice.component_scale_failed",
     source,
     host_id
 );
@@ -532,8 +534,8 @@ event_impl!(
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct HostHeartbeat {
-    /// Actors running on this host.
-    pub actors: Vec<ActorDescription>,
+    /// Components running on this host.
+    pub components: Vec<ComponentDescription>,
     /// Providers running on this host
     pub providers: Vec<ProviderDescription>,
     /// The host's unique ID

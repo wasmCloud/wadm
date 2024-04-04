@@ -37,12 +37,14 @@ impl Worker for CommandWorker {
                 let mut annotations = actor.annotations.clone();
                 insert_managed_annotations(&mut annotations, &actor.model_name);
                 self.client
-                    .scale_actor(
+                    .scale_component(
                         &actor.host_id,
                         &actor.reference,
                         &actor.actor_id,
                         actor.count,
                         Some(annotations.into_iter().collect()),
+                        // TODO(#252): Support config
+                        vec![],
                     )
                     .await
             }
@@ -51,7 +53,7 @@ impl Worker for CommandWorker {
                 // Order here is intentional to prevent scalers from overwriting managed annotations
                 let mut annotations = prov.annotations.clone();
                 insert_managed_annotations(&mut annotations, &prov.model_name);
-                let config = prov.config.clone().map(|conf| match conf {
+                let _config = prov.config.clone().map(|conf| match conf {
                     // NOTE: We validate the serialization when we store the model so this should be
                     // safe to unwrap
                     CapabilityConfig::Json(conf) => {
@@ -65,7 +67,8 @@ impl Worker for CommandWorker {
                         &prov.reference,
                         &prov.provider_id,
                         Some(annotations.into_iter().collect()),
-                        config,
+                        // TODO(#252): Support config
+                        vec![],
                     )
                     .await
             }

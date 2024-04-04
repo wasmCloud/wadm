@@ -2,7 +2,7 @@
   {
     "specversion": "1.0",
     "id": "018d32ce-6133-2f9d-0b69-1437b25cf59c",
-    "type": "com.wasmcloud.lattice.actor_scaled",
+    "type": "com.wasmcloud.lattice.component_scaled",
     "source": "NCBAWBHRT6JNSQIYQEURM3AQZ74I6HTQRRCFMTVPC3OAX4BUTCNTYADZ",
     "datacontenttype": "application/json",
     "time": "2024-01-22T20:13:22.611283Z",
@@ -27,7 +27,7 @@
   {
     "specversion": "1.0",
     "id": "018d32d0-4687-8e53-e77b-4af4d6dc0a67",
-    "type": "com.wasmcloud.lattice.actor_scale_failed",
+    "type": "com.wasmcloud.lattice.component_scale_failed",
     "source": "NCBAWBHRT6JNSQIYQEURM3AQZ74I6HTQRRCFMTVPC3OAX4BUTCNTYADZ",
     "datacontenttype": "application/json",
     "time": "2024-01-22T20:15:26.855859Z",
@@ -107,7 +107,7 @@
     "datacontenttype": "application/json",
     "time": "2024-03-06T21:32:13.405311Z",
     "data": {
-      "actors": [
+      "components": [
         {
           "annotations": {},
           "id": "hello_world",

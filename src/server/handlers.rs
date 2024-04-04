@@ -953,6 +953,7 @@ pub(crate) async fn validate_manifest(manifest: Manifest) -> anyhow::Result<()> 
     if let Err(errors) = validation_result {
         let mut error_message = String::new();
         for error in errors {
+            trace!(error = ?error, "Validation error");
             let instance_path = error
                 .instance_path
                 .into_iter()
