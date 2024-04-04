@@ -324,7 +324,7 @@ async fn test_annotation_stop() {
     // acts on _everything_. We could technically move this back down after the initial scale up of
     // the managed actors after https://github.com/wasmCloud/wasmCloud/issues/746 is resolved
     ctl_client
-        .scale_actor(&host_id, "wasmcloud.azurecr.io/echo:0.3.4", Some(1), None)
+        .scale_component(&host_id, "wasmcloud.azurecr.io/echo:0.3.4", Some(1), None)
         .await
         .unwrap();
 

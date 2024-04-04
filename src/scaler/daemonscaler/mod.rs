@@ -85,9 +85,9 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorDaemonScaler<S> {
         // the entire reconcile, smart compute exactly what needs to change, but it just
         // requires more code branches and would be fine as a future improvement
         match event {
-            // TODO: React to ActorScaleFailed with an exponential backoff, can't just immediately retry since that
+            // TODO: React to ComponentScaleFailed with an exponential backoff, can't just immediately retry since that
             // would cause a very tight loop of failures
-            Event::ActorScaled(evt) if evt.actor_id == self.config.actor_id => {
+            Event::ComponentScaled(evt) if evt.actor_id == self.config.actor_id => {
                 self.reconcile().await
             }
             Event::HostStopped(HostStopped { labels, .. })
@@ -496,7 +496,6 @@ mod test {
                 Actor {
                     id: echo_id.to_string(),
                     name: "Echo".to_string(),
-                    capabilities: vec![],
                     issuer: "AASDASDASDASD".to_string(),
                     instances: HashMap::from_iter([
                         (
@@ -545,7 +544,6 @@ mod test {
                 Actor {
                     id: blobby_id.to_string(),
                     name: "Blobby".to_string(),
-                    capabilities: vec![],
                     issuer: "AASDASDASDASD".to_string(),
                     instances: HashMap::from_iter([
                         (
@@ -713,7 +711,7 @@ mod test {
         lattice_source.inventory.write().await.insert(
             host_id_three.to_string(),
             HostInventory {
-                actors: vec![],
+                components: vec![],
                 friendly_name: "hey".to_string(),
                 labels: HashMap::from_iter([
                     ("cloud".to_string(), "purgatory".to_string()),
@@ -774,7 +772,6 @@ mod test {
                 Actor {
                     id: blobby_id.to_string(),
                     name: "Blobby".to_string(),
-                    capabilities: vec![],
                     issuer: "AASDASDASDASD".to_string(),
                     instances: HashMap::from_iter([
                         (
@@ -892,7 +889,7 @@ mod test {
 
         // Let a new host come online, should match the spread
         let modifying_event = HostHeartbeat {
-            actors: vec![],
+            components: vec![],
             friendly_name: "hey".to_string(),
             issuer: "".to_string(),
             labels: HashMap::from_iter([
@@ -947,7 +944,6 @@ mod test {
                 Actor {
                     id: blobby_id.to_string(),
                     name: "Blobby".to_string(),
-                    capabilities: vec![],
                     issuer: "AASDASDASDASD".to_string(),
                     instances: HashMap::from_iter([
                         (

@@ -50,7 +50,7 @@ pub struct LinkScalerConfig {
 /// The LinkSpreadScaler ensures that link configuration exists on a specified lattice.
 pub struct LinkScaler<S, L> {
     pub config: LinkScalerConfig,
-    // TODO: Reenable once we figure out https://github.com/wasmCloud/wadm/issues/123
+    // TODO(#253): Reenable once we figure out https://github.com/wasmCloud/wadm/issues/123
     #[allow(unused)]
     store: S,
     ctl_client: L,
@@ -83,7 +83,7 @@ where
     async fn handle_event(&self, event: &Event) -> Result<Vec<Command>> {
         match event {
             // Trigger linkdef creation if this actor starts and belongs to this model
-            Event::ActorScaled(evt) if evt.actor_id == self.config.source_id => {
+            Event::ComponentScaled(evt) if evt.actor_id == self.config.source_id => {
                 self.reconcile().await
             }
             Event::ProviderHealthCheckPassed(ProviderHealthCheckPassed {
@@ -262,7 +262,6 @@ where
 
 impl<S: ReadStore + Send + Sync, L: LinkSource> LinkScaler<S, L> {
     /// Construct a new LinkScaler with specified configuration values
-    #[allow(clippy::too_many_arguments)]
     pub fn new(store: S, link_config: LinkScalerConfig, ctl_client: L) -> Self {
         // NOTE(thomastaylor312): Yep, this is gnarly, but it was all the information that would be
         // useful to have if uniquely identifying a link scaler
@@ -316,7 +315,7 @@ mod test {
     use super::*;
 
     use crate::{
-        events::{ActorScaled, ProviderHealthCheckInfo, ProviderInfo},
+        events::{ComponentScaled, ProviderHealthCheckInfo, ProviderInfo},
         storage::{Actor, Host, Provider, Store},
         test_util::{TestLatticeSource, TestStore},
         APP_SPEC_ANNOTATION,
@@ -674,7 +673,7 @@ mod test {
             .expect("should be able to store actor");
 
         let commands = link_scaler
-            .handle_event(&Event::ActorScaled(ActorScaled {
+            .handle_event(&Event::ComponentScaled(ComponentScaled {
                 annotations: BTreeMap::from_iter([(
                     APP_SPEC_ANNOTATION.to_string(),
                     "foobar".to_string(),

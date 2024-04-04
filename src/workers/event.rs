@@ -3,7 +3,7 @@ use std::collections::{hash_map::Entry, HashMap, HashSet};
 
 use anyhow::Result;
 use tracing::{debug, instrument, trace, warn};
-use wasmcloud_control_interface::{ActorDescription, ProviderDescription};
+use wasmcloud_control_interface::{ComponentDescription, ProviderDescription};
 
 use crate::commands::Command;
 use crate::consumers::{
@@ -209,10 +209,10 @@ where
     }
 
     #[instrument(level = "debug", skip(self, actor), fields(actor_id = %actor.actor_id, host_id = %actor.host_id))]
-    async fn handle_actor_scaled(
+    async fn handle_component_scaled(
         &self,
         lattice_id: &str,
-        actor: &ActorScaled,
+        actor: &ComponentScaled,
     ) -> anyhow::Result<()> {
         trace!("Scaling actor in store");
         debug!("Fetching current data for actor");
@@ -236,7 +236,7 @@ where
                     });
                 }
                 // Actor is not running and now scaled to zero, no action required. This can happen if we
-                // update the state before we receive the ActorScaled event
+                // update the state before we receive the ComponentScaled event
                 None if actor.max_instances == 0 => (),
                 // If an actor isn't running yet, add it with the scaled max_instances value
                 None => {
@@ -304,7 +304,7 @@ where
 
         // NOTE: We can return an error here and then nack because we'll just reupdate the host data
         // with the exact same host heartbeat entry. There is no possibility of a duplicate
-        self.heartbeat_actor_update(lattice_id, host, &host.actors)
+        self.heartbeat_actor_update(lattice_id, host, &host.components)
             .await?;
 
         Ok(())
@@ -609,7 +609,7 @@ where
         &self,
         actors: &HashMap<String, Actor>,
         host_id: &str,
-        instance_map: Vec<ActorDescription>,
+        instance_map: Vec<ComponentDescription>,
     ) -> anyhow::Result<Vec<(String, Actor)>> {
         let claims = self.ctl_client.get_claims().await?;
 
@@ -642,7 +642,6 @@ where
                         Actor {
                             id: actor_description.id,
                             name: claim.name.to_owned(),
-                            capabilities: claim.capabilities.to_owned(),
                             issuer: claim.issuer.to_owned(),
                             instances: HashMap::from_iter([(host_id.to_owned(), instance)]),
                             reference: actor_description.image_ref,
@@ -656,7 +655,6 @@ where
                         Actor {
                             id: actor_description.id,
                             name: "".to_owned(),
-                            capabilities: Vec::new(),
                             issuer: "".to_owned(),
                             instances: HashMap::from_iter([(host_id.to_owned(), instance)]),
                             reference: actor_description.image_ref,
@@ -672,7 +670,7 @@ where
         &self,
         lattice_id: &str,
         host: &HostHeartbeat,
-        inventory_actors: &Vec<ActorDescription>,
+        inventory_actors: &Vec<ComponentDescription>,
     ) -> anyhow::Result<()> {
         debug!("Fetching current actor state");
         let actors = self.store.list::<Actor>(lattice_id).await?;
@@ -721,7 +719,7 @@ where
                 }
             })
             // actor ID to all instances on this host
-            .collect::<Vec<ActorDescription>>();
+            .collect::<Vec<ComponentDescription>>();
 
         let actors_to_store = self
             .populate_actor_info(&actors, &host.host_id, actors_to_update)
@@ -1005,8 +1003,8 @@ where
                         .get(APP_SPEC_ANNOTATION)
                         .map(|s| s.as_str())
                 }),
-            Event::ActorScaled(actor) => self
-                .handle_actor_scaled(&message.lattice_id, actor)
+            Event::ComponentScaled(actor) => self
+                .handle_component_scaled(&message.lattice_id, actor)
                 .await
                 .map(|_| {
                     actor
@@ -1086,7 +1084,7 @@ where
             Event::LinkdefSet(_)
             | Event::LinkdefDeleted(_)
             | Event::ProviderStartFailed(_)
-            | Event::ActorScaleFailed(_) => {
+            | Event::ComponentScaleFailed(_) => {
                 trace!("Got event we don't care about. Skipping");
                 Ok(None)
             }
@@ -1167,7 +1165,7 @@ mod test {
     use std::sync::Arc;
 
     use tokio::sync::RwLock;
-    use wasmcloud_control_interface::{ActorDescription, HostInventory, ProviderDescription};
+    use wasmcloud_control_interface::{ComponentDescription, HostInventory, ProviderDescription};
 
     use super::*;
 
@@ -1282,7 +1280,6 @@ mod test {
         let actor1 = ActorsStarted {
             claims: ActorClaims {
                 call_alias: Some("Grand Moff".into()),
-                capabilites: vec!["empire:command".into()],
                 issuer: "Sheev Palpatine".into(),
                 name: "Grand Moff Tarkin".into(),
                 version: Some("0.1.0".into()),
@@ -1298,7 +1295,6 @@ mod test {
         let actor2 = ActorsStarted {
             claims: ActorClaims {
                 call_alias: Some("Darth".into()),
-                capabilites: vec!["empire:command".into(), "force_user:sith".into()],
                 issuer: "Sheev Palpatine".into(),
                 name: "Darth Vader".into(),
                 version: Some("0.1.0".into()),
@@ -1378,10 +1374,9 @@ mod test {
         /******************** Actor Scale Tests ********************/
         /***********************************************************/
 
-        let actor1_scaled = ActorScaled {
+        let actor1_scaled = ComponentScaled {
             claims: Some(ActorClaims {
                 call_alias: Some("Grand Moff".into()),
-                capabilites: vec!["empire:command".into()],
                 issuer: "Sheev Palpatine".into(),
                 name: "Grand Moff Tarkin".into(),
                 version: Some("0.1.0".into()),
@@ -1394,7 +1389,7 @@ mod test {
             max_instances: 500,
         };
         worker
-            .handle_actor_scaled(lattice_id, &actor1_scaled)
+            .handle_component_scaled(lattice_id, &actor1_scaled)
             .await
             .expect("Should be able to handle actor event");
         let actors = store.list::<Actor>(lattice_id).await.unwrap();
@@ -1412,10 +1407,9 @@ mod test {
             "Actor count should be modified with an increase in scale"
         );
 
-        let actor1_scaled = ActorScaled {
+        let actor1_scaled = ComponentScaled {
             claims: Some(ActorClaims {
                 call_alias: Some("Grand Moff".into()),
-                capabilites: vec!["empire:command".into()],
                 issuer: "Sheev Palpatine".into(),
                 name: "Grand Moff Tarkin".into(),
                 version: Some("0.1.0".into()),
@@ -1428,7 +1422,7 @@ mod test {
             max_instances: 200,
         };
         worker
-            .handle_actor_scaled(lattice_id, &actor1_scaled)
+            .handle_component_scaled(lattice_id, &actor1_scaled)
             .await
             .expect("Should be able to handle actor event");
         let actors = store.list::<Actor>(lattice_id).await.unwrap();
@@ -1446,10 +1440,9 @@ mod test {
             "Actor count should be modified with a decrease in scale"
         );
 
-        let actor1_scaled = ActorScaled {
+        let actor1_scaled = ComponentScaled {
             claims: Some(ActorClaims {
                 call_alias: Some("Grand Moff".into()),
-                capabilites: vec!["empire:command".into()],
                 issuer: "Sheev Palpatine".into(),
                 name: "Grand Moff Tarkin".into(),
                 version: Some("0.1.0".into()),
@@ -1462,7 +1455,7 @@ mod test {
             max_instances: 0,
         };
         worker
-            .handle_actor_scaled(lattice_id, &actor1_scaled)
+            .handle_component_scaled(lattice_id, &actor1_scaled)
             .await
             .expect("Should be able to handle actor event");
         let actors = store.list::<Actor>(lattice_id).await.unwrap();
@@ -1480,10 +1473,9 @@ mod test {
             "Actor count should be modified with a scale to zero"
         );
 
-        let actor1_scaled = ActorScaled {
+        let actor1_scaled = ComponentScaled {
             claims: Some(ActorClaims {
                 call_alias: Some("Grand Moff".into()),
-                capabilites: vec!["empire:command".into()],
                 issuer: "Sheev Palpatine".into(),
                 name: "Grand Moff Tarkin".into(),
                 version: Some("0.1.0".into()),
@@ -1496,7 +1488,7 @@ mod test {
             max_instances: 1,
         };
         worker
-            .handle_actor_scaled(lattice_id, &actor1_scaled)
+            .handle_component_scaled(lattice_id, &actor1_scaled)
             .await
             .expect("Should be able to handle actor event");
         let actors = store.list::<Actor>(lattice_id).await.unwrap();
@@ -1602,8 +1594,8 @@ mod test {
             .handle_host_heartbeat(
                 lattice_id,
                 &HostHeartbeat {
-                    actors: vec![
-                        ActorDescription {
+                    components: vec![
+                        ComponentDescription {
                             id: actor1.public_key.to_string(),
                             image_ref: "ref1".to_string(),
                             annotations: None,
@@ -1611,7 +1603,7 @@ mod test {
                             max_instances: 2,
                             name: None,
                         },
-                        ActorDescription {
+                        ComponentDescription {
                             id: actor2.public_key.to_string(),
                             image_ref: "ref2".to_string(),
                             annotations: None,
@@ -1652,8 +1644,8 @@ mod test {
             .handle_host_heartbeat(
                 lattice_id,
                 &HostHeartbeat {
-                    actors: vec![
-                        ActorDescription {
+                    components: vec![
+                        ComponentDescription {
                             id: actor1.public_key.to_string(),
                             image_ref: "ref1".to_string(),
                             annotations: None,
@@ -1661,7 +1653,7 @@ mod test {
                             max_instances: 2,
                             name: None,
                         },
-                        ActorDescription {
+                        ComponentDescription {
                             id: actor2.public_key.to_string(),
                             image_ref: "ref2".to_string(),
                             annotations: None,
@@ -1796,7 +1788,7 @@ mod test {
                 HostInventory {
                     friendly_name: "my-host-3".to_string(),
                     issuer: "my-issuer-2".to_string(),
-                    actors: vec![ActorDescription {
+                    components: vec![ComponentDescription {
                         id: actor2.public_key.to_string(),
                         image_ref: actor2.image_ref.to_string(),
                         annotations: None,
@@ -1817,7 +1809,7 @@ mod test {
                 HostInventory {
                     friendly_name: "my-host-4".to_string(),
                     issuer: "my-issuer-2".to_string(),
-                    actors: vec![ActorDescription {
+                    components: vec![ComponentDescription {
                         id: actor2.public_key.to_string(),
                         image_ref: actor2.image_ref.to_string(),
                         annotations: None,
@@ -1840,7 +1832,7 @@ mod test {
             .handle_host_heartbeat(
                 lattice_id,
                 &HostHeartbeat {
-                    actors: vec![ActorDescription {
+                    components: vec![ComponentDescription {
                         id: actor2.public_key.to_string(),
                         image_ref: actor2.image_ref.to_string(),
                         annotations: None,
@@ -1871,7 +1863,7 @@ mod test {
             .handle_host_heartbeat(
                 lattice_id,
                 &HostHeartbeat {
-                    actors: vec![ActorDescription {
+                    components: vec![ComponentDescription {
                         id: actor2.public_key.to_string(),
                         image_ref: actor2.image_ref.to_string(),
                         annotations: None,
@@ -2016,8 +2008,8 @@ mod test {
             HostInventory {
                 friendly_name: "my-host-5".to_string(),
                 issuer: "my-issuer-3".to_string(),
-                actors: vec![
-                    ActorDescription {
+                components: vec![
+                    ComponentDescription {
                         id: actor1_id.to_string(),
                         image_ref: actor1_ref.to_string(),
                         annotations: None,
@@ -2025,7 +2017,7 @@ mod test {
                         max_instances: 2,
                         name: None,
                     },
-                    ActorDescription {
+                    ComponentDescription {
                         id: actor2_id.to_string(),
                         image_ref: actor2_ref.to_string(),
                         annotations: None,
@@ -2054,8 +2046,8 @@ mod test {
             .handle_host_heartbeat(
                 lattice_id,
                 &HostHeartbeat {
-                    actors: vec![
-                        ActorDescription {
+                    components: vec![
+                        ComponentDescription {
                             id: actor1_id.to_string(),
                             image_ref: actor1_ref.to_string(),
                             annotations: None,
@@ -2063,7 +2055,7 @@ mod test {
                             max_instances: 2,
                             name: None,
                         },
-                        ActorDescription {
+                        ComponentDescription {
                             id: actor2_id.to_string(),
                             image_ref: actor2_ref.to_string(),
                             annotations: None,
@@ -2098,10 +2090,6 @@ mod test {
         let actor = actors.get(&actor1_id).expect("Actor should exist");
         let expected = claims.get(&actor1_id).unwrap();
         assert_eq!(actor.name, expected.name, "Data should match");
-        assert_eq!(
-            actor.capabilities, expected.capabilities,
-            "Data should match"
-        );
         assert_eq!(actor.issuer, expected.issuer, "Data should match");
         assert_eq!(
             actor
@@ -2118,10 +2106,6 @@ mod test {
         let actor = actors.get(&actor2_id).expect("Actor should exist");
         let expected = claims.get(&actor2_id).unwrap();
         assert_eq!(actor.name, expected.name, "Data should match");
-        assert_eq!(
-            actor.capabilities, expected.capabilities,
-            "Data should match"
-        );
         assert_eq!(actor.issuer, expected.issuer, "Data should match");
         assert_eq!(
             actor
@@ -2310,8 +2294,8 @@ mod test {
             .handle_host_heartbeat(
                 lattice_id,
                 &HostHeartbeat {
-                    actors: vec![
-                        ActorDescription {
+                    components: vec![
+                        ComponentDescription {
                             id: "jabba".to_string(),
                             image_ref: "jabba.tatooinecr.io/jabba:latest".to_string(),
                             name: Some("Da Hutt".to_string()),
@@ -2322,7 +2306,7 @@ mod test {
                             revision: 0,
                             max_instances: 5,
                         },
-                        ActorDescription {
+                        ComponentDescription {
                             id: "jabba2".to_string(),
                             image_ref: "jabba.tatooinecr.io/jabba:latest".to_string(),
                             name: Some("Da Hutt".to_string()),

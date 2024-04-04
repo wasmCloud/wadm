@@ -104,7 +104,7 @@ pub struct Component {
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(tag = "type")]
 pub enum Properties {
-    #[serde(rename = "actor")]
+    #[serde(rename = "actor", alias = "component")]
     Actor { properties: ActorProperties },
     #[serde(rename = "capability")]
     Capability { properties: CapabilityProperties },
@@ -283,7 +283,7 @@ impl From<serde_json::Value> for TraitProperty {
 ///      port: "8080"
 /// ```
 ///
-/// TODO: Consider if we want to scope this by application
+/// TODO(#252): Consider if we want to scope this by application
 /// Will result in two config scalers being created, one with the name `basic-kv` and one with the
 /// name `default-port`. Wadm will not resolve collisions with configuration names between manifests.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
