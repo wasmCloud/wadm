@@ -73,9 +73,12 @@ impl Manifest {
 pub struct Metadata {
     /// The name of the manifest. This must be unique per lattice
     pub name: String,
-    /// Optional data for annotating this manifest
+    /// Optional data for annotating this manifest see <https://github.com/oam-dev/spec/blob/master/metadata.md#annotations-format>
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub annotations: BTreeMap<String, String>,
+    /// Optional data for labeling this manifest, see <https://github.com/oam-dev/spec/blob/master/metadata.md#label-format>
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub labels: BTreeMap<String, String>,
 }
 
 /// A representation of an OAM specification
@@ -656,6 +659,10 @@ mod test {
                     "This is my app".to_string(),
                 ),
             ]),
+            labels: BTreeMap::from([(
+                "prefix.dns.prefix/name-for_a.123".to_string(),
+                "this is a valid label".to_string(),
+            )]),
         };
         let manifest = Manifest {
             api_version: OAM_VERSION.to_owned(),

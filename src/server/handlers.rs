@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use anyhow::{anyhow, bail};
+use anyhow::{anyhow, bail, ensure};
 use async_nats::{jetstream::stream::Stream, Client, Message, Subject};
 use base64::{engine::general_purpose::STANDARD as B64decoder, Engine};
 use jsonschema::{paths::PathChunk, Draft, JSONSchema};
@@ -976,6 +976,9 @@ pub(crate) async fn validate_manifest(manifest: Manifest) -> anyhow::Result<()> 
         ));
     }
 
+    ensure!(manifest.metadata.labels.iter().all(valid_oam_label));
+    ensure!(manifest.metadata.annotations.iter().all(valid_oam_label));
+
     for component in manifest.spec.components.iter() {
         // Component name validation : each component (actors or providers) should have a unique name
         if !name_registry.insert(component.name.clone()) {
@@ -1073,6 +1076,50 @@ fn parse_image_ref(image_name: &str) -> Option<(String, String)> {
         // ignore if image ref is not in the format some_url:some_version
         None
     }
+}
+
+/// This function validates that a key/value pair is a valid OAM label. It's using fairly
+/// basic validation rules to ensure that the manifest isn't doing anything horribly wrong. Keeping
+/// this function free of regex is intentional to keep this code functional but simple.
+///
+/// See <https://github.com/oam-dev/spec/blob/master/metadata.md#metadata> for details
+fn valid_oam_label(label: (&String, &String)) -> bool {
+    let (key, _) = label;
+    match key.split_once('/') {
+        Some((prefix, name)) => is_valid_dns_subdomain(prefix) && is_valid_label_name(name),
+        None => is_valid_label_name(key),
+    }
+}
+
+fn is_valid_dns_subdomain(s: &str) -> bool {
+    if s.is_empty() || s.len() > 253 {
+        return false;
+    }
+
+    s.split('.').all(|part| {
+        // Ensure each part is non-empty, <= 63 characters, starts with an alphabetic character,
+        // ends with an alphanumeric character, and contains only alphanumeric characters or hyphens
+        !part.is_empty()
+            && part.len() <= 63
+            && part.starts_with(|c: char| c.is_ascii_alphabetic())
+            && part.ends_with(|c: char| c.is_ascii_alphanumeric())
+            && part.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+    })
+}
+
+// Ensure each name is non-empty, <= 63 characters, starts with an alphanumeric character,
+// ends with an alphanumeric character, and contains only alphanumeric characters, hyphens,
+// underscores, or periods
+fn is_valid_label_name(name: &str) -> bool {
+    if name.is_empty() || name.len() > 63 {
+        return false;
+    }
+
+    name.starts_with(|c: char| c.is_ascii_alphanumeric())
+        && name.ends_with(|c: char| c.is_ascii_alphanumeric())
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
 }
 
 #[cfg(test)]
@@ -1197,5 +1244,45 @@ mod test {
         let word_with_space = "my manifest";
         assert!(!regex.is_match(word_with_period));
         assert!(!regex.is_match(word_with_space));
+    }
+
+    #[tokio::test]
+    async fn validate_oam_label_rules() {
+        // Valid labels
+        assert!(valid_oam_label((&"foo".to_string(), &"bar".to_string())));
+        assert!(valid_oam_label((
+            &"app.oam.io/name".to_string(),
+            &"wasmcloud".to_string()
+        )));
+        assert!(valid_oam_label((
+            &"justaregularstring".to_string(),
+            &"wasmcloud".to_string()
+        )));
+        assert!(valid_oam_label((
+            &"dash-period.numb3r/any_v4lue".to_string(),
+            &"this can be any string".to_string()
+        )));
+
+        // Invalid labels
+        assert!(!valid_oam_label((
+            &"my_prefix/app-name".to_string(),
+            &"wasmcloud".to_string()
+        )));
+        assert!(!valid_oam_label((
+            &"1my_prefix/app-name".to_string(),
+            &"wasmcloud".to_string()
+        )));
+        assert!(!valid_oam_label((
+            &"my_prefix---/app-name".to_string(),
+            &"wasmcloud".to_string()
+        )));
+        assert!(!valid_oam_label((
+            &"my_prefix/app-name...".to_string(),
+            &"wasmcloud".to_string()
+        )));
+        assert!(!valid_oam_label((
+            &"a".repeat(255).to_string(),
+            &"toolong".to_string()
+        )));
     }
 }
