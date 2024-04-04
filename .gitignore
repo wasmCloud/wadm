@@ -8,3 +8,4 @@ test/e2e_log/
 
 # Ignore IDE specific files
 .idea/
+.vscode/
