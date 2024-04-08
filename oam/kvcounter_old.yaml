@@ -9,7 +9,7 @@ metadata:
 spec:
   components:
     - name: kvcounter
-      type: actor
+      type: component
       properties:
         image: file://./build/http_hello_world_s.wasm
       traits:

@@ -27,7 +27,7 @@ macro_rules! from_impl {
 /// All possible compensatory commands for a lattice
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum Command {
-    ScaleActor(ScaleActor),
+    ScaleComponent(ScaleComponent),
     StartProvider(StartProvider),
     StopProvider(StopProvider),
     PutLink(PutLink),
@@ -78,15 +78,15 @@ impl Command {
     }
 }
 
-/// Struct for the ScaleActor command
+/// Struct for the ScaleComponent command
 #[derive(Clone, Debug, Serialize, Deserialize, Default, Eq)]
-pub struct ScaleActor {
-    /// The ID of the actor to scale. This should be computed by wadm as a combination
-    /// of the manifest name and the actor name.
-    pub actor_id: String,
-    /// The host id on which to scale the actors
+pub struct ScaleComponent {
+    /// The ID of the component to scale. This should be computed by wadm as a combination
+    /// of the manifest name and the component name.
+    pub component_id: String,
+    /// The host id on which to scale the components
     pub host_id: String,
-    /// The number of actors to scale to
+    /// The number of components to scale to
     pub count: u32,
     /// The OCI or bindle reference to scale
     pub reference: String,
@@ -96,11 +96,11 @@ pub struct ScaleActor {
     pub annotations: BTreeMap<String, String>,
 }
 
-from_impl!(ScaleActor);
+from_impl!(ScaleComponent);
 
-impl PartialEq for ScaleActor {
+impl PartialEq for ScaleComponent {
     fn eq(&self, other: &Self) -> bool {
-        self.actor_id == other.actor_id
+        self.component_id == other.component_id
             && self.host_id == other.host_id
             && self.count == other.count
             && self.model_name == other.model_name
@@ -116,7 +116,7 @@ pub struct StartProvider {
     /// The ID of the provider to scale. This should be computed by wadm as a combination
     /// of the manifest name and the provider name.
     pub provider_id: String,
-    /// The host id on which to start the actor(s)
+    /// The host id on which to start the provider
     pub host_id: String,
     /// The name of the model/manifest that generated this command
     pub model_name: String,

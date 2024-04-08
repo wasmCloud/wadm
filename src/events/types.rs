@@ -307,7 +307,7 @@ pub struct ActorsStarted {
     pub annotations: BTreeMap<String, String>,
     // Commented out for now because the host broken it and we actually don't use this right now
     // pub api_version: usize,
-    pub claims: ActorClaims,
+    pub claims: ComponentClaims,
     pub image_ref: String,
     pub count: usize,
     // TODO: Parse as nkey?
@@ -365,9 +365,10 @@ event_impl!(
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct ComponentScaled {
     pub annotations: BTreeMap<String, String>,
-    pub claims: Option<ActorClaims>,
+    pub claims: Option<ComponentClaims>,
     pub image_ref: String,
     pub max_instances: usize,
+    // TODO: Once we update to the 1.0 release candidate, this will be component_id
     pub actor_id: String,
     #[serde(default)]
     pub host_id: String,
@@ -383,9 +384,10 @@ event_impl!(
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct ComponentScaleFailed {
     pub annotations: BTreeMap<String, String>,
-    pub claims: Option<ActorClaims>,
+    pub claims: Option<ComponentClaims>,
     pub image_ref: String,
     pub max_instances: usize,
+    // TODO: Once we update to the 1.0 release candidate, this will be component_id
     pub actor_id: String,
     #[serde(default)]
     pub host_id: String,

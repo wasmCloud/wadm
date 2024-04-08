@@ -8,7 +8,7 @@ metadata:
 spec:
   components:
     - name: ui
-      type: actor
+      type: component
       properties:
         image: wasmcloud.azurecr.io/ui:0.3.2
       traits:
@@ -20,7 +20,7 @@ spec:
                   app: petclinic
 
     - name: ui
-      type: actor
+      type: component
       properties:
         image: wasmcloud.azurecr.io/customers:0.3.1
       traits:
@@ -38,7 +38,7 @@ spec:
                   app: petclinic
 
     - name: vets
-      type: actor
+      type: component
       properties:
         image: wasmcloud.azurecr.io/vets:0.3.1
       traits:
@@ -57,7 +57,7 @@ spec:
                   app: petclinic
 
     - name: vets
-      type: actor
+      type: component
       properties:
         image: wasmcloud.azurecr.io/visits:0.3.1
       traits:
@@ -76,7 +76,7 @@ spec:
                   app: petclinic
 
     - name: clinicapi
-      type: actor
+      type: component
       properties:
         image: wasmcloud.azurecr.io/clinicapi:0.3.1
       traits:

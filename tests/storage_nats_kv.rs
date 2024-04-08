@@ -5,8 +5,8 @@ use chrono::Utc;
 use wadm::{
     events::ProviderInfo,
     storage::{
-        nats_kv::NatsKvStore, Actor, Host, Provider, ProviderStatus, ReadStore, Store as WadmStore,
-        WadmActorInfo,
+        nats_kv::NatsKvStore, Component, Host, Provider, ProviderStatus, ReadStore,
+        Store as WadmStore, WadmComponentInfo,
     },
 };
 
@@ -20,13 +20,13 @@ async fn test_round_trip() {
 
     let lattice_id = "roundtrip";
 
-    let actor1 = Actor {
+    let actor1 = Component {
         id: "testactor".to_string(),
         name: "Test Actor".to_string(),
         issuer: "afakekey".to_string(),
         instances: HashMap::from([(
             "testhost".to_string(),
-            HashSet::from_iter([WadmActorInfo {
+            HashSet::from_iter([WadmComponentInfo {
                 count: 1,
                 annotations: BTreeMap::new(),
             }]),
@@ -35,13 +35,13 @@ async fn test_round_trip() {
         ..Default::default()
     };
 
-    let actor2 = Actor {
+    let actor2 = Component {
         id: "anotheractor".to_string(),
         name: "Another Actor".to_string(),
         issuer: "afakekey".to_string(),
         instances: HashMap::from([(
             "testhost".to_string(),
-            HashSet::from_iter([WadmActorInfo {
+            HashSet::from_iter([WadmComponentInfo {
                 count: 1,
                 annotations: BTreeMap::new(),
             }]),
@@ -51,7 +51,7 @@ async fn test_round_trip() {
     };
 
     let host = Host {
-        actors: HashMap::from([("testactor".to_string(), 1)]),
+        components: HashMap::from([("testactor".to_string(), 1)]),
         id: "testhost".to_string(),
         providers: HashSet::from([ProviderInfo {
             provider_id: "testprovider".to_string(),
@@ -109,7 +109,7 @@ async fn test_round_trip() {
         "Provider should be correct"
     );
 
-    let stored_actor: Actor = store
+    let stored_actor: Component = store
         .get(lattice_id, &actor1.id)
         .await
         .expect("Unable to fetch stored actor")
@@ -123,7 +123,7 @@ async fn test_round_trip() {
         .expect("Should be able to add a new actor");
 
     let all_actors = store
-        .list::<Actor>(lattice_id)
+        .list::<Component>(lattice_id)
         .await
         .expect("Should be able to get all actors");
 
@@ -145,12 +145,12 @@ async fn test_round_trip() {
 
     // Delete one of the actors and make sure the data is correct
     store
-        .delete::<Actor>(lattice_id, &actor1.id)
+        .delete::<Component>(lattice_id, &actor1.id)
         .await
         .expect("Should be able to delete an actor");
 
     let all_actors = store
-        .list::<Actor>(lattice_id)
+        .list::<Component>(lattice_id)
         .await
         .expect("Should be able to get all actors");
 
@@ -174,7 +174,7 @@ async fn test_no_data() {
 
     assert!(
         store
-            .get::<Actor>(lattice_id, "doesnotexist")
+            .get::<Component>(lattice_id, "doesnotexist")
             .await
             .expect("Should be able to query store")
             .is_none(),
@@ -202,13 +202,13 @@ async fn test_multiple_lattice() {
 
     let lattice_id1 = "multiple_lattice";
     let lattice_id2 = "other_lattice";
-    let actor1 = Actor {
+    let actor1 = Component {
         id: "testactor".to_string(),
         name: "Test Actor".to_string(),
         issuer: "afakekey".to_string(),
         instances: HashMap::from([(
             "testhost".to_string(),
-            HashSet::from_iter([WadmActorInfo {
+            HashSet::from_iter([WadmComponentInfo {
                 count: 1,
                 annotations: BTreeMap::new(),
             }]),
@@ -217,13 +217,13 @@ async fn test_multiple_lattice() {
         ..Default::default()
     };
 
-    let actor2 = Actor {
+    let actor2 = Component {
         id: "anotheractor".to_string(),
         name: "Another Actor".to_string(),
         issuer: "afakekey".to_string(),
         instances: HashMap::from([(
             "testhost".to_string(),
-            HashSet::from_iter([WadmActorInfo {
+            HashSet::from_iter([WadmComponentInfo {
                 count: 1,
                 annotations: BTreeMap::new(),
             }]),
@@ -243,20 +243,20 @@ async fn test_multiple_lattice() {
         .expect("Should be able to store data");
 
     let first = store
-        .list::<Actor>(lattice_id1)
+        .list::<Component>(lattice_id1)
         .await
         .expect("Should be able to list data");
     assert_eq!(first.len(), 1, "First lattice should have exactly 1 actor");
-    let actor = first
+    let component = first
         .get(&actor1.id)
         .expect("First lattice should have the right actor");
     assert_eq!(
-        actor.name, actor1.name,
+        component.name, actor1.name,
         "Should have returned the correct actor"
     );
 
     let second = store
-        .list::<Actor>(lattice_id2)
+        .list::<Component>(lattice_id2)
         .await
         .expect("Should be able to list data");
     assert_eq!(
@@ -264,11 +264,11 @@ async fn test_multiple_lattice() {
         1,
         "Second lattice should have exactly 1 actor"
     );
-    let actor = second
+    let component = second
         .get(&actor2.id)
         .expect("Second lattice should have the right actor");
     assert_eq!(
-        actor.name, actor2.name,
+        component.name, actor2.name,
         "Should have returned the correct actor"
     );
 }
@@ -279,13 +279,13 @@ async fn test_store_and_delete_many() {
 
     let lattice_id = "storemany";
 
-    let actor1 = Actor {
+    let actor1 = Component {
         id: "testactor".to_string(),
         name: "Test Actor".to_string(),
         issuer: "afakekey".to_string(),
         instances: HashMap::from([(
             "testhost".to_string(),
-            HashSet::from_iter([WadmActorInfo {
+            HashSet::from_iter([WadmComponentInfo {
                 count: 1,
                 annotations: BTreeMap::new(),
             }]),
@@ -294,13 +294,13 @@ async fn test_store_and_delete_many() {
         ..Default::default()
     };
 
-    let actor2 = Actor {
+    let actor2 = Component {
         id: "anotheractor".to_string(),
         name: "Another Actor".to_string(),
         issuer: "afakekey".to_string(),
         instances: HashMap::from([(
             "testhost".to_string(),
-            HashSet::from_iter([WadmActorInfo {
+            HashSet::from_iter([WadmComponentInfo {
                 count: 1,
                 annotations: BTreeMap::new(),
             }]),
@@ -321,7 +321,7 @@ async fn test_store_and_delete_many() {
         .expect("Should be able to store multiple actors");
 
     let all_actors = store
-        .list::<Actor>(lattice_id)
+        .list::<Component>(lattice_id)
         .await
         .expect("Should be able to get all actors");
 
@@ -343,13 +343,13 @@ async fn test_store_and_delete_many() {
 
     // Now try to delete them all
     store
-        .delete_many::<Actor, _, _>(lattice_id, [&actor1.id, &actor2.id])
+        .delete_many::<Component, _, _>(lattice_id, [&actor1.id, &actor2.id])
         .await
         .expect("Should be able to delete many");
 
     // Double check that the list is empty now
     let all_actors = store
-        .list::<Actor>(lattice_id)
+        .list::<Component>(lattice_id)
         .await
         .expect("Should be able to get all actors");
 

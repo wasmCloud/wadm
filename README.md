@@ -46,7 +46,7 @@ metadata:
 spec:
   components:
     - name: echo
-      type: actor
+      type: component
       properties:
         image: wasmcloud.azurecr.io/echo:0.3.7
       traits:
@@ -101,7 +101,7 @@ them. Try changing the manifest you created above by updating the number of echo
 spec:
   components:
     - name: echo
-      type: actor
+      type: component
       properties:
         image: wasmcloud.azurecr.io/echo:0.3.5
       traits:

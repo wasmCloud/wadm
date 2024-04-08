@@ -104,14 +104,14 @@ pub struct Component {
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(tag = "type")]
 pub enum Properties {
-    #[serde(rename = "actor", alias = "component")]
-    Actor { properties: ActorProperties },
+    #[serde(rename = "component", alias = "actor")]
+    Component { properties: ComponentProperties },
     #[serde(rename = "capability")]
     Capability { properties: CapabilityProperties },
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
-pub struct ActorProperties {
+pub struct ComponentProperties {
     /// The image reference to use
     pub image: String,
     /// The component ID to use for this actor. If not supplied, it will be generated
@@ -218,7 +218,7 @@ pub struct Trait {
 
 impl Trait {
     /// Helper that creates a new linkdef type trait with the given properties
-    pub fn new_linkdef(props: LinkProperty) -> Trait {
+    pub fn new_link(props: LinkProperty) -> Trait {
         Trait {
             trait_type: LINK_TRAIT.to_owned(),
             properties: TraitProperty::Link(props),
@@ -271,7 +271,7 @@ impl From<serde_json::Value> for TraitProperty {
     }
 }
 
-/// Properties for the config list associated with actors, providers, and link definitions
+/// Properties for the config list associated with components, providers, and links
 ///
 /// ## Usage
 /// Defining a config block, like so:
@@ -406,7 +406,7 @@ mod test {
             .spec
             .components
             .into_iter()
-            .find(|comp| matches!(comp.properties, Properties::Actor { .. }))
+            .find(|comp| matches!(comp.properties, Properties::Component { .. }))
             .expect("Should be able to find actor component");
         let traits = actor_component.traits.expect("Should have Vec of traits");
         assert!(
@@ -492,7 +492,7 @@ mod test {
                 .spec
                 .components
                 .iter()
-                .filter(|component| matches!(component.properties, Properties::Actor { .. }))
+                .filter(|component| matches!(component.properties, Properties::Component { .. }))
                 .count(),
             1,
             "Should have found 1 actor property"
@@ -518,7 +518,7 @@ mod test {
             .components
             .clone()
             .into_iter()
-            .find(|component| matches!(component.properties, Properties::Actor { .. }))
+            .find(|component| matches!(component.properties, Properties::Component { .. }))
             .expect("Should find actor component")
             .traits
             .expect("Should have traits object");
@@ -590,13 +590,13 @@ mod test {
             target_config: vec![],
             name: Some("default".to_string()),
         };
-        let trait_item = Trait::new_linkdef(linkdefprop);
+        let trait_item = Trait::new_link(linkdefprop);
         trait_vec.push(trait_item);
         let mut component_vec: Vec<Component> = Vec::new();
         let component_item = Component {
             name: "userinfo".to_string(),
-            properties: Properties::Actor {
-                properties: ActorProperties {
+            properties: Properties::Component {
+                properties: ComponentProperties {
                     image: "wasmcloud.azurecr.io/fake:1".to_string(),
                     id: None,
                 },

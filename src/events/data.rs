@@ -49,7 +49,7 @@ pub struct ProviderHealthCheckInfo {
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq)]
-pub struct ActorClaims {
+pub struct ComponentClaims {
     pub call_alias: Option<String>,
     #[serde(default)]
     pub expires_human: String,

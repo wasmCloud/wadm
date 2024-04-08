@@ -172,7 +172,7 @@ async fn test_basic_separation(client_info: &ClientInfo) -> anyhow::Result<()> {
             .map_err(|e| anyhow::anyhow!("{e:?}"))?;
 
         if !links.iter().any(|ld| {
-            ld.actor_id == ECHO_ACTOR_ID
+            ld.component_id == ECHO_ACTOR_ID
                 && ld.provider_id == HTTP_SERVER_PROVIDER_ID
                 && ld.contract_id == "wasmcloud:httpserver"
         }) {
@@ -207,7 +207,7 @@ async fn test_basic_separation(client_info: &ClientInfo) -> anyhow::Result<()> {
             .map_err(|e| anyhow::anyhow!("{e:?}"))?;
 
         if !links.iter().any(|ld| {
-            ld.actor_id == MESSAGE_PUB_ACTOR_ID
+            ld.component_id == MESSAGE_PUB_ACTOR_ID
                 && ld.provider_id == HTTP_SERVER_PROVIDER_ID
                 && ld.contract_id == "wasmcloud:httpserver"
         }) {
@@ -217,7 +217,7 @@ async fn test_basic_separation(client_info: &ClientInfo) -> anyhow::Result<()> {
             )
         }
         if !links.iter().any(|ld| {
-            ld.actor_id == MESSAGE_PUB_ACTOR_ID
+            ld.component_id == MESSAGE_PUB_ACTOR_ID
                 && ld.provider_id == NATS_PROVIDER_ID
                 && ld.contract_id == "wasmcloud:messaging"
         }) {
@@ -247,7 +247,7 @@ async fn test_basic_separation(client_info: &ClientInfo) -> anyhow::Result<()> {
             .map_err(|e| anyhow::anyhow!("{e:?}"))?;
 
         if links.iter().any(|ld| {
-            ld.actor_id == ECHO_ACTOR_ID
+            ld.component_id == ECHO_ACTOR_ID
                 && ld.provider_id == HTTP_SERVER_PROVIDER_ID
                 && ld.contract_id == "wasmcloud:httpserver"
         }) {
@@ -279,7 +279,7 @@ async fn test_basic_separation(client_info: &ClientInfo) -> anyhow::Result<()> {
             .map_err(|e| anyhow::anyhow!("{e:?}"))?;
 
         if links.iter().any(|ld| {
-            ld.actor_id == MESSAGE_PUB_ACTOR_ID
+            ld.component_id == MESSAGE_PUB_ACTOR_ID
                 && ld.provider_id == HTTP_SERVER_PROVIDER_ID
                 && ld.contract_id == "wasmcloud:httpserver"
         }) {
@@ -289,7 +289,7 @@ async fn test_basic_separation(client_info: &ClientInfo) -> anyhow::Result<()> {
             )
         }
         if links.iter().any(|ld| {
-            ld.actor_id == MESSAGE_PUB_ACTOR_ID
+            ld.component_id == MESSAGE_PUB_ACTOR_ID
                 && ld.provider_id == NATS_PROVIDER_ID
                 && ld.contract_id == "wasmcloud:messaging"
         }) {
@@ -302,9 +302,14 @@ async fn test_basic_separation(client_info: &ClientInfo) -> anyhow::Result<()> {
         check_status(&stream, LATTICE_EAST, "echo-simple", StatusType::Deployed)
             .await
             .unwrap();
-        check_status(&stream, LATTICE_WEST, "messaging-simple", StatusType::Deployed)
-            .await
-            .unwrap();
+        check_status(
+            &stream,
+            LATTICE_WEST,
+            "messaging-simple",
+            StatusType::Deployed,
+        )
+        .await
+        .unwrap();
 
         Ok(())
     })

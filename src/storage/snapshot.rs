@@ -4,7 +4,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use wasmcloud_control_interface::InterfaceLinkDefinition;
 
-use crate::storage::{Actor, Host, Provider, ReadStore, StateKind};
+use crate::storage::{Component, Host, Provider, ReadStore, StateKind};
 use crate::workers::LinkSource;
 
 // NOTE(thomastaylor312): This type is real ugly and we should probably find a better way to
@@ -70,7 +70,7 @@ where
             .collect::<HashMap<_, _>>();
         let actors = self
             .store
-            .list::<Actor>(&self.lattice_id)
+            .list::<Component>(&self.lattice_id)
             .await?
             .into_iter()
             .map(|(key, val)| (key, serde_json::to_value(val).unwrap()))
@@ -87,7 +87,7 @@ where
         {
             let mut stored_state = self.stored_state.write().await;
             stored_state.insert(Provider::KIND.to_owned(), providers);
-            stored_state.insert(Actor::KIND.to_owned(), actors);
+            stored_state.insert(Component::KIND.to_owned(), actors);
             stored_state.insert(Host::KIND.to_owned(), hosts);
         }
 

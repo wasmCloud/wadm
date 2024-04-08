@@ -21,7 +21,7 @@ use tracing::{debug, error, instrument, trace, warn};
 use crate::{
     events::Event,
     model::{
-        ActorProperties, CapabilityProperties, Component, Manifest, Properties,
+        CapabilityProperties, Component, ComponentProperties, Manifest, Properties,
         SpreadScalerProperty, Trait, TraitProperty, DAEMONSCALER_TRAIT, LINK_TRAIT,
         SPREADSCALER_TRAIT,
     },
@@ -580,15 +580,15 @@ where
     for component in components.iter() {
         let traits = component.traits.as_ref();
         match &component.properties {
-            Properties::Actor { properties: props } => {
+            Properties::Component { properties: props } => {
                 scalers.extend(traits.unwrap_or(&EMPTY_TRAIT_VEC).iter().filter_map(|trt| {
-                    let actor_id = component_id(name, props.id.as_ref(), &props.image);
+                    let component_id = compute_component_id(name, props.id.as_ref(), &props.image);
                     match (trt.trait_type.as_str(), &trt.properties) {
                         (SPREADSCALER_TRAIT, TraitProperty::SpreadScaler(p)) => {
                             Some(Box::new(ActorSpreadScaler::new(
                                 snapshot_data.clone(),
                                 props.image.to_owned(),
-                                actor_id,
+                                component_id,
                                 lattice_id.to_owned(),
                                 name.to_owned(),
                                 p.to_owned(),
@@ -599,7 +599,7 @@ where
                             Some(Box::new(ActorDaemonScaler::new(
                                 snapshot_data.clone(),
                                 props.image.to_owned(),
-                                actor_id,
+                                component_id,
                                 lattice_id.to_owned(),
                                 name.to_owned(),
                                 p.to_owned(),
@@ -613,14 +613,18 @@ where
                                     Properties::Capability {
                                         properties: CapabilityProperties { id, image, .. },
                                     }
-                                    | Properties::Actor {
-                                        properties: ActorProperties { id, image },
+                                    | Properties::Component {
+                                        properties: ComponentProperties { id, image },
                                     } if component.name == p.target => {
                                         Some(Box::new(LinkScaler::new(
                                             snapshot_data.clone(),
                                             LinkScalerConfig {
-                                                source_id: actor_id.to_string(),
-                                                target: component_id(name, id.as_ref(), &image),
+                                                source_id: component_id.to_string(),
+                                                target: compute_component_id(
+                                                    name,
+                                                    id.as_ref(),
+                                                    &image,
+                                                ),
                                                 wit_namespace: p.namespace.to_owned(),
                                                 wit_package: p.package.to_owned(),
                                                 wit_interfaces: p.interfaces.to_owned(),
@@ -644,7 +648,7 @@ where
                 }))
             }
             Properties::Capability { properties: props } => {
-                let provider_id = component_id(name, props.id.as_ref(), &props.image);
+                let provider_id = compute_component_id(name, props.id.as_ref(), &props.image);
                 let mut scaler_specified = false;
                 if let Some(traits) = traits {
                     scalers.extend(traits.iter().filter_map(|trt| {
@@ -696,14 +700,14 @@ where
                             (LINK_TRAIT, TraitProperty::Link(p)) => {
                                 components.iter().find_map(|component| {
                                     match &component.properties {
-                                        Properties::Actor { properties: cappy }
+                                        Properties::Component { properties: cappy }
                                             if component.name == p.target =>
                                         {
                                             Some(Box::new(LinkScaler::new(
                                                 snapshot_data.clone(),
                                                 LinkScalerConfig {
                                                     source_id: provider_id.to_string(),
-                                                    target: component_id(
+                                                    target: compute_component_id(
                                                         name,
                                                         cappy.id.as_ref(),
                                                         &cappy.image,
@@ -765,7 +769,7 @@ where
 /// Based on the name of the model and the optionally provided ID, returns a unique ID for the
 /// component that is a sanitized version of the component reference and model name, separated
 /// by a dash.
-pub(crate) fn component_id(
+pub(crate) fn compute_component_id(
     model_name: &str,
     component_id: Option<&String>,
     component_ref: &str,
@@ -787,13 +791,13 @@ pub(crate) fn component_id(
 
 #[cfg(test)]
 mod test {
-    use crate::scaler::manager::component_id;
+    use crate::scaler::manager::compute_component_id;
 
     #[test]
     fn compute_proper_component_id() {
         // User supplied ID always takes precedence
         assert_eq!(
-            component_id(
+            compute_component_id(
                 "mymodel",
                 Some(&"myid".to_string()),
                 "wasmcloud.azurecr.io/echo:0.3.4"
@@ -801,7 +805,7 @@ mod test {
             "myid"
         );
         assert_eq!(
-            component_id(
+            compute_component_id(
                 "some model name with spaces cause yaml",
                 Some(&"myid".to_string()),
                 "wasmcloud.azurecr.io/echo:0.3.4"
@@ -810,12 +814,12 @@ mod test {
         );
         // Sanitize component reference
         assert_eq!(
-            component_id("mymodel", None, "wasmcloud.azurecr.io/echo:0.3.4"),
+            compute_component_id("mymodel", None, "wasmcloud.azurecr.io/echo:0.3.4"),
             "mymodel-wasmcloud_azurecr_io_echo_0_3_4"
         );
         // Ensure we can support spaces in the model name, because YAML strings
         assert_eq!(
-            component_id(
+            compute_component_id(
                 "some model name with spaces cause yaml",
                 None,
                 "wasmcloud.azurecr.io/echo:0.3.4"
@@ -825,7 +829,7 @@ mod test {
         // Ensure we can support spaces in the model name, because YAML strings
         // Ensure we can support lowercasing the reference as well, just in case
         assert_eq!(
-            component_id("My ThInG", None, "file:///Users/me/thing.wasm"),
+            compute_component_id("My ThInG", None, "file:///Users/me/thing.wasm"),
             "my_thing-file____users_me_thing_wasm"
         );
     }

@@ -8,7 +8,7 @@ metadata:
 spec:
   components:
     - name: messagepub
-      type: actor
+      type: component
       properties:
         image: wasmcloud.azurecr.io/message-pub:0.1.3
       traits:

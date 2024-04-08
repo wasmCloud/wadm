@@ -149,7 +149,7 @@ async fn test_upgrade(client_info: &ClientInfo) {
         println!("Links: {:?}", links);
 
         if !links.iter().any(|ld| {
-            ld.actor_id == ECHO_ACTOR_ID
+            ld.component_id == ECHO_ACTOR_ID
                 && ld.provider_id == HTTP_SERVER_PROVIDER_ID
                 && ld.contract_id == "wasmcloud:httpserver"
                 && ld
@@ -165,7 +165,7 @@ async fn test_upgrade(client_info: &ClientInfo) {
         }
 
         if !links.iter().any(|ld| {
-            ld.actor_id == KV_COUNTER_ACTOR_ID
+            ld.component_id == KV_COUNTER_ACTOR_ID
                 && ld.provider_id == KV_REDIS_PROVIDER_ID
                 && ld.contract_id == "wasmcloud:keyvalue"
                 && ld
@@ -266,7 +266,7 @@ async fn test_upgrade(client_info: &ClientInfo) {
             .map_err(|e| anyhow::anyhow!("{e:?}"))?;
 
         if !links.iter().any(|ld| {
-            ld.actor_id == ECHO_ACTOR_ID
+            ld.component_id == ECHO_ACTOR_ID
                 && ld.provider_id == HTTP_SERVER_PROVIDER_ID
                 && ld.contract_id == "wasmcloud:httpserver"
                 && ld
@@ -282,7 +282,7 @@ async fn test_upgrade(client_info: &ClientInfo) {
         }
 
         if links.iter().any(|ld| {
-            ld.actor_id == KV_COUNTER_ACTOR_ID
+            ld.component_id == KV_COUNTER_ACTOR_ID
                 && ld.provider_id == KV_REDIS_PROVIDER_ID
                 && ld.contract_id == "wasmcloud:keyvalue"
         }) {
@@ -378,7 +378,7 @@ async fn test_upgrade(client_info: &ClientInfo) {
             .map_err(|e| anyhow::anyhow!("{e:?}"))?;
 
         if !links.iter().any(|ld| {
-            ld.actor_id == ECHO_ACTOR_ID
+            ld.component_id == ECHO_ACTOR_ID
                 && ld.provider_id == HTTP_SERVER_PROVIDER_ID
                 && ld.contract_id == "wasmcloud:httpserver"
                 && ld
@@ -394,7 +394,7 @@ async fn test_upgrade(client_info: &ClientInfo) {
         }
 
         if links.iter().any(|ld| {
-            ld.actor_id == KV_COUNTER_ACTOR_ID
+            ld.component_id == KV_COUNTER_ACTOR_ID
                 && ld.provider_id == KV_REDIS_PROVIDER_ID
                 && ld.contract_id == "wasmcloud:keyvalue"
         }) {

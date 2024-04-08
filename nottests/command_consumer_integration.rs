@@ -15,8 +15,8 @@ async fn test_consumer_stream() {
 
     // Publish a whole bunch of commands to the stream
     wrapper
-        .publish_command(ScaleActor {
-            actor_id: None,
+        .publish_command(ScaleComponent {
+            component_id: None,
             reference: "foobar".to_string(),
             host_id: "fakehost".to_string(),
             count: 3,
@@ -34,7 +34,7 @@ async fn test_consumer_stream() {
         .await;
     wrapper
         .publish_command(PutLinkdef {
-            actor_id: "foobar".to_string(),
+            component_id: "foobar".to_string(),
             provider_id: "fakehost".to_string(),
             contract_id: "wasmcloud:httpserver".to_string(),
             model_name: "fake".into(),
@@ -44,7 +44,7 @@ async fn test_consumer_stream() {
 
     // Make sure we get the right data back, in the right order
     let mut cmd = wrapper.wait_for_command().await;
-    if let Command::ScaleActor(actor) = cmd.as_ref() {
+    if let Command::ScaleComponent(actor) = cmd.as_ref() {
         assert_eq!(
             actor.reference,
             "foobar",
@@ -98,8 +98,8 @@ async fn test_consumer_stream() {
         .expect("Should be able to publish data");
 
     wrapper
-        .publish_command(ScaleActor {
-            actor_id: Some("foobar".to_string()),
+        .publish_command(ScaleComponent {
+            component_id: Some("foobar".to_string()),
             reference: "foobarref".to_string(),
             host_id: "fakehost".to_string(),
             count: 0,
@@ -109,9 +109,9 @@ async fn test_consumer_stream() {
         .await;
 
     let mut cmd = wrapper.wait_for_command().await;
-    if let Command::ScaleActor(actor) = cmd.as_ref() {
+    if let Command::ScaleComponent(actor) = cmd.as_ref() {
         assert_eq!(
-            actor.actor_id,
+            actor.component_id,
             Some("foobar".to_string()),
             "Expected to get a valid stop actor command, got command: {:?}",
             cmd.as_ref()
@@ -128,8 +128,8 @@ async fn test_nack_and_rereceive() {
     let mut wrapper = StreamWrapper::new("nack_and_rereceive".into(), None).await;
     // Send an event
     wrapper
-        .publish_command(ScaleActor {
-            actor_id: None,
+        .publish_command(ScaleComponent {
+            component_id: None,
             reference: "foobar".to_string(),
             host_id: "fakehost".to_string(),
             count: 3,
@@ -141,7 +141,7 @@ async fn test_nack_and_rereceive() {
     // Get the event and then nack it
     let mut cmd = wrapper.wait_for_command().await;
     // Make sure we got the right event
-    if let Command::ScaleActor(actor) = cmd.as_ref() {
+    if let Command::ScaleComponent(actor) = cmd.as_ref() {
         assert_eq!(
             actor.reference,
             "foobar",
@@ -154,7 +154,7 @@ async fn test_nack_and_rereceive() {
 
     cmd.nack().await;
     // Now do it again and make sure we get the same event
-    if let Command::ScaleActor(actor) = wrapper.wait_for_command().await.as_ref() {
+    if let Command::ScaleComponent(actor) = wrapper.wait_for_command().await.as_ref() {
         assert_eq!(
             actor.reference,
             "foobar",

@@ -31,7 +31,7 @@ metadata:
 spec:
   components:
     - name: userinfo
-      type: actor
+      type: component
       properties:
         image: wasmcloud.azurecr.io/fake:1
       traits:
