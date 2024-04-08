@@ -166,7 +166,7 @@ where
         //     .then(|| {
         //         trace!("Linkdef exists, but values are different, deleting and recreating");
         //         vec![Command::DeleteLinkdef(DeleteLinkdef {
-        //             actor_id: actor_id.to_owned(),
+        //             component_id: component_id.to_owned(),
         //             provider_id: provider_id.to_owned(),
         //             contract_id: self.config.provider_contract_id.to_owned(),
         //             link_name: self.config.provider_link_name.to_owned(),
@@ -180,7 +180,7 @@ where
         // } else if !exists || values_different {
         //     trace!("Linkdef does not exist or needs to be recreated");
         //     commands.push(Command::PutLinkdef(PutLinkdef {
-        //         actor_id: actor_id.to_owned(),
+        //         component_id: component_id.to_owned(),
         //         provider_id: provider_id.to_owned(),
         //         link_name: self.config.provider_link_name.to_owned(),
         //         contract_id: self.config.provider_contract_id.to_owned(),
@@ -316,7 +316,7 @@ mod test {
 
     use crate::{
         events::{ComponentScaled, ProviderHealthCheckInfo, ProviderInfo},
-        storage::{Actor, Host, Provider, Store},
+        storage::{Component, Host, Provider, Store},
         test_util::{TestLatticeSource, TestStore},
         APP_SPEC_ANNOTATION,
     };
@@ -327,7 +327,7 @@ mod test {
             .store(
                 lattice_id,
                 "actor".to_string(),
-                Actor {
+                Component {
                     id: "actor".to_string(),
                     reference: actor_ref.to_owned(),
                     ..Default::default()
@@ -354,7 +354,7 @@ mod test {
     async fn test_id_generator() {
         let lattice_id = "id_generator".to_string();
         let actor_ref = "actor_ref".to_string();
-        let actor_id = "actor_id".to_string();
+        let component_id = "component_id".to_string();
         let provider_ref = "provider_ref".to_string();
         let provider_id = "provider_id".to_string();
 
@@ -371,7 +371,7 @@ mod test {
             create_store(&lattice_id, &actor_ref, &provider_ref).await,
             LinkScalerConfig {
                 source_id: provider_id.clone(),
-                target: actor_id.clone(),
+                target: component_id.clone(),
                 wit_namespace: "wit_namespace".to_string(),
                 wit_package: "wit_package".to_string(),
                 wit_interfaces: vec!["wit_interface".to_string()],
@@ -385,7 +385,7 @@ mod test {
         );
 
         let id = format!(
-            "{LINK_SCALER_TYPE}-{model_name}-{link_name}-{provider_id}-{actor_id}-{linkscaler_values_hash}",
+            "{LINK_SCALER_TYPE}-{model_name}-{link_name}-{provider_id}-{component_id}-{linkscaler_values_hash}",
             LINK_SCALER_TYPE = LINK_SCALER_TYPE,
             model_name = "model",
             link_name = "default",
@@ -395,7 +395,7 @@ mod test {
         assert_eq!(scaler.id(), id, "LinkScaler ID should be the same when scalers have the same type, model name, provider link name, actor reference, provider reference, and values");
 
         let id = format!(
-            "{LINK_SCALER_TYPE}-{model_name}-{link_name}-{actor_id}-{provider_id}-{linkscaler_values_hash}",
+            "{LINK_SCALER_TYPE}-{model_name}-{link_name}-{component_id}-{provider_id}-{linkscaler_values_hash}",
             LINK_SCALER_TYPE = LINK_SCALER_TYPE,
             model_name = "model",
             link_name = "default",
@@ -411,7 +411,7 @@ mod test {
         let scaler = LinkScaler::new(
             create_store(&lattice_id, &actor_ref, &provider_ref).await,
             LinkScalerConfig {
-                source_id: actor_id.clone(),
+                source_id: component_id.clone(),
                 target: provider_id.clone(),
                 wit_namespace: "contr".to_string(),
                 wit_package: "act".to_string(),
@@ -426,7 +426,7 @@ mod test {
         );
 
         let id = format!(
-            "{LINK_SCALER_TYPE}-{model_name}-{link_name}-{actor_id}-{provider_id}-{linkscaler_values_hash}",
+            "{LINK_SCALER_TYPE}-{model_name}-{link_name}-{component_id}-{provider_id}-{linkscaler_values_hash}",
             LINK_SCALER_TYPE = LINK_SCALER_TYPE,
             model_name = "model",
             link_name = "default",
@@ -438,7 +438,7 @@ mod test {
         let scaler = LinkScaler::new(
             create_store(&lattice_id, &actor_ref, &provider_ref).await,
             LinkScalerConfig {
-                source_id: actor_id.clone(),
+                source_id: component_id.clone(),
                 target: provider_id.clone(),
                 wit_namespace: "contr".to_string(),
                 wit_package: "act".to_string(),
@@ -465,14 +465,14 @@ mod test {
     async fn test_no_linkdef() {
         let lattice_id = "no-linkdef".to_string();
         let actor_ref = "actor_ref".to_string();
-        let actor_id = "actor".to_string();
+        let component_id = "actor".to_string();
         let provider_ref = "provider_ref".to_string();
         let provider_id = "provider".to_string();
 
         let scaler = LinkScaler::new(
             create_store(&lattice_id, &actor_ref, &provider_ref).await,
             LinkScalerConfig {
-                source_id: actor_id.clone(),
+                source_id: component_id.clone(),
                 target: provider_id.clone(),
                 wit_namespace: "namespace".to_string(),
                 wit_package: "package".to_string(),
@@ -503,7 +503,7 @@ mod test {
     //     let values = HashMap::from([("foo".to_string(), "bar".to_string())]);
 
     //     let mut linkdef = LinkDefinition::default();
-    //     linkdef.actor_id = "actor".to_string();
+    //     linkdef.component_id = "actor".to_string();
     //     linkdef.provider_id = "provider".to_string();
     //     linkdef.contract_id = "contract".to_string();
     //     linkdef.link_name = "default".to_string();
@@ -534,12 +534,12 @@ mod test {
     async fn test_existing_linkdef() {
         let lattice_id = "existing-linkdef".to_string();
         let actor_ref = "actor_ref".to_string();
-        let actor_id = "actor".to_string();
+        let component_id = "actor".to_string();
         let provider_ref = "provider_ref".to_string();
         let provider_id = "provider".to_string();
 
         let linkdef = InterfaceLinkDefinition {
-            source_id: actor_id.to_string(),
+            source_id: component_id.to_string(),
             target: provider_id.to_string(),
             wit_namespace: "namespace".to_string(),
             wit_package: "package".to_string(),
@@ -595,7 +595,7 @@ mod test {
                 lattice_id,
                 host_id_one.to_string(),
                 Host {
-                    actors: HashMap::from_iter([(echo_id.to_string(), 1)]),
+                    components: HashMap::from_iter([(echo_id.to_string(), 1)]),
                     friendly_name: "hey".to_string(),
                     labels: HashMap::from_iter([
                         ("cloud".to_string(), "fake".to_string()),
@@ -663,7 +663,7 @@ mod test {
             .store(
                 lattice_id,
                 echo_id.to_string(),
-                Actor {
+                Component {
                     id: echo_id.to_string(),
                     reference: echo_ref.to_string(),
                     ..Default::default()

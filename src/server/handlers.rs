@@ -11,8 +11,8 @@ use tracing::{debug, error, instrument, log::warn, trace};
 
 use crate::{
     model::{
-        internal::StoredManifest, ActorProperties, CapabilityProperties, LinkProperty, Manifest,
-        Properties, Trait, TraitProperty, LATEST_VERSION,
+        internal::StoredManifest, CapabilityProperties, ComponentProperties, LinkProperty,
+        Manifest, Properties, Trait, TraitProperty, LATEST_VERSION,
     },
     publisher::Publisher,
     server::StatusType,
@@ -1014,8 +1014,8 @@ pub(crate) async fn validate_manifest(manifest: Manifest) -> anyhow::Result<()> 
         }
 
         // Actor validation : Actors should have a unique identifier per manifest
-        if let Properties::Actor {
-            properties: ActorProperties { id: Some(id), .. },
+        if let Properties::Component {
+            properties: ComponentProperties { id: Some(id), .. },
         } = &component.properties
         {
             if !id_registry.insert(id.to_string()) {

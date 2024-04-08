@@ -8,7 +8,7 @@ metadata:
 spec:
   components:
     - name: hello
-      type: actor
+      type: component
       properties:
         image: wasmcloud.azurecr.io/http-hello-world:0.1.0
         id: http_hello_world

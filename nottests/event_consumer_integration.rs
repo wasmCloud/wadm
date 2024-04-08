@@ -146,9 +146,9 @@ async fn test_event_stream() -> Result<()> {
     let mut evt = wait_for_event(&mut stream, LINK_OPERATION_TIMEOUT_DURATION).await;
     if let Event::LinkdefSet(link) = evt.as_ref() {
         assert_eq!(
-            link.linkdef.actor_id, ECHO_ACTOR_ID,
+            link.linkdef.component_id, ECHO_ACTOR_ID,
             "Expected to get a linkdef event for the right actor and provider, got actor ID: {}",
-            link.linkdef.actor_id,
+            link.linkdef.component_id,
         );
         assert_eq!(
             link.linkdef.provider_id, HTTP_SERVER_PROVIDER_ID,
@@ -178,9 +178,9 @@ async fn test_event_stream() -> Result<()> {
     let mut evt = wait_for_event(&mut stream, LINK_OPERATION_TIMEOUT_DURATION).await;
     if let Event::LinkdefDeleted(link) = evt.as_ref() {
         assert_eq!(
-            link.linkdef.actor_id, ECHO_ACTOR_ID,
+            link.linkdef.component_id, ECHO_ACTOR_ID,
             "Expected to get a linkdef event for the right actor and provider, got actor ID: {}",
-            link.linkdef.actor_id,
+            link.linkdef.component_id,
         );
         assert_eq!(
             link.linkdef.provider_id, HTTP_SERVER_PROVIDER_ID,

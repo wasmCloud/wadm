@@ -100,55 +100,55 @@ impl From<&ProviderStarted> for Provider {
     }
 }
 
-/// A representation of a unique actor (as defined by its annotations) and its count. This struct
+/// A representation of a unique component (as defined by its annotations) and its count. This struct
 /// has a custom implementation of PartialEq and Hash that _only_ compares the annotations. This is
-/// not a very "pure" way of doing things, but it lets us access current counts of actors without
+/// not a very "pure" way of doing things, but it lets us access current counts of components without
 /// having to do a bunch of extra work.
 #[derive(Debug, Serialize, Deserialize, Clone, Default, Eq)]
-pub struct WadmActorInfo {
+pub struct WadmComponentInfo {
     pub annotations: BTreeMap<String, String>,
     pub count: usize,
 }
 
-impl PartialEq for WadmActorInfo {
+impl PartialEq for WadmComponentInfo {
     fn eq(&self, other: &Self) -> bool {
         self.annotations == other.annotations
     }
 }
 
-impl Hash for WadmActorInfo {
+impl Hash for WadmComponentInfo {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.annotations.hash(state);
     }
 }
 
-impl Borrow<BTreeMap<String, String>> for WadmActorInfo {
+impl Borrow<BTreeMap<String, String>> for WadmComponentInfo {
     fn borrow(&self) -> &BTreeMap<String, String> {
         &self.annotations
     }
 }
 
-/// A wasmCloud Actor
+/// A wasmCloud Component
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
-pub struct Actor {
-    /// ID of the actor, normally a public (n)key
+pub struct Component {
+    /// ID of the component
     pub id: String,
 
-    /// Name of the actor
+    /// Name of the component
     pub name: String,
 
-    /// Issuer of the (signed) actor
+    /// Issuer of the (signed) component
     pub issuer: String,
 
-    /// All instances of this actor running in the lattice, keyed by the host ID and contains a hash
+    /// All instances of this component running in the lattice, keyed by the host ID and contains a hash
     /// map of annotations -> count for each set of unique annotations
-    pub instances: HashMap<String, HashSet<WadmActorInfo>>,
+    pub instances: HashMap<String, HashSet<WadmComponentInfo>>,
 
-    /// The reference used to start the actor. Can be empty if it was started from a file
+    /// The reference used to start the component. Can be empty if it was started from a file
     pub reference: String,
 }
 
-impl Actor {
+impl Component {
     /// A helper method that returns the total count of running copies of this actor, regardless of
     /// which host they are running on
     pub fn count(&self) -> usize {
@@ -168,20 +168,20 @@ impl Actor {
     }
 }
 
-impl StateKind for Actor {
-    const KIND: &'static str = "actor";
+impl StateKind for Component {
+    const KIND: &'static str = "component";
 }
 
-impl From<ActorsStarted> for Actor {
+impl From<ActorsStarted> for Component {
     fn from(value: ActorsStarted) -> Self {
-        Actor {
+        Component {
             id: value.public_key,
             name: value.claims.name,
             issuer: value.claims.issuer,
             reference: value.image_ref,
             instances: HashMap::from_iter([(
                 value.host_id,
-                HashSet::from_iter([WadmActorInfo {
+                HashSet::from_iter([WadmComponentInfo {
                     annotations: value.annotations,
                     count: value.count,
                 }]),
@@ -190,16 +190,16 @@ impl From<ActorsStarted> for Actor {
     }
 }
 
-impl From<&ActorsStarted> for Actor {
+impl From<&ActorsStarted> for Component {
     fn from(value: &ActorsStarted) -> Self {
-        Actor {
+        Component {
             id: value.public_key.clone(),
             name: value.claims.name.clone(),
             issuer: value.claims.issuer.clone(),
             reference: value.image_ref.clone(),
             instances: HashMap::from_iter([(
                 value.host_id.clone(),
-                HashSet::from_iter([WadmActorInfo {
+                HashSet::from_iter([WadmComponentInfo {
                     annotations: value.annotations.clone(),
                     count: value.count,
                 }]),
@@ -208,17 +208,17 @@ impl From<&ActorsStarted> for Actor {
     }
 }
 
-impl From<ComponentScaled> for Actor {
+impl From<ComponentScaled> for Component {
     fn from(value: ComponentScaled) -> Self {
         let (name, issuer) = value.claims.map(|c| (c.name, c.issuer)).unwrap_or_default();
-        Actor {
+        Component {
             id: value.actor_id,
             name,
             issuer,
             reference: value.image_ref,
             instances: HashMap::from_iter([(
                 value.host_id,
-                HashSet::from_iter([WadmActorInfo {
+                HashSet::from_iter([WadmComponentInfo {
                     annotations: value.annotations,
                     count: value.max_instances,
                 }]),
@@ -227,9 +227,9 @@ impl From<ComponentScaled> for Actor {
     }
 }
 
-impl From<&ComponentScaled> for Actor {
+impl From<&ComponentScaled> for Component {
     fn from(value: &ComponentScaled) -> Self {
-        Actor {
+        Component {
             id: value.actor_id.clone(),
             name: value
                 .claims
@@ -244,7 +244,7 @@ impl From<&ComponentScaled> for Actor {
             reference: value.image_ref.clone(),
             instances: HashMap::from_iter([(
                 value.host_id.clone(),
-                HashSet::from_iter([WadmActorInfo {
+                HashSet::from_iter([WadmComponentInfo {
                     annotations: value.annotations.clone(),
                     count: value.max_instances,
                 }]),
@@ -256,11 +256,8 @@ impl From<&ComponentScaled> for Actor {
 /// A wasmCloud host
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct Host {
-    /// A map of actor IDs to the number of instances of the actor running on the host
-    // NOTE(thomastaylor312): If we ever start storing a _ton_ of actors and it gets slow, we might
-    // want to consider switching out the hash algorithm to something like `ahash` to speed up
-    // lookups and deserialization
-    pub actors: HashMap<String, usize>,
+    /// A map of component IDs to the number of instances of the component running on the host
+    pub components: HashMap<String, usize>,
 
     /// The randomly generated friendly name of the host
     pub friendly_name: String,
@@ -343,7 +340,7 @@ impl From<HostHeartbeat> for Host {
             .collect();
 
         Host {
-            actors,
+            components: actors,
             friendly_name: value.friendly_name,
             labels: value.labels,
             providers,
@@ -384,7 +381,7 @@ impl From<&HostHeartbeat> for Host {
             .collect();
 
         Host {
-            actors,
+            components: actors,
             friendly_name: value.friendly_name.clone(),
             labels: value.labels.clone(),
             providers,

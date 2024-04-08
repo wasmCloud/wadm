@@ -342,7 +342,7 @@ mod test {
                 lattice_id,
                 host_id_one.to_string(),
                 Host {
-                    actors: HashMap::new(),
+                    components: HashMap::new(),
                     friendly_name: "hey".to_string(),
                     labels: HashMap::from_iter([
                         ("inda".to_string(), "cloud".to_string()),
@@ -363,7 +363,7 @@ mod test {
                 lattice_id,
                 host_id_two.to_string(),
                 Host {
-                    actors: HashMap::new(),
+                    components: HashMap::new(),
                     friendly_name: "hey".to_string(),
                     labels: HashMap::from_iter([
                         ("inda".to_string(), "cloud".to_string()),

@@ -16,7 +16,7 @@ spec:
   components:
     # Latest, no modifications needed, actor component
     - name: xkcd
-      type: actor
+      type: component
       properties:
         image: wasmcloud.azurecr.io/xkcd:0.1.1
       traits:
@@ -30,7 +30,7 @@ spec:
               address: 0.0.0.0:8081
     # Old actor component
     - name: echo
-      type: actor
+      type: component
       properties:
         image: wasmcloud.azurecr.io/echo:0.3.4
       traits:
@@ -45,7 +45,7 @@ spec:
               address: 0.0.0.0:8080
     # No longer needed actor component
     - name: kvcounter
-      type: actor
+      type: component
       properties:
         image: wasmcloud.azurecr.io/kvcounter:0.4.0
       traits:

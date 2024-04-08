@@ -8,7 +8,7 @@ metadata:
 spec:
   components:
     - name: echo
-      type: actor
+      type: component
       properties:
         image: file:///some/path/to/another/path/that/is/very/long/and/would/normally/crash/the/thing/but/in/this/case/doesnt/because/the/size/is/changed.wasm
     - name: httpserver

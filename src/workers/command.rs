@@ -31,7 +31,7 @@ impl Worker for CommandWorker {
     #[instrument(level = "trace", skip_all)]
     async fn do_work(&self, mut message: ScopedMessage<Self::Message>) -> WorkResult<()> {
         let res = match message.as_ref() {
-            Command::ScaleActor(actor) => {
+            Command::ScaleComponent(actor) => {
                 trace!(command = ?actor, "Handling scale actor command");
                 // Order here is intentional to prevent scalers from overwriting managed annotations
                 let mut annotations = actor.annotations.clone();
@@ -40,7 +40,7 @@ impl Worker for CommandWorker {
                     .scale_component(
                         &actor.host_id,
                         &actor.reference,
-                        &actor.actor_id,
+                        &actor.component_id,
                         actor.count,
                         Some(annotations.into_iter().collect()),
                         // TODO(#252): Support config

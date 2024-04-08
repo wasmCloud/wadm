@@ -406,7 +406,7 @@ mod test {
                 lattice_id,
                 host_id_one.to_string(),
                 Host {
-                    actors: HashMap::new(),
+                    components: HashMap::new(),
                     friendly_name: "hey".to_string(),
                     labels: HashMap::from_iter([
                         ("cloud".to_string(), "fake".to_string()),
@@ -426,7 +426,7 @@ mod test {
                 lattice_id,
                 host_id_two.to_string(),
                 Host {
-                    actors: HashMap::new(),
+                    components: HashMap::new(),
                     friendly_name: "hey".to_string(),
                     labels: HashMap::from_iter([
                         ("cloud".to_string(), "real".to_string()),
@@ -601,7 +601,7 @@ mod test {
                 lattice_id,
                 host_id_one.to_string(),
                 Host {
-                    actors: HashMap::new(),
+                    components: HashMap::new(),
                     friendly_name: "hey".to_string(),
                     labels: HashMap::from_iter([
                         ("cloud".to_string(), "fake".to_string()),
@@ -626,7 +626,7 @@ mod test {
                 lattice_id,
                 host_id_two.to_string(),
                 Host {
-                    actors: HashMap::new(),
+                    components: HashMap::new(),
                     friendly_name: "hey".to_string(),
                     labels: HashMap::from_iter([
                         ("cloud".to_string(), "real".to_string()),
@@ -645,7 +645,7 @@ mod test {
                 lattice_id,
                 host_id_three.to_string(),
                 Host {
-                    actors: HashMap::new(),
+                    components: HashMap::new(),
                     friendly_name: "hey".to_string(),
                     labels: HashMap::from_iter([
                         ("cloud".to_string(), "inthemiddle".to_string()),
@@ -664,7 +664,7 @@ mod test {
                 lattice_id,
                 host_id_four.to_string(),
                 Host {
-                    actors: HashMap::new(),
+                    components: HashMap::new(),
                     friendly_name: "hey".to_string(),
                     labels: HashMap::from_iter([
                         ("cloud".to_string(), "fake".to_string()),
@@ -820,7 +820,7 @@ mod test {
                 lattice_id,
                 host_id_one.to_string(),
                 Host {
-                    actors: HashMap::new(),
+                    components: HashMap::new(),
                     friendly_name: "hey".to_string(),
                     labels: HashMap::from_iter([
                         ("cloud".to_string(), "fake".to_string()),
@@ -840,7 +840,7 @@ mod test {
                 lattice_id,
                 host_id_two.to_string(),
                 Host {
-                    actors: HashMap::new(),
+                    components: HashMap::new(),
                     friendly_name: "hey".to_string(),
                     labels: HashMap::from_iter([
                         ("cloud".to_string(), "real".to_string()),
@@ -952,7 +952,7 @@ mod test {
                 lattice_id,
                 host_id_one.to_string(),
                 Host {
-                    actors: HashMap::new(),
+                    components: HashMap::new(),
                     friendly_name: "hey".to_string(),
                     labels: HashMap::from_iter([
                         ("cloud".to_string(), "fake".to_string()),
@@ -977,7 +977,7 @@ mod test {
                 lattice_id,
                 host_id_two.to_string(),
                 Host {
-                    actors: HashMap::new(),
+                    components: HashMap::new(),
                     friendly_name: "hey".to_string(),
                     labels: HashMap::from_iter([
                         ("cloud".to_string(), "real".to_string()),
@@ -1064,7 +1064,7 @@ mod test {
                 lattice_id,
                 host_id_one.to_string(),
                 Host {
-                    actors: HashMap::new(),
+                    components: HashMap::new(),
                     friendly_name: "hey".to_string(),
                     labels: HashMap::from_iter([
                         ("cloud".to_string(), "fake".to_string()),
@@ -1112,7 +1112,7 @@ mod test {
                 lattice_id,
                 host_id_two.to_string(),
                 Host {
-                    actors: HashMap::new(),
+                    components: HashMap::new(),
                     friendly_name: "hey".to_string(),
                     labels: HashMap::from_iter([
                         ("cloud".to_string(), "fake".to_string()),

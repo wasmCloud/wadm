@@ -7,7 +7,7 @@ pub mod reaper;
 pub(crate) mod snapshot;
 mod state;
 
-pub use state::{Actor, Host, Provider, ProviderStatus, WadmActorInfo};
+pub use state::{Component, Host, Provider, ProviderStatus, WadmComponentInfo};
 
 /// A trait that must be implemented with a unique identifier for the given type. This is used in
 /// the construction of keys for a store

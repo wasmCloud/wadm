@@ -8,7 +8,7 @@ metadata:
 spec:
   components:
     - name: echo
-      type: actor
+      type: component
       properties:
         image: wasmcloud.azurecr.io/echo:0.3.7
       traits:

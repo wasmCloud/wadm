@@ -7,7 +7,7 @@ use chrono::{Duration, Utc};
 use tokio::{task::JoinHandle, time};
 use tracing::{debug, error, info, instrument, trace, warn};
 
-use super::{Actor, Host, Provider, Store};
+use super::{Component, Host, Provider, Store};
 
 /// A struct that can reap various pieces of data from the given store
 pub struct Reaper<S> {
@@ -152,7 +152,7 @@ impl<S: Store + Clone + Send + Sync + 'static> Undertaker<S> {
 
     #[instrument(level = "debug", skip(self, hosts), fields(lattice_id = %self.lattice_id))]
     async fn reap_actors(&self, hosts: &HashMap<String, Host>) {
-        let actors = match self.store.list::<Actor>(&self.lattice_id).await {
+        let actors = match self.store.list::<Component>(&self.lattice_id).await {
             Ok(n) => n,
             Err(e) => {
                 error!(error = %e, "Error when fetching actors from store. Will retry on next tick");
@@ -160,20 +160,22 @@ impl<S: Store + Clone + Send + Sync + 'static> Undertaker<S> {
             }
         };
 
-        let (actors_to_remove, actors_to_update): (HashMap<String, Actor>, HashMap<String, Actor>) =
-            actors
-                .into_iter()
-                .map(|(id, mut actor)| {
-                    // Only keep the instances where the host exists and the actor is in its map
-                    actor.instances.retain(|host_id, _| {
-                        hosts
-                            .get(host_id)
-                            .map(|host| host.actors.contains_key(&actor.id))
-                            .unwrap_or(false)
-                    });
-                    (id, actor)
-                })
-                .partition(|(_, actor)| actor.instances.is_empty());
+        let (actors_to_remove, actors_to_update): (
+            HashMap<String, Component>,
+            HashMap<String, Component>,
+        ) = actors
+            .into_iter()
+            .map(|(id, mut actor)| {
+                // Only keep the instances where the host exists and the actor is in its map
+                actor.instances.retain(|host_id, _| {
+                    hosts
+                        .get(host_id)
+                        .map(|host| host.components.contains_key(&actor.id))
+                        .unwrap_or(false)
+                });
+                (id, actor)
+            })
+            .partition(|(_, actor)| actor.instances.is_empty());
 
         debug!(to_remove = %actors_to_remove.len(), to_update = %actors_to_update.len(), "Filtered out list of actors to update and reap");
 
@@ -188,7 +190,7 @@ impl<S: Store + Clone + Send + Sync + 'static> Undertaker<S> {
 
         if let Err(e) = self
             .store
-            .delete_many::<Actor, _, _>(&self.lattice_id, actors_to_remove.keys())
+            .delete_many::<Component, _, _>(&self.lattice_id, actors_to_remove.keys())
             .await
         {
             warn!(error = %e, "Error when deleting actors from store. Will retry on next tick")
@@ -251,7 +253,7 @@ mod test {
     };
 
     use crate::{
-        storage::{ProviderStatus, ReadStore, WadmActorInfo},
+        storage::{ProviderStatus, ReadStore, WadmComponentInfo},
         test_util::TestStore,
     };
 
@@ -260,7 +262,7 @@ mod test {
         let store = Arc::new(TestStore::default());
 
         let lattice_id = "reaper";
-        let actor_id = "testactor";
+        let component_id = "testactor";
         let host1_id = "host1";
         let host2_id = "host2";
 
@@ -270,20 +272,20 @@ mod test {
                 lattice_id,
                 [
                     (
-                        actor_id.to_string(),
-                        Actor {
-                            id: actor_id.to_string(),
+                        component_id.to_string(),
+                        Component {
+                            id: component_id.to_string(),
                             instances: HashMap::from([
                                 (
                                     host1_id.to_string(),
-                                    HashSet::from_iter([WadmActorInfo {
+                                    HashSet::from_iter([WadmComponentInfo {
                                         annotations: BTreeMap::default(),
                                         count: 1,
                                     }]),
                                 ),
                                 (
                                     host2_id.to_string(),
-                                    HashSet::from_iter([WadmActorInfo {
+                                    HashSet::from_iter([WadmComponentInfo {
                                         annotations: BTreeMap::default(),
                                         count: 1,
                                     }]),
@@ -294,11 +296,11 @@ mod test {
                     ),
                     (
                         "idontexist".to_string(),
-                        Actor {
+                        Component {
                             id: "idontexist".to_string(),
                             instances: HashMap::from([(
                                 host1_id.to_string(),
-                                HashSet::from_iter([WadmActorInfo {
+                                HashSet::from_iter([WadmComponentInfo {
                                     annotations: BTreeMap::default(),
                                     count: 1,
                                 }]),
@@ -331,7 +333,7 @@ mod test {
                     (
                         host1_id.to_string(),
                         Host {
-                            actors: HashMap::from([(actor_id.to_string(), 1)]),
+                            components: HashMap::from([(component_id.to_string(), 1)]),
                             providers: HashSet::default(),
                             id: host1_id.to_string(),
                             last_seen: Utc::now(),
@@ -341,7 +343,7 @@ mod test {
                     (
                         host2_id.to_string(),
                         Host {
-                            actors: HashMap::from([(actor_id.to_string(), 1)]),
+                            components: HashMap::from([(component_id.to_string(), 1)]),
                             providers: HashSet::default(),
                             id: host2_id.to_string(),
                             // Make this host stick around for longer
@@ -365,10 +367,10 @@ mod test {
         // Now check that the providers, actors, and hosts were reaped
         let hosts = store.list::<Host>(lattice_id).await.unwrap();
         assert_eq!(hosts.len(), 1, "Only one host should be left");
-        let actors = store.list::<Actor>(lattice_id).await.unwrap();
+        let actors = store.list::<Component>(lattice_id).await.unwrap();
         assert_eq!(actors.len(), 1, "Only one actor should remain in the store");
         actors
-            .get(actor_id)
+            .get(component_id)
             .expect("Should have the correct actor in the store");
 
         assert!(
@@ -382,7 +384,7 @@ mod test {
         let store = Arc::new(TestStore::default());
 
         let lattice_id = "reaper";
-        let actor_id = "testactor";
+        let component_id = "testactor";
         let host1_id = "host1";
         let host2_id = "host2";
 
@@ -390,20 +392,20 @@ mod test {
         store
             .store(
                 lattice_id,
-                actor_id.to_string(),
-                Actor {
-                    id: actor_id.to_string(),
+                component_id.to_string(),
+                Component {
+                    id: component_id.to_string(),
                     instances: HashMap::from([
                         (
                             host1_id.to_string(),
-                            HashSet::from_iter([WadmActorInfo {
+                            HashSet::from_iter([WadmComponentInfo {
                                 annotations: BTreeMap::default(),
                                 count: 1,
                             }]),
                         ),
                         (
                             host2_id.to_string(),
-                            HashSet::from_iter([WadmActorInfo {
+                            HashSet::from_iter([WadmComponentInfo {
                                 annotations: BTreeMap::default(),
                                 count: 1,
                             }]),
@@ -422,7 +424,7 @@ mod test {
                     (
                         host1_id.to_string(),
                         Host {
-                            actors: HashMap::from([(actor_id.to_string(), 1)]),
+                            components: HashMap::from([(component_id.to_string(), 1)]),
                             providers: HashSet::default(),
                             id: host1_id.to_string(),
                             last_seen: Utc::now() + Duration::milliseconds(600),
@@ -432,7 +434,7 @@ mod test {
                     (
                         host2_id.to_string(),
                         Host {
-                            actors: HashMap::default(),
+                            components: HashMap::default(),
                             providers: HashSet::default(),
                             id: host2_id.to_string(),
                             last_seen: Utc::now() + Duration::milliseconds(600),
@@ -453,17 +455,17 @@ mod test {
         tokio::time::sleep(wait).await;
 
         // Make sure we only have one instance of the actor left
-        let actors = store.list::<Actor>(lattice_id).await.unwrap();
-        let actor = actors
-            .get(actor_id)
+        let actors = store.list::<Component>(lattice_id).await.unwrap();
+        let component = actors
+            .get(component_id)
             .expect("Should have the correct actor in the store");
         assert_eq!(
-            actor.instances.len(),
+            component.instances.len(),
             1,
             "Only one host should remain in instances"
         );
         assert_eq!(
-            actor
+            component
                 .instances
                 .get(host1_id)
                 .expect("Should have instance left on the correct host")

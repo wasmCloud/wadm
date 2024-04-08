@@ -9,7 +9,7 @@ spec:
   components:
     # Latest, no modifications needed, actor component
     - name: xkcd
-      type: actor
+      type: component
       properties:
         image: wasmcloud.azurecr.io/xkcd:0.1.1
       traits:
@@ -22,7 +22,7 @@ spec:
             values:
               address: 0.0.0.0:8081
     - name: messagepub
-      type: actor
+      type: component
       properties:
         image: wasmcloud.azurecr.io/message-pub:0.1.3
       traits:
@@ -30,7 +30,7 @@ spec:
           properties:
             instances: 1
     - name: echo
-      type: actor
+      type: component
       properties:
         image: wasmcloud.azurecr.io/echo:0.3.8
       traits:

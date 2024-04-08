@@ -9,11 +9,11 @@ use tracing::{instrument, trace, warn};
 use crate::events::HostHeartbeat;
 use crate::server::StatusInfo;
 use crate::{
-    commands::{Command, ScaleActor},
+    commands::{Command, ScaleComponent},
     events::{Event, HostStarted, HostStopped},
     model::{Spread, SpreadScalerProperty, TraitProperty, DEFAULT_SPREAD_WEIGHT},
     scaler::Scaler,
-    storage::{Actor, Host, ReadStore},
+    storage::{Component, Host, ReadStore},
     SCALER_KEY,
 };
 
@@ -31,7 +31,7 @@ struct ActorSpreadConfig {
     /// OCI, Bindle, or File reference for an actor
     actor_reference: String,
     /// Unique component identifier for an actor
-    actor_id: String,
+    component_id: String,
     /// Lattice ID that this SpreadScaler monitors
     lattice_id: String,
     /// The name of the wadm model this SpreadScaler is under
@@ -82,7 +82,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
         match event {
             // TODO: React to ComponentScaleFailed with an exponential backoff, can't just immediately retry since that
             // would cause a very tight loop of failures
-            Event::ComponentScaled(evt) if evt.actor_id == self.config.actor_id => {
+            Event::ComponentScaled(evt) if evt.actor_id == self.config.component_id => {
                 self.reconcile().await
             }
             Event::HostStopped(HostStopped { labels, .. })
@@ -109,10 +109,10 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
     async fn reconcile(&self) -> Result<Vec<Command>> {
         let hosts = self.store.list::<Host>(&self.config.lattice_id).await?;
 
-        let actor_id = &self.config.actor_id;
-        let actor = self
+        let component_id = &self.config.component_id;
+        let component = self
             .store
-            .get::<Actor>(&self.config.lattice_id, actor_id)
+            .get::<Component>(&self.config.lattice_id, component_id)
             .await?;
 
         let mut spread_status = vec![];
@@ -120,7 +120,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
         // NOTE(brooksmtownsend) it's easier to assign one host per list of requirements than
         // balance within those requirements. Users should be specific with their requirements
         // as wadm is not responsible for ambiguity, a future scaler like a DaemonScaler could handle this
-        trace!(spread_requirements = ?self.spread_requirements, ?actor_id, "Computing commands");
+        trace!(spread_requirements = ?self.spread_requirements, ?component_id, "Computing commands");
         let commands = self
             .spread_requirements
             .iter()
@@ -132,7 +132,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
 
                     // Parse the instances into a map of host_id -> number of running actors managed
                     // by this scaler. Ignoring ones where we aren't running anything
-                    let running_actors_per_host: HashMap<&String, usize> = actor
+                    let running_actors_per_host: HashMap<&String, usize> = component
                         .as_ref()
                         .map(|actor| &actor.instances)
                         .map(|instances| {
@@ -164,8 +164,8 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
                         // Start actors to reach desired instances
                         Ordering::Less =>{
                             // Right now just start on the first available host. We can be smarter about it later
-                            Some(vec![Command::ScaleActor(ScaleActor {
-                                actor_id: actor_id.to_owned(),
+                            Some(vec![Command::ScaleComponent(ScaleComponent {
+                                component_id: component_id.to_owned(),
                                 reference: self.config.actor_reference.to_owned(),
                                 // SAFETY: We already checked that the list of hosts is not empty, so we can unwrap here
                                 host_id: eligible_hosts.keys().next().unwrap().to_string(),
@@ -188,8 +188,8 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
                                     // Keep track of how many we've stopped, which will be the smaller of the current
                                     // instance count or the number we need to stop
                                     current_stopped += std::cmp::min(instance_count, remaining_to_stop);
-                                    commands.push(Command::ScaleActor(ScaleActor {
-                                        actor_id: actor_id.to_owned(),
+                                    commands.push(Command::ScaleComponent(ScaleComponent {
+                                        component_id: component_id.to_owned(),
                                         reference: self.config.actor_reference.to_owned(),
                                         host_id: host_id.to_owned(),
                                         count: count as u32,
@@ -253,7 +253,7 @@ impl<S: ReadStore + Send + Sync> ActorSpreadScaler<S> {
     pub fn new(
         store: S,
         actor_reference: String,
-        actor_id: String,
+        component_id: String,
         lattice_id: String,
         model_name: String,
         spread_config: SpreadScalerProperty,
@@ -266,7 +266,7 @@ impl<S: ReadStore + Send + Sync> ActorSpreadScaler<S> {
             spread_requirements: compute_spread(&spread_config),
             config: ActorSpreadConfig {
                 actor_reference,
-                actor_id,
+                component_id,
                 lattice_id,
                 spread_config,
                 model_name,
@@ -403,7 +403,7 @@ mod test {
             spreadscaler::{spreadscaler_annotations, ActorSpreadScaler},
             Scaler,
         },
-        storage::{Actor, Host, Store, WadmActorInfo},
+        storage::{Component, Host, Store, WadmComponentInfo},
         test_util::{NoopPublisher, TestLatticeSource, TestStore},
         workers::{CommandPublisher, EventWorker, StatusPublisher},
     };
@@ -564,7 +564,7 @@ mod test {
     async fn can_compute_spread_commands() -> Result<()> {
         let lattice_id = "hoohah_multi_stop_actor";
         let actor_reference = "fakecloud.azurecr.io/echo:0.3.4".to_string();
-        let actor_id = "fakecloud_azurecr_io_echo_0_3_4".to_string();
+        let component_id = "fakecloud_azurecr_io_echo_0_3_4".to_string();
         let host_id = "NASDASDIMAREALHOST";
 
         let store = Arc::new(TestStore::default());
@@ -575,7 +575,7 @@ mod test {
                 lattice_id,
                 host_id.to_string(),
                 Host {
-                    actors: HashMap::new(),
+                    components: HashMap::new(),
                     friendly_name: "hey".to_string(),
                     labels: HashMap::new(),
                     providers: HashSet::new(),
@@ -621,7 +621,7 @@ mod test {
         let spreadscaler = ActorSpreadScaler::new(
             store.clone(),
             actor_reference.to_string(),
-            actor_id.to_string(),
+            component_id.to_string(),
             lattice_id.to_string(),
             MODEL_NAME.to_string(),
             complex_spread,
@@ -630,24 +630,24 @@ mod test {
 
         let cmds = spreadscaler.reconcile().await?;
         assert_eq!(cmds.len(), 3);
-        assert!(cmds.contains(&Command::ScaleActor(ScaleActor {
-            actor_id: actor_id.to_string(),
+        assert!(cmds.contains(&Command::ScaleComponent(ScaleComponent {
+            component_id: component_id.to_string(),
             reference: actor_reference.to_string(),
             host_id: host_id.to_string(),
             count: 10,
             model_name: MODEL_NAME.to_string(),
             annotations: spreadscaler_annotations("ComplexOne", spreadscaler.id())
         })));
-        assert!(cmds.contains(&Command::ScaleActor(ScaleActor {
-            actor_id: actor_id.to_string(),
+        assert!(cmds.contains(&Command::ScaleComponent(ScaleComponent {
+            component_id: component_id.to_string(),
             reference: actor_reference.to_string(),
             host_id: host_id.to_string(),
             count: 8,
             model_name: MODEL_NAME.to_string(),
             annotations: spreadscaler_annotations("ComplexThree", spreadscaler.id())
         })));
-        assert!(cmds.contains(&Command::ScaleActor(ScaleActor {
-            actor_id: actor_id.to_string(),
+        assert!(cmds.contains(&Command::ScaleComponent(ScaleComponent {
+            component_id: component_id.to_string(),
             reference: actor_reference.to_string(),
             host_id: host_id.to_string(),
             count: 85,
@@ -752,7 +752,7 @@ mod test {
             .store(
                 lattice_id,
                 echo_id.to_string(),
-                Actor {
+                Component {
                     id: echo_id.to_string(),
                     name: "Echo".to_string(),
                     issuer: "AASDASDASDASD".to_string(),
@@ -760,7 +760,7 @@ mod test {
                         (
                             host_id_one.to_string(),
                             // One instance on this host
-                            HashSet::from_iter([WadmActorInfo {
+                            HashSet::from_iter([WadmComponentInfo {
                                 annotations: spreadscaler_annotations(
                                     "RunInFakeCloud",
                                     echo_spreadscaler.id(),
@@ -771,7 +771,7 @@ mod test {
                         (
                             host_id_two.to_string(),
                             // 103 instances on this host
-                            HashSet::from_iter([WadmActorInfo {
+                            HashSet::from_iter([WadmComponentInfo {
                                 annotations: spreadscaler_annotations(
                                     "RunInRealCloud",
                                     echo_spreadscaler.id(),
@@ -782,7 +782,7 @@ mod test {
                         (
                             host_id_three.to_string(),
                             // 400 instances on this host
-                            HashSet::from_iter([WadmActorInfo {
+                            HashSet::from_iter([WadmComponentInfo {
                                 annotations: spreadscaler_annotations(
                                     "RunInPurgatoryCloud",
                                     echo_spreadscaler.id(),
@@ -800,7 +800,7 @@ mod test {
             .store(
                 lattice_id,
                 blobby_id.to_string(),
-                Actor {
+                Component {
                     id: blobby_id.to_string(),
                     name: "Blobby".to_string(),
                     issuer: "AASDASDASDASD".to_string(),
@@ -808,7 +808,7 @@ mod test {
                         (
                             host_id_one.to_string(),
                             // 3 instances on this host
-                            HashSet::from_iter([WadmActorInfo {
+                            HashSet::from_iter([WadmComponentInfo {
                                 count: 3,
                                 annotations: spreadscaler_annotations(
                                     "CrossRegionCustom",
@@ -819,7 +819,7 @@ mod test {
                         (
                             host_id_two.to_string(),
                             // 19 instances on this host
-                            HashSet::from_iter([WadmActorInfo {
+                            HashSet::from_iter([WadmComponentInfo {
                                 count: 19,
                                 annotations: spreadscaler_annotations(
                                     "CrossRegionReal",
@@ -838,7 +838,7 @@ mod test {
                 lattice_id,
                 host_id_one.to_string(),
                 Host {
-                    actors: HashMap::from_iter([
+                    components: HashMap::from_iter([
                         (echo_id.to_string(), 1),
                         (blobby_id.to_string(), 3),
                         ("MSOMEOTHERACTOR".to_string(), 3),
@@ -862,7 +862,7 @@ mod test {
                 lattice_id,
                 host_id_two.to_string(),
                 Host {
-                    actors: HashMap::from_iter([
+                    components: HashMap::from_iter([
                         (echo_id.to_string(), 103),
                         (blobby_id.to_string(), 19),
                     ]),
@@ -886,7 +886,7 @@ mod test {
                 lattice_id,
                 host_id_three.to_string(),
                 Host {
-                    actors: HashMap::from_iter([(echo_id.to_string(), 400)]),
+                    components: HashMap::from_iter([(echo_id.to_string(), 400)]),
                     friendly_name: "hey".to_string(),
                     labels: HashMap::from_iter([
                         ("cloud".to_string(), "purgatory".to_string()),
@@ -906,7 +906,7 @@ mod test {
         let mut cmds = echo_spreadscaler.reconcile().await?;
         assert_eq!(cmds.len(), 2);
         cmds.sort_by(|a, b| match (a, b) {
-            (Command::ScaleActor(a), Command::ScaleActor(b)) => a.host_id.cmp(&b.host_id),
+            (Command::ScaleComponent(a), Command::ScaleComponent(b)) => a.host_id.cmp(&b.host_id),
             _ => panic!("Unexpected commands in spreadscaler list"),
         });
 
@@ -915,14 +915,14 @@ mod test {
             cmds_iter.next().expect("one scale command"),
             cmds_iter.next().expect("two scale commands"),
         ) {
-            (Command::ScaleActor(scale1), Command::ScaleActor(scale2)) => {
+            (Command::ScaleComponent(scale1), Command::ScaleComponent(scale2)) => {
                 assert_eq!(scale1.host_id, host_id_one.to_string());
                 assert_eq!(scale1.count, 206);
                 assert_eq!(scale1.reference, echo_ref);
 
                 assert_eq!(scale2.host_id, host_id_three.to_string());
                 assert_eq!(scale2.count, 103);
-                assert_eq!(scale2.actor_id, echo_id.to_string());
+                assert_eq!(scale2.component_id, echo_id.to_string());
             }
             _ => panic!("Unexpected commands in spreadscaler list"),
         }
@@ -930,7 +930,7 @@ mod test {
         let mut cmds = blobby_spreadscaler.reconcile().await?;
         assert_eq!(cmds.len(), 2);
         cmds.sort_by(|a, b| match (a, b) {
-            (Command::ScaleActor(a), Command::ScaleActor(b)) => a.host_id.cmp(&b.host_id),
+            (Command::ScaleComponent(a), Command::ScaleComponent(b)) => a.host_id.cmp(&b.host_id),
             _ => panic!("Unexpected commands in spreadscaler list"),
         });
 
@@ -939,14 +939,14 @@ mod test {
             cmds_iter.next().expect("one scale command"),
             cmds_iter.next().expect("two scale commands"),
         ) {
-            (Command::ScaleActor(scale1), Command::ScaleActor(scale2)) => {
+            (Command::ScaleComponent(scale1), Command::ScaleComponent(scale2)) => {
                 assert_eq!(scale1.host_id, host_id_three.to_string());
                 assert_eq!(scale1.count, 3);
                 assert_eq!(scale1.reference, blobby_ref);
 
                 assert_eq!(scale2.host_id, host_id_two.to_string());
                 assert_eq!(scale2.count, 3);
-                assert_eq!(scale2.actor_id, blobby_id.to_string());
+                assert_eq!(scale2.component_id, blobby_id.to_string());
             }
             _ => panic!("Unexpected commands in spreadscaler list"),
         }
@@ -958,7 +958,7 @@ mod test {
     async fn can_handle_multiple_spread_matches() -> Result<()> {
         let lattice_id = "multiple_spread_matches";
         let actor_reference = "fakecloud.azurecr.io/echo:0.3.4".to_string();
-        let actor_id = "fakecloud_azurecr_io_echo_0_3_4".to_string();
+        let component_id = "fakecloud_azurecr_io_echo_0_3_4".to_string();
         let host_id = "NASDASDIMAREALHOST";
 
         let store = Arc::new(TestStore::default());
@@ -986,7 +986,7 @@ mod test {
         let spreadscaler = ActorSpreadScaler::new(
             store.clone(),
             actor_reference.to_string(),
-            actor_id.to_string(),
+            component_id.to_string(),
             lattice_id.to_string(),
             MODEL_NAME.to_string(),
             real_spread,
@@ -999,7 +999,7 @@ mod test {
                 lattice_id,
                 host_id.to_string(),
                 Host {
-                    actors: HashMap::from_iter([(actor_id.to_string(), 10)]),
+                    components: HashMap::from_iter([(component_id.to_string(), 10)]),
                     friendly_name: "hey".to_string(),
                     labels: HashMap::from_iter([
                         ("region".to_string(), "east".to_string()),
@@ -1017,15 +1017,15 @@ mod test {
         store
             .store(
                 lattice_id,
-                actor_id.to_string(),
-                Actor {
-                    id: actor_id.to_string(),
+                component_id.to_string(),
+                Component {
+                    id: component_id.to_string(),
                     name: "Faketor".to_string(),
                     issuer: "AASDASDASDASD".to_string(),
                     instances: HashMap::from_iter([(
                         host_id.to_string(),
                         // 10 instances on this host under the first spread
-                        HashSet::from_iter([WadmActorInfo {
+                        HashSet::from_iter([WadmComponentInfo {
                             count: 10,
                             annotations: spreadscaler_annotations("SimpleOne", spreadscaler.id()),
                         }]),
@@ -1039,16 +1039,16 @@ mod test {
         assert_eq!(cmds.len(), 2);
 
         // Should be enforcing 10 instances per spread
-        assert!(cmds.contains(&Command::ScaleActor(ScaleActor {
-            actor_id: "fakecloud_azurecr_io_echo_0_3_4".to_string(),
+        assert!(cmds.contains(&Command::ScaleComponent(ScaleComponent {
+            component_id: "fakecloud_azurecr_io_echo_0_3_4".to_string(),
             reference: actor_reference.to_string(),
             host_id: host_id.to_string(),
             count: 15,
             model_name: MODEL_NAME.to_string(),
             annotations: spreadscaler_annotations("SimpleOne", spreadscaler.id())
         })));
-        assert!(cmds.contains(&Command::ScaleActor(ScaleActor {
-            actor_id: "fakecloud_azurecr_io_echo_0_3_4".to_string(),
+        assert!(cmds.contains(&Command::ScaleComponent(ScaleComponent {
+            component_id: "fakecloud_azurecr_io_echo_0_3_4".to_string(),
             reference: actor_reference.to_string(),
             host_id: host_id.to_string(),
             count: 5,
@@ -1063,7 +1063,7 @@ mod test {
     async fn calculates_proper_scale_commands() -> Result<()> {
         let lattice_id = "calculates_proper_scale_commands";
         let actor_reference = "fakecloud.azurecr.io/echo:0.3.4".to_string();
-        let actor_id = "fakecloud_azurecr_io_echo_0_3_4".to_string();
+        let component_id = "fakecloud_azurecr_io_echo_0_3_4".to_string();
         let host_id = "NASDASDIMAREALHOST";
         let host_id2 = "NASDASDIMAREALHOST2";
 
@@ -1078,7 +1078,7 @@ mod test {
         let spreadscaler = ActorSpreadScaler::new(
             store.clone(),
             actor_reference.to_string(),
-            actor_id.to_string(),
+            component_id.to_string(),
             lattice_id.to_string(),
             MODEL_NAME.to_string(),
             real_spread,
@@ -1093,7 +1093,7 @@ mod test {
                     (
                         host_id.to_string(),
                         Host {
-                            actors: HashMap::from_iter([(actor_id.to_string(), 10)]),
+                            components: HashMap::from_iter([(component_id.to_string(), 10)]),
                             friendly_name: "hey".to_string(),
                             labels: HashMap::new(),
 
@@ -1107,7 +1107,7 @@ mod test {
                     (
                         host_id2.to_string(),
                         Host {
-                            actors: HashMap::from_iter([(actor_id.to_string(), 10)]),
+                            components: HashMap::from_iter([(component_id.to_string(), 10)]),
                             friendly_name: "hey2".to_string(),
                             labels: HashMap::new(),
 
@@ -1125,22 +1125,22 @@ mod test {
         store
             .store(
                 lattice_id,
-                actor_id.to_string(),
-                Actor {
-                    id: actor_id.to_string(),
+                component_id.to_string(),
+                Component {
+                    id: component_id.to_string(),
                     name: "Faketor".to_string(),
                     issuer: "AASDASDASDASD".to_string(),
                     instances: HashMap::from_iter([
                         (
                             host_id.to_string(),
-                            HashSet::from_iter([WadmActorInfo {
+                            HashSet::from_iter([WadmComponentInfo {
                                 count: 10,
                                 annotations: spreadscaler_annotations("default", spreadscaler.id()),
                             }]),
                         ),
                         (
                             host_id2.to_string(),
-                            HashSet::from_iter([WadmActorInfo {
+                            HashSet::from_iter([WadmComponentInfo {
                                 count: 10,
                                 annotations: spreadscaler_annotations("default", spreadscaler.id()),
                             }]),
@@ -1157,7 +1157,7 @@ mod test {
         assert_eq!(cmds.len(), 2);
         assert!(
             cmds.iter().any(|command| {
-                if let Command::ScaleActor(actor) = command {
+                if let Command::ScaleComponent(actor) = command {
                     actor.host_id == host_id
                 } else {
                     false
@@ -1167,7 +1167,7 @@ mod test {
         );
         assert!(
             cmds.iter().any(|command| {
-                if let Command::ScaleActor(actor) = command {
+                if let Command::ScaleComponent(actor) = command {
                     actor.host_id == host_id2
                 } else {
                     false
@@ -1180,16 +1180,16 @@ mod test {
         let cmds = spreadscaler.cleanup().await?;
 
         // Should stop 10 on each host
-        assert!(cmds.contains(&Command::ScaleActor(ScaleActor {
-            actor_id: actor_id.clone(),
+        assert!(cmds.contains(&Command::ScaleComponent(ScaleComponent {
+            component_id: component_id.clone(),
             reference: actor_reference.clone(),
             host_id: host_id.to_string(),
             count: 0,
             model_name: MODEL_NAME.to_string(),
             annotations: spreadscaler_annotations("default", spreadscaler.id())
         })));
-        assert!(cmds.contains(&Command::ScaleActor(ScaleActor {
-            actor_id: actor_id.clone(),
+        assert!(cmds.contains(&Command::ScaleComponent(ScaleComponent {
+            component_id: component_id.clone(),
             reference: actor_reference.clone(),
             host_id: host_id2.to_string(),
             count: 0,
@@ -1274,7 +1274,7 @@ mod test {
             .store(
                 lattice_id,
                 blobby_id.to_string(),
-                Actor {
+                Component {
                     id: blobby_id.to_string(),
                     name: "Blobby".to_string(),
                     issuer: "AASDASDASDASD".to_string(),
@@ -1282,7 +1282,7 @@ mod test {
                         (
                             host_id_one.to_string(),
                             // 3 instances on this host
-                            HashSet::from_iter([WadmActorInfo {
+                            HashSet::from_iter([WadmComponentInfo {
                                 count: 3,
                                 annotations: spreadscaler_annotations(
                                     "CrossRegionCustom",
@@ -1293,7 +1293,7 @@ mod test {
                         (
                             host_id_two.to_string(),
                             // 19 instances on this host
-                            HashSet::from_iter([WadmActorInfo {
+                            HashSet::from_iter([WadmComponentInfo {
                                 count: 19,
                                 annotations: spreadscaler_annotations(
                                     "CrossRegionReal",
@@ -1312,7 +1312,7 @@ mod test {
                 lattice_id,
                 host_id_one.to_string(),
                 Host {
-                    actors: HashMap::from_iter([
+                    components: HashMap::from_iter([
                         (blobby_id.to_string(), 3),
                         ("MSOMEOTHERACTOR".to_string(), 3),
                     ]),
@@ -1335,7 +1335,7 @@ mod test {
                 lattice_id,
                 host_id_two.to_string(),
                 Host {
-                    actors: HashMap::from_iter([(blobby_id.to_string(), 19)]),
+                    components: HashMap::from_iter([(blobby_id.to_string(), 19)]),
                     friendly_name: "hey".to_string(),
                     labels: HashMap::from_iter([
                         ("cloud".to_string(), "real".to_string()),
@@ -1356,7 +1356,7 @@ mod test {
                 lattice_id,
                 host_id_three.to_string(),
                 Host {
-                    actors: HashMap::new(),
+                    components: HashMap::new(),
                     friendly_name: "hey".to_string(),
                     labels: HashMap::from_iter([
                         ("cloud".to_string(), "purgatory".to_string()),
@@ -1411,7 +1411,7 @@ mod test {
         let mut cmds = blobby_spreadscaler.reconcile().await?;
         assert_eq!(cmds.len(), 2);
         cmds.sort_by(|a, b| match (a, b) {
-            (Command::ScaleActor(a), Command::ScaleActor(b)) => a.host_id.cmp(&b.host_id),
+            (Command::ScaleComponent(a), Command::ScaleComponent(b)) => a.host_id.cmp(&b.host_id),
             _ => panic!("Unexpected commands in spreadscaler list"),
         });
 
@@ -1420,14 +1420,14 @@ mod test {
             cmds_iter.next().expect("one scale command"),
             cmds_iter.next().expect("two scale commands"),
         ) {
-            (Command::ScaleActor(scale1), Command::ScaleActor(scale2)) => {
+            (Command::ScaleComponent(scale1), Command::ScaleComponent(scale2)) => {
                 assert_eq!(scale1.host_id, host_id_three.to_string());
                 assert_eq!(scale1.count, 3);
                 assert_eq!(scale1.reference, blobby_ref);
 
                 assert_eq!(scale2.host_id, host_id_two.to_string());
                 assert_eq!(scale2.count, 3);
-                assert_eq!(scale2.actor_id, blobby_id.to_string());
+                assert_eq!(scale2.component_id, blobby_id.to_string());
             }
             _ => panic!("Unexpected commands in spreadscaler list"),
         }
@@ -1455,7 +1455,7 @@ mod test {
             .await?;
         assert_eq!(cmds.len(), 2);
         cmds.sort_by(|a, b| match (a, b) {
-            (Command::ScaleActor(a), Command::ScaleActor(b)) => a.host_id.cmp(&b.host_id),
+            (Command::ScaleComponent(a), Command::ScaleComponent(b)) => a.host_id.cmp(&b.host_id),
             _ => panic!("Unexpected commands in spreadscaler list"),
         });
 
@@ -1464,14 +1464,14 @@ mod test {
             cmds_iter.next().expect("one scale command"),
             cmds_iter.next().expect("two scale commands"),
         ) {
-            (Command::ScaleActor(scale1), Command::ScaleActor(scale2)) => {
+            (Command::ScaleComponent(scale1), Command::ScaleComponent(scale2)) => {
                 assert_eq!(scale1.host_id, host_id_three.to_string());
                 assert_eq!(scale1.count, 3);
                 assert_eq!(scale1.reference, blobby_ref);
 
                 assert_eq!(scale2.host_id, host_id_two.to_string());
                 assert_eq!(scale2.count, 3);
-                assert_eq!(scale2.actor_id, blobby_id.to_string());
+                assert_eq!(scale2.component_id, blobby_id.to_string());
             }
             _ => panic!("Unexpected commands in spreadscaler list"),
         }

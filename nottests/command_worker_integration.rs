@@ -43,8 +43,8 @@ async fn test_commands() {
 
     // Start an actor
     wrapper
-        .publish_command(ScaleActor {
-            actor_id: Some(ECHO_ACTOR_ID.to_string()),
+        .publish_command(ScaleComponent {
+            component_id: Some(ECHO_ACTOR_ID.to_string()),
             reference: "wasmcloud.azurecr.io/echo:0.3.4".to_string(),
             host_id: host_id.clone(),
             count: 2,
@@ -172,7 +172,7 @@ async fn test_commands() {
     // Put a linkdef
     wrapper
         .publish_command(PutLinkdef {
-            actor_id: ECHO_ACTOR_ID.to_owned(),
+            component_id: ECHO_ACTOR_ID.to_owned(),
             provider_id: HTTP_SERVER_PROVIDER_ID.to_owned(),
             link_name: wadm::DEFAULT_LINK_NAME.to_owned(),
             contract_id: "wasmcloud:httpserver".to_string(),
@@ -195,7 +195,7 @@ async fn test_commands() {
     inventory
         .into_iter()
         .find(|ld| {
-            ld.actor_id == ECHO_ACTOR_ID
+            ld.component_id == ECHO_ACTOR_ID
                 && ld.provider_id == HTTP_SERVER_PROVIDER_ID
                 && ld.contract_id == "wasmcloud:httpserver"
         })
@@ -204,7 +204,7 @@ async fn test_commands() {
     // Delete the linkdef
     wrapper
         .publish_command(DeleteLinkdef {
-            actor_id: ECHO_ACTOR_ID.to_owned(),
+            component_id: ECHO_ACTOR_ID.to_owned(),
             provider_id: HTTP_SERVER_PROVIDER_ID.to_owned(),
             link_name: wadm::DEFAULT_LINK_NAME.to_owned(),
             contract_id: "wasmcloud:httpserver".to_string(),
@@ -225,7 +225,7 @@ async fn test_commands() {
     // We could have more than one link due to local testing, so search for the proper link
     assert!(
         !inventory.into_iter().any(|ld| {
-            ld.actor_id == ECHO_ACTOR_ID
+            ld.component_id == ECHO_ACTOR_ID
                 && ld.provider_id == HTTP_SERVER_PROVIDER_ID
                 && ld.contract_id == "wasmcloud:httpserver"
         }),
@@ -262,8 +262,8 @@ async fn test_commands() {
 
     // Stop the actor
     wrapper
-        .publish_command(ScaleActor {
-            actor_id: Some(ECHO_ACTOR_ID.to_owned()),
+        .publish_command(ScaleComponent {
+            component_id: Some(ECHO_ACTOR_ID.to_owned()),
             reference: "wasmcloud.azurecr.io/echo:0.3.4".to_string(),
             count: 0,
             host_id: host_id.clone(),
@@ -335,8 +335,8 @@ async fn test_annotation_stop() {
 
     // Start an actor
     wrapper
-        .publish_command(ScaleActor {
-            actor_id: Some(ECHO_ACTOR_ID.to_string()),
+        .publish_command(ScaleComponent {
+            component_id: Some(ECHO_ACTOR_ID.to_string()),
             reference: "wasmcloud.azurecr.io/echo:0.3.4".to_string(),
             host_id: host_id.clone(),
             count: 2,
@@ -387,8 +387,8 @@ async fn test_annotation_stop() {
 
     // Stop the managed actors
     wrapper
-        .publish_command(ScaleActor {
-            actor_id: Some(ECHO_ACTOR_ID.to_owned()),
+        .publish_command(ScaleComponent {
+            component_id: Some(ECHO_ACTOR_ID.to_owned()),
             reference: "wasmcloud.azurecr.io/echo:0.3.4".to_string(),
             count: 0,
             host_id: host_id.clone(),
