@@ -1,7 +1,7 @@
 [package]
 name = "wadm"
 description = "wasmCloud Application Deployment Manager: A tool for running Wasm applications in wasmCloud"
-version = "0.11.0-alpha.1"
+version = "0.11.0-alpha.2"
 edition = "2021"
 authors = ["wasmCloud Team"]
 keywords = ["webassembly", "wasmcloud", "wadm"]
@@ -61,8 +61,7 @@ tracing-subscriber = { version = "0.3.7", features = [
     "json",
 ], optional = true }
 uuid = "1"
-# wasmcloud-control-interface = { version = "1.0.0-alpha.3" }
-wasmcloud-control-interface = { git = "https://github.com/wasmcloud/wasmcloud", branch = "main" }
+wasmcloud-control-interface = { version = "1.0.0-alpha.3" }
 
 [dev-dependencies]
 serial_test = "1"
