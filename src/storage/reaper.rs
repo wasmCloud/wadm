@@ -112,8 +112,9 @@ impl<S: Store + Clone + Send + Sync + 'static> Undertaker<S> {
                     continue;
                 }
             };
-            // Reap actors and providers simultaneously
-            futures::join!(self.reap_actors(&hosts), self.reap_providers(&hosts));
+            // Reap actors and providers
+            self.reap_actors(&hosts).await;
+            self.reap_providers(&hosts).await;
             trace!("Completed reap tasks");
         }
     }
