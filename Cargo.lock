@@ -2807,7 +2807,7 @@ checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 
 [[package]]
 name = "wadm"
-version = "0.11.0-alpha.1"
+version = "0.11.0-alpha.2"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -2855,10 +2855,12 @@ dependencies = [
 [[package]]
 name = "wascap"
 version = "0.13.0"
-source = "git+https://github.com/wasmcloud/wasmcloud?branch=main#df92440e2506c12349bf71e4ea0080228336817e"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "802ee1beca185fd4d61bcfd937360d1dddacc88fefa39b08209e875d99c95711"
 dependencies = [
  "data-encoding",
  "humantime",
+ "log",
  "nkeys",
  "nuid 0.4.1",
  "ring",
@@ -2943,9 +2945,9 @@ checksum = "af190c94f2773fdb3729c55b007a722abb5384da03bc0986df4c289bf5567e96"
 
 [[package]]
 name = "wasm-encoder"
-version = "0.202.0"
+version = "0.41.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bfd106365a7f5f7aa3c1916a98cbb3ad477f5ff96ddb130285a91c6e7429e67a"
+checksum = "972f97a5d8318f908dded23594188a90bcd09365986b1163e66d70170e5287ae"
 dependencies = [
  "leb128",
 ]
@@ -2976,7 +2978,8 @@ dependencies = [
 [[package]]
 name = "wasmcloud-control-interface"
 version = "1.0.0-alpha.3"
-source = "git+https://github.com/wasmcloud/wasmcloud?branch=main#df92440e2506c12349bf71e4ea0080228336817e"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc87e84c68d31d65d4070cf70548f5d27e2c9c75d2768ea52ce60416c048e9a6"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -2997,8 +3000,9 @@ dependencies = [
 
 [[package]]
 name = "wasmcloud-core"
-version = "0.5.0"
-source = "git+https://github.com/wasmcloud/wasmcloud?branch=main#df92440e2506c12349bf71e4ea0080228336817e"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c9384bec7161ea7763f6665c49b9282323065e3edd0247cca9f679180bd14d86"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -3024,9 +3028,9 @@ dependencies = [
 
 [[package]]
 name = "wasmparser"
-version = "0.202.0"
+version = "0.121.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d6998515d3cf3f8b980ef7c11b29a9b1017d4cf86b99ae93b546992df9931413"
+checksum = "9dbe55c8f9d0dbd25d9447a5a889ff90c0cc3feaa7395310d3d826b2c703eaab"
 dependencies = [
  "bitflags 2.5.0",
  "indexmap 2.2.6",
@@ -3256,9 +3260,9 @@ dependencies = [
 
 [[package]]
 name = "wit-parser"
-version = "0.202.0"
+version = "0.201.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "744237b488352f4f27bca05a10acb79474415951c450e52ebd0da784c1df2bcc"
+checksum = "196d3ecfc4b759a8573bf86a9b3f8996b304b3732e4c7de81655f875f6efdca6"
 dependencies = [
  "anyhow",
  "id-arena",
@@ -3270,9 +3274,9 @@ dependencies = [
 
 [[package]]
 name = "wrpc-transport"
-version = "0.24.2"
+version = "0.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f2e2c6aa7dae01766d47ad89bf4450b5ffa7761aab9a920f26d1845c932617a7"
+checksum = "b551cf90e43a1a331ec13af1ad244c9605956fd2c3d535ff857f5978ae963518"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -3289,9 +3293,9 @@ dependencies = [
 
 [[package]]
 name = "wrpc-transport-nats"
-version = "0.21.0"
+version = "0.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c7a40219678cc9e65164487ff3540cddc463d2040950f010bd1d8ce27c8c9a6c"
+checksum = "d0d7401a0771e00936b57519e5c1627a174ae05d979a5f8a961e264f0e6f99f1"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -3305,9 +3309,9 @@ dependencies = [
 
 [[package]]
 name = "wrpc-types"
-version = "0.6.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b5304f4c3000b643bb56d405c5e29efd940f529b898288c65cd3861e24cca71"
+checksum = "052dd3b6e5a936407695801656660badc5d0ddeaff482ac266669bfd47e6457e"
 dependencies = [
  "anyhow",
  "tracing",
