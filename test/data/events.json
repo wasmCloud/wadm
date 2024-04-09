@@ -20,7 +20,7 @@
       },
       "host_id": "NCBAWBHRT6JNSQIYQEURM3AQZ74I6HTQRRCFMTVPC3OAX4BUTCNTYADZ",
       "image_ref": "wasmcloud.azurecr.io/echo:0.3.4",
-      "actor_id": "wasmcloud_azurecr_io_echo_0_3_4",
+      "component_id": "wasmcloud_azurecr_io_echo_0_3_4",
       "max_instances": 10
     }
   },
@@ -36,7 +36,7 @@
       "error": "actor is already running with a different image reference `wasmcloud.azurecr.io/echo:0.3.4`",
       "host_id": "NCBAWBHRT6JNSQIYQEURM3AQZ74I6HTQRRCFMTVPC3OAX4BUTCNTYADZ",
       "image_ref": "wasmcloud.azurecr.io/echo:0.3.8",
-      "actor_id": "wasmcloud_azurecr_io_echo_0_3_4",
+      "component_id": "wasmcloud_azurecr_io_echo_0_3_4",
       "max_instances": 11,
       "public_key": "MBCFOPM6JW2APJLXJD3Z5O4CN7CPYJ2B4FTKLJUR5YR5MITIU7HD3WD5"
     }

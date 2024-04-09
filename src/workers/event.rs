@@ -208,7 +208,7 @@ where
         Ok(())
     }
 
-    #[instrument(level = "debug", skip(self, actor), fields(component_id = %actor.actor_id, host_id = %actor.host_id))]
+    #[instrument(level = "debug", skip(self, actor), fields(component_id = %actor.component_id, host_id = %actor.host_id))]
     async fn handle_component_scaled(
         &self,
         lattice_id: &str,
@@ -222,7 +222,7 @@ where
         let mut actor_data = Component::from(actor);
         if let Some(mut current) = self
             .store
-            .get::<Component>(lattice_id, &actor.actor_id)
+            .get::<Component>(lattice_id, &actor.component_id)
             .await?
         {
             trace!(actor = ?current, "Found existing actor data");
@@ -263,10 +263,10 @@ where
             trace!(host = ?host, "Found existing host data");
 
             if actor.max_instances == 0 {
-                host.components.remove(&actor.actor_id);
+                host.components.remove(&actor.component_id);
             } else {
                 host.components
-                    .entry(actor.actor_id.clone())
+                    .entry(actor.component_id.clone())
                     .and_modify(|count| *count = actor.max_instances)
                     .or_insert(actor.max_instances);
             }
@@ -278,12 +278,12 @@ where
 
         if actor_data.instances.is_empty() {
             self.store
-                .delete::<Component>(lattice_id, &actor.actor_id)
+                .delete::<Component>(lattice_id, &actor.component_id)
                 .await
                 .map_err(anyhow::Error::from)
         } else {
             self.store
-                .store(lattice_id, actor.actor_id.clone(), actor_data)
+                .store(lattice_id, actor.component_id.clone(), actor_data)
                 .await
                 .map_err(anyhow::Error::from)
         }
@@ -1392,7 +1392,7 @@ mod test {
                 ..Default::default()
             }),
             image_ref: "coruscant.galactic.empire/tarkin:0.1.0".into(),
-            actor_id: "TARKIN".into(),
+            component_id: "TARKIN".into(),
             host_id: host1_id.clone(),
             annotations: BTreeMap::default(),
             max_instances: 500,
@@ -1406,7 +1406,7 @@ mod test {
         let hosts = store.list::<Host>(lattice_id).await.unwrap();
         let host = hosts.get(&host1_id).expect("Host should exist in state");
         assert_eq!(
-            host.components.get(&actor1_scaled.actor_id),
+            host.components.get(&actor1_scaled.component_id),
             Some(&500),
             "Actor count in host should be updated"
         );
@@ -1425,7 +1425,7 @@ mod test {
                 ..Default::default()
             }),
             image_ref: "coruscant.galactic.empire/tarkin:0.1.0".into(),
-            actor_id: "TARKIN".into(),
+            component_id: "TARKIN".into(),
             host_id: host1_id.clone(),
             annotations: BTreeMap::default(),
             max_instances: 200,
@@ -1439,7 +1439,7 @@ mod test {
         let hosts = store.list::<Host>(lattice_id).await.unwrap();
         let host = hosts.get(&host1_id).expect("Host should exist in state");
         assert_eq!(
-            host.components.get(&actor1_scaled.actor_id),
+            host.components.get(&actor1_scaled.component_id),
             Some(&200),
             "Actor count in host should be updated"
         );
@@ -1458,7 +1458,7 @@ mod test {
                 ..Default::default()
             }),
             image_ref: "coruscant.galactic.empire/tarkin:0.1.0".into(),
-            actor_id: "TARKIN".into(),
+            component_id: "TARKIN".into(),
             host_id: host1_id.clone(),
             annotations: BTreeMap::default(),
             max_instances: 0,
@@ -1472,7 +1472,7 @@ mod test {
         let hosts = store.list::<Host>(lattice_id).await.unwrap();
         let host = hosts.get(&host1_id).expect("Host should exist in state");
         assert_eq!(
-            host.components.get(&actor1_scaled.actor_id),
+            host.components.get(&actor1_scaled.component_id),
             None,
             "Actor in host should be removed"
         );
@@ -1491,7 +1491,7 @@ mod test {
                 ..Default::default()
             }),
             image_ref: "coruscant.galactic.empire/tarkin:0.1.0".into(),
-            actor_id: "TARKIN".into(),
+            component_id: "TARKIN".into(),
             host_id: host1_id.clone(),
             annotations: BTreeMap::default(),
             max_instances: 1,
@@ -1505,7 +1505,7 @@ mod test {
         let hosts = store.list::<Host>(lattice_id).await.unwrap();
         let host = hosts.get(&host1_id).expect("Host should exist in state");
         assert_eq!(
-            host.components.get(&actor1_scaled.actor_id),
+            host.components.get(&actor1_scaled.component_id),
             Some(&1),
             "Actor in host should be readded from scratch"
         );
