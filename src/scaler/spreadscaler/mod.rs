@@ -82,7 +82,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
         match event {
             // TODO: React to ComponentScaleFailed with an exponential backoff, can't just immediately retry since that
             // would cause a very tight loop of failures
-            Event::ComponentScaled(evt) if evt.actor_id == self.config.component_id => {
+            Event::ComponentScaled(evt) if evt.component_id == self.config.component_id => {
                 self.reconcile().await
             }
             Event::HostStopped(HostStopped { labels, .. })
@@ -1434,7 +1434,7 @@ mod test {
 
         let modifying_event = ComponentScaled {
             annotations: spreadscaler_annotations("CrossRegionReal", blobby_spreadscaler.id()),
-            actor_id: blobby_id.to_string(),
+            component_id: blobby_id.to_string(),
             image_ref: blobby_ref.to_string(),
             host_id: host_id_two.to_string(),
             max_instances: 0,

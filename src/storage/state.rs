@@ -212,7 +212,7 @@ impl From<ComponentScaled> for Component {
     fn from(value: ComponentScaled) -> Self {
         let (name, issuer) = value.claims.map(|c| (c.name, c.issuer)).unwrap_or_default();
         Component {
-            id: value.actor_id,
+            id: value.component_id,
             name,
             issuer,
             reference: value.image_ref,
@@ -230,7 +230,7 @@ impl From<ComponentScaled> for Component {
 impl From<&ComponentScaled> for Component {
     fn from(value: &ComponentScaled) -> Self {
         Component {
-            id: value.actor_id.clone(),
+            id: value.component_id.clone(),
             name: value
                 .claims
                 .as_ref()

@@ -83,7 +83,7 @@ where
     async fn handle_event(&self, event: &Event) -> Result<Vec<Command>> {
         match event {
             // Trigger linkdef creation if this actor starts and belongs to this model
-            Event::ComponentScaled(evt) if evt.actor_id == self.config.source_id => {
+            Event::ComponentScaled(evt) if evt.component_id == self.config.source_id => {
                 self.reconcile().await
             }
             Event::ProviderHealthCheckPassed(ProviderHealthCheckPassed {
@@ -680,7 +680,7 @@ mod test {
                 )]),
                 claims: None,
                 image_ref: echo_ref,
-                actor_id: echo_id.to_string(),
+                component_id: echo_id.to_string(),
                 max_instances: 1,
                 host_id: host_id_one.to_string(),
             }))

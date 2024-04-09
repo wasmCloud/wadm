@@ -369,7 +369,7 @@ pub struct ComponentScaled {
     pub image_ref: String,
     pub max_instances: usize,
     // TODO: Once we update to the 1.0 release candidate, this will be component_id
-    pub actor_id: String,
+    pub component_id: String,
     #[serde(default)]
     pub host_id: String,
 }
@@ -388,7 +388,7 @@ pub struct ComponentScaleFailed {
     pub image_ref: String,
     pub max_instances: usize,
     // TODO: Once we update to the 1.0 release candidate, this will be component_id
-    pub actor_id: String,
+    pub component_id: String,
     #[serde(default)]
     pub host_id: String,
     pub error: String,

@@ -87,7 +87,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorDaemonScaler<S> {
         match event {
             // TODO: React to ComponentScaleFailed with an exponential backoff, can't just immediately retry since that
             // would cause a very tight loop of failures
-            Event::ComponentScaled(evt) if evt.actor_id == self.config.component_id => {
+            Event::ComponentScaled(evt) if evt.component_id == self.config.component_id => {
                 self.reconcile().await
             }
             Event::HostStopped(HostStopped { labels, .. })
