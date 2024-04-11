@@ -23,7 +23,7 @@ pub mod provider;
 // Annotation constants
 const SPREAD_KEY: &str = "wasmcloud.dev/spread_name";
 
-pub const ACTOR_SPREAD_SCALER_TYPE: &str = "actorspreadscaler";
+pub const COMPONENT_SPREAD_SCALER_TYPE: &str = "componentspreadscaler";
 
 /// Config for an ActorSpreadScaler
 #[derive(Clone)]
@@ -46,11 +46,13 @@ struct ActorSpreadConfig {
 /// If no [Spreads](crate::model::Spread) are specified, this Scaler simply maintains the number of instances
 /// on an available host
 pub struct ActorSpreadScaler<S> {
-    config: ActorSpreadConfig,
+    spread_config: ActorSpreadConfig,
     spread_requirements: Vec<(Spread, usize)>,
     store: S,
     id: String,
     status: RwLock<StatusInfo>,
+    /// Named configuration to pass to the component.
+    pub config: Vec<String>,
 }
 
 #[async_trait]
@@ -69,8 +71,8 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
             TraitProperty::SpreadScaler(prop) => prop,
             _ => anyhow::bail!("Given config was not a spread scaler config object"),
         };
-        self.config.spread_config = spread_config;
-        self.spread_requirements = compute_spread(&self.config.spread_config);
+        self.spread_config.spread_config = spread_config;
+        self.spread_requirements = compute_spread(&self.spread_config.spread_config);
         self.reconcile().await
     }
 
@@ -82,7 +84,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
         match event {
             // TODO: React to ComponentScaleFailed with an exponential backoff, can't just immediately retry since that
             // would cause a very tight loop of failures
-            Event::ComponentScaled(evt) if evt.component_id == self.config.component_id => {
+            Event::ComponentScaled(evt) if evt.component_id == self.spread_config.component_id => {
                 self.reconcile().await
             }
             Event::HostStopped(HostStopped { labels, .. })
@@ -105,14 +107,17 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
         }
     }
 
-    #[instrument(level = "trace", skip_all, fields(name = %self.config.model_name, scaler_id = %self.id))]
+    #[instrument(level = "trace", skip_all, fields(name = %self.spread_config.model_name, scaler_id = %self.id))]
     async fn reconcile(&self) -> Result<Vec<Command>> {
-        let hosts = self.store.list::<Host>(&self.config.lattice_id).await?;
+        let hosts = self
+            .store
+            .list::<Host>(&self.spread_config.lattice_id)
+            .await?;
 
-        let component_id = &self.config.component_id;
+        let component_id = &self.spread_config.component_id;
         let component = self
             .store
-            .get::<Component>(&self.config.lattice_id, component_id)
+            .get::<Component>(&self.spread_config.lattice_id, component_id)
             .await?;
 
         let mut spread_status = vec![];
@@ -166,12 +171,13 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
                             // Right now just start on the first available host. We can be smarter about it later
                             Some(vec![Command::ScaleComponent(ScaleComponent {
                                 component_id: component_id.to_owned(),
-                                reference: self.config.actor_reference.to_owned(),
+                                reference: self.spread_config.actor_reference.to_owned(),
                                 // SAFETY: We already checked that the list of hosts is not empty, so we can unwrap here
                                 host_id: eligible_hosts.keys().next().unwrap().to_string(),
                                 count: *count as u32,
-                                model_name: self.config.model_name.to_owned(),
+                                model_name: self.spread_config.model_name.to_owned(),
                                 annotations: spreadscaler_annotations(&spread.name, self.id()),
+                                        config: self.config.clone(),
                             })])
                         }
                         // Stop actors to reach desired instances
@@ -190,11 +196,12 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
                                     current_stopped += std::cmp::min(instance_count, remaining_to_stop);
                                     commands.push(Command::ScaleComponent(ScaleComponent {
                                         component_id: component_id.to_owned(),
-                                        reference: self.config.actor_reference.to_owned(),
+                                        reference: self.spread_config.actor_reference.to_owned(),
                                         host_id: host_id.to_owned(),
                                         count: count as u32,
-                                        model_name: self.config.model_name.to_owned(),
+                                        model_name: self.spread_config.model_name.to_owned(),
                                         annotations: spreadscaler_annotations(&spread.name, self.id()),
+                                        config: self.config.clone(),
                                     }));
                                 }
                                 (current_stopped, commands)
@@ -205,7 +212,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
                 } else {
                     // No hosts were eligible, so we can't attempt to add or remove actors
                     trace!(?spread.name, "Found no eligible hosts for spread");
-                    spread_status.push(StatusInfo::failed(&format!("Could not satisfy spread {} for {}, 0/1 eligible hosts found.", spread.name, self.config.actor_reference)));
+                    spread_status.push(StatusInfo::failed(&format!("Could not satisfy spread {} for {}, 0/1 eligible hosts found.", spread.name, self.spread_config.actor_reference)));
                     None
                 }
             })
@@ -230,18 +237,19 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
         Ok(commands)
     }
 
-    #[instrument(level = "trace", skip_all, fields(name = %self.config.model_name))]
+    #[instrument(level = "trace", skip_all, fields(name = %self.spread_config.model_name))]
     async fn cleanup(&self) -> Result<Vec<Command>> {
-        let mut config_clone = self.config.clone();
+        let mut config_clone = self.spread_config.clone();
         config_clone.spread_config.instances = 0;
         let spread_requirements = compute_spread(&config_clone.spread_config);
 
         let cleanerupper = ActorSpreadScaler {
-            config: config_clone,
+            spread_config: config_clone,
             store: self.store.clone(),
             spread_requirements,
             id: self.id.clone(),
             status: RwLock::new(StatusInfo::reconciling("")),
+            config: self.config.clone(),
         };
 
         cleanerupper.reconcile().await
@@ -250,6 +258,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
 
 impl<S: ReadStore + Send + Sync> ActorSpreadScaler<S> {
     /// Construct a new ActorSpreadScaler with specified configuration values
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         store: S,
         actor_reference: String,
@@ -258,13 +267,16 @@ impl<S: ReadStore + Send + Sync> ActorSpreadScaler<S> {
         model_name: String,
         spread_config: SpreadScalerProperty,
         component_name: &str,
+        config: Vec<String>,
     ) -> Self {
-        let id =
-            format!("{ACTOR_SPREAD_SCALER_TYPE}-{model_name}-{component_name}-{actor_reference}");
+        // TODO: consider config
+        let id = format!(
+            "{COMPONENT_SPREAD_SCALER_TYPE}-{model_name}-{component_name}-{actor_reference}"
+        );
         Self {
             store,
             spread_requirements: compute_spread(&spread_config),
-            config: ActorSpreadConfig {
+            spread_config: ActorSpreadConfig {
                 actor_reference,
                 component_id,
                 lattice_id,
@@ -272,6 +284,7 @@ impl<S: ReadStore + Send + Sync> ActorSpreadScaler<S> {
                 model_name,
             },
             id,
+            config,
             status: RwLock::new(StatusInfo::reconciling("")),
         }
     }
@@ -626,6 +639,7 @@ mod test {
             MODEL_NAME.to_string(),
             complex_spread,
             "fake_component",
+            vec![],
         );
 
         let cmds = spreadscaler.reconcile().await?;
@@ -636,7 +650,8 @@ mod test {
             host_id: host_id.to_string(),
             count: 10,
             model_name: MODEL_NAME.to_string(),
-            annotations: spreadscaler_annotations("ComplexOne", spreadscaler.id())
+            annotations: spreadscaler_annotations("ComplexOne", spreadscaler.id()),
+            config: vec![]
         })));
         assert!(cmds.contains(&Command::ScaleComponent(ScaleComponent {
             component_id: component_id.to_string(),
@@ -644,7 +659,8 @@ mod test {
             host_id: host_id.to_string(),
             count: 8,
             model_name: MODEL_NAME.to_string(),
-            annotations: spreadscaler_annotations("ComplexThree", spreadscaler.id())
+            annotations: spreadscaler_annotations("ComplexThree", spreadscaler.id()),
+            config: vec![]
         })));
         assert!(cmds.contains(&Command::ScaleComponent(ScaleComponent {
             component_id: component_id.to_string(),
@@ -652,7 +668,8 @@ mod test {
             host_id: host_id.to_string(),
             count: 85,
             model_name: MODEL_NAME.to_string(),
-            annotations: spreadscaler_annotations("ComplexFour", spreadscaler.id())
+            annotations: spreadscaler_annotations("ComplexFour", spreadscaler.id()),
+            config: vec![]
         })));
 
         Ok(())
@@ -734,6 +751,7 @@ mod test {
             MODEL_NAME.to_string(),
             echo_spread_property,
             "fake_echo",
+            vec![],
         );
 
         let blobby_spreadscaler = ActorSpreadScaler::new(
@@ -744,6 +762,7 @@ mod test {
             MODEL_NAME.to_string(),
             blobby_spread_property,
             "fake_blobby",
+            vec![],
         );
 
         // STATE SETUP BEGIN
@@ -991,6 +1010,7 @@ mod test {
             MODEL_NAME.to_string(),
             real_spread,
             "fake_component",
+            vec![],
         );
 
         // STATE SETUP BEGIN, ONE HOST
@@ -1045,7 +1065,8 @@ mod test {
             host_id: host_id.to_string(),
             count: 15,
             model_name: MODEL_NAME.to_string(),
-            annotations: spreadscaler_annotations("SimpleOne", spreadscaler.id())
+            annotations: spreadscaler_annotations("SimpleOne", spreadscaler.id()),
+            config: vec![]
         })));
         assert!(cmds.contains(&Command::ScaleComponent(ScaleComponent {
             component_id: "fakecloud_azurecr_io_echo_0_3_4".to_string(),
@@ -1053,7 +1074,8 @@ mod test {
             host_id: host_id.to_string(),
             count: 5,
             model_name: MODEL_NAME.to_string(),
-            annotations: spreadscaler_annotations("SimpleTwo", spreadscaler.id())
+            annotations: spreadscaler_annotations("SimpleTwo", spreadscaler.id()),
+            config: vec![]
         })));
 
         Ok(())
@@ -1083,6 +1105,7 @@ mod test {
             MODEL_NAME.to_string(),
             real_spread,
             "fake_component",
+            vec![],
         );
 
         // STATE SETUP BEGIN, ONE HOST
@@ -1186,7 +1209,8 @@ mod test {
             host_id: host_id.to_string(),
             count: 0,
             model_name: MODEL_NAME.to_string(),
-            annotations: spreadscaler_annotations("default", spreadscaler.id())
+            annotations: spreadscaler_annotations("default", spreadscaler.id()),
+            config: vec![]
         })));
         assert!(cmds.contains(&Command::ScaleComponent(ScaleComponent {
             component_id: component_id.clone(),
@@ -1194,7 +1218,8 @@ mod test {
             host_id: host_id2.to_string(),
             count: 0,
             model_name: MODEL_NAME.to_string(),
-            annotations: spreadscaler_annotations("default", spreadscaler.id())
+            annotations: spreadscaler_annotations("default", spreadscaler.id()),
+            config: vec![]
         })));
         Ok(())
     }
@@ -1267,6 +1292,7 @@ mod test {
             MODEL_NAME.to_string(),
             blobby_spread_property,
             "fake_blobby",
+            vec![],
         );
 
         // STATE SETUP BEGIN

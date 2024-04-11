@@ -1,7 +1,4 @@
-use std::{
-    collections::BTreeMap,
-    hash::{Hash, Hasher},
-};
+use std::hash::{Hash, Hasher};
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -9,12 +6,12 @@ use tokio::sync::RwLock;
 use tracing::instrument;
 
 use crate::{
-    commands::{Command, DeleteLink, PutConfig, PutLink},
+    commands::{Command, DeleteLink, PutLink},
     events::{
         Event, LinkdefDeleted, LinkdefSet, ProviderHealthCheckInfo, ProviderHealthCheckPassed,
         ProviderHealthCheckStatus,
     },
-    model::{ConfigProperty, TraitProperty},
+    model::TraitProperty,
     scaler::Scaler,
     server::StatusInfo,
     storage::ReadStore,
@@ -42,9 +39,9 @@ pub struct LinkScalerConfig {
     /// The name of the wadm model this SpreadScaler is under
     pub model_name: String,
     /// List of configurations for the source of this link
-    pub source_config: Vec<ConfigProperty>,
+    pub source_config: Vec<String>,
     /// List of configurations for the target of this link
-    pub target_config: Vec<ConfigProperty>,
+    pub target_config: Vec<String>,
 }
 
 /// The LinkSpreadScaler ensures that link configuration exists on a specified lattice.
@@ -143,15 +140,9 @@ where
                     // TODO: reverse compare too
                     // Ensure all named configs are the same
                     linkdef.source_config.iter().all(|config_name| {
-                        self.config
-                            .source_config
-                            .iter()
-                            .any(|c| &c.name == config_name)
+                        self.config.source_config.iter().any(|c| c == config_name)
                     }) || linkdef.target_config.iter().all(|config_name| {
-                        self.config
-                            .target_config
-                            .iter()
-                            .any(|c| &c.name == config_name)
+                        self.config.target_config.iter().any(|c| c == config_name)
                     }),
                 )
             })
@@ -189,34 +180,6 @@ where
         //     }))
         // };
 
-        // TODO: put these
-        let _source_config_commands = self
-            .config
-            .source_config
-            .iter()
-            .filter_map(|config| {
-                config.properties.as_ref().map(|properties| {
-                    Command::PutConfig(PutConfig {
-                        config_name: config.name.clone(),
-                        config: properties.clone(),
-                    })
-                })
-            })
-            .collect::<Vec<_>>();
-        let _target_config_commands = self
-            .config
-            .source_config
-            .iter()
-            .filter_map(|config| {
-                config.properties.as_ref().map(|properties| {
-                    Command::PutConfig(PutConfig {
-                        config_name: config.name.clone(),
-                        config: properties.clone(),
-                    })
-                })
-            })
-            .collect::<Vec<_>>();
-
         let commands = if !exists {
             *self.status.write().await = StatusInfo::reconciling(&format!(
                 "Putting link definition between {source_id} and {target}"
@@ -228,18 +191,8 @@ where
                 wit_namespace: self.config.wit_namespace.to_owned(),
                 wit_package: self.config.wit_package.to_owned(),
                 interfaces: self.config.wit_interfaces.to_owned(),
-                source_config: self
-                    .config
-                    .source_config
-                    .iter()
-                    .map(|c| c.name.clone())
-                    .collect::<Vec<_>>(),
-                target_config: self
-                    .config
-                    .target_config
-                    .iter()
-                    .map(|c| c.name.clone())
-                    .collect::<Vec<_>>(),
+                source_config: self.config.source_config.clone(),
+                target_config: self.config.target_config.clone(),
                 model_name: self.config.model_name.to_owned(),
             })]
         } else {
@@ -282,20 +235,14 @@ impl<S: ReadStore + Send + Sync, L: LinkSource> LinkScaler<S, L> {
     }
 }
 
-fn compute_linkscaler_config_hash(source: &[ConfigProperty], target: &[ConfigProperty]) -> u64 {
+fn compute_linkscaler_config_hash(source: &[String], target: &[String]) -> u64 {
     let mut linkscaler_config_hasher = std::collections::hash_map::DefaultHasher::new();
-    // Hash each of the properties in the source and target
+    // Hash each of the names in the source and target
     source.iter().for_each(|s| {
-        s.name.hash(&mut linkscaler_config_hasher);
-        if let Some(ref properties) = s.properties {
-            BTreeMap::from_iter(properties.iter()).hash(&mut linkscaler_config_hasher)
-        }
+        s.hash(&mut linkscaler_config_hasher);
     });
     target.iter().for_each(|t| {
-        t.name.hash(&mut linkscaler_config_hasher);
-        if let Some(ref properties) = t.properties {
-            BTreeMap::from_iter(properties.iter()).hash(&mut linkscaler_config_hasher)
-        }
+        t.hash(&mut linkscaler_config_hasher);
     });
     linkscaler_config_hasher.finish()
 }
@@ -358,14 +305,8 @@ mod test {
         let provider_ref = "provider_ref".to_string();
         let provider_id = "provider_id".to_string();
 
-        let source_config = vec![ConfigProperty {
-            name: "source_config".to_string(),
-            properties: None,
-        }];
-        let target_config = vec![ConfigProperty {
-            name: "target_config".to_string(),
-            properties: None,
-        }];
+        let source_config = vec!["source_config".to_string()];
+        let target_config = vec!["target_config".to_string()];
 
         let scaler = LinkScaler::new(
             create_store(&lattice_id, &actor_ref, &provider_ref).await,
@@ -399,7 +340,7 @@ mod test {
             LINK_SCALER_TYPE = LINK_SCALER_TYPE,
             model_name = "model",
             link_name = "default",
-            linkscaler_values_hash = compute_linkscaler_config_hash(&[ConfigProperty { name: "foo".to_string(), properties: None }], &[ConfigProperty { name: "bar".to_string(), properties: None}])
+            linkscaler_values_hash = compute_linkscaler_config_hash(&["foo".to_string()], &["bar".to_string()])
         );
 
         assert_ne!(
@@ -446,14 +387,8 @@ mod test {
                 name: "default".to_string(),
                 lattice_id: lattice_id.clone(),
                 model_name: "model".to_string(),
-                source_config: vec![ConfigProperty {
-                    name: "default-http".to_string(),
-                    properties: None,
-                }],
-                target_config: vec![ConfigProperty {
-                    name: "outbound-cert".to_string(),
-                    properties: None,
-                }],
+                source_config: vec!["default-http".to_string()],
+                target_config: vec!["outbound-cert".to_string()],
             },
             TestLatticeSource::default(),
         );

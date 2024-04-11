@@ -995,19 +995,20 @@ pub(crate) async fn validate_manifest(manifest: Manifest) -> anyhow::Result<()> 
             properties:
                 CapabilityProperties {
                     id,
-                    config: capability_config,
+                    config: _capability_config,
                     ..
                 },
         } = &component.properties
         {
-            if let Some(data) = capability_config {
-                if let Err(e) = serde_json::to_string(data) {
-                    return Err(anyhow!(
-                        "Unable to serialize JSON config data for component {}: {e:?}",
-                        component.name
-                    ));
-                }
-            }
+            // TODO: Ensure config exists?
+            // if let Some(data) = capability_config {
+            //     if let Err(e) = serde_json::to_string(data) {
+            //         return Err(anyhow!(
+            //             "Unable to serialize JSON config data for component {}: {e:?}",
+            //             component.name
+            //         ));
+            //     }
+            // }
 
             if let Some(component_id) = id {
                 if !id_registry.insert(component_id.to_string()) {

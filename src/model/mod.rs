@@ -1,13 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 
-use anyhow::Context;
-use serde::{
-    de::{self, Deserializer, MapAccess, Visitor},
-    ser::Serializer,
-    Deserialize, Serialize,
-};
-
-use base64::{engine::general_purpose, Engine as _};
+use serde::{Deserialize, Serialize};
 
 pub(crate) mod internal;
 
@@ -121,6 +114,10 @@ pub struct ComponentProperties {
     /// as a combination of the [Metadata::name] and the image reference.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
+    /// Named configuration to pass to the component. The component will be able to retrieve
+    /// these values at runtime using `wasi:runtime/config.`
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub config: Vec<ConfigProperty>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -131,84 +128,12 @@ pub struct CapabilityProperties {
     /// as a combination of the [Metadata::name] and the image reference.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
-    /// Optional config to pass to the provider. This can be either a raw string encoded config, or
-    /// a JSON or YAML object
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub config: Option<CapabilityConfig>,
+    /// Named configuration to pass to the provider. The merged set of configuration will be passed
+    /// to the provider at runtime using the provider SDK's `init()` function.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub config: Vec<ConfigProperty>,
 }
 
-/// Right now providers can technically use any config format they want, although most use JSON.
-/// This enum takes that into account and allows either type of data to be passed
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CapabilityConfig {
-    Json(serde_json::Value),
-    Opaque(String),
-}
-
-impl CapabilityConfig {
-    pub fn try_base64_encoding(&self) -> anyhow::Result<String> {
-        let mut bytes: Vec<u8> = Vec::new();
-        serde_json::to_writer(&mut bytes, &self)
-            .context("failed to serialize capability config into bytes for base64 encoding")?;
-        Ok(general_purpose::STANDARD.encode(&bytes))
-    }
-
-    pub fn try_base64_encoding_with_engine<T: base64::Engine>(
-        &self,
-        engine: &T,
-    ) -> anyhow::Result<String> {
-        let mut bytes: Vec<u8> = Vec::new();
-        serde_json::to_writer(&mut bytes, &self)
-            .context("failed to serialize capability config into bytes for base64 encoding")?;
-        Ok(engine.encode(&bytes))
-    }
-}
-
-impl<'de> Deserialize<'de> for CapabilityConfig {
-    fn deserialize<D>(deserializer: D) -> Result<CapabilityConfig, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        deserializer.deserialize_any(CapabilityConfigVisitor)
-    }
-}
-
-struct CapabilityConfigVisitor;
-
-impl<'de> Visitor<'de> for CapabilityConfigVisitor {
-    type Value = CapabilityConfig;
-
-    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        formatter.write_str("string or json/yaml object")
-    }
-
-    fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
-    where
-        E: de::Error,
-    {
-        Ok(CapabilityConfig::Opaque(value.to_owned()))
-    }
-
-    fn visit_map<M>(self, map: M) -> Result<Self::Value, M::Error>
-    where
-        M: MapAccess<'de>,
-    {
-        let data = serde_json::Value::deserialize(de::value::MapAccessDeserializer::new(map))?;
-        Ok(CapabilityConfig::Json(data))
-    }
-}
-
-impl Serialize for CapabilityConfig {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        match self {
-            CapabilityConfig::Json(v) => v.serialize(serializer),
-            CapabilityConfig::Opaque(v) => serializer.serialize_str(v),
-        }
-    }
-}
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct Trait {
     /// The type of trait specified. This should be a unique string for the type of scaler. As we
@@ -286,7 +211,6 @@ impl From<serde_json::Value> for TraitProperty {
 ///      port: "8080"
 /// ```
 ///
-/// TODO(#252): Consider if we want to scope this by application
 /// Will result in two config scalers being created, one with the name `basic-kv` and one with the
 /// name `default-port`. Wadm will not resolve collisions with configuration names between manifests.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -318,8 +242,10 @@ pub struct LinkProperty {
     pub package: String,
     /// WIT interfaces for the link
     pub interfaces: Vec<String>,
+    /// Configuration to apply to the source of the link
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub source_config: Vec<ConfigProperty>,
+    /// Configuration to apply to the target of the link
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub target_config: Vec<ConfigProperty>,
     /// The name of this link
@@ -421,70 +347,26 @@ mod test {
     }
 
     #[test]
-    fn test_provider_config() {
-        let manifest =
-            deserialize_yaml("./oam/provider_config.yaml").expect("Should be able to parse");
-        let props = match &manifest.spec.components[0].properties {
-            Properties::Capability { properties } => properties,
-            _ => panic!("Should have found capability component"),
-        };
+    fn test_config() {
+        let manifest = deserialize_yaml("./oam/config.yaml").expect("Should be able to parse");
+        // TODO: test component
 
-        match props.config.as_ref().expect("Config should have been set") {
-            CapabilityConfig::Opaque(data) => assert_eq!(data, "{\"raw\": \"json\", \"data\": {}}"),
-            _ => panic!("Should have found opaque config"),
-        }
-
-        // YAML should work
         let props = match &manifest.spec.components[1].properties {
             Properties::Capability { properties } => properties,
             _ => panic!("Should have found capability component"),
         };
-        let config = match props.config.as_ref().expect("Config should have been set") {
-            CapabilityConfig::Json(data) => data,
-            _ => panic!("Should have found json config"),
-        };
-        assert_eq!(
-            config
-                .get("some")
-                .expect("Should have the right key in the config")
-                .as_str()
-                .expect("Should have parsed the right data type"),
-            "config"
-        );
-        assert_eq!(
-            config
-                .get("number")
-                .expect("Should have the right key in the config")
-                .as_u64()
-                .expect("Should have parsed the right data type"),
-            1
-        );
 
-        // So should raw JSON
-        let props = match &manifest.spec.components[2].properties {
-            Properties::Capability { properties } => properties,
-            _ => panic!("Should have found capability component"),
-        };
-        let config = match props.config.as_ref().expect("Config should have been set") {
-            CapabilityConfig::Json(data) => data,
-            _ => panic!("Should have found json config"),
-        };
-        assert_eq!(
-            config
-                .get("some")
-                .expect("Should have the right key in the config")
-                .as_str()
-                .expect("Should have parsed the right data type"),
-            "config"
-        );
-        assert_eq!(
-            config
-                .get("number")
-                .expect("Should have the right key in the config")
-                .as_u64()
-                .expect("Should have parsed the right data type"),
-            1
-        );
+        assert_eq!(props.config.len(), 1, "Should have found a config property");
+        let config_property = props.config.first().expect("Should have a config property");
+        assert!(config_property.name == "raw_provider_config");
+        assert!(config_property
+            .properties
+            .as_ref()
+            .is_some_and(|p| p.get("raw").is_some_and(|v| v == "json")));
+        assert!(config_property
+            .properties
+            .as_ref()
+            .is_some_and(|p| p.get("data").is_some_and(|v| v == "{}")));
     }
 
     #[test]
@@ -602,6 +484,7 @@ mod test {
                 properties: ComponentProperties {
                     image: "wasmcloud.azurecr.io/fake:1".to_string(),
                     id: None,
+                    config: vec![],
                 },
             },
             traits: Some(trait_vec),
@@ -613,7 +496,7 @@ mod test {
                 properties: CapabilityProperties {
                     image: "wasmcloud.azurecr.io/httpserver:0.13.1".to_string(),
                     id: None,
-                    config: None,
+                    config: vec![],
                 },
             },
             traits: None,
@@ -640,7 +523,7 @@ mod test {
                 properties: CapabilityProperties {
                     image: "wasmcloud.azurecr.io/ledblinky:0.0.1".to_string(),
                     id: None,
-                    config: None,
+                    config: vec![],
                 },
             },
             traits: Some(trait_vec),

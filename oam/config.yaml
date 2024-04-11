@@ -1,0 +1,29 @@
+apiVersion: core.oam.dev/v1beta1
+kind: Application
+metadata:
+  name: config-example
+  annotations:
+    version: v0.0.1
+    description: "This is my app"
+spec:
+  components:
+    - name: webcap
+      type: component
+      properties:
+        image: wasmcloud.azurecr.io/http-hello-world:0.1.0
+        # You can pass any config data you'd like sent to your component as a string->string map
+        config:
+          - name: raw_config
+            properties:
+              lang: EN-US
+
+    - name: webcap
+      type: capability
+      properties:
+        image: wasmcloud.azurecr.io/httpserver:0.17.0
+        # You can pass any config data you'd like sent to your provider as a string->string map
+        config:
+          - name: raw_provider_config
+            properties:
+              raw: json
+              data: "{}"

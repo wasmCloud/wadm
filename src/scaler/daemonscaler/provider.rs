@@ -2,12 +2,13 @@ use std::collections::BTreeMap;
 
 use anyhow::Result;
 use async_trait::async_trait;
+use base64::{engine::general_purpose, Engine as _};
 use tokio::sync::RwLock;
 use tracing::{instrument, trace};
 
 use crate::commands::StopProvider;
 use crate::events::{HostHeartbeat, ProviderInfo, ProviderStarted, ProviderStopped};
-use crate::model::{CapabilityConfig, Spread};
+use crate::model::Spread;
 use crate::scaler::spreadscaler::provider::ProviderSpreadConfig;
 use crate::scaler::spreadscaler::{eligible_hosts, spreadscaler_annotations};
 use crate::server::StatusInfo;
@@ -193,25 +194,17 @@ impl<S: ReadStore + Send + Sync> ProviderDaemonScaler<S> {
     /// Construct a new ProviderDaemonScaler with specified configuration values
     pub fn new(store: S, config: ProviderSpreadConfig, component_name: &str) -> Self {
         let id = {
-            let default = format!(
-                "{PROVIDER_DAEMON_SCALER_TYPE}-{}-{component_name}-{}",
-                config.model_name, config.provider_id,
-            );
-
-            match &config.provider_config {
-                Some(provider_config) => {
-                    if let Some(provider_config_hash) =
-                        compute_provider_config_hash(provider_config)
-                    {
-                        format!(
-                            "{PROVIDER_DAEMON_SCALER_TYPE}-{}-{component_name}-{}-{}",
-                            config.model_name, config.provider_id, provider_config_hash
-                        )
-                    } else {
-                        default
-                    }
-                }
-                None => default,
+            if config.provider_config.is_empty() {
+                format!(
+                    "{PROVIDER_DAEMON_SCALER_TYPE}-{}-{component_name}-{}",
+                    config.model_name, config.provider_id,
+                )
+            } else {
+                let provider_config_hash = compute_provider_config_hash(&config.provider_config);
+                format!(
+                    "{PROVIDER_DAEMON_SCALER_TYPE}-{}-{component_name}-{}-{}",
+                    config.model_name, config.provider_id, provider_config_hash
+                )
             }
         };
 
@@ -237,8 +230,11 @@ impl<S: ReadStore + Send + Sync> ProviderDaemonScaler<S> {
     }
 }
 
-fn compute_provider_config_hash(provider_config: &CapabilityConfig) -> Option<String> {
-    provider_config.try_base64_encoding().ok()
+/// Hash the named configurations to generate a unique identifier for the scaler
+/// This is only called when the provider_config is not empty so we don't need to worry about
+/// returning empty strings.
+fn compute_provider_config_hash(provider_config: &[String]) -> String {
+    general_purpose::STANDARD.encode(provider_config.join("_"))
 }
 
 #[cfg(test)]
@@ -253,7 +249,7 @@ mod test {
 
     use crate::{
         commands::{Command, StartProvider},
-        model::{CapabilityConfig, Spread, SpreadScalerProperty},
+        model::{Spread, SpreadScalerProperty},
         scaler::{spreadscaler::spreadscaler_annotations, Scaler},
         storage::{Host, Provider, Store},
         test_util::TestStore,
@@ -274,7 +270,7 @@ mod test {
                 instances: 1,
                 spread: vec![],
             },
-            provider_config: None,
+            provider_config: vec![],
         };
 
         let scaler =
@@ -297,7 +293,7 @@ mod test {
                 instances: 1,
                 spread: vec![],
             },
-            provider_config: Some(CapabilityConfig::Opaque("foobar".to_string())),
+            provider_config: vec!["foobar".to_string()],
         };
 
         let scaler =
@@ -307,8 +303,7 @@ mod test {
             format!(
                 "{PROVIDER_DAEMON_SCALER_TYPE}-{}-myprovider-provider_id-{}",
                 MODEL_NAME,
-                compute_provider_config_hash(&CapabilityConfig::Opaque("foobar".to_string()))
-                    .unwrap()
+                compute_provider_config_hash(&["foobar".to_string()])
             ),
             "ProviderDaemonScaler ID should be valid"
         );
@@ -412,7 +407,7 @@ mod test {
                 provider_reference: provider_ref.to_string(),
                 spread_config: multi_spread_even,
                 model_name: MODEL_NAME.to_string(),
-                provider_config: Some(CapabilityConfig::Opaque("foobar".to_string())),
+                provider_config: vec!["foobar".to_string()],
             },
             "fake_component",
         );
@@ -437,7 +432,7 @@ mod test {
                         host_id: host_id_one.to_string(),
                         model_name: MODEL_NAME.to_string(),
                         annotations: spreadscaler_annotations("SimpleOne", spreadscaler.id()),
-                        config: Some(CapabilityConfig::Opaque("foobar".to_string())),
+                        config: vec!["foobar".to_string()],
                     }
                 );
                 // This manual assertion is because we don't hash on annotations and I want to be extra sure we have the
@@ -462,7 +457,7 @@ mod test {
                         host_id: host_id_two.to_string(),
                         model_name: MODEL_NAME.to_string(),
                         annotations: spreadscaler_annotations("SimpleTwo", spreadscaler.id()),
-                        config: Some(CapabilityConfig::Opaque("foobar".to_string())),
+                        config: vec!["foobar".to_string()],
                     }
                 );
                 // This manual assertion is because we don't hash on annotations and I want to be extra sure we have the
