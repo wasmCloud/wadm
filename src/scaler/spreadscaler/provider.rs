@@ -5,7 +5,6 @@ use std::{
 
 use anyhow::Result;
 use async_trait::async_trait;
-use base64::{engine::general_purpose, Engine as _};
 use tokio::sync::{OnceCell, RwLock};
 use tracing::{instrument, trace};
 
@@ -17,6 +16,7 @@ use crate::{
     },
     model::{Spread, SpreadScalerProperty, TraitProperty},
     scaler::{
+        compute_config_hash,
         spreadscaler::{compute_spread, eligible_hosts, spreadscaler_annotations},
         Scaler,
     },
@@ -266,20 +266,14 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
 impl<S: ReadStore + Send + Sync> ProviderSpreadScaler<S> {
     /// Construct a new ProviderSpreadScaler with specified configuration values
     pub fn new(store: S, config: ProviderSpreadConfig, component_name: &str) -> Self {
-        let id = {
-            if config.provider_config.is_empty() {
-                format!(
-                    "{PROVIDER_SPREAD_SCALER_TYPE}-{}-{component_name}-{}",
-                    config.model_name, config.provider_id,
-                )
-            } else {
-                let provider_config_hash = compute_provider_config_hash(&config.provider_config);
-                format!(
-                    "{PROVIDER_SPREAD_SCALER_TYPE}-{}-{component_name}-{}-{}",
-                    config.model_name, config.provider_id, provider_config_hash
-                )
-            }
-        };
+        let mut id = format!(
+            "{PROVIDER_SPREAD_SCALER_TYPE}-{}-{component_name}-{}",
+            config.model_name, config.provider_id,
+        );
+        if !config.provider_config.is_empty() {
+            id.push('-');
+            id.push_str(&compute_config_hash(&config.provider_config))
+        }
 
         Self {
             store,
@@ -290,13 +284,6 @@ impl<S: ReadStore + Send + Sync> ProviderSpreadScaler<S> {
             status: RwLock::new(StatusInfo::reconciling("")),
         }
     }
-}
-
-/// Hash the named configurations to generate a unique identifier for the scaler
-/// This is only called when the provider_config is not empty so we don't need to worry about
-/// returning empty strings.
-fn compute_provider_config_hash(provider_config: &[String]) -> String {
-    general_purpose::STANDARD.encode(provider_config.join("_"))
 }
 
 #[cfg(test)]
@@ -367,7 +354,7 @@ mod test {
             format!(
                 "{PROVIDER_SPREAD_SCALER_TYPE}-{}-component-provider_id-{}",
                 MODEL_NAME,
-                compute_provider_config_hash(&["foobar".to_string()])
+                compute_config_hash(&["foobar".to_string()])
             ),
             "ProviderSpreadScaler ID should be valid"
         );

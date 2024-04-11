@@ -17,6 +17,8 @@ use crate::{
     SCALER_KEY,
 };
 
+use super::compute_config_hash;
+
 pub mod link;
 pub mod provider;
 
@@ -269,10 +271,13 @@ impl<S: ReadStore + Send + Sync> ActorSpreadScaler<S> {
         component_name: &str,
         config: Vec<String>,
     ) -> Self {
-        // TODO: consider config
-        let id = format!(
-            "{COMPONENT_SPREAD_SCALER_TYPE}-{model_name}-{component_name}-{actor_reference}"
-        );
+        let mut id =
+            format!("{COMPONENT_SPREAD_SCALER_TYPE}-{model_name}-{component_name}-{component_id}");
+
+        if !config.is_empty() {
+            id.push('-');
+            id.push_str(&compute_config_hash(&config));
+        }
         Self {
             store,
             spread_requirements: compute_spread(&spread_config),
