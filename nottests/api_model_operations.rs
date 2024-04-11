@@ -581,7 +581,7 @@ async fn test_manifest_parsing() {
     assert_put_response(resp, PutResult::NewVersion, "v0.0.2", 2);
 
     // Smoke test to make sure the server can handle the various provider config options
-    let raw = tokio::fs::read("./oam/provider_config.yaml")
+    let raw = tokio::fs::read("./oam/config.yaml")
         .await
         .expect("Unable to load file");
     let resp: PutModelResponse = test_server

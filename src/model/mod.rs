@@ -349,7 +349,18 @@ mod test {
     #[test]
     fn test_config() {
         let manifest = deserialize_yaml("./oam/config.yaml").expect("Should be able to parse");
-        // TODO: test component
+        let props = match &manifest.spec.components[0].properties {
+            Properties::Component { properties } => properties,
+            _ => panic!("Should have found capability component"),
+        };
+
+        assert_eq!(props.config.len(), 1, "Should have found a config property");
+        let config_property = props.config.first().expect("Should have a config property");
+        assert!(config_property.name == "component_config");
+        assert!(config_property
+            .properties
+            .as_ref()
+            .is_some_and(|p| p.get("lang").is_some_and(|v| v == "EN-US")));
 
         let props = match &manifest.spec.components[1].properties {
             Properties::Capability { properties } => properties,
@@ -358,15 +369,14 @@ mod test {
 
         assert_eq!(props.config.len(), 1, "Should have found a config property");
         let config_property = props.config.first().expect("Should have a config property");
-        assert!(config_property.name == "raw_provider_config");
+        assert!(config_property.name == "provider_config");
         assert!(config_property
             .properties
             .as_ref()
-            .is_some_and(|p| p.get("raw").is_some_and(|v| v == "json")));
-        assert!(config_property
-            .properties
-            .as_ref()
-            .is_some_and(|p| p.get("data").is_some_and(|v| v == "{}")));
+            .is_some_and(|p| p.get("default-port").is_some_and(|v| v == "8080")));
+        assert!(config_property.properties.as_ref().is_some_and(|p| p
+            .get("cache_file")
+            .is_some_and(|v| v == "/tmp/mycache.json")));
     }
 
     #[test]
