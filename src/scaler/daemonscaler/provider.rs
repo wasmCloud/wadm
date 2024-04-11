@@ -2,13 +2,13 @@ use std::collections::BTreeMap;
 
 use anyhow::Result;
 use async_trait::async_trait;
-use base64::{engine::general_purpose, Engine as _};
 use tokio::sync::RwLock;
 use tracing::{instrument, trace};
 
 use crate::commands::StopProvider;
 use crate::events::{HostHeartbeat, ProviderInfo, ProviderStarted, ProviderStopped};
 use crate::model::Spread;
+use crate::scaler::compute_config_hash;
 use crate::scaler::spreadscaler::provider::ProviderSpreadConfig;
 use crate::scaler::spreadscaler::{eligible_hosts, spreadscaler_annotations};
 use crate::server::StatusInfo;
@@ -193,20 +193,14 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderDaemonScaler<S> {
 impl<S: ReadStore + Send + Sync> ProviderDaemonScaler<S> {
     /// Construct a new ProviderDaemonScaler with specified configuration values
     pub fn new(store: S, config: ProviderSpreadConfig, component_name: &str) -> Self {
-        let id = {
-            if config.provider_config.is_empty() {
-                format!(
-                    "{PROVIDER_DAEMON_SCALER_TYPE}-{}-{component_name}-{}",
-                    config.model_name, config.provider_id,
-                )
-            } else {
-                let provider_config_hash = compute_provider_config_hash(&config.provider_config);
-                format!(
-                    "{PROVIDER_DAEMON_SCALER_TYPE}-{}-{component_name}-{}-{}",
-                    config.model_name, config.provider_id, provider_config_hash
-                )
-            }
-        };
+        let mut id = format!(
+            "{PROVIDER_DAEMON_SCALER_TYPE}-{}-{component_name}-{}",
+            config.model_name, config.provider_id,
+        );
+        if !config.provider_config.is_empty() {
+            id.push('-');
+            id.push_str(&compute_config_hash(&config.provider_config))
+        }
 
         // If no spreads are specified, an empty spread is sufficient to match _every_ host
         // in a lattice
@@ -228,13 +222,6 @@ impl<S: ReadStore + Send + Sync> ProviderDaemonScaler<S> {
             status: RwLock::new(StatusInfo::reconciling("")),
         }
     }
-}
-
-/// Hash the named configurations to generate a unique identifier for the scaler
-/// This is only called when the provider_config is not empty so we don't need to worry about
-/// returning empty strings.
-fn compute_provider_config_hash(provider_config: &[String]) -> String {
-    general_purpose::STANDARD.encode(provider_config.join("_"))
 }
 
 #[cfg(test)]
@@ -303,7 +290,7 @@ mod test {
             format!(
                 "{PROVIDER_DAEMON_SCALER_TYPE}-{}-myprovider-provider_id-{}",
                 MODEL_NAME,
-                compute_provider_config_hash(&["foobar".to_string()])
+                compute_config_hash(&["foobar".to_string()])
             ),
             "ProviderDaemonScaler ID should be valid"
         );

@@ -17,6 +17,8 @@ use crate::{
     storage::{Component, Host, ReadStore},
 };
 
+use super::compute_config_hash;
+
 pub mod provider;
 
 // Annotation constants
@@ -263,9 +265,12 @@ impl<S: ReadStore + Send + Sync> ActorDaemonScaler<S> {
         component_name: &str,
         config: Vec<String>,
     ) -> Self {
-        // TODO: config in id
-        let id =
+        let mut id =
             format!("{COMPONENT_DAEMON_SCALER_TYPE}-{model_name}-{component_name}-{component_id}");
+        if !config.is_empty() {
+            id.push('-');
+            id.push_str(&compute_config_hash(&config));
+        }
         // If no spreads are specified, an empty spread is sufficient to match _every_ host
         // in a lattice
         let spread_config = if spread_config.spread.is_empty() {
