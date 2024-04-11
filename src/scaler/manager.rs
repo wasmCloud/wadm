@@ -582,7 +582,8 @@ where
         match &component.properties {
             Properties::Component { properties: props } => {
                 scalers.extend(traits.unwrap_or(&EMPTY_TRAIT_VEC).iter().filter_map(|trt| {
-                    let component_id = compute_component_id(name, props.id.as_ref(), &props.image);
+                    let component_id =
+                        compute_component_id(name, props.id.as_ref(), &component.name);
                     match (trt.trait_type.as_str(), &trt.properties) {
                         (SPREADSCALER_TRAIT, TraitProperty::SpreadScaler(p)) => {
                             Some(Box::new(ActorSpreadScaler::new(
@@ -611,10 +612,10 @@ where
                                 .iter()
                                 .find_map(|component| match &component.properties {
                                     Properties::Capability {
-                                        properties: CapabilityProperties { id, image, .. },
+                                        properties: CapabilityProperties { id, .. },
                                     }
                                     | Properties::Component {
-                                        properties: ComponentProperties { id, image },
+                                        properties: ComponentProperties { id, .. },
                                     } if component.name == p.target => {
                                         Some(Box::new(LinkScaler::new(
                                             snapshot_data.clone(),
@@ -623,7 +624,7 @@ where
                                                 target: compute_component_id(
                                                     name,
                                                     id.as_ref(),
-                                                    &image,
+                                                    &component.name,
                                                 ),
                                                 wit_namespace: p.namespace.to_owned(),
                                                 wit_package: p.package.to_owned(),
@@ -648,7 +649,7 @@ where
                 }))
             }
             Properties::Capability { properties: props } => {
-                let provider_id = compute_component_id(name, props.id.as_ref(), &props.image);
+                let provider_id = compute_component_id(name, props.id.as_ref(), &component.name);
                 let mut scaler_specified = false;
                 if let Some(traits) = traits {
                     scalers.extend(traits.iter().filter_map(|trt| {
@@ -710,7 +711,7 @@ where
                                                     target: compute_component_id(
                                                         name,
                                                         cappy.id.as_ref(),
-                                                        &cappy.image,
+                                                        &component.name,
                                                     ),
                                                     wit_namespace: p.namespace.to_owned(),
                                                     wit_package: p.package.to_owned(),
@@ -772,7 +773,7 @@ where
 pub(crate) fn compute_component_id(
     model_name: &str,
     component_id: Option<&String>,
-    component_ref: &str,
+    component_name: &str,
 ) -> String {
     if let Some(id) = component_id {
         id.to_owned()
@@ -782,7 +783,7 @@ pub(crate) fn compute_component_id(
             model_name
                 .to_lowercase()
                 .replace(|c: char| !c.is_ascii_alphanumeric(), "_"),
-            component_ref
+            component_name
                 .to_lowercase()
                 .replace(|c: char| !c.is_ascii_alphanumeric(), "_")
         )
@@ -797,40 +798,32 @@ mod test {
     fn compute_proper_component_id() {
         // User supplied ID always takes precedence
         assert_eq!(
-            compute_component_id(
-                "mymodel",
-                Some(&"myid".to_string()),
-                "wasmcloud.azurecr.io/echo:0.3.4"
-            ),
+            compute_component_id("mymodel", Some(&"myid".to_string()), "echo"),
             "myid"
         );
         assert_eq!(
             compute_component_id(
                 "some model name with spaces cause yaml",
                 Some(&"myid".to_string()),
-                "wasmcloud.azurecr.io/echo:0.3.4"
+                " echo "
             ),
             "myid"
         );
         // Sanitize component reference
         assert_eq!(
-            compute_component_id("mymodel", None, "wasmcloud.azurecr.io/echo:0.3.4"),
-            "mymodel-wasmcloud_azurecr_io_echo_0_3_4"
+            compute_component_id("mymodel", None, "echo-component"),
+            "mymodel-echo_component"
         );
         // Ensure we can support spaces in the model name, because YAML strings
         assert_eq!(
-            compute_component_id(
-                "some model name with spaces cause yaml",
-                None,
-                "wasmcloud.azurecr.io/echo:0.3.4"
-            ),
-            "some_model_name_with_spaces_cause_yaml-wasmcloud_azurecr_io_echo_0_3_4"
+            compute_component_id("some model name with spaces cause yaml", None, "echo"),
+            "some_model_name_with_spaces_cause_yaml-echo"
         );
         // Ensure we can support spaces in the model name, because YAML strings
         // Ensure we can support lowercasing the reference as well, just in case
         assert_eq!(
-            compute_component_id("My ThInG", None, "file:///Users/me/thing.wasm"),
-            "my_thing-file____users_me_thing_wasm"
+            compute_component_id("My ThInG", None, "thing.wasm"),
+            "my_thing-thing_wasm"
         );
     }
 }
