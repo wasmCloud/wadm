@@ -21,7 +21,7 @@ use tracing::{debug, error, instrument, trace, warn};
 use crate::{
     events::Event,
     model::{
-        CapabilityProperties, Component, ComponentProperties, Manifest, Properties,
+        CapabilityProperties, Component, ComponentProperties, ConfigProperty, Manifest, Properties,
         SpreadScalerProperty, Trait, TraitProperty, DAEMONSCALER_TRAIT, LINK_TRAIT,
         SPREADSCALER_TRAIT,
     },
@@ -594,6 +594,7 @@ where
                                 name.to_owned(),
                                 p.to_owned(),
                                 &component.name,
+                                config_names(props.config.as_ref()),
                             )) as BoxedScaler)
                         }
                         (DAEMONSCALER_TRAIT, TraitProperty::SpreadScaler(p)) => {
@@ -605,6 +606,7 @@ where
                                 name.to_owned(),
                                 p.to_owned(),
                                 &component.name,
+                                config_names(props.config.as_ref()),
                             )) as BoxedScaler)
                         }
                         (LINK_TRAIT, TraitProperty::Link(p)) => {
@@ -634,8 +636,12 @@ where
                                                 }),
                                                 lattice_id: lattice_id.to_owned(),
                                                 model_name: name.to_owned(),
-                                                source_config: p.source_config.clone(),
-                                                target_config: p.target_config.clone(),
+                                                source_config: config_names(
+                                                    p.source_config.as_ref(),
+                                                ),
+                                                target_config: config_names(
+                                                    p.target_config.as_ref(),
+                                                ),
                                             },
                                             snapshot_data.clone(),
                                         ))
@@ -665,7 +671,7 @@ where
                                             provider_reference: props.image.to_owned(),
                                             spread_config: p.to_owned(),
                                             model_name: name.to_owned(),
-                                            provider_config: props.config.to_owned(),
+                                            provider_config: config_names(props.config.as_ref()),
                                         },
                                         &component.name,
                                     ),
@@ -687,7 +693,7 @@ where
                                             provider_reference: props.image.to_owned(),
                                             spread_config: p.to_owned(),
                                             model_name: name.to_owned(),
-                                            provider_config: props.config.to_owned(),
+                                            provider_config: config_names(props.config.as_ref()),
                                         },
                                         &component.name,
                                     ),
@@ -721,8 +727,12 @@ where
                                                     }),
                                                     lattice_id: lattice_id.to_owned(),
                                                     model_name: name.to_owned(),
-                                                    source_config: p.source_config.clone(),
-                                                    target_config: p.target_config.clone(),
+                                                    source_config: config_names(
+                                                        p.source_config.as_ref(),
+                                                    ),
+                                                    target_config: config_names(
+                                                        p.target_config.as_ref(),
+                                                    ),
                                                 },
                                                 snapshot_data.clone(),
                                             ))
@@ -750,7 +760,7 @@ where
                                     spread: vec![],
                                 },
                                 model_name: name.to_owned(),
-                                provider_config: props.config.to_owned(),
+                                provider_config: config_names(props.config.as_ref()),
                             },
                             &component.name,
                         ),
@@ -788,6 +798,11 @@ pub(crate) fn compute_component_id(
                 .replace(|c: char| !c.is_ascii_alphanumeric(), "_")
         )
     }
+}
+
+/// Helper function to map a list of `ConfigProperty` to a list of their names
+fn config_names(configs: &[ConfigProperty]) -> Vec<String> {
+    configs.iter().map(|c| c.name.clone()).collect()
 }
 
 #[cfg(test)]

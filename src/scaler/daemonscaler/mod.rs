@@ -20,7 +20,7 @@ use crate::{
 pub mod provider;
 
 // Annotation constants
-pub const ACTOR_DAEMON_SCALER_TYPE: &str = "actordaemonscaler";
+pub const COMPONENT_DAEMON_SCALER_TYPE: &str = "componentdaemonscaler";
 
 /// Config for an ActorDaemonScaler
 #[derive(Clone, Debug)]
@@ -43,10 +43,11 @@ struct ActorSpreadConfig {
 /// If no [Spreads](crate::model::Spread) are specified, this Scaler simply maintains the number of instances
 /// on every available host.
 pub struct ActorDaemonScaler<S> {
-    config: ActorSpreadConfig,
+    spread_config: ActorSpreadConfig,
     store: S,
     id: String,
     status: RwLock<StatusInfo>,
+    config: Vec<String>,
 }
 
 #[async_trait]
@@ -75,7 +76,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorDaemonScaler<S> {
         } else {
             spread_config
         };
-        self.config.spread_config = spread_config;
+        self.spread_config.spread_config = spread_config;
         self.reconcile().await
     }
 
@@ -87,18 +88,24 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorDaemonScaler<S> {
         match event {
             // TODO: React to ComponentScaleFailed with an exponential backoff, can't just immediately retry since that
             // would cause a very tight loop of failures
-            Event::ComponentScaled(evt) if evt.component_id == self.config.component_id => {
+            Event::ComponentScaled(evt) if evt.component_id == self.spread_config.component_id => {
                 self.reconcile().await
             }
             Event::HostStopped(HostStopped { labels, .. })
             | Event::HostStarted(HostStarted { labels, .. })
             | Event::HostHeartbeat(HostHeartbeat { labels, .. }) => {
                 // If the host labels match any spread requirement, perform reconcile
-                if self.config.spread_config.spread.iter().any(|spread| {
-                    spread.requirements.iter().all(|(key, value)| {
-                        labels.get(key).map(|val| val == value).unwrap_or(false)
+                if self
+                    .spread_config
+                    .spread_config
+                    .spread
+                    .iter()
+                    .any(|spread| {
+                        spread.requirements.iter().all(|(key, value)| {
+                            labels.get(key).map(|val| val == value).unwrap_or(false)
+                        })
                     })
-                }) {
+                {
                     trace!("Host event matches spread requirements. Will reconcile");
                     self.reconcile().await
                 } else {
@@ -110,21 +117,24 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorDaemonScaler<S> {
         }
     }
 
-    #[instrument(level = "trace", skip_all, fields(name = %self.config.model_name, scaler_id = %self.id))]
+    #[instrument(level = "trace", skip_all, fields(name = %self.spread_config.model_name, scaler_id = %self.id))]
     async fn reconcile(&self) -> Result<Vec<Command>> {
-        let hosts = self.store.list::<Host>(&self.config.lattice_id).await?;
+        let hosts = self
+            .store
+            .list::<Host>(&self.spread_config.lattice_id)
+            .await?;
 
-        let component_id = &self.config.component_id;
+        let component_id = &self.spread_config.component_id;
         let component = self
             .store
-            .get::<Component>(&self.config.lattice_id, component_id)
+            .get::<Component>(&self.spread_config.lattice_id, component_id)
             .await?;
 
         let mut spread_status = vec![];
 
-        trace!(spread = ?self.config.spread_config.spread, ?component_id, "Computing commands");
+        trace!(spread = ?self.spread_config.spread_config.spread, ?component_id, "Computing commands");
         let commands = self
-            .config
+            .spread_config
             .spread_config
             .spread
             .iter()
@@ -166,20 +176,26 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorDaemonScaler<S> {
                             .iter()
                             .filter_map(|(host_id, current_count)| {
                                 // Here we'll generate commands for the proper host depending on where they are running
-                                match current_count.cmp(&self.config.spread_config.instances) {
+                                match current_count.cmp(&self.spread_config.spread_config.instances)
+                                {
                                     Ordering::Equal => None,
                                     // Scale actor can handle both up and down scaling
                                     Ordering::Less | Ordering::Greater => {
                                         Some(Command::ScaleComponent(ScaleComponent {
-                                            reference: self.config.actor_reference.to_owned(),
+                                            reference: self
+                                                .spread_config
+                                                .actor_reference
+                                                .to_owned(),
                                             component_id: component_id.to_owned(),
                                             host_id: host_id.to_string(),
-                                            count: self.config.spread_config.instances as u32,
-                                            model_name: self.config.model_name.to_owned(),
+                                            count: self.spread_config.spread_config.instances
+                                                as u32,
+                                            model_name: self.spread_config.model_name.to_owned(),
                                             annotations: spreadscaler_annotations(
                                                 &spread.name,
                                                 self.id(),
                                             ),
+                                            config: self.config.clone(),
                                         }))
                                     }
                                 }
@@ -191,7 +207,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorDaemonScaler<S> {
                     trace!(?spread.name, "Found no eligible hosts for daemon scaler");
                     spread_status.push(StatusInfo::failed(&format!(
                         "Could not satisfy daemonscaler {} for {}, 0 eligible hosts found.",
-                        spread.name, self.config.actor_reference
+                        spread.name, self.spread_config.actor_reference
                     )));
                     None
                 }
@@ -217,16 +233,17 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorDaemonScaler<S> {
         Ok(commands)
     }
 
-    #[instrument(level = "trace", skip_all, fields(name = %self.config.model_name))]
+    #[instrument(level = "trace", skip_all, fields(name = %self.spread_config.model_name))]
     async fn cleanup(&self) -> Result<Vec<Command>> {
-        let mut config_clone = self.config.clone();
+        let mut config_clone = self.spread_config.clone();
         config_clone.spread_config.instances = 0;
 
         let cleanerupper = ActorDaemonScaler {
-            config: config_clone,
+            spread_config: config_clone,
             store: self.store.clone(),
             id: self.id.clone(),
             status: RwLock::new(StatusInfo::reconciling("")),
+            config: self.config.clone(),
         };
 
         cleanerupper.reconcile().await
@@ -235,6 +252,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorDaemonScaler<S> {
 
 impl<S: ReadStore + Send + Sync> ActorDaemonScaler<S> {
     /// Construct a new ActorDaemonScaler with specified configuration values
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         store: S,
         actor_reference: String,
@@ -243,8 +261,11 @@ impl<S: ReadStore + Send + Sync> ActorDaemonScaler<S> {
         model_name: String,
         spread_config: SpreadScalerProperty,
         component_name: &str,
+        config: Vec<String>,
     ) -> Self {
-        let id = format!("{ACTOR_DAEMON_SCALER_TYPE}-{model_name}-{component_name}-{component_id}");
+        // TODO: config in id
+        let id =
+            format!("{COMPONENT_DAEMON_SCALER_TYPE}-{model_name}-{component_name}-{component_id}");
         // If no spreads are specified, an empty spread is sufficient to match _every_ host
         // in a lattice
         let spread_config = if spread_config.spread.is_empty() {
@@ -257,7 +278,7 @@ impl<S: ReadStore + Send + Sync> ActorDaemonScaler<S> {
         };
         Self {
             store,
-            config: ActorSpreadConfig {
+            spread_config: ActorSpreadConfig {
                 actor_reference,
                 component_id,
                 lattice_id,
@@ -266,6 +287,7 @@ impl<S: ReadStore + Send + Sync> ActorDaemonScaler<S> {
             },
             id,
             status: RwLock::new(StatusInfo::reconciling("")),
+            config,
         }
     }
 }
@@ -359,6 +381,7 @@ mod test {
             MODEL_NAME.to_string(),
             complex_spread,
             "fake_component",
+            vec![],
         );
 
         let cmds = daemonscaler.reconcile().await?;
@@ -369,7 +392,8 @@ mod test {
             host_id: host_id.to_string(),
             count: 13,
             model_name: MODEL_NAME.to_string(),
-            annotations: spreadscaler_annotations("ComplexOne", daemonscaler.id())
+            annotations: spreadscaler_annotations("ComplexOne", daemonscaler.id()),
+            config: vec![],
         })));
         assert!(cmds.contains(&Command::ScaleComponent(ScaleComponent {
             component_id: component_id.to_string(),
@@ -377,7 +401,8 @@ mod test {
             host_id: host_id.to_string(),
             count: 13,
             model_name: MODEL_NAME.to_string(),
-            annotations: spreadscaler_annotations("ComplexTwo", daemonscaler.id())
+            annotations: spreadscaler_annotations("ComplexTwo", daemonscaler.id()),
+            config: vec![],
         })));
         assert!(cmds.contains(&Command::ScaleComponent(ScaleComponent {
             component_id: component_id.to_string(),
@@ -385,7 +410,8 @@ mod test {
             host_id: host_id.to_string(),
             count: 13,
             model_name: MODEL_NAME.to_string(),
-            annotations: spreadscaler_annotations("ComplexThree", daemonscaler.id())
+            annotations: spreadscaler_annotations("ComplexThree", daemonscaler.id()),
+            config: vec![],
         })));
         assert!(cmds.contains(&Command::ScaleComponent(ScaleComponent {
             component_id: component_id.to_string(),
@@ -393,7 +419,8 @@ mod test {
             host_id: host_id.to_string(),
             count: 13,
             model_name: MODEL_NAME.to_string(),
-            annotations: spreadscaler_annotations("ComplexFour", daemonscaler.id())
+            annotations: spreadscaler_annotations("ComplexFour", daemonscaler.id()),
+            config: vec![],
         })));
 
         Ok(())
@@ -475,6 +502,7 @@ mod test {
             MODEL_NAME.to_string(),
             echo_spread_property,
             "fake_echo",
+            vec![],
         );
 
         let blobby_daemonscaler = ActorDaemonScaler::new(
@@ -485,6 +513,7 @@ mod test {
             MODEL_NAME.to_string(),
             blobby_spread_property,
             "fake_blobby",
+            vec![],
         );
 
         // STATE SETUP BEGIN
@@ -762,6 +791,7 @@ mod test {
             MODEL_NAME.to_string(),
             blobby_spread_property,
             "fake_blobby",
+            vec![],
         );
 
         // STATE SETUP BEGIN

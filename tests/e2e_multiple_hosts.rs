@@ -145,7 +145,7 @@ async fn test_no_requirements(client_info: &ClientInfo) {
                 && ld.wit_namespace == "wasi"
                 && ld.wit_package == "http"
                 && ld.interfaces == vec!["incoming-handler"]
-                && ld.name == "default".to_string()
+                && ld.name == "default"
         }) {
             anyhow::bail!(
                 "Link between http provider and hello component should exist: {:#?}",

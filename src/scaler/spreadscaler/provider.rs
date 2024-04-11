@@ -5,6 +5,7 @@ use std::{
 
 use anyhow::Result;
 use async_trait::async_trait;
+use base64::{engine::general_purpose, Engine as _};
 use tokio::sync::{OnceCell, RwLock};
 use tracing::{instrument, trace};
 
@@ -14,7 +15,7 @@ use crate::{
         Event, HostHeartbeat, HostStarted, HostStopped, ProviderInfo, ProviderStarted,
         ProviderStopped,
     },
-    model::{CapabilityConfig, Spread, SpreadScalerProperty, TraitProperty},
+    model::{Spread, SpreadScalerProperty, TraitProperty},
     scaler::{
         spreadscaler::{compute_spread, eligible_hosts, spreadscaler_annotations},
         Scaler,
@@ -38,8 +39,8 @@ pub struct ProviderSpreadConfig {
     pub model_name: String,
     /// Configuration for this SpreadScaler
     pub spread_config: SpreadScalerProperty,
-    /// Configuration passed to the provider when it starts
-    pub provider_config: Option<CapabilityConfig>,
+    /// Named configuration passed to the provider when it starts
+    pub provider_config: Vec<String>,
 }
 
 /// The ProviderSpreadScaler ensures that a certain number of provider instances are running,
@@ -266,25 +267,17 @@ impl<S: ReadStore + Send + Sync> ProviderSpreadScaler<S> {
     /// Construct a new ProviderSpreadScaler with specified configuration values
     pub fn new(store: S, config: ProviderSpreadConfig, component_name: &str) -> Self {
         let id = {
-            let default = format!(
-                "{PROVIDER_SPREAD_SCALER_TYPE}-{}-{component_name}-{}",
-                config.model_name, config.provider_id,
-            );
-
-            match &config.provider_config {
-                Some(provider_config) => {
-                    if let Some(provider_config_hash) =
-                        compute_provider_config_hash(provider_config)
-                    {
-                        format!(
-                            "{PROVIDER_SPREAD_SCALER_TYPE}-{}-{component_name}-{}-{}",
-                            config.model_name, config.provider_id, provider_config_hash
-                        )
-                    } else {
-                        default
-                    }
-                }
-                None => default,
+            if config.provider_config.is_empty() {
+                format!(
+                    "{PROVIDER_SPREAD_SCALER_TYPE}-{}-{component_name}-{}",
+                    config.model_name, config.provider_id,
+                )
+            } else {
+                let provider_config_hash = compute_provider_config_hash(&config.provider_config);
+                format!(
+                    "{PROVIDER_SPREAD_SCALER_TYPE}-{}-{component_name}-{}-{}",
+                    config.model_name, config.provider_id, provider_config_hash
+                )
             }
         };
 
@@ -299,8 +292,11 @@ impl<S: ReadStore + Send + Sync> ProviderSpreadScaler<S> {
     }
 }
 
-fn compute_provider_config_hash(provider_config: &CapabilityConfig) -> Option<String> {
-    provider_config.try_base64_encoding().ok()
+/// Hash the named configurations to generate a unique identifier for the scaler
+/// This is only called when the provider_config is not empty so we don't need to worry about
+/// returning empty strings.
+fn compute_provider_config_hash(provider_config: &[String]) -> String {
+    general_purpose::STANDARD.encode(provider_config.join("_"))
 }
 
 #[cfg(test)]
@@ -340,7 +336,7 @@ mod test {
                 instances: 1,
                 spread: vec![],
             },
-            provider_config: None,
+            provider_config: vec![],
         };
 
         let scaler = ProviderSpreadScaler::new(Arc::new(TestStore::default()), config, "component");
@@ -362,7 +358,7 @@ mod test {
                 instances: 1,
                 spread: vec![],
             },
-            provider_config: Some(CapabilityConfig::Opaque("foobar".to_string())),
+            provider_config: vec!["foobar".to_string()],
         };
 
         let scaler = ProviderSpreadScaler::new(Arc::new(TestStore::default()), config, "component");
@@ -371,8 +367,7 @@ mod test {
             format!(
                 "{PROVIDER_SPREAD_SCALER_TYPE}-{}-component-provider_id-{}",
                 MODEL_NAME,
-                compute_provider_config_hash(&CapabilityConfig::Opaque("foobar".to_string()))
-                    .unwrap()
+                compute_provider_config_hash(&["foobar".to_string()])
             ),
             "ProviderSpreadScaler ID should be valid"
         );
@@ -480,7 +475,7 @@ mod test {
                 provider_reference: provider_ref.to_string(),
                 spread_config: multi_spread_even,
                 model_name: MODEL_NAME.to_string(),
-                provider_config: Some(CapabilityConfig::Opaque("foobar".to_string())),
+                provider_config: vec!["foobar".to_string()],
             },
             "fake_component",
         );
@@ -500,7 +495,7 @@ mod test {
                         host_id: host_id_one.to_string(),
                         model_name: MODEL_NAME.to_string(),
                         annotations: spreadscaler_annotations("SimpleOne", spreadscaler.id()),
-                        config: Some(CapabilityConfig::Opaque("foobar".to_string())),
+                        config: vec!["foobar".to_string()],
                     }
                 );
                 // This manual assertion is because we don't hash on annotations and I want to be extra sure we have the
@@ -525,7 +520,7 @@ mod test {
                         host_id: host_id_two.to_string(),
                         model_name: MODEL_NAME.to_string(),
                         annotations: spreadscaler_annotations("SimpleTwo", spreadscaler.id()),
-                        config: Some(CapabilityConfig::Opaque("foobar".to_string())),
+                        config: vec!["foobar".to_string()],
                     }
                 );
                 // This manual assertion is because we don't hash on annotations and I want to be extra sure we have the
@@ -591,7 +586,7 @@ mod test {
                 provider_reference: provider_ref.to_string(),
                 spread_config: multi_spread_hard,
                 model_name: MODEL_NAME.to_string(),
-                provider_config: None,
+                provider_config: vec![],
             },
             "fake_component",
         );
@@ -764,7 +759,7 @@ mod test {
                         host_id: host_id_two.to_string(),
                         model_name: MODEL_NAME.to_string(),
                         annotations: spreadscaler_annotations("ComplexTwo", spreadscaler.id()),
-                        config: None,
+                        config: vec![],
                     }
                 );
                 // This manual assertion is because we don't hash on annotations and I want to be extra sure we have the
@@ -788,7 +783,7 @@ mod test {
                         provider_id: provider_id.to_string(),
                         model_name: MODEL_NAME.to_string(),
                         annotations: spreadscaler_annotations("ComplexTwo", spreadscaler.id()),
-                        config: None,
+                        config: vec![],
                     }
                 );
                 // This manual assertion is because we don't hash on annotations and I want to be extra sure we have the
@@ -900,7 +895,7 @@ mod test {
                 provider_id: provider_id.to_string(),
                 spread_config: multi_spread_even,
                 model_name: MODEL_NAME.to_string(),
-                provider_config: Some(CapabilityConfig::Opaque("foobar".to_string())),
+                provider_config: vec!["foobar".to_string()],
             },
             "fake_component",
         );
@@ -920,7 +915,7 @@ mod test {
                         host_id: host_id_one.to_string(),
                         model_name: MODEL_NAME.to_string(),
                         annotations: spreadscaler_annotations("SimpleOne", spreadscaler.id()),
-                        config: Some(CapabilityConfig::Opaque("foobar".to_string())),
+                        config: vec!["foobar".to_string()],
                     }
                 );
                 // This manual assertion is because we don't hash on annotations and I want to be extra sure we have the
@@ -1037,7 +1032,7 @@ mod test {
                 provider_reference: provider_ref.to_string(),
                 spread_config: multi_spread_even,
                 model_name: MODEL_NAME.to_string(),
-                provider_config: Some(CapabilityConfig::Opaque("foobar".to_string())),
+                provider_config: vec!["foobar".to_string()],
             },
             "fake_component",
         );
@@ -1102,7 +1097,7 @@ mod test {
                 provider_id: provider_id.to_string(),
                 spread_config: multi_spread_even,
                 model_name: MODEL_NAME.to_string(),
-                provider_config: Some(CapabilityConfig::Opaque("foobar".to_string())),
+                provider_config: vec!["foobar".to_string()],
             },
             "fake_component",
         );

@@ -10,7 +10,6 @@ use wasmcloud_control_interface::InterfaceLinkDefinition;
 
 use crate::{
     events::{Event, ProviderStartFailed, ProviderStarted},
-    model::CapabilityConfig,
     workers::insert_managed_annotations,
 };
 
@@ -94,6 +93,9 @@ pub struct ScaleComponent {
     pub model_name: String,
     /// Additional annotations to attach on this command
     pub annotations: BTreeMap<String, String>,
+    /// Named configuration to pass to the component.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub config: Vec<String>,
 }
 
 from_impl!(ScaleComponent);
@@ -120,9 +122,9 @@ pub struct StartProvider {
     pub host_id: String,
     /// The name of the model/manifest that generated this command
     pub model_name: String,
-    /// Optional config to pass to the provider.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub config: Option<CapabilityConfig>,
+    /// Named configuration to pass to the provider.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub config: Vec<String>,
     /// Additional annotations to attach on this command
     pub annotations: BTreeMap<String, String>,
 }

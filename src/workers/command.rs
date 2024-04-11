@@ -6,7 +6,6 @@ use crate::{
         manager::{WorkError, WorkResult, Worker},
         ScopedMessage,
     },
-    model::CapabilityConfig,
 };
 
 use super::insert_managed_annotations;
@@ -43,8 +42,7 @@ impl Worker for CommandWorker {
                         &actor.component_id,
                         actor.count,
                         Some(annotations.into_iter().collect()),
-                        // TODO(#252): Support config
-                        vec![],
+                        actor.config.clone(),
                     )
                     .await
             }
@@ -53,22 +51,13 @@ impl Worker for CommandWorker {
                 // Order here is intentional to prevent scalers from overwriting managed annotations
                 let mut annotations = prov.annotations.clone();
                 insert_managed_annotations(&mut annotations, &prov.model_name);
-                let _config = prov.config.clone().map(|conf| match conf {
-                    // NOTE: We validate the serialization when we store the model so this should be
-                    // safe to unwrap
-                    CapabilityConfig::Json(conf) => {
-                        serde_json::to_string(&conf).unwrap_or_default()
-                    }
-                    CapabilityConfig::Opaque(conf) => conf,
-                });
                 self.client
                     .start_provider(
                         &prov.host_id,
                         &prov.reference,
                         &prov.provider_id,
                         Some(annotations.into_iter().collect()),
-                        // TODO(#252): Support config
-                        vec![],
+                        prov.config.clone(),
                     )
                     .await
             }

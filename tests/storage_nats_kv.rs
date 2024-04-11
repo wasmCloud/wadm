@@ -32,7 +32,6 @@ async fn test_round_trip() {
             }]),
         )]),
         reference: "fake.oci.repo/testactor:0.1.0".to_string(),
-        ..Default::default()
     };
 
     let actor2 = Component {
@@ -47,7 +46,6 @@ async fn test_round_trip() {
             }]),
         )]),
         reference: "fake.oci.repo/anotheractor:0.1.0".to_string(),
-        ..Default::default()
     };
 
     let host = Host {
@@ -100,7 +98,7 @@ async fn test_round_trip() {
     );
 
     let stored_provider: Provider = store
-        .get(lattice_id, &provider_id)
+        .get(lattice_id, provider_id)
         .await
         .expect("Unable to fetch stored provider")
         .expect("Provider should exist");
@@ -214,7 +212,6 @@ async fn test_multiple_lattice() {
             }]),
         )]),
         reference: "fake.oci.repo/testactor:0.1.0".to_string(),
-        ..Default::default()
     };
 
     let actor2 = Component {
@@ -229,7 +226,6 @@ async fn test_multiple_lattice() {
             }]),
         )]),
         reference: "fake.oci.repo/anotheractor:0.1.0".to_string(),
-        ..Default::default()
     };
 
     // Store both actors first with the different lattice id
@@ -291,7 +287,6 @@ async fn test_store_and_delete_many() {
             }]),
         )]),
         reference: "fake.oci.repo/testactor:0.1.0".to_string(),
-        ..Default::default()
     };
 
     let actor2 = Component {
@@ -306,7 +301,6 @@ async fn test_store_and_delete_many() {
             }]),
         )]),
         reference: "fake.oci.repo/anotheractor:0.1.0".to_string(),
-        ..Default::default()
     };
 
     store
