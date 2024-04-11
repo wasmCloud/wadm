@@ -257,6 +257,7 @@ impl From<&ComponentScaled> for Component {
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct Host {
     /// A map of component IDs to the number of instances of the component running on the host
+    #[serde(alias = "actors")]
     pub components: HashMap<String, usize>,
 
     /// The randomly generated friendly name of the host
