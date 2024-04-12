@@ -909,7 +909,7 @@ where
             scaler_status(&scalers).await
         } else {
             StatusInfo::reconciling(&format!(
-                "Event {event} modified scaler \"{}\" state, running compensating commands",
+                "Event {event} modified app \"{}\" state, running compensating commands",
                 name.to_owned(),
             ))
         };
@@ -940,7 +940,7 @@ where
                 scaler_status(scalers).await
             } else {
                 StatusInfo::reconciling(&format!(
-                    "Event {event} modified scaler \"{}\" state, running compensating commands",
+                    "Event {event} modified app \"{}\" state, running compensating commands",
                     name.to_owned(),
                 ))
             };

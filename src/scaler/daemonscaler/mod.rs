@@ -1,4 +1,5 @@
 use std::cmp::Ordering;
+use std::collections::BTreeMap;
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -7,7 +8,9 @@ use tracing::{instrument, trace};
 
 use crate::events::HostHeartbeat;
 use crate::model::Spread;
-use crate::scaler::spreadscaler::{eligible_hosts, spreadscaler_annotations};
+use crate::scaler::spreadscaler::{
+    compute_ineligible_hosts, eligible_hosts, spreadscaler_annotations,
+};
 use crate::server::StatusInfo;
 use crate::{
     commands::{Command, ScaleComponent},
@@ -84,9 +87,6 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorDaemonScaler<S> {
 
     #[instrument(level = "trace", skip_all, fields(scaler_id = %self.id))]
     async fn handle_event(&self, event: &Event) -> Result<Vec<Command>> {
-        // NOTE(brooksmtownsend): We could be more efficient here and instead of running
-        // the entire reconcile, smart compute exactly what needs to change, but it just
-        // requires more code branches and would be fine as a future improvement
         match event {
             // TODO: React to ComponentScaleFailed with an exponential backoff, can't just immediately retry since that
             // would cause a very tight loop of failures
@@ -121,16 +121,51 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorDaemonScaler<S> {
 
     #[instrument(level = "trace", skip_all, fields(name = %self.spread_config.model_name, scaler_id = %self.id))]
     async fn reconcile(&self) -> Result<Vec<Command>> {
-        let hosts = self
-            .store
-            .list::<Host>(&self.spread_config.lattice_id)
-            .await?;
-
         let component_id = &self.spread_config.component_id;
         let component = self
             .store
             .get::<Component>(&self.spread_config.lattice_id, component_id)
             .await?;
+
+        let hosts = self
+            .store
+            .list::<Host>(&self.spread_config.lattice_id)
+            .await?;
+
+        let ineligible_hosts = compute_ineligible_hosts(
+            &hosts,
+            self.spread_config.spread_config.spread.iter().collect(),
+        );
+
+        // Remove any components that are managed by this scaler and running on ineligible hosts
+        let remove_ineligible: Vec<Command> = ineligible_hosts
+            .iter()
+            .filter_map(|(host_id, host)| {
+                if host.components.contains_key(component_id) {
+                    Some(Command::ScaleComponent(ScaleComponent {
+                        component_id: component_id.to_owned(),
+                        reference: self.spread_config.actor_reference.to_owned(),
+                        host_id: host_id.to_string(),
+                        count: 0,
+                        model_name: self.spread_config.model_name.to_owned(),
+                        annotations: BTreeMap::new(),
+                        config: self.config.clone(),
+                    }))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        // If we found any components running on ineligible hosts, remove them before
+        // attempting to scale up or down.
+        if remove_ineligible.len() > 0 {
+            let status = StatusInfo::reconciling(
+                "Found components running on ineligible hosts, removing them.",
+            );
+            trace!(?status, "Updating scaler status");
+            *self.status.write().await = status;
+            return Ok(remove_ineligible);
+        }
 
         let mut spread_status = vec![];
 
