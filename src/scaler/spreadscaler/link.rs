@@ -106,7 +106,7 @@ where
             }) if source_id == &self.config.source_id
                 && name == &self.config.name
                 && wit_namespace == &self.config.wit_namespace
-                && wit_package == &self.config.wit_namespace =>
+                && wit_package == &self.config.wit_package =>
             {
                 self.reconcile().await
             }
