@@ -95,9 +95,6 @@ pub trait EventType {
 /// A lattice event
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 pub enum Event {
-    ActorsStarted(ActorsStarted),
-    ActorsStartFailed(ActorsStartFailed),
-    ActorsStopped(ActorsStopped),
     ComponentScaled(ComponentScaled),
     ComponentScaleFailed(ComponentScaleFailed),
     ProviderStarted(ProviderStarted),
@@ -120,9 +117,6 @@ pub enum Event {
 impl Display for Event {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Event::ActorsStarted(_) => write!(f, "ActorsStarted"),
-            Event::ActorsStartFailed(_) => write!(f, "ActorsStartFailed"),
-            Event::ActorsStopped(_) => write!(f, "ActorsStopped"),
             Event::ComponentScaled(_) => write!(f, "ComponentScaled"),
             Event::ComponentScaleFailed(_) => write!(f, "ComponentScaleFailed"),
             Event::ProviderStarted(_) => write!(f, "ProviderStarted"),
@@ -147,11 +141,6 @@ impl TryFrom<CloudEvent> for Event {
 
     fn try_from(value: CloudEvent) -> Result<Self, Self::Error> {
         match value.ty() {
-            ActorsStarted::TYPE => ActorsStarted::try_from(value).map(Event::ActorsStarted),
-            ActorsStartFailed::TYPE => {
-                ActorsStartFailed::try_from(value).map(Event::ActorsStartFailed)
-            }
-            ActorsStopped::TYPE => ActorsStopped::try_from(value).map(Event::ActorsStopped),
             ComponentScaled::TYPE => ComponentScaled::try_from(value).map(Event::ComponentScaled),
             ComponentScaleFailed::TYPE => {
                 ComponentScaleFailed::try_from(value).map(Event::ComponentScaleFailed)
@@ -191,9 +180,6 @@ impl TryFrom<Event> for CloudEvent {
 
     fn try_from(value: Event) -> Result<Self, Self::Error> {
         let ty = match value {
-            Event::ActorsStarted(_) => ActorsStarted::TYPE,
-            Event::ActorsStartFailed(_) => ActorsStartFailed::TYPE,
-            Event::ActorsStopped(_) => ActorsStopped::TYPE,
             Event::ComponentScaled(_) => ComponentScaled::TYPE,
             Event::ComponentScaleFailed(_) => ComponentScaleFailed::TYPE,
             Event::ProviderStarted(_) => ProviderStarted::TYPE,
@@ -229,9 +215,6 @@ impl Serialize for Event {
         S: serde::Serializer,
     {
         match self {
-            Event::ActorsStarted(evt) => evt.serialize(serializer),
-            Event::ActorsStartFailed(evt) => evt.serialize(serializer),
-            Event::ActorsStopped(evt) => evt.serialize(serializer),
             Event::ComponentScaled(evt) => evt.serialize(serializer),
             Event::ComponentScaleFailed(evt) => evt.serialize(serializer),
             Event::ProviderStarted(evt) => evt.serialize(serializer),
@@ -260,9 +243,6 @@ impl Event {
     /// Returns the underlying raw cloudevent type for the event
     pub fn raw_type(&self) -> &str {
         match self {
-            Event::ActorsStarted(_) => ActorsStarted::TYPE,
-            Event::ActorsStartFailed(_) => ActorsStartFailed::TYPE,
-            Event::ActorsStopped(_) => ActorsStopped::TYPE,
             Event::ComponentScaled(_) => ComponentScaled::TYPE,
             Event::ComponentScaleFailed(_) => ComponentScaleFailed::TYPE,
             Event::ProviderStarted(_) => ProviderStarted::TYPE,
@@ -301,66 +281,6 @@ pub enum ConversionError {
 //
 // EVENTS START HERE
 //
-
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
-pub struct ActorsStarted {
-    pub annotations: BTreeMap<String, String>,
-    // Commented out for now because the host broken it and we actually don't use this right now
-    // pub api_version: usize,
-    pub claims: ComponentClaims,
-    pub image_ref: String,
-    pub count: usize,
-    // TODO: Parse as nkey?
-    pub public_key: String,
-    #[serde(default)]
-    pub host_id: String,
-}
-
-event_impl!(
-    ActorsStarted,
-    "com.wasmcloud.lattice.actors_started",
-    source,
-    host_id
-);
-
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
-pub struct ActorsStartFailed {
-    pub annotations: BTreeMap<String, String>,
-    pub image_ref: String,
-    // TODO: Parse as nkey?
-    pub public_key: String,
-    #[serde(default)]
-    pub host_id: String,
-    pub error: String,
-}
-
-event_impl!(
-    ActorsStartFailed,
-    "com.wasmcloud.lattice.actors_start_failed",
-    source,
-    host_id
-);
-
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
-pub struct ActorsStopped {
-    #[serde(default)]
-    pub annotations: BTreeMap<String, String>,
-    // TODO: Parse as nkey?
-    pub public_key: String,
-    #[serde(default)]
-    pub host_id: String,
-    /// Number of actors stopped from this command
-    pub count: usize,
-    /// Remaining number of this actor running on the host
-    pub remaining: usize,
-}
-
-event_impl!(
-    ActorsStopped,
-    "com.wasmcloud.lattice.actors_stopped",
-    source,
-    host_id
-);
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct ComponentScaled {

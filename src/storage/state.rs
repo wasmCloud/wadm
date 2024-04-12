@@ -9,9 +9,7 @@ use semver::Version;
 use serde::{Deserialize, Serialize};
 
 use super::StateKind;
-use crate::events::{
-    ActorsStarted, ComponentScaled, HostHeartbeat, HostStarted, ProviderInfo, ProviderStarted,
-};
+use crate::events::{ComponentScaled, HostHeartbeat, HostStarted, ProviderInfo, ProviderStarted};
 
 /// A wasmCloud Capability provider
 // NOTE: We probably aren't going to use this _right now_ so we've kept it pretty minimal. But it is
@@ -170,42 +168,6 @@ impl Component {
 
 impl StateKind for Component {
     const KIND: &'static str = "component";
-}
-
-impl From<ActorsStarted> for Component {
-    fn from(value: ActorsStarted) -> Self {
-        Component {
-            id: value.public_key,
-            name: value.claims.name,
-            issuer: value.claims.issuer,
-            reference: value.image_ref,
-            instances: HashMap::from_iter([(
-                value.host_id,
-                HashSet::from_iter([WadmComponentInfo {
-                    annotations: value.annotations,
-                    count: value.count,
-                }]),
-            )]),
-        }
-    }
-}
-
-impl From<&ActorsStarted> for Component {
-    fn from(value: &ActorsStarted) -> Self {
-        Component {
-            id: value.public_key.clone(),
-            name: value.claims.name.clone(),
-            issuer: value.claims.issuer.clone(),
-            reference: value.image_ref.clone(),
-            instances: HashMap::from_iter([(
-                value.host_id.clone(),
-                HashSet::from_iter([WadmComponentInfo {
-                    annotations: value.annotations.clone(),
-                    count: value.count,
-                }]),
-            )]),
-        }
-    }
 }
 
 impl From<ComponentScaled> for Component {
