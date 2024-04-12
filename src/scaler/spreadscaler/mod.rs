@@ -200,7 +200,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
                         })
                         .unwrap_or_default();
                     let current_count: usize = running_actors_per_host.values().sum();
-                    tracing::info!(current = %current_count, expected = %count, "Calculated running actors, reconciling with expected count");
+                    trace!(current = %current_count, expected = %count, "Calculated running actors, reconciling with expected count");
                     // Here we'll generate commands for the proper host depending on where they are running
                     match current_count.cmp(count) {
                         Ordering::Equal => None,
