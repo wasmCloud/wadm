@@ -32,7 +32,7 @@ pub enum Command {
     PutLink(PutLink),
     DeleteLink(DeleteLink),
     PutConfig(PutConfig),
-    DeleteConfig(String),
+    DeleteConfig(DeleteConfig),
 }
 
 impl Command {
@@ -245,3 +245,12 @@ pub struct PutConfig {
 }
 
 from_impl!(PutConfig);
+
+/// Struct for the DeleteConfig command
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Default)]
+pub struct DeleteConfig {
+    /// The name of the configuration to delete
+    pub config_name: String,
+}
+
+from_impl!(DeleteConfig);

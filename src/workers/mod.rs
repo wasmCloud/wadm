@@ -7,5 +7,6 @@ mod event;
 mod event_helpers;
 
 pub use command::CommandWorker;
+pub(crate) use event::get_commands_and_result;
 pub use event::EventWorker;
 pub use event_helpers::*;

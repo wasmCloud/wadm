@@ -93,9 +93,9 @@ impl Worker for CommandWorker {
                     .put_config(&put_config.config_name, put_config.config.clone())
                     .await
             }
-            Command::DeleteConfig(config_name) => {
-                trace!("Handling delete config command");
-                self.client.delete_config(config_name).await
+            Command::DeleteConfig(delete_config) => {
+                trace!(command = ?delete_config, "Handling delete config command");
+                self.client.delete_config(&delete_config.config_name).await
             }
         }
         .map_err(|e| anyhow::anyhow!("{e:?}"));
