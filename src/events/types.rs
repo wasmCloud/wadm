@@ -168,6 +168,8 @@ impl TryFrom<CloudEvent> for Event {
             HostHeartbeat::TYPE => HostHeartbeat::try_from(value).map(Event::HostHeartbeat),
             LinkdefSet::TYPE => LinkdefSet::try_from(value).map(Event::LinkdefSet),
             LinkdefDeleted::TYPE => LinkdefDeleted::try_from(value).map(Event::LinkdefDeleted),
+            ConfigSet::TYPE => ConfigSet::try_from(value).map(Event::ConfigSet),
+            ConfigDeleted::TYPE => ConfigDeleted::try_from(value).map(Event::ConfigDeleted),
             ManifestPublished::TYPE => {
                 ManifestPublished::try_from(value).map(Event::ManifestPublished)
             }

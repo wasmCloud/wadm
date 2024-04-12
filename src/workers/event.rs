@@ -945,7 +945,10 @@ where
 
 /// Helper that runs any iterable of futures and returns a list of commands and the proper result to
 /// use as a response (Ok if there were no errors, all of the errors combined otherwise)
-async fn get_commands_and_result<Fut, I>(futs: I, error_message: &str) -> (Vec<Command>, Result<()>)
+pub(crate) async fn get_commands_and_result<Fut, I>(
+    futs: I,
+    error_message: &str,
+) -> (Vec<Command>, Result<()>)
 where
     Fut: futures::Future<Output = Result<Vec<Command>>>,
     I: IntoIterator<Item = Fut>,

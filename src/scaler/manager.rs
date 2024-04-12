@@ -34,6 +34,7 @@ use crate::{
 };
 
 use super::{
+    configscaler::ConfigScaler,
     daemonscaler::{provider::ProviderDaemonScaler, ActorDaemonScaler},
     spreadscaler::{
         link::{LinkScaler, LinkScalerConfig},
@@ -662,6 +663,12 @@ where
                         match (trt.trait_type.as_str(), &trt.properties) {
                             (SPREADSCALER_TRAIT, TraitProperty::SpreadScaler(p)) => {
                                 scaler_specified = true;
+                                let (config_scalers, config_names) = config_to_scalers(
+                                    snapshot_data.clone(),
+                                    lattice_id,
+                                    name,
+                                    &props.config,
+                                );
                                 Some(Box::new(BackoffAwareScaler::new(
                                     ProviderSpreadScaler::new(
                                         snapshot_data.clone(),
@@ -671,11 +678,12 @@ where
                                             provider_reference: props.image.to_owned(),
                                             spread_config: p.to_owned(),
                                             model_name: name.to_owned(),
-                                            provider_config: config_names(props.config.as_ref()),
+                                            provider_config: config_names,
                                         },
                                         &component.name,
                                     ),
                                     notifier.to_owned(),
+                                    config_scalers,
                                     notifier_subject,
                                     name,
                                     // Providers are a bit longer because it can take a bit to download
@@ -684,6 +692,12 @@ where
                             }
                             (DAEMONSCALER_TRAIT, TraitProperty::SpreadScaler(p)) => {
                                 scaler_specified = true;
+                                let (config_scalers, config_names) = config_to_scalers(
+                                    snapshot_data.clone(),
+                                    lattice_id,
+                                    name,
+                                    &props.config,
+                                );
                                 Some(Box::new(BackoffAwareScaler::new(
                                     ProviderDaemonScaler::new(
                                         snapshot_data.clone(),
@@ -693,11 +707,12 @@ where
                                             provider_reference: props.image.to_owned(),
                                             spread_config: p.to_owned(),
                                             model_name: name.to_owned(),
-                                            provider_config: config_names(props.config.as_ref()),
+                                            provider_config: config_names,
                                         },
                                         &component.name,
                                     ),
                                     notifier.to_owned(),
+                                    config_scalers,
                                     notifier_subject,
                                     name,
                                     // Providers are a bit longer because it can take a bit to download
@@ -748,6 +763,8 @@ where
                 }
                 // Allow providers to omit the scaler entirely for simplicity
                 if !scaler_specified {
+                    let (config_scalers, config_names) =
+                        config_to_scalers(snapshot_data.clone(), lattice_id, name, &props.config);
                     scalers.push(Box::new(BackoffAwareScaler::new(
                         ProviderSpreadScaler::new(
                             snapshot_data.clone(),
@@ -760,11 +777,12 @@ where
                                     spread: vec![],
                                 },
                                 model_name: name.to_owned(),
-                                provider_config: config_names(props.config.as_ref()),
+                                provider_config: config_names,
                             },
                             &component.name,
                         ),
                         notifier.to_owned(),
+                        config_scalers,
                         notifier_subject,
                         name,
                         // Providers are a bit longer because it can take a bit to download
@@ -775,6 +793,50 @@ where
         }
     }
     scalers
+}
+
+/// Returns a tuple which is a list of scalers and a list of the names of the configs that the
+/// scalers use.
+///
+/// Any input [ConfigProperty] that has a `properties` field will be converted into a [ConfigScaler], and
+/// the name of the configuration will be modified to be unique to the model and component. If the properties
+/// field is not present, the name will be used as-is and assumed that it's managed externally to wadm.
+fn config_to_scalers<S: ReadStore + Send + Sync + Clone>(
+    store: S,
+    lattice_id: &str,
+    model_name: &str,
+    configs: &Vec<ConfigProperty>,
+) -> (Vec<ConfigScaler<S>>, Vec<String>) {
+    let (config_scalers, names): (Vec<Option<ConfigScaler<S>>>, Vec<String>) = configs
+        .iter()
+        .map(|config| {
+            // We're mapping the component properties here in a `filter_map` as we're only interested
+            // in a [ConfigScaler] if the [ConfigProperty] has a `name` and `properties` field.
+            // If the [ConfigProperty] only lists a name, it's managed externally.
+            config.properties.as_ref().map_or_else(
+                || (None, config.name.clone()),
+                |properties| {
+                    // NOTE: Here we are explicitly taking
+                    let name = compute_component_id(model_name, None, &config.name);
+                    (
+                        Some(ConfigScaler::new(
+                            store.clone(),
+                            &lattice_id,
+                            &name,
+                            &properties,
+                        )),
+                        name,
+                    )
+                },
+            )
+        })
+        .unzip();
+
+    // Filter out None values from the scalers, keeping all names
+    (
+        config_scalers.into_iter().filter_map(|c| c).collect(),
+        names,
+    )
 }
 
 /// Based on the name of the model and the optionally provided ID, returns a unique ID for the

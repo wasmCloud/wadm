@@ -7,7 +7,7 @@ use tokio::{
     sync::{Mutex, RwLock},
     task::JoinHandle,
 };
-use tracing::{instrument, trace, Instrument};
+use tracing::{error, instrument, trace, Instrument};
 
 use crate::{
     commands::Command,
@@ -15,13 +15,17 @@ use crate::{
     model::TraitProperty,
     publisher::Publisher,
     server::StatusInfo,
+    workers::{get_commands_and_result, ConfigSource},
 };
 
+pub mod configscaler;
 pub mod daemonscaler;
 pub mod manager;
 pub mod spreadscaler;
 
 use manager::Notifications;
+
+use self::configscaler::ConfigScaler;
 
 const DEFAULT_WAIT_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -69,22 +73,32 @@ pub trait Scaler {
 }
 
 /// The BackoffAwareScaler is a wrapper around a scaler that is responsible for
-/// computing a proper backoff in terms of `expected_events` for the scaler based
-/// on its commands. When the BackoffAwareScaler handles events that it's expecting,
-/// it does not compute new commands and instead removes them from the list.
+/// ensuring that a particular [Scaler] has the proper prerequisites in place
+/// and should be able to reconcile and issue commands.
 ///
-/// This effectively allows the inner Scaler to only worry about the logic around
+/// 1. With the introduction of configuration for wadm applications, the most necessary
+/// prerequisite for components, providers and links to start is that their
+/// configuration is available. Scalers will not be able to issue commands until
+/// the configuration exists.
+/// 2. For scalers that issue commands that take a long time to complete, like downloading
+/// an image for a provider, the BackoffAwareScaler will ensure that the scaler is not
+/// overwhelmed with events and will back off until the expected events have been received.
+/// 3. In the future (#253) this wrapper should also be responsible for exponential backoff
+/// when a scaler is repeatedly issuing the same commands to prevent thrashing.
+///
+/// All of the above effectively allows the inner Scaler to only worry about the logic around
 /// reconciling and handling events, rather than be concerned about whether or not
 /// it should handle a specific event, if it's causing jitter, overshoot, etc.
 ///
 /// The `notifier` is used to publish notifications to add, remove, or recompute
 /// expected events with scalers on other wadm instances, as only one wadm instance
 /// at a time will handle a specific event.
-pub(crate) struct BackoffAwareScaler<T, P> {
+pub(crate) struct BackoffAwareScaler<T, P, S> {
     scaler: T,
     notifier: P,
     notify_subject: String,
     model_name: String,
+    required_config: Vec<ConfigScaler<S>>,
     /// A list of (success, Option<failure>) events that the scaler is expecting
     #[allow(clippy::type_complexity)]
     expected_events: Arc<RwLock<Vec<(Event, Option<Event>)>>>,
@@ -94,16 +108,18 @@ pub(crate) struct BackoffAwareScaler<T, P> {
     cleanup_timeout: std::time::Duration,
 }
 
-impl<T, P> BackoffAwareScaler<T, P>
+impl<T, P, S> BackoffAwareScaler<T, P, S>
 where
     T: Scaler + Send + Sync,
     P: Publisher + Send + Sync + 'static,
+    C: ConfigSource + Send + Sync + Clone + 'static,
 {
     /// Wraps the given scaler in a new backoff aware scaler. `cleanup_timeout` can be set to a
     /// desired waiting time, otherwise it will default to 30s
     pub fn new(
         scaler: T,
         notifier: P,
+        required_config: Vec<ConfigScaler<S>>,
         notify_subject: &str,
         model_name: &str,
         cleanup_timeout: Option<Duration>,
@@ -111,6 +127,7 @@ where
         Self {
             scaler,
             notifier,
+            required_config,
             notify_subject: notify_subject.to_owned(),
             model_name: model_name.to_string(),
             expected_events: Arc::new(RwLock::new(Vec::new())),
@@ -196,7 +213,27 @@ where
             // the backoff mechanism within wadm
             Vec::with_capacity(0)
         } else {
-            trace!("Scaler is not backing off, handling event");
+            trace!("Scaler is not backing off, checking configuration");
+            let (commands, res) = get_commands_and_result(
+                self.required_config
+                    .iter()
+                    .map(|config| async { config.handle_event(event).await }),
+                "Errors occurred while handling event with config scalers",
+            )
+            .await;
+
+            if let Err(e) = res {
+                error!(
+                    "Error occurred while handling event with config scalers: {}",
+                    e
+                );
+            }
+
+            if !commands.is_empty() {
+                return Ok(commands);
+            }
+
+            trace!("Scaler required configuration is present, handling event");
             let commands = self.scaler.handle_event(event).await?;
 
             // Based on the commands, compute the events that we expect to see for this scaler. The scaler
@@ -234,6 +271,18 @@ where
             trace!(%current_event_count, "Scaler is backing off, not reconciling");
             return Ok(Vec::with_capacity(0));
         }
+
+        let mut commands = Vec::new();
+        for config in &self.required_config {
+            config.reconcile().await?.into_iter().for_each(|cmd| {
+                commands.push(cmd);
+            });
+        }
+
+        if !commands.is_empty() {
+            return Ok(commands);
+        }
+
         match self.scaler.reconcile().await {
             // "Back off" scaler with expected corresponding events if the scaler generated commands
             Ok(commands) if !commands.is_empty() => {
@@ -269,6 +318,19 @@ where
         }
     }
 
+    async fn cleanup_internal(&self) -> Result<Vec<Command>> {
+        let mut commands = Vec::new();
+        for config in &self.required_config {
+            config.cleanup().await?.into_iter().for_each(|cmd| {
+                commands.push(cmd);
+            });
+        }
+        self.scaler.cleanup().await.map(|mut cmds| {
+            commands.append(&mut cmds);
+            commands
+        })
+    }
+
     /// Sets a timed cleanup task to clear the expected events list after a timeout
     async fn set_timed_cleanup(&self) {
         let mut event_cleaner = self.event_cleaner.lock().await;
@@ -301,10 +363,11 @@ where
 /// * `reconcile` calls an internal method that uses a notifier to ensure all Scalers, even
 ///   running on different wadm instances, compute their expected events in response to the
 ///   reconciliation commands in order to "back off".
-impl<T, P> Scaler for BackoffAwareScaler<T, P>
+impl<T, P, S> Scaler for BackoffAwareScaler<T, P, S>
 where
     T: Scaler + Send + Sync,
     P: Publisher + Send + Sync + 'static,
+    C: ConfigSource + Send + Sync + Clone + 'static,
 {
     fn id(&self) -> &str {
         // Pass through the ID of the wrapped scaler
@@ -328,7 +391,7 @@ where
     }
 
     async fn cleanup(&self) -> Result<Vec<Command>> {
-        self.scaler.cleanup().await
+        self.cleanup_internal().await
     }
 }
 
