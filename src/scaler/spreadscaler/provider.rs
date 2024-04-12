@@ -17,7 +17,9 @@ use crate::{
     model::{Spread, SpreadScalerProperty, TraitProperty},
     scaler::{
         compute_config_hash,
-        spreadscaler::{compute_spread, eligible_hosts, spreadscaler_annotations},
+        spreadscaler::{
+            compute_ineligible_hosts, compute_spread, eligible_hosts, spreadscaler_annotations,
+        },
         Scaler,
     },
     server::StatusInfo,
@@ -115,6 +117,48 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
         let hosts = self.store.list::<Host>(&self.config.lattice_id).await?;
         let provider_id = &self.config.provider_id;
         let provider_ref = &self.config.provider_reference;
+
+        let ineligible_hosts = compute_ineligible_hosts(
+            &hosts,
+            self.spread_requirements
+                .iter()
+                .map(|(s, _)| s)
+                .collect::<Vec<&Spread>>(),
+        );
+        // Remove any providers that are managed by this scaler and running on ineligible hosts
+        let remove_ineligible: Vec<Command> = ineligible_hosts
+            .iter()
+            .filter_map(|(_host_id, host)| {
+                if host
+                    .providers
+                    .get(&ProviderInfo {
+                        provider_id: provider_id.to_string(),
+                        provider_ref: provider_ref.to_string(),
+                        annotations: BTreeMap::default(),
+                    })
+                    .is_some()
+                {
+                    Some(Command::StopProvider(StopProvider {
+                        provider_id: provider_id.to_owned(),
+                        host_id: host.id.to_string(),
+                        model_name: self.config.model_name.to_owned(),
+                        annotations: BTreeMap::default(),
+                    }))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        // If we found any providers running on ineligible hosts, remove them before
+        // attempting to start new ones.
+        if remove_ineligible.len() > 0 {
+            let status = StatusInfo::reconciling(
+                "Found providers running on ineligible hosts, removing them.",
+            );
+            trace!(?status, "Updating scaler status");
+            *self.status.write().await = status;
+            return Ok(remove_ineligible);
+        }
 
         let mut spread_status = vec![];
 
