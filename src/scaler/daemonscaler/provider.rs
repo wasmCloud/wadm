@@ -14,6 +14,7 @@ use crate::scaler::spreadscaler::{
     compute_ineligible_hosts, eligible_hosts, spreadscaler_annotations,
 };
 use crate::server::StatusInfo;
+use crate::SCALER_KEY;
 use crate::{
     commands::{Command, StartProvider},
     events::{Event, HostStarted, HostStopped},
@@ -122,7 +123,12 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderDaemonScaler<S> {
                         provider_ref: provider_ref.to_string(),
                         annotations: BTreeMap::default(),
                     })
-                    .is_some()
+                    .is_some_and(|provider| {
+                        provider
+                            .annotations
+                            .get(SCALER_KEY)
+                            .is_some_and(|id| id == &self.id)
+                    })
                 {
                     Some(Command::StopProvider(StopProvider {
                         provider_id: provider_id.to_owned(),
