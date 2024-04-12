@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::{cmp::Ordering, cmp::Reverse, collections::HashMap};
 
 use anyhow::Result;
@@ -111,11 +111,6 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
 
     #[instrument(level = "trace", skip_all, fields(name = %self.spread_config.model_name, scaler_id = %self.id))]
     async fn reconcile(&self) -> Result<Vec<Command>> {
-        let hosts = self
-            .store
-            .list::<Host>(&self.spread_config.lattice_id)
-            .await?;
-
         let component_id = &self.spread_config.component_id;
         let component = self
             .store
@@ -124,14 +119,55 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
 
         let mut spread_status = vec![];
 
-        // NOTE(brooksmtownsend) it's easier to assign one host per list of requirements than
-        // balance within those requirements. Users should be specific with their requirements
-        // as wadm is not responsible for ambiguity, a future scaler like a DaemonScaler could handle this
+        let hosts = self
+            .store
+            .list::<Host>(&self.spread_config.lattice_id)
+            .await?;
+
+        let ineligible_hosts = compute_ineligible_hosts(
+            &hosts,
+            self.spread_requirements
+                .iter()
+                .map(|(s, _)| s)
+                .collect::<Vec<&Spread>>(),
+        );
+
+        // Remove any components that are managed by this scaler and running on ineligible hosts
+        let remove_ineligible: Vec<Command> = ineligible_hosts
+            .iter()
+            .filter_map(|(host_id, host)| {
+                if host.components.contains_key(component_id) {
+                    Some(Command::ScaleComponent(ScaleComponent {
+                        component_id: component_id.to_owned(),
+                        reference: self.spread_config.actor_reference.to_owned(),
+                        host_id: host_id.to_string(),
+                        count: 0,
+                        model_name: self.spread_config.model_name.to_owned(),
+                        annotations: BTreeMap::new(),
+                        config: self.config.clone(),
+                    }))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        // If we found any components running on ineligible hosts, remove them before
+        // attempting to scale up or down.
+        if remove_ineligible.len() > 0 {
+            let status = StatusInfo::reconciling(
+                "Found components running on ineligible hosts, removing them.",
+            );
+            trace!(?status, "Updating scaler status");
+            *self.status.write().await = status;
+            return Ok(remove_ineligible);
+        }
+
         trace!(spread_requirements = ?self.spread_requirements, ?component_id, "Computing commands");
         let commands = self
             .spread_requirements
             .iter()
             .filter_map(|(spread, count)| {
+                // Narrow down eligible hosts to those that match this spread's requirements
                 let eligible_hosts = eligible_hosts(&hosts, spread);
                 if !eligible_hosts.is_empty() {
                     // In the future we may want more information from this chain, but for now
@@ -164,7 +200,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
                         })
                         .unwrap_or_default();
                     let current_count: usize = running_actors_per_host.values().sum();
-                    trace!(current = %current_count, expected = %count, "Calculated running actors, reconciling with expected count");
+                    tracing::info!(current = %current_count, expected = %count, "Calculated running actors, reconciling with expected count");
                     // Here we'll generate commands for the proper host depending on where they are running
                     match current_count.cmp(count) {
                         Ordering::Equal => None,
@@ -320,6 +356,29 @@ pub(crate) fn eligible_hosts<'a>(
                 .all(|(key, value)| host.labels.get(key).map(|v| v.eq(value)).unwrap_or(false))
         })
         .collect()
+}
+
+/// Helper function that computes a list of ineligible hosts that match none of the spread requirements
+pub(crate) fn compute_ineligible_hosts<'a>(
+    all_hosts: &'a HashMap<String, Host>,
+    spreads: Vec<&Spread>,
+) -> HashMap<&'a String, &'a Host> {
+    // Find all host IDs that are eligible for any spread
+    let eligible_ids = spreads
+        .iter()
+        .map(|spread| {
+            eligible_hosts(all_hosts, spread)
+                .into_iter()
+                .map(|(id, _)| id)
+        })
+        .flatten()
+        .collect::<HashSet<_>>();
+
+    // Filter out all hosts that are eligible for any spread, leaving only ineligible hosts
+    all_hosts
+        .iter()
+        .filter(|(id, _)| !eligible_ids.contains(id))
+        .collect::<HashMap<_, _>>()
 }
 
 /// Given a spread config, return a vector of tuples that represents the spread
@@ -1508,5 +1567,98 @@ mod test {
         }
 
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn can_calculate_ineligible_hosts() {
+        let spreads = vec![
+            Spread {
+                name: "SimpleOne".to_string(),
+                requirements: BTreeMap::from_iter([("region".to_string(), "east".to_string())]),
+                weight: Some(75),
+            },
+            Spread {
+                name: "SimpleTwo".to_string(),
+                requirements: BTreeMap::from_iter([("resilient".to_string(), "true".to_string())]),
+                weight: Some(25),
+            },
+        ];
+
+        let hosts = HashMap::from_iter([
+            (
+                "NASDASDIMAREALHOST".to_string(),
+                Host {
+                    components: HashMap::from_iter([("fake".to_string(), 1)]),
+                    friendly_name: "hey".to_string(),
+                    labels: HashMap::from_iter([
+                        ("region".to_string(), "east".to_string()),
+                        ("resilient".to_string(), "true".to_string()),
+                    ]),
+                    providers: HashSet::new(),
+                    uptime_seconds: 123,
+                    version: None,
+                    id: "NASDASDIMAREALHOST".to_string(),
+                    last_seen: Utc::now(),
+                },
+            ),
+            (
+                "NASDASDIMAREALHOST2".to_string(),
+                Host {
+                    components: HashMap::from_iter([("fake".to_string(), 1)]),
+                    friendly_name: "hey".to_string(),
+                    labels: HashMap::from_iter([
+                        ("region".to_string(), "west".to_string()),
+                        ("resilient".to_string(), "true".to_string()),
+                    ]),
+                    providers: HashSet::new(),
+                    uptime_seconds: 123,
+                    version: None,
+                    id: "NASDASDIMAREALHOST2".to_string(),
+                    last_seen: Utc::now(),
+                },
+            ),
+            (
+                "NASDASDIMAREALHOST3".to_string(),
+                Host {
+                    components: HashMap::from_iter([("fake".to_string(), 1)]),
+                    friendly_name: "hey".to_string(),
+                    labels: HashMap::from_iter([
+                        ("region".to_string(), "east".to_string()),
+                        ("resilient".to_string(), "false".to_string()),
+                    ]),
+                    providers: HashSet::new(),
+                    uptime_seconds: 123,
+                    version: None,
+                    id: "NASDASDIMAREALHOST3".to_string(),
+                    last_seen: Utc::now(),
+                },
+            ),
+            (
+                "NASDASDIMAREALHOST4".to_string(),
+                Host {
+                    components: HashMap::from_iter([("fake".to_string(), 1)]),
+                    friendly_name: "hey".to_string(),
+                    labels: HashMap::from_iter([
+                        ("region".to_string(), "west".to_string()),
+                        ("resilient".to_string(), "false".to_string()),
+                        ("arch".to_string(), "nemesis".to_string()),
+                    ]),
+                    providers: HashSet::new(),
+                    uptime_seconds: 123,
+                    version: None,
+                    id: "NASDASDIMAREALHOST4".to_string(),
+                    last_seen: Utc::now(),
+                },
+            ),
+        ]);
+
+        // The first three hosts match at least one of the spread requirements (resilient: true || region: east)
+        // The last host is in west and not resilient.
+        let ineligible = compute_ineligible_hosts(&hosts, spreads.iter().collect());
+
+        assert_eq!(ineligible.len(), 1);
+        assert!(ineligible
+            .iter()
+            .any(|(id, _host)| *id == "NASDASDIMAREALHOST4"));
     }
 }
