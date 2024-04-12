@@ -24,6 +24,7 @@ use crate::{
     },
     server::StatusInfo,
     storage::{Host, ReadStore},
+    SCALER_KEY,
 };
 
 pub const PROVIDER_SPREAD_SCALER_TYPE: &str = "providerspreadscaler";
@@ -136,7 +137,12 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
                         provider_ref: provider_ref.to_string(),
                         annotations: BTreeMap::default(),
                     })
-                    .is_some()
+                    .is_some_and(|provider| {
+                        provider
+                            .annotations
+                            .get(SCALER_KEY)
+                            .is_some_and(|id| id == &self.id)
+                    })
                 {
                     Some(Command::StopProvider(StopProvider {
                         provider_id: provider_id.to_owned(),
