@@ -172,6 +172,24 @@
     }
   },
   {
+    "specversion": "1.0",
+    "id": "018ed364-f3c1-cb14-347c-e737d792480d",
+    "type": "com.wasmcloud.lattice.config_set",
+    "source": "NCWKTSXV56OENKKOWIUKNUPZH3GOAFX3ZZSIFYEFYBZRWYUNOLE3S475",
+    "datacontenttype": "application/json",
+    "time": "2024-04-12T17:39:52.385642Z",
+    "data": { "config_name": "my-config" }
+  },
+  {
+    "specversion": "1.0",
+    "id": "018ed365-0780-bccb-821b-9398b80982e5",
+    "type": "com.wasmcloud.lattice.config_deleted",
+    "source": "NCWKTSXV56OENKKOWIUKNUPZH3GOAFX3ZZSIFYEFYBZRWYUNOLE3S475",
+    "datacontenttype": "application/json",
+    "time": "2024-04-12T17:39:57.440160Z",
+    "data": { "config_name": "my-config" }
+  },
+  {
     "data": {
       "host_id": "NB6PMW4RGLBP3NAVUVO2IH34VFJFSX7LF7TJOQCDU4GGUGF3P57SZLPX",
       "provider_id": "VAG3QITQQ2ODAOWB5TTQSDJ53XK3SHBEIFNK4AYJ5RKAX2UNSCAPHA5M",

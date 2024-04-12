@@ -918,9 +918,11 @@ where
             // to make sure we don't forget to handle them when new events are added.
             Event::LinkdefSet(_)
             | Event::LinkdefDeleted(_)
+            | Event::ConfigSet(_)
+            | Event::ConfigDeleted(_)
             | Event::ProviderStartFailed(_)
             | Event::ComponentScaleFailed(_) => {
-                trace!("Got event we don't care about. Skipping");
+                trace!("Got event we don't care about. Not modifying state.");
                 Ok(None)
             }
         };
