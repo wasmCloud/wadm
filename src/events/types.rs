@@ -108,6 +108,8 @@ pub enum Event {
     HostHeartbeat(HostHeartbeat),
     LinkdefSet(LinkdefSet),
     LinkdefDeleted(LinkdefDeleted),
+    ConfigSet(ConfigSet),
+    ConfigDeleted(ConfigDeleted),
     // NOTE(thomastaylor312): We may change where and how these get published, but it makes sense
     // for now to have them here even though they aren't technically lattice events
     ManifestPublished(ManifestPublished),
@@ -130,6 +132,8 @@ impl Display for Event {
             Event::HostHeartbeat(_) => write!(f, "HostHeartbeat"),
             Event::LinkdefSet(_) => write!(f, "LinkdefSet"),
             Event::LinkdefDeleted(_) => write!(f, "LinkdefDeleted"),
+            Event::ConfigSet(_) => write!(f, "ConfigSet"),
+            Event::ConfigDeleted(_) => write!(f, "ConfigDeleted"),
             Event::ManifestPublished(_) => write!(f, "ManifestPublished"),
             Event::ManifestUnpublished(_) => write!(f, "ManifestUnpublished"),
         }
@@ -193,6 +197,8 @@ impl TryFrom<Event> for CloudEvent {
             Event::HostHeartbeat(_) => HostHeartbeat::TYPE,
             Event::LinkdefSet(_) => LinkdefSet::TYPE,
             Event::LinkdefDeleted(_) => LinkdefDeleted::TYPE,
+            Event::ConfigSet(_) => ConfigSet::TYPE,
+            Event::ConfigDeleted(_) => ConfigDeleted::TYPE,
             Event::ManifestPublished(_) => ManifestPublished::TYPE,
             Event::ManifestUnpublished(_) => ManifestUnpublished::TYPE,
         };
@@ -228,6 +234,8 @@ impl Serialize for Event {
             Event::HostHeartbeat(evt) => evt.serialize(serializer),
             Event::LinkdefSet(evt) => evt.serialize(serializer),
             Event::LinkdefDeleted(evt) => evt.serialize(serializer),
+            Event::ConfigSet(evt) => evt.serialize(serializer),
+            Event::ConfigDeleted(evt) => evt.serialize(serializer),
             Event::ManifestPublished(evt) => evt.serialize(serializer),
             Event::ManifestUnpublished(evt) => evt.serialize(serializer),
         }
@@ -256,6 +264,8 @@ impl Event {
             Event::HostHeartbeat(_) => HostHeartbeat::TYPE,
             Event::LinkdefSet(_) => LinkdefSet::TYPE,
             Event::LinkdefDeleted(_) => LinkdefDeleted::TYPE,
+            Event::ConfigSet(_) => ConfigSet::TYPE,
+            Event::ConfigDeleted(_) => ConfigDeleted::TYPE,
             Event::ManifestPublished(_) => ManifestPublished::TYPE,
             Event::ManifestUnpublished(_) => ManifestUnpublished::TYPE,
         }
@@ -281,6 +291,8 @@ pub enum ConversionError {
 //
 // EVENTS START HERE
 //
+
+// Component Events
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct ComponentScaled {
@@ -320,6 +332,8 @@ event_impl!(
     source,
     host_id
 );
+
+// Provider Events
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct ProviderStarted {
@@ -405,6 +419,8 @@ event_impl!(
     "com.wasmcloud.lattice.health_check_status"
 );
 
+// Link Events
+
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct LinkdefSet {
     #[serde(flatten)]
@@ -422,6 +438,24 @@ pub struct LinkdefDeleted {
 }
 
 event_impl!(LinkdefDeleted, "com.wasmcloud.lattice.linkdef_deleted");
+
+// Config Events
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct ConfigSet {
+    pub config_name: String,
+}
+
+event_impl!(ConfigSet, "com.wasmcloud.lattice.config_set");
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct ConfigDeleted {
+    pub config_name: String,
+}
+
+event_impl!(ConfigDeleted, "com.wasmcloud.lattice.config_deleted");
+
+// Host Events
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct HostStarted {
@@ -484,6 +518,8 @@ event_impl!(
     source,
     host_id
 );
+
+// Manifest Events
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct ManifestPublished {
