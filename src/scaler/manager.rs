@@ -611,16 +611,30 @@ where
                             )) as BoxedScaler)
                         }
                         (LINK_TRAIT, TraitProperty::Link(p)) => {
-                            components
-                                .iter()
-                                .find_map(|component| match &component.properties {
+                            components.iter().find_map(|component| {
+                                let (source_config_scalers, source_config) = config_to_scalers(
+                                    snapshot_data.clone(),
+                                    name,
+                                    &p.source_config,
+                                );
+                                let (target_config_scalers, target_config) = config_to_scalers(
+                                    snapshot_data.clone(),
+                                    name,
+                                    &p.target_config,
+                                );
+                                let config_scalers = source_config_scalers
+                                    .into_iter()
+                                    .chain(target_config_scalers.into_iter())
+                                    .collect();
+                                match &component.properties {
                                     Properties::Capability {
                                         properties: CapabilityProperties { id, .. },
                                     }
                                     | Properties::Component {
                                         properties: ComponentProperties { id, .. },
                                     } if component.name == p.target => {
-                                        Some(Box::new(LinkScaler::new(
+                                        Some(Box::new(BackoffAwareScaler::new(
+                                            LinkScaler::new(
                                             snapshot_data.clone(),
                                             LinkScalerConfig {
                                                 source_id: component_id.to_string(),
@@ -637,18 +651,21 @@ where
                                                 }),
                                                 lattice_id: lattice_id.to_owned(),
                                                 model_name: name.to_owned(),
-                                                source_config: config_names(
-                                                    p.source_config.as_ref(),
-                                                ),
-                                                target_config: config_names(
-                                                    p.target_config.as_ref(),
-                                                ),
+                                                    source_config,
+                                                    target_config,
                                             },
                                             snapshot_data.clone(),
+                                            ),
+                                            notifier.to_owned(),
+                                            config_scalers,
+                                            notifier_subject,
+                                            name,
+                                            Some(Duration::from_secs(5)),
                                         ))
                                             as BoxedScaler)
                                     }
                                     _ => None,
+                                }
                                 })
                         }
                         _ => None,
@@ -713,11 +730,26 @@ where
                             }
                             (LINK_TRAIT, TraitProperty::Link(p)) => {
                                 components.iter().find_map(|component| {
+                                    let (source_config_scalers, source_config) = config_to_scalers(
+                                        snapshot_data.clone(),
+                                        name,
+                                        &p.source_config,
+                                    );
+                                    let (target_config_scalers, target_config) = config_to_scalers(
+                                        snapshot_data.clone(),
+                                        name,
+                                        &p.target_config,
+                                    );
+                                    let config_scalers = source_config_scalers
+                                        .into_iter()
+                                        .chain(target_config_scalers.into_iter())
+                                        .collect();
                                     match &component.properties {
                                         Properties::Component { properties: cappy }
                                             if component.name == p.target =>
                                         {
-                                            Some(Box::new(LinkScaler::new(
+                                            Some(Box::new(BackoffAwareScaler::new(
+                                                LinkScaler::new(
                                                 snapshot_data.clone(),
                                                 LinkScalerConfig {
                                                     source_id: provider_id.to_string(),
@@ -729,19 +761,21 @@ where
                                                     wit_namespace: p.namespace.to_owned(),
                                                     wit_package: p.package.to_owned(),
                                                     wit_interfaces: p.interfaces.to_owned(),
-                                                    name: p.name.to_owned().unwrap_or_else(|| {
-                                                        DEFAULT_LINK_NAME.to_string()
-                                                    }),
+                                                        name: p.name.to_owned().unwrap_or_else(
+                                                            || DEFAULT_LINK_NAME.to_string(),
+                                                        ),
                                                     lattice_id: lattice_id.to_owned(),
                                                     model_name: name.to_owned(),
-                                                    source_config: config_names(
-                                                        p.source_config.as_ref(),
-                                                    ),
-                                                    target_config: config_names(
-                                                        p.target_config.as_ref(),
-                                                    ),
+                                                        source_config,
+                                                        target_config,
                                                 },
                                                 snapshot_data.clone(),
+                                                ),
+                                                notifier.to_owned(),
+                                                config_scalers,
+                                                notifier_subject,
+                                                name,
+                                                Some(Duration::from_secs(5)),
                                             ))
                                                 as BoxedScaler)
                                         }
