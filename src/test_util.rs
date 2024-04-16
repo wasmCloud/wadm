@@ -7,7 +7,7 @@ use wasmcloud_control_interface::{HostInventory, InterfaceLinkDefinition};
 
 use crate::publisher::Publisher;
 use crate::storage::StateKind;
-use crate::workers::{Claims, ClaimsSource, InventorySource, LinkSource};
+use crate::workers::{Claims, ClaimsSource, ConfigSource, InventorySource, LinkSource};
 
 fn generate_key<T: StateKind>(lattice_id: &str) -> String {
     format!("{}_{lattice_id}", T::KIND)
@@ -108,6 +108,7 @@ pub struct TestLatticeSource {
     pub claims: HashMap<String, Claims>,
     pub inventory: Arc<RwLock<HashMap<String, HostInventory>>>,
     pub links: Vec<InterfaceLinkDefinition>,
+    pub config: HashMap<String, HashMap<String, String>>,
 }
 
 #[async_trait::async_trait]
@@ -128,6 +129,13 @@ impl InventorySource for TestLatticeSource {
 impl LinkSource for TestLatticeSource {
     async fn get_links(&self) -> anyhow::Result<Vec<InterfaceLinkDefinition>> {
         Ok(self.links.clone())
+    }
+}
+
+#[async_trait::async_trait]
+impl ConfigSource for TestLatticeSource {
+    async fn get_config(&self, name: &str) -> anyhow::Result<Option<HashMap<String, String>>> {
+        Ok(self.config.get(name).cloned())
     }
 }
 

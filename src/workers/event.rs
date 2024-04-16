@@ -30,7 +30,7 @@ pub struct EventWorker<StateStore, C: Clone, P: Clone> {
 impl<StateStore, C, P> EventWorker<StateStore, C, P>
 where
     StateStore: Store + Send + Sync + Clone + 'static,
-    C: ClaimsSource + InventorySource + LinkSource + Clone + Send + Sync + 'static,
+    C: ClaimsSource + InventorySource + LinkSource + ConfigSource + Clone + Send + Sync + 'static,
     P: Publisher + Clone + Send + Sync + 'static,
 {
     /// Creates a new event worker configured to use the given store and control interface client for fetching state
@@ -766,8 +766,7 @@ where
             scaler_status(&scalers).await
         } else {
             StatusInfo::reconciling(&format!(
-                "Event {event} modified app \"{}\" state, running compensating commands",
-                name.to_owned(),
+                "Event {event} modified app \"{name}\" state, running compensating commands"
             ))
         };
         trace!(?status, "Setting status");
@@ -835,7 +834,7 @@ where
 impl<StateStore, C, P> Worker for EventWorker<StateStore, C, P>
 where
     StateStore: Store + Send + Sync + Clone + 'static,
-    C: ClaimsSource + InventorySource + LinkSource + Clone + Send + Sync + 'static,
+    C: ClaimsSource + InventorySource + LinkSource + ConfigSource + Clone + Send + Sync + 'static,
     P: Publisher + Clone + Send + Sync + 'static,
 {
     type Message = Event;
