@@ -295,6 +295,16 @@ async fn test_complex_app(client_info: &ClientInfo) {
         "Shouldn't have errored when creating manifest: {resp:?}"
     );
 
+    // Put configuration that's mentioned in manifest but without properties
+    client_info
+        .ctl_client("default")
+        .put_config(
+            "blobby-default-configuration-values",
+            HashMap::from_iter([("littleblobby".to_string(), "tables".to_string())]),
+        )
+        .await
+        .expect("should be able to put blobby config");
+
     // Deploy manifest
     let resp = client_info
         .deploy_manifest("complex", None, None, None)

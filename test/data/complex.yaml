@@ -16,6 +16,7 @@ spec:
           - name: defaultcode
             properties:
               http: "404"
+          - name: blobby-default-configuration-values
       traits:
         - type: spreadscaler
           properties:
