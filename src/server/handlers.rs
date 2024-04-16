@@ -636,8 +636,6 @@ impl<P: Publisher> Handler<P> {
             }
         }
 
-        // TODO(#253): Validate that named configurations managed outside of wadm exist?
-
         if !manifests.deploy(req.version) {
             trace!("Requested version does not exist");
             self.send_reply(

@@ -25,7 +25,7 @@ pub struct ConfigScaler<ConfigSource> {
     // NOTE(#263): Introducing storing the entire configuration in-memory has the potential to get
     // fairly heavy if the configuration is large. We should consider a more efficient way to store
     // this by fetching configuration from the manifest when it's needed, for example.
-    config: HashMap<String, String>,
+    config: Option<HashMap<String, String>>,
     status: RwLock<StatusInfo>,
 }
 
@@ -72,20 +72,38 @@ impl<C: ConfigSource + Send + Sync + Clone> Scaler for ConfigScaler<C> {
     #[instrument(level = "trace", skip_all, scaler_id = %self.id)]
     async fn reconcile(&self) -> Result<Vec<Command>> {
         debug!(self.config_name, "Fetching configuration");
-        match self.config_bucket.get_config(&self.config_name).await {
-            Ok(Some(config)) if config == self.config => {
+        match (
+            self.config_bucket.get_config(&self.config_name).await,
+            self.config.as_ref(),
+        ) {
+            // If configuration is not supplied to the scaler, we just ensure that it exists
+            (Ok(Some(_config)), None) => {
                 *self.status.write().await = StatusInfo::deployed("");
                 Ok(Vec::new())
             }
-            Ok(_config) => {
+            // If configuration is not supplied and doesn't exist, we enter a failed state
+            (Ok(None), None) => {
+                *self.status.write().await = StatusInfo::failed(&format!(
+                    "Specified configuration {} does not exist",
+                    self.config_name
+                ));
+                Ok(Vec::new())
+            }
+            // If configuration matches what's supplied, this scaler is deployed
+            (Ok(Some(config)), Some(scaler_config)) if &config == scaler_config => {
+                *self.status.write().await = StatusInfo::deployed("");
+                Ok(Vec::new())
+            }
+            // If configuration is out of sync, we put the configuration
+            (Ok(_config), Some(scaler_config)) => {
                 debug!(self.config_name, "Putting configuration");
                 *self.status.write().await = StatusInfo::reconciling("Configuration out of sync");
                 Ok(vec![Command::PutConfig(PutConfig {
                     config_name: self.config_name.clone(),
-                    config: self.config.clone(),
+                    config: scaler_config.clone(),
                 })])
             }
-            Err(e) => {
+            (Err(e), _) => {
                 error!(error = %e, "Configscaler failed to fetch configuration");
                 *self.status.write().await = StatusInfo::failed(&e.to_string());
                 Ok(Vec::new())
@@ -95,25 +113,37 @@ impl<C: ConfigSource + Send + Sync + Clone> Scaler for ConfigScaler<C> {
 
     #[instrument(level = "trace", skip_all)]
     async fn cleanup(&self) -> Result<Vec<Command>> {
-        Ok(vec![Command::DeleteConfig(DeleteConfig {
-            config_name: self.config_name.clone(),
-        })])
+        if self.config.is_some() {
+            Ok(vec![Command::DeleteConfig(DeleteConfig {
+                config_name: self.config_name.clone(),
+            })])
+        } else {
+            // This configuration is externally managed, don't delete it
+            Ok(Vec::new())
+        }
     }
 }
 
 impl<C: ConfigSource> ConfigScaler<C> {
     /// Construct a new ConfigScaler with specified values
-    pub fn new(config_bucket: C, config_name: &str, config: &HashMap<String, String>) -> Self {
+    pub fn new(
+        config_bucket: C,
+        config_name: &str,
+        config: Option<&HashMap<String, String>>,
+    ) -> Self {
+        let mut id = config_name.to_string();
         // Hash the config to generate a unique id, used to compare scalers for uniqueness when updating
-        let mut config_hasher = std::collections::hash_map::DefaultHasher::new();
-        BTreeMap::from_iter(config.iter()).hash(&mut config_hasher);
-        let id = format!("{config_name}-{}", config_hasher.finish());
+        if let Some(config) = config.as_ref() {
+            let mut config_hasher = std::collections::hash_map::DefaultHasher::new();
+            BTreeMap::from_iter(config.iter()).hash(&mut config_hasher);
+            id.extend(format!("-{}", config_hasher.finish()).chars());
+        }
 
         Self {
             config_bucket,
             id,
             config_name: config_name.to_string(),
-            config: config.clone(),
+            config: config.cloned(),
             status: RwLock::new(StatusInfo::reconciling("")),
         }
     }
@@ -150,11 +180,8 @@ mod test {
             )])),
         };
 
-        let config_scaler = ConfigScaler::new(
-            lattice,
-            &config.name,
-            &config.properties.clone().expect("properties not found"),
-        );
+        let config_scaler =
+            ConfigScaler::new(lattice.clone(), &config.name, config.properties.as_ref());
 
         assert_eq!(
             config_scaler.status().await.status_type,
@@ -262,11 +289,7 @@ mod test {
             )]),
         };
 
-        let config_scaler2 = ConfigScaler::new(
-            lattice2,
-            &config.name,
-            &config.properties.clone().expect("properties not found"),
-        );
+        let config_scaler2 = ConfigScaler::new(lattice2, &config.name, config.properties.as_ref());
 
         assert_eq!(
             config_scaler2
@@ -312,11 +335,8 @@ mod test {
                 HashMap::from_iter(vec![("key".to_string(), "wrong_value".to_string())]),
             )]),
         };
-        let config_scaler3 = ConfigScaler::new(
-            lattice3,
-            &config.name,
-            &config.properties.clone().expect("properties not found"),
-        );
+        let config_scaler3 =
+            ConfigScaler::new(lattice3.clone(), &config.name, config.properties.as_ref());
 
         assert_eq!(
             config_scaler3
@@ -331,6 +351,33 @@ mod test {
         assert_eq!(
             config_scaler3.status().await.status_type,
             crate::server::StatusType::Reconciling
+        );
+
+        // Test supplied name but not supplied config
+        let config_scaler4 = ConfigScaler::new(lattice3, &config.name, None);
+        assert_eq!(
+            config_scaler4
+                .reconcile()
+                .await
+                .expect("reconcile should succeed"),
+            vec![]
+        );
+        assert_eq!(
+            config_scaler4.status().await.status_type,
+            crate::server::StatusType::Deployed
+        );
+
+        let config_scaler5 = ConfigScaler::new(lattice, &config.name, None);
+        assert_eq!(
+            config_scaler5
+                .reconcile()
+                .await
+                .expect("reconcile should succeed"),
+            vec![]
+        );
+        assert_eq!(
+            config_scaler5.status().await.status_type,
+            crate::server::StatusType::Failed
         );
     }
 }

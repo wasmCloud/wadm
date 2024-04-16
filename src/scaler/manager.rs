@@ -842,28 +842,20 @@ fn config_to_scalers<C: ConfigSource + Send + Sync + Clone>(
     model_name: &str,
     configs: &[ConfigProperty],
 ) -> (Vec<ConfigScaler<C>>, Vec<String>) {
-    let (config_scalers, names): (Vec<Option<ConfigScaler<C>>>, Vec<String>) = configs
+    configs
         .iter()
         .map(|config| {
-            // We're mapping the component properties here in a `filter_map` as we're only interested
-            // in a [ConfigScaler] if the [ConfigProperty] has a `name` and `properties` field.
-            // If the [ConfigProperty] only lists a name, it's managed externally.
-            config.properties.as_ref().map_or_else(
-                || (None, config.name.clone()),
-                |properties| {
-                    // NOTE: Here we are explicitly taking
-                    let name = compute_component_id(model_name, None, &config.name);
-                    (
-                        Some(ConfigScaler::new(config_source.clone(), &name, properties)),
-                        name,
-                    )
-                },
+            let name = if config.properties.is_some() {
+                compute_component_id(model_name, None, &config.name)
+            } else {
+                config.name.clone()
+            };
+            (
+                ConfigScaler::new(config_source.clone(), &name, config.properties.as_ref()),
+                name,
             )
         })
-        .unzip();
-
-    // Filter out None values from the scalers, keeping all names
-    (config_scalers.into_iter().flatten().collect(), names)
+        .unzip()
 }
 
 /// Based on the name of the model and the optionally provided ID, returns a unique ID for the
