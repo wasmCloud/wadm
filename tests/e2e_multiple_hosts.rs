@@ -1,6 +1,6 @@
 #![cfg(feature = "_e2e_tests")]
-use std::path::PathBuf;
 use std::time::Duration;
+use std::{collections::HashMap, path::PathBuf};
 
 use futures::{FutureExt, StreamExt};
 use wadm::server::{DeployResult, PutResult, StatusType};
@@ -127,6 +127,19 @@ async fn test_no_requirements(client_info: &ClientInfo) {
     // which can take a bit
     assert_status(None, Some(7), || async {
         let inventory = client_info.get_all_inventory("default").await?;
+
+        // Ensure all configuration is set correctly
+        let config = client_info
+            .ctl_client("default")
+            .get_config("hello_simple-httpaddr")
+            .await
+            .expect("should have http provider source config")
+            .response
+            .expect("should have http provider source config response");
+        assert_eq!(
+            config,
+            HashMap::from_iter(vec![("address".to_string(), "0.0.0.0:8080".to_string())])
+        );
 
         check_actors(&inventory, HELLO_IMAGE_REF, "hello-simple", 4)?;
         check_providers(&inventory, HTTP_SERVER_IMAGE_REF, ExpectedCount::Exactly(1))?;
@@ -294,6 +307,52 @@ async fn test_complex_app(client_info: &ClientInfo) {
 
     assert_status(None, Some(7), || async {
         let inventory = client_info.get_all_inventory("default").await?;
+
+        // Ensure all configuration is set correctly
+        let blobby_config = client_info
+            .ctl_client("default")
+            .get_config("complex-defaultcode")
+            .await
+            .expect("should have blobby component config")
+            .response
+            .expect("should have blobby component config response");
+        assert_eq!(
+            blobby_config,
+            HashMap::from_iter(vec![("http".to_string(), "404".to_string())])
+        );
+        let blobby_target_config = client_info
+            .ctl_client("default")
+            .get_config("complex-rootfs")
+            .await
+            .expect("should have target link config")
+            .response
+            .expect("should have target link config response");
+        assert_eq!(
+            blobby_target_config,
+            HashMap::from_iter(vec![("root".to_string(), "/tmp".to_string())])
+        );
+        let http_source_config = client_info
+            .ctl_client("default")
+            .get_config("complex-httpaddr")
+            .await
+            .expect("should have source link config")
+            .response
+            .expect("should have target link config response");
+        assert_eq!(
+            http_source_config,
+            HashMap::from_iter(vec![("address".to_string(), "0.0.0.0:8081".to_string())])
+        );
+        let fileserver_config = client_info
+            .ctl_client("default")
+            .get_config("complex-defaultfs")
+            .await
+            .expect("should have provider config")
+            .response
+            .expect("should have provider config response");
+        assert_eq!(
+            fileserver_config,
+            HashMap::from_iter(vec![("root".to_string(), "/tmp/blobby".to_string())])
+        );
 
         check_actors(&inventory, BLOBBY_IMAGE_REF, "complex", 5)?;
         check_providers(&inventory, HTTP_SERVER_IMAGE_REF, ExpectedCount::AtLeast(3))?;

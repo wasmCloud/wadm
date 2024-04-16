@@ -4,7 +4,7 @@ metadata:
   name: complex
   annotations:
     version: v0.0.1
-    description: "This is my CRUDdy complex blobby app"
+    description: "This is my CRUDdy complex blobby app with all configuration possibilities"
 spec:
   components:
     - name: blobby
@@ -12,6 +12,10 @@ spec:
       properties:
         image: wasmcloud.azurecr.io/blobby:0.1.0
         id: littleblobbytables
+        config:
+          - name: defaultcode
+            properties:
+              http: "404"
       traits:
         - type: spreadscaler
           properties:
@@ -31,11 +35,10 @@ spec:
             namespace: wasi
             package: blobstore
             interfaces: [blobstore]
-            # TODO(#253): enable config
-            # target_config:
-            #   - name: rootfs
-            #     properties:
-            #       root: /tmp
+            target_config:
+              - name: rootfs
+                properties:
+                  root: /tmp
 
     - name: httpserver
       type: capability
@@ -61,17 +64,20 @@ spec:
             namespace: wasi
             package: http
             interfaces: [incoming-handler]
-            # TODO(#253): enable config
-            # source_config:
-            #   - name: httpaddr
-            #     properties:
-            #       address: 0.0.0.0:8081
+            source_config:
+              - name: httpaddr
+                properties:
+                  address: 0.0.0.0:8081
 
     - name: fileserver
       type: capability
       properties:
         image: ghcr.io/wasmcloud/blobstore-fs:0.6.0
         id: fileserver
+        config:
+          - name: defaultfs
+            properties:
+              root: /tmp/blobby
       traits:
         - type: spreadscaler
           properties:

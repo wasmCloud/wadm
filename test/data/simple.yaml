@@ -32,8 +32,7 @@ spec:
             namespace: wasi
             package: http
             interfaces: [incoming-handler]
-            # TODO(#253): enable config
-            # source_config:
-            #   - name: httpaddr
-            #     properties:
-            #       address: 0.0.0.0:8080
+            source_config:
+              - name: httpaddr
+                properties:
+                  address: 0.0.0.0:8080
