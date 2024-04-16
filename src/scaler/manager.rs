@@ -585,29 +585,45 @@ where
                 scalers.extend(traits.unwrap_or(&EMPTY_TRAIT_VEC).iter().filter_map(|trt| {
                     let component_id =
                         compute_component_id(name, props.id.as_ref(), &component.name);
+                    let (config_scalers, config_names) =
+                        config_to_scalers(snapshot_data.clone(), name, &props.config);
                     match (trt.trait_type.as_str(), &trt.properties) {
                         (SPREADSCALER_TRAIT, TraitProperty::SpreadScaler(p)) => {
-                            Some(Box::new(ActorSpreadScaler::new(
-                                snapshot_data.clone(),
-                                props.image.to_owned(),
-                                component_id,
-                                lattice_id.to_owned(),
-                                name.to_owned(),
-                                p.to_owned(),
-                                &component.name,
-                                config_names(props.config.as_ref()),
+                            Some(Box::new(BackoffAwareScaler::new(
+                                ActorSpreadScaler::new(
+                                    snapshot_data.clone(),
+                                    props.image.to_owned(),
+                                    component_id,
+                                    lattice_id.to_owned(),
+                                    name.to_owned(),
+                                    p.to_owned(),
+                                    &component.name,
+                                    config_names,
+                                ),
+                                notifier.to_owned(),
+                                config_scalers,
+                                notifier_subject,
+                                name,
+                                Some(Duration::from_secs(5)),
                             )) as BoxedScaler)
                         }
                         (DAEMONSCALER_TRAIT, TraitProperty::SpreadScaler(p)) => {
-                            Some(Box::new(ActorDaemonScaler::new(
-                                snapshot_data.clone(),
-                                props.image.to_owned(),
-                                component_id,
-                                lattice_id.to_owned(),
-                                name.to_owned(),
-                                p.to_owned(),
-                                &component.name,
-                                config_names(props.config.as_ref()),
+                            Some(Box::new(BackoffAwareScaler::new(
+                                ActorDaemonScaler::new(
+                                    snapshot_data.clone(),
+                                    props.image.to_owned(),
+                                    component_id,
+                                    lattice_id.to_owned(),
+                                    name.to_owned(),
+                                    p.to_owned(),
+                                    &component.name,
+                                    config_names,
+                                ),
+                                notifier.to_owned(),
+                                config_scalers,
+                                notifier_subject,
+                                name,
+                                Some(Duration::from_secs(5)),
                             )) as BoxedScaler)
                         }
                         (LINK_TRAIT, TraitProperty::Link(p)) => {
@@ -635,26 +651,26 @@ where
                                     } if component.name == p.target => {
                                         Some(Box::new(BackoffAwareScaler::new(
                                             LinkScaler::new(
-                                            snapshot_data.clone(),
-                                            LinkScalerConfig {
-                                                source_id: component_id.to_string(),
-                                                target: compute_component_id(
-                                                    name,
-                                                    id.as_ref(),
-                                                    &component.name,
-                                                ),
-                                                wit_namespace: p.namespace.to_owned(),
-                                                wit_package: p.package.to_owned(),
-                                                wit_interfaces: p.interfaces.to_owned(),
-                                                name: p.name.to_owned().unwrap_or_else(|| {
-                                                    DEFAULT_LINK_NAME.to_string()
-                                                }),
-                                                lattice_id: lattice_id.to_owned(),
-                                                model_name: name.to_owned(),
+                                                snapshot_data.clone(),
+                                                LinkScalerConfig {
+                                                    source_id: component_id.to_string(),
+                                                    target: compute_component_id(
+                                                        name,
+                                                        id.as_ref(),
+                                                        &component.name,
+                                                    ),
+                                                    wit_namespace: p.namespace.to_owned(),
+                                                    wit_package: p.package.to_owned(),
+                                                    wit_interfaces: p.interfaces.to_owned(),
+                                                    name: p.name.to_owned().unwrap_or_else(|| {
+                                                        DEFAULT_LINK_NAME.to_string()
+                                                    }),
+                                                    lattice_id: lattice_id.to_owned(),
+                                                    model_name: name.to_owned(),
                                                     source_config,
                                                     target_config,
-                                            },
-                                            snapshot_data.clone(),
+                                                },
+                                                snapshot_data.clone(),
                                             ),
                                             notifier.to_owned(),
                                             config_scalers,
@@ -666,7 +682,7 @@ where
                                     }
                                     _ => None,
                                 }
-                                })
+                            })
                         }
                         _ => None,
                     }
@@ -750,26 +766,26 @@ where
                                         {
                                             Some(Box::new(BackoffAwareScaler::new(
                                                 LinkScaler::new(
-                                                snapshot_data.clone(),
-                                                LinkScalerConfig {
-                                                    source_id: provider_id.to_string(),
-                                                    target: compute_component_id(
-                                                        name,
-                                                        cappy.id.as_ref(),
-                                                        &component.name,
-                                                    ),
-                                                    wit_namespace: p.namespace.to_owned(),
-                                                    wit_package: p.package.to_owned(),
-                                                    wit_interfaces: p.interfaces.to_owned(),
+                                                    snapshot_data.clone(),
+                                                    LinkScalerConfig {
+                                                        source_id: provider_id.to_string(),
+                                                        target: compute_component_id(
+                                                            name,
+                                                            cappy.id.as_ref(),
+                                                            &component.name,
+                                                        ),
+                                                        wit_namespace: p.namespace.to_owned(),
+                                                        wit_package: p.package.to_owned(),
+                                                        wit_interfaces: p.interfaces.to_owned(),
                                                         name: p.name.to_owned().unwrap_or_else(
                                                             || DEFAULT_LINK_NAME.to_string(),
                                                         ),
-                                                    lattice_id: lattice_id.to_owned(),
-                                                    model_name: name.to_owned(),
+                                                        lattice_id: lattice_id.to_owned(),
+                                                        model_name: name.to_owned(),
                                                         source_config,
                                                         target_config,
-                                                },
-                                                snapshot_data.clone(),
+                                                    },
+                                                    snapshot_data.clone(),
                                                 ),
                                                 notifier.to_owned(),
                                                 config_scalers,
@@ -877,11 +893,6 @@ pub(crate) fn compute_component_id(
                 .replace(|c: char| !c.is_ascii_alphanumeric(), "_")
         )
     }
-}
-
-/// Helper function to map a list of `ConfigProperty` to a list of their names
-fn config_names(configs: &[ConfigProperty]) -> Vec<String> {
-    configs.iter().map(|c| c.name.clone()).collect()
 }
 
 #[cfg(test)]
