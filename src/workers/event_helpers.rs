@@ -2,7 +2,7 @@ use async_nats::jetstream::stream::Stream;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
 
-use tracing::{instrument, trace, warn};
+use tracing::{debug, instrument, trace, warn};
 use wasmcloud_control_interface::{CtlResponse, HostInventory, InterfaceLinkDefinition};
 
 use crate::{commands::Command, publisher::Publisher, server::StatusInfo, APP_SPEC_ANNOTATION};
@@ -41,6 +41,16 @@ pub trait InventorySource {
 #[async_trait::async_trait]
 pub trait LinkSource {
     async fn get_links(&self) -> anyhow::Result<Vec<InterfaceLinkDefinition>>;
+}
+
+/// A trait for anything that can fetch a piece of named configuration
+///
+/// In the future this could be expanded to fetch more than just a single piece of configuration,
+/// but for now it's limited to a single config in an attempt to keep the scope of fetching
+/// configuration small, and efficiently pass around data.
+#[async_trait::async_trait]
+pub trait ConfigSource {
+    async fn get_config(&self, name: &str) -> anyhow::Result<Option<HashMap<String, String>>>;
 }
 
 #[async_trait::async_trait]
@@ -116,6 +126,29 @@ impl LinkSource for wasmcloud_control_interface::Client {
                 ..
             } => Ok(links),
             CtlResponse { message, .. } => Err(anyhow::anyhow!("Failed to get links, {message}")),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl ConfigSource for wasmcloud_control_interface::Client {
+    async fn get_config(&self, name: &str) -> anyhow::Result<Option<HashMap<String, String>>> {
+        match self
+            .get_config(name)
+            .await
+            .map_err(|e| anyhow::anyhow!("{e:?}"))?
+        {
+            CtlResponse {
+                success: true,
+                response: Some(config),
+                ..
+            } => Ok(Some(config)),
+            // TODO(https://github.com/wasmCloud/wasmCloud/issues/1906): The control interface should return a None when config isn't found
+            // instead of returning an error.
+            CtlResponse { message, .. } => {
+                debug!("Failed to get config for {name}, {message}");
+                Ok(None)
+            }
         }
     }
 }

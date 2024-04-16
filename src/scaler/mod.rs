@@ -93,12 +93,12 @@ pub trait Scaler {
 /// The `notifier` is used to publish notifications to add, remove, or recompute
 /// expected events with scalers on other wadm instances, as only one wadm instance
 /// at a time will handle a specific event.
-pub(crate) struct BackoffAwareScaler<T, P, S> {
+pub(crate) struct BackoffAwareScaler<T, P, C> {
     scaler: T,
     notifier: P,
     notify_subject: String,
     model_name: String,
-    required_config: Vec<ConfigScaler<S>>,
+    required_config: Vec<ConfigScaler<C>>,
     /// A list of (success, Option<failure>) events that the scaler is expecting
     #[allow(clippy::type_complexity)]
     expected_events: Arc<RwLock<Vec<(Event, Option<Event>)>>>,
@@ -108,7 +108,7 @@ pub(crate) struct BackoffAwareScaler<T, P, S> {
     cleanup_timeout: std::time::Duration,
 }
 
-impl<T, P, S> BackoffAwareScaler<T, P, S>
+impl<T, P, C> BackoffAwareScaler<T, P, C>
 where
     T: Scaler + Send + Sync,
     P: Publisher + Send + Sync + 'static,
@@ -119,7 +119,7 @@ where
     pub fn new(
         scaler: T,
         notifier: P,
-        required_config: Vec<ConfigScaler<S>>,
+        required_config: Vec<ConfigScaler<C>>,
         notify_subject: &str,
         model_name: &str,
         cleanup_timeout: Option<Duration>,
@@ -363,7 +363,7 @@ where
 /// * `reconcile` calls an internal method that uses a notifier to ensure all Scalers, even
 ///   running on different wadm instances, compute their expected events in response to the
 ///   reconciliation commands in order to "back off".
-impl<T, P, S> Scaler for BackoffAwareScaler<T, P, S>
+impl<T, P, C> Scaler for BackoffAwareScaler<T, P, C>
 where
     T: Scaler + Send + Sync,
     P: Publisher + Send + Sync + 'static,

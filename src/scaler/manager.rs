@@ -29,7 +29,7 @@ use crate::{
     scaler::{spreadscaler::ActorSpreadScaler, Command, Scaler},
     server::StatusInfo,
     storage::{snapshot::SnapshotStore, ReadStore},
-    workers::{CommandPublisher, LinkSource, StatusPublisher},
+    workers::{CommandPublisher, ConfigSource, LinkSource, StatusPublisher},
     DEFAULT_LINK_NAME,
 };
 
@@ -134,7 +134,7 @@ impl<StateStore, P, L> ScalerManager<StateStore, P, L>
 where
     StateStore: ReadStore + Send + Sync + Clone + 'static,
     P: Publisher + Clone + Send + Sync + 'static,
-    L: LinkSource + Clone + Send + Sync + 'static,
+    L: LinkSource + ConfigSource + Clone + Send + Sync + 'static,
 {
     /// Creates a new ScalerManager configured to notify messages to `wadm.notify.{lattice_id}`
     /// using the given jetstream client. Also creates an ephemeral consumer for notifications on
@@ -575,7 +575,7 @@ pub(crate) fn components_to_scalers<S, P, L>(
 where
     S: ReadStore + Send + Sync + Clone + 'static,
     P: Publisher + Clone + Send + Sync + 'static,
-    L: LinkSource + Clone + Send + Sync + 'static,
+    L: LinkSource + ConfigSource + Clone + Send + Sync + 'static,
 {
     let mut scalers: ScalerList = Vec::new();
     for component in components.iter() {
@@ -663,12 +663,8 @@ where
                         match (trt.trait_type.as_str(), &trt.properties) {
                             (SPREADSCALER_TRAIT, TraitProperty::SpreadScaler(p)) => {
                                 scaler_specified = true;
-                                let (config_scalers, config_names) = config_to_scalers(
-                                    snapshot_data.clone(),
-                                    lattice_id,
-                                    name,
-                                    &props.config,
-                                );
+                                let (config_scalers, config_names) =
+                                    config_to_scalers(snapshot_data.clone(), name, &props.config);
                                 Some(Box::new(BackoffAwareScaler::new(
                                     ProviderSpreadScaler::new(
                                         snapshot_data.clone(),
@@ -692,12 +688,8 @@ where
                             }
                             (DAEMONSCALER_TRAIT, TraitProperty::SpreadScaler(p)) => {
                                 scaler_specified = true;
-                                let (config_scalers, config_names) = config_to_scalers(
-                                    snapshot_data.clone(),
-                                    lattice_id,
-                                    name,
-                                    &props.config,
-                                );
+                                let (config_scalers, config_names) =
+                                    config_to_scalers(snapshot_data.clone(), name, &props.config);
                                 Some(Box::new(BackoffAwareScaler::new(
                                     ProviderDaemonScaler::new(
                                         snapshot_data.clone(),
@@ -764,7 +756,7 @@ where
                 // Allow providers to omit the scaler entirely for simplicity
                 if !scaler_specified {
                     let (config_scalers, config_names) =
-                        config_to_scalers(snapshot_data.clone(), lattice_id, name, &props.config);
+                        config_to_scalers(snapshot_data.clone(), name, &props.config);
                     scalers.push(Box::new(BackoffAwareScaler::new(
                         ProviderSpreadScaler::new(
                             snapshot_data.clone(),
@@ -801,13 +793,12 @@ where
 /// Any input [ConfigProperty] that has a `properties` field will be converted into a [ConfigScaler], and
 /// the name of the configuration will be modified to be unique to the model and component. If the properties
 /// field is not present, the name will be used as-is and assumed that it's managed externally to wadm.
-fn config_to_scalers<S: ReadStore + Send + Sync + Clone>(
-    store: S,
-    lattice_id: &str,
+fn config_to_scalers<C: ConfigSource + Send + Sync + Clone>(
+    config_source: C,
     model_name: &str,
-    configs: &Vec<ConfigProperty>,
-) -> (Vec<ConfigScaler<S>>, Vec<String>) {
-    let (config_scalers, names): (Vec<Option<ConfigScaler<S>>>, Vec<String>) = configs
+    configs: &[ConfigProperty],
+) -> (Vec<ConfigScaler<C>>, Vec<String>) {
+    let (config_scalers, names): (Vec<Option<ConfigScaler<C>>>, Vec<String>) = configs
         .iter()
         .map(|config| {
             // We're mapping the component properties here in a `filter_map` as we're only interested
@@ -819,12 +810,7 @@ fn config_to_scalers<S: ReadStore + Send + Sync + Clone>(
                     // NOTE: Here we are explicitly taking
                     let name = compute_component_id(model_name, None, &config.name);
                     (
-                        Some(ConfigScaler::new(
-                            store.clone(),
-                            &lattice_id,
-                            &name,
-                            &properties,
-                        )),
+                        Some(ConfigScaler::new(config_source.clone(), &name, properties)),
                         name,
                     )
                 },
@@ -833,10 +819,7 @@ fn config_to_scalers<S: ReadStore + Send + Sync + Clone>(
         .unzip();
 
     // Filter out None values from the scalers, keeping all names
-    (
-        config_scalers.into_iter().filter_map(|c| c).collect(),
-        names,
-    )
+    (config_scalers.into_iter().flatten().collect(), names)
 }
 
 /// Based on the name of the model and the optionally provided ID, returns a unique ID for the

@@ -636,6 +636,8 @@ impl<P: Publisher> Handler<P> {
             }
         }
 
+        // TODO(#253): Validate that named configurations managed outside of wadm exist?
+
         if !manifests.deploy(req.version) {
             trace!("Requested version does not exist");
             self.send_reply(
@@ -1000,16 +1002,6 @@ pub(crate) async fn validate_manifest(manifest: Manifest) -> anyhow::Result<()> 
                 },
         } = &component.properties
         {
-            // TODO: Ensure config exists?
-            // if let Some(data) = capability_config {
-            //     if let Err(e) = serde_json::to_string(data) {
-            //         return Err(anyhow!(
-            //             "Unable to serialize JSON config data for component {}: {e:?}",
-            //             component.name
-            //         ));
-            //     }
-            // }
-
             if let Some(component_id) = id {
                 if !id_registry.insert(component_id.to_string()) {
                     bail!("Duplicate component identifier in manifest: {component_id}");
