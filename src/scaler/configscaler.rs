@@ -115,3 +115,219 @@ impl<C: ConfigSource> ConfigScaler<C> {
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use std::collections::{BTreeMap, HashMap};
+
+    use crate::{
+        commands::{Command, PutConfig},
+        events::{ComponentScaled, ConfigDeleted, Event, HostHeartbeat},
+        model::ConfigProperty,
+        scaler::{configscaler::ConfigScaler, Scaler},
+        test_util::TestLatticeSource,
+    };
+
+    #[tokio::test]
+    /// Ensure that the config scaler reacts properly to events, fetching configuration
+    /// when it is out of sync and ignoring irrelevant events.
+    async fn test_configscaler() {
+        let lattice = TestLatticeSource {
+            claims: HashMap::new(),
+            inventory: Default::default(),
+            links: Vec::new(),
+            config: HashMap::new(),
+        };
+
+        let config = ConfigProperty {
+            name: "test_config".to_string(),
+            properties: Some(HashMap::from_iter(vec![(
+                "key".to_string(),
+                "value".to_string(),
+            )])),
+        };
+
+        let config_scaler = ConfigScaler::new(
+            lattice,
+            &config.name,
+            &config.properties.clone().expect("properties not found"),
+        );
+
+        assert_eq!(
+            config_scaler.status().await.status_type,
+            crate::server::StatusType::Reconciling
+        );
+        assert_eq!(
+            config_scaler
+                .reconcile()
+                .await
+                .expect("reconcile should succeed"),
+            vec![Command::PutConfig(PutConfig {
+                config_name: config.name.clone(),
+                config: config.properties.clone().expect("properties not found"),
+            })]
+        );
+        assert_eq!(
+            config_scaler.status().await.status_type,
+            crate::server::StatusType::Reconciling
+        );
+
+        // Configuration deleted, relevant
+        assert_eq!(
+            config_scaler
+                .handle_event(&Event::ConfigDeleted(ConfigDeleted {
+                    config_name: config.name.clone()
+                }))
+                .await
+                .expect("handle_event should succeed"),
+            vec![Command::PutConfig(PutConfig {
+                config_name: config.name.clone(),
+                config: config.properties.clone().expect("properties not found"),
+            })]
+        );
+        assert_eq!(
+            config_scaler.status().await.status_type,
+            crate::server::StatusType::Reconciling
+        );
+        // Configuration deleted, irrelevant
+        assert_eq!(
+            config_scaler
+                .handle_event(&Event::ConfigDeleted(ConfigDeleted {
+                    config_name: "some_other_config".to_string()
+                }))
+                .await
+                .expect("handle_event should succeed"),
+            vec![]
+        );
+        assert_eq!(
+            config_scaler.status().await.status_type,
+            crate::server::StatusType::Reconciling
+        );
+        // Periodic reconcile with host heartbeat
+        assert_eq!(
+            config_scaler
+                .handle_event(&Event::HostHeartbeat(HostHeartbeat {
+                    components: Vec::new(),
+                    providers: Vec::new(),
+                    host_id: String::default(),
+                    issuer: String::default(),
+                    friendly_name: String::default(),
+                    labels: HashMap::new(),
+                    version: semver::Version::new(0, 0, 0),
+                    uptime_human: String::default(),
+                    uptime_seconds: 0,
+                }))
+                .await
+                .expect("handle_event should succeed"),
+            vec![Command::PutConfig(PutConfig {
+                config_name: config.name.clone(),
+                config: config.properties.clone().expect("properties not found"),
+            })]
+        );
+        assert_eq!(
+            config_scaler.status().await.status_type,
+            crate::server::StatusType::Reconciling
+        );
+        // Ignore other event
+        assert_eq!(
+            config_scaler
+                .handle_event(&Event::ComponentScaled(ComponentScaled {
+                    annotations: BTreeMap::new(),
+                    claims: None,
+                    image_ref: "foo".to_string(),
+                    max_instances: 0,
+                    component_id: "fooo".to_string(),
+                    host_id: "hostid".to_string()
+                }))
+                .await
+                .expect("handle_event should succeed"),
+            vec![]
+        );
+        assert_eq!(
+            config_scaler.status().await.status_type,
+            crate::server::StatusType::Reconciling
+        );
+
+        // Create lattice where config is present
+        let lattice2 = TestLatticeSource {
+            claims: HashMap::new(),
+            inventory: Default::default(),
+            links: Vec::new(),
+            config: HashMap::from_iter(vec![(
+                config.name.clone(),
+                config.properties.clone().expect("properties not found"),
+            )]),
+        };
+
+        let config_scaler2 = ConfigScaler::new(
+            lattice2,
+            &config.name,
+            &config.properties.clone().expect("properties not found"),
+        );
+
+        assert_eq!(
+            config_scaler2
+                .reconcile()
+                .await
+                .expect("reconcile should succeed"),
+            vec![]
+        );
+        assert_eq!(
+            config_scaler2.status().await.status_type,
+            crate::server::StatusType::Deployed
+        );
+        // Periodic reconcile with host heartbeat
+        assert_eq!(
+            config_scaler2
+                .handle_event(&Event::HostHeartbeat(HostHeartbeat {
+                    components: Vec::new(),
+                    providers: Vec::new(),
+                    host_id: String::default(),
+                    issuer: String::default(),
+                    friendly_name: String::default(),
+                    labels: HashMap::new(),
+                    version: semver::Version::new(0, 0, 0),
+                    uptime_human: String::default(),
+                    uptime_seconds: 0,
+                }))
+                .await
+                .expect("handle_event should succeed"),
+            vec![]
+        );
+        assert_eq!(
+            config_scaler2.status().await.status_type,
+            crate::server::StatusType::Deployed
+        );
+
+        // Create lattice where config is present but with the wrong values
+        let lattice3 = TestLatticeSource {
+            claims: HashMap::new(),
+            inventory: Default::default(),
+            links: Vec::new(),
+            config: HashMap::from_iter(vec![(
+                config.name.clone(),
+                HashMap::from_iter(vec![("key".to_string(), "wrong_value".to_string())]),
+            )]),
+        };
+        let config_scaler3 = ConfigScaler::new(
+            lattice3,
+            &config.name,
+            &config.properties.clone().expect("properties not found"),
+        );
+
+        assert_eq!(
+            config_scaler3
+                .reconcile()
+                .await
+                .expect("reconcile should succeed"),
+            vec![Command::PutConfig(PutConfig {
+                config_name: config.name.clone(),
+                config: config.properties.clone().expect("properties not found"),
+            })]
+        );
+        assert_eq!(
+            config_scaler3.status().await.status_type,
+            crate::server::StatusType::Reconciling
+        );
+    }
+}
