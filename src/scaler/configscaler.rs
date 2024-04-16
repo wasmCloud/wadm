@@ -22,6 +22,9 @@ pub struct ConfigScaler<ConfigSource> {
     config_bucket: ConfigSource,
     id: String,
     config_name: String,
+    // NOTE(#263): Introducing storing the entire configuration in-memory has the potential to get
+    // fairly heavy if the configuration is large. We should consider a more efficient way to store
+    // this by fetching configuration from the manifest when it's needed, for example.
     config: HashMap<String, String>,
     status: RwLock<StatusInfo>,
 }

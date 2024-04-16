@@ -319,16 +319,18 @@ where
     }
 
     async fn cleanup_internal(&self) -> Result<Vec<Command>> {
-        let mut commands = Vec::new();
-        for config in &self.required_config {
-            config.cleanup().await?.into_iter().for_each(|cmd| {
-                commands.push(cmd);
-            });
+        let mut commands = self.scaler.cleanup().await.unwrap_or_default();
+        for config in self.required_config.iter() {
+            match config.cleanup().await {
+                Ok(cmds) => commands.extend(cmds),
+                // Explicitly logging, but continuing, in the case of an error to make sure
+                // we don't prevent other cleanup tasks from running
+                Err(e) => {
+                    error!("Error occurred while cleaning up config scalers: {}", e);
+                }
+            }
         }
-        self.scaler.cleanup().await.map(|mut cmds| {
-            commands.append(&mut cmds);
-            commands
-        })
+        Ok(commands)
     }
 
     /// Sets a timed cleanup task to clear the expected events list after a timeout

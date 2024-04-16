@@ -628,7 +628,7 @@ where
                         }
                         (LINK_TRAIT, TraitProperty::Link(p)) => {
                             components.iter().find_map(|component| {
-                                let (source_config_scalers, source_config) = config_to_scalers(
+                                let (mut config_scalers, source_config) = config_to_scalers(
                                     snapshot_data.clone(),
                                     name,
                                     &p.source_config,
@@ -638,10 +638,7 @@ where
                                     name,
                                     &p.target_config,
                                 );
-                                let config_scalers = source_config_scalers
-                                    .into_iter()
-                                    .chain(target_config_scalers.into_iter())
-                                    .collect();
+                                config_scalers.extend(target_config_scalers);
                                 match &component.properties {
                                     Properties::Capability {
                                         properties: CapabilityProperties { id, .. },
@@ -746,7 +743,7 @@ where
                             }
                             (LINK_TRAIT, TraitProperty::Link(p)) => {
                                 components.iter().find_map(|component| {
-                                    let (source_config_scalers, source_config) = config_to_scalers(
+                                    let (mut config_scalers, source_config) = config_to_scalers(
                                         snapshot_data.clone(),
                                         name,
                                         &p.source_config,
@@ -756,10 +753,7 @@ where
                                         name,
                                         &p.target_config,
                                     );
-                                    let config_scalers = source_config_scalers
-                                        .into_iter()
-                                        .chain(target_config_scalers.into_iter())
-                                        .collect();
+                                    config_scalers.extend(target_config_scalers);
                                     match &component.properties {
                                         Properties::Component { properties: cappy }
                                             if component.name == p.target =>
