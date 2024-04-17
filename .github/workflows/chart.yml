@@ -79,7 +79,7 @@ jobs:
 
       - name: Package
         run: |
-          helm package chart -d .helm-charts
+          helm package charts/wadm -d .helm-charts
 
       - name: Login to GHCR
         uses: docker/login-action@v3
