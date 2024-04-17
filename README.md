@@ -166,21 +166,10 @@ of these can be found below:
   does not exist after you create it. This is a very unlikely scenario as only one person or process
   is interacting with a specific, but it is possible. If this becomes a problem for you, please let
   us know and we will consider additional ways of how we can address it.
-- Manifest validation is not yet implemented. Right now wadm will accept the manifest blindly so
-  long as it can parse it. It will not validate that the model name is valid or if you specified
-  entirely invalid properties. This will be added in a future version.
+- Manifest validation is implemented, but slightly clunky. Any PRs that make this better would be
+  more than welcome!
 - Nondestructive (e.g. orphaning resources) undeploys are not currently implemented. You can set the
   field in the request, but it won't do anything
-- If wadm discovers a provider in the lattice that isn't already started via a manifest, the
-  manifest won't be able to reconcile until another start provider event is received. This will
-  require a feature add to the ctl client to fix
-- All manifests belonging to a lattice must be using the same version of actors and providers. This
-  is an important limitation of the host RPC protocol. We are open to ideas about how to best handle
-  manifests with different actor/provider versions
-- When running multiple wadm processes, you can still get a little bit of jitter with starting
-  actors and providers (in some cases). This will always resolve after a few ticks and isn't a huge
-  problem as actors are "cheap" from a compute standpoint. If anyone would like to submit a PR to
-  make this better, we'd love to see it!
 
 ## References
 
