@@ -1570,7 +1570,6 @@ mod test {
                 host1_id.to_string(),
                 HostInventory {
                     friendly_name: "my-host-3".to_string(),
-                    issuer: "my-issuer-2".to_string(),
                     components: vec![ComponentDescription {
                         id: actor_2_id.to_string(),
                         image_ref: "ref2".to_string(),
@@ -1591,7 +1590,6 @@ mod test {
                 host2_id.to_string(),
                 HostInventory {
                     friendly_name: "my-host-4".to_string(),
-                    issuer: "my-issuer-2".to_string(),
                     components: vec![ComponentDescription {
                         id: actor_2_id.to_string(),
                         image_ref: "ref2".to_string(),
@@ -1790,7 +1788,6 @@ mod test {
             host_id.to_string(),
             HostInventory {
                 friendly_name: "my-host-5".to_string(),
-                issuer: "my-issuer-3".to_string(),
                 components: vec![
                     ComponentDescription {
                         id: actor1_id.to_string(),
