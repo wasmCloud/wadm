@@ -789,7 +789,6 @@ mod test {
                 ]),
                 providers: vec![],
                 host_id: host_id_three.to_string(),
-                issuer: "NASDASD".to_string(),
                 version: "1.0.0".to_string(),
                 uptime_human: "what is time really anyway maaaan".to_string(),
                 uptime_seconds: 42,
