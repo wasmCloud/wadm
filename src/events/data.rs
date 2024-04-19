@@ -7,7 +7,9 @@ use serde::{Deserialize, Serialize};
 /// and Hash since it can serve as a key
 #[derive(Debug, Serialize, Deserialize, Default, Clone, Eq)]
 pub struct ProviderInfo {
+    #[serde(alias = "public_key")]
     pub provider_id: String,
+    #[serde(default)]
     pub provider_ref: String,
     #[serde(default)]
     pub annotations: BTreeMap<String, String>,
