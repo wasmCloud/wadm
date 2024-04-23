@@ -10,7 +10,7 @@ readme = "README.md"
 repository = "https://github.com/wasmcloud/wadm"
 
 [features]
-default = []
+default = ["full"]
 cli = [
     "clap",
     "tracing-opentelemetry",
@@ -18,50 +18,69 @@ cli = [
     "opentelemetry",
     "opentelemetry-otlp",
 ]
+full = [
+    "anyhow",
+    "async-nats",
+    "async-trait",
+    "base64",
+    "bytes",
+    "chrono",
+    "cloudevents-sdk",
+    "futures",
+    "jsonschema",
+    "lazy_static",
+    "nkeys",
+    "opentelemetry",
+    "opentelemetry-otlp",
+    "prometheus",
+    "rand",
+    "regex",
+    "semver",
+    "sha2",
+    "thiserror",
+    "tokio",
+    "tracing",
+    "tracing-futures",
+    "tracing-opentelemetry",
+    "tracing-subscriber",
+    "uuid",
+    "wasmcloud-control-interface"
+]
 # internal feature for e2e tests
 _e2e_tests = []
 
 [dependencies]
-anyhow = "1"
-async-nats = "0.33"
-async-trait = "0.1"
-base64 = "0.21.2"
-bytes = "1"
-chrono = "0.4"
+anyhow = { version = "1", optional = true }
+async-nats = { version = "0.33", optional = true }
+async-trait = { version = "0.1", optional = true }
+base64 = { version = "0.21.2", optional = true }
+bytes = { version = "1", optional = true }
+chrono = { version = "0.4", optional = true }
 clap = { version = "4", features = ["derive", "cargo", "env"], optional = true }
-cloudevents-sdk = "0.7"
-futures = "0.3"
+cloudevents-sdk = { version = "0.7", optional = true }
+futures = { version = "0.3", optional = true }
 indexmap = { version = "2", features = ["serde"] }
-jsonschema = "0.17"
-lazy_static = "1"
-nkeys = "0.3.0"
-# One version back to avoid clashes with 0.10 of otlp
+jsonschema = { version = "0.17", optional = true }
+lazy_static = { version = "1", optional = true }
+nkeys = { version = "0.3.0", optional = true }
 opentelemetry = { version = "0.17", features = ["rt-tokio"], optional = true }
-# 0.10 to avoid protoc dep
-opentelemetry-otlp = { version = "0.10", features = [
-    "http-proto",
-    "reqwest-client",
-], optional = true }
-# TODO: Actually leverage prometheus
+opentelemetry-otlp = { version = "0.10", features = ["http-proto", "reqwest-client"], optional = true }
 prometheus = { version = "0.13", optional = true }
-rand = { version = "0.8", features = ["small_rng"] }
-regex = "1.9.3"
-semver = { version = "1.0.16", features = ["serde"] }
-serde = "1"
-serde_json = "1"
-serde_yaml = "0.9"
-sha2 = "0.10.2"
-thiserror = "1"
-tokio = { version = "1", features = ["full"] }
-tracing = { version = "0.1", features = ["log"] }
-tracing-futures = "0.2"
+rand = { version = "0.8", features = ["small_rng"], optional = true }
+regex = { version = "1.9.3", optional = true }
+semver = { version = "1.0.16", features = ["serde"], optional = true }
+serde = { version = "1", features = ["derive"]}
+serde_json = { version = "1" }
+serde_yaml = { version = "0.9" }
+sha2 = { version = "0.10.2", optional = true }
+thiserror = { version = "1", optional = true }
+tokio = { version = "1", features = ["full"], optional = true }
+tracing = { version = "0.1", features = ["log"], optional = true }
+tracing-futures = { version = "0.2", optional = true }
 tracing-opentelemetry = { version = "0.17", optional = true }
-tracing-subscriber = { version = "0.3.7", features = [
-    "env-filter",
-    "json",
-], optional = true }
-uuid = "1"
-wasmcloud-control-interface = "1.0.0"
+tracing-subscriber = { version = "0.3.7", features = ["env-filter", "json"], optional = true }
+uuid = { version = "1", optional = true }
+wasmcloud-control-interface = { version = "1.0.0", optional = true }
 
 [dev-dependencies]
 serial_test = "1"

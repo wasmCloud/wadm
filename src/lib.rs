@@ -1,15 +1,25 @@
 use std::time::Duration;
 
+#[cfg(feature = "full")]
 pub mod commands;
+#[cfg(feature = "full")]
 pub mod consumers;
+#[cfg(feature = "full")]
 pub mod events;
+#[cfg(feature = "full")]
 pub mod mirror;
 pub mod model;
+#[cfg(feature = "full")]
 pub mod nats_utils;
+#[cfg(feature = "full")]
 pub mod publisher;
+#[cfg(feature = "full")]
 pub mod scaler;
+#[cfg(feature = "full")]
 pub mod server;
+#[cfg(feature = "full")]
 pub mod storage;
+#[cfg(feature = "full")]
 pub mod workers;
 
 #[cfg(test)]
