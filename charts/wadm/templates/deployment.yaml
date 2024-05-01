@@ -36,18 +36,7 @@ spec:
           env:
             - name: WADM_NATS_SERVER
               value: {{ .Values.wadm.config.nats.server | quote }}
-          {{- if .Values.wadm.config.nats.seed }}
-            - name: WADM_NATS_NKEY
-              value: {{ .Values.wadm.config.nats.seed | quote }}
-          {{- end }}
-          {{- if .Values.wadm.config.nats.jwt }}
-            - name: WADM_NATS_JWT
-              value: {{ .Values.wadm.config.nats.jwt | quote }}
-          {{- end }}
-          {{- if .Values.wadm.config.nats.credsFile }}
-            - name: WADM_NATS_CREDS_FILE
-              value: {{ .Values.wadm.config.nats.credsFile | quote }}
-          {{- end }}
+          {{- include "wadm.nats.auth" . | nindent 12 }}
           {{- if .Values.wadm.config.nats.tlsCaFile }}
             - name: WADM_NATS_TLS_CA_FILE
               value: {{ .Values.wadm.config.nats.tlsCaFile | quote }}
@@ -102,6 +91,8 @@ spec:
           {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+          {{- include "wadm.nats.creds_volume_mount" . | nindent 10 -}}
+      {{- include "wadm.nats.creds_volume" . | nindent 6 -}}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

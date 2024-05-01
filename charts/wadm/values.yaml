@@ -14,12 +14,14 @@ wadm:
     hostId: ""
     logLevel: ""
     nats:
-      credsFile: ""
-      jetstreamDomain: ""
-      jwt: ""
-      seed: ""
       server: "127.0.0.1:4222"
+      jetstreamDomain: ""
       tlsCaFile: ""
+      creds:
+        jwt: ""
+        seed: ""
+        secretName: ""
+        key: "nats.creds"
     maxJobs: ""
     stateBucket: ""
     manifestBucket: ""
