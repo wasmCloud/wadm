@@ -51,7 +51,7 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{- define "wadm.nats.auth" -}}
-{{- if .secretName }}
+{{- if  .Values.wadm.config.nats.creds.secretName -}}
 - name: WADM_NATS_CREDS_FILE
   value: {{ include "wadm.nats.creds_file_path" . | quote }}
 {{- else if and .Values.wadm.config.nats.creds.jwt .Values.wadm.config.nats.creds.seed -}}
@@ -63,7 +63,7 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{- define "wadm.nats.creds_file_path" }}
-{{- if .Values.wadm.config.nats.creds.secretName }}
+{{- if .Values.wadm.config.nats.creds.secretName -}}
 /etc/nats-creds/nats.creds
 {{- end }}
 {{- end }}
