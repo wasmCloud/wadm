@@ -1,0 +1,8 @@
+config:
+  jetstream:
+    enabled: true
+    fileStore:
+      pvc:
+        enabled: false
+    merge:
+      domain: default
