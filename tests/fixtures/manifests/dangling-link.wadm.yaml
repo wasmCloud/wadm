@@ -1,0 +1,23 @@
+---
+apiVersion: core.oam.dev/v1beta1
+kind: Application
+metadata:
+  name: dangling-link
+  annotations:
+    version: v0.0.1
+    description: Manifest with a dangling link
+spec:
+  components:
+    - name: http-component
+      type: component
+      properties:
+        image: ghcr.io/wasmcloud/component-http-hello-world:0.1.0
+      traits:
+        - type: spreadscaler
+          properties:
+            replicas: 1
+        - type: link
+          properties:
+            target: httpserver
+            values:
+              address: 0.0.0.0:8080

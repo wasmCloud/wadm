@@ -4,15 +4,16 @@ use anyhow::{anyhow, bail, ensure};
 use async_nats::{jetstream::stream::Stream, Client, Message, Subject};
 use base64::{engine::general_purpose::STANDARD as B64decoder, Engine};
 use jsonschema::{paths::PathChunk, Draft, JSONSchema};
-use regex::Regex;
 use serde_json::json;
 use tokio::sync::OnceCell;
 use tracing::{debug, error, instrument, log::warn, trace};
 
 use crate::{
     model::{
-        internal::StoredManifest, CapabilityProperties, ComponentProperties, LinkProperty,
-        Manifest, Properties, Trait, TraitProperty, LATEST_VERSION,
+        internal::StoredManifest,
+        validation::{is_valid_manifest_name, validate_manifest_version, ValidationOutput},
+        CapabilityProperties, ComponentProperties, LinkProperty, Manifest, Properties, Trait,
+        TraitProperty, LATEST_VERSION,
     },
     publisher::Publisher,
     server::StatusType,
@@ -25,7 +26,6 @@ use super::{
     StatusResponse, StatusResult, UndeployModelRequest, VersionInfo, VersionResponse,
 };
 const JSON_SCHEMA: &str = include_str!("../../oam/oam.schema.json");
-static MANIFEST_NAME_REGEX: OnceCell<Regex> = OnceCell::const_new();
 static JSON_SCHEMA_VALUE: OnceCell<serde_json::Value> = OnceCell::const_new();
 static OAM_JSON_SCHEMA: OnceCell<JSONSchema> = OnceCell::const_new();
 
@@ -54,22 +54,26 @@ impl<P: Publisher> Handler<P> {
             "Manifest is valid. Fetching current manifests from store"
         );
 
-        if manifest.version() == LATEST_VERSION {
+        let manifest_validation_output = validate_manifest_version(manifest.version());
+        let manifest_validation_errors = manifest_validation_output.errors();
+        if !manifest_validation_errors.is_empty() {
             self.send_error(
                 msg.reply,
-                format!("A manifest with a version {LATEST_VERSION} is not allowed in wadm"),
+                format!(
+                    "invalid manifest version, errors: {:#?}",
+                    manifest_validation_errors
+                        .iter()
+                        .map(|e| e.msg.clone())
+                        .collect::<Vec<String>>()
+                        .join("\n")
+                ),
             )
             .await;
             return;
         }
 
         let manifest_name = manifest.metadata.name.trim().to_string();
-        if !MANIFEST_NAME_REGEX
-            // SAFETY: We know this is valid Regex
-            .get_or_init(|| async { Regex::new(r"^[-\w]+$").unwrap() })
-            .await
-            .is_match(&manifest_name)
-        {
+        if !is_valid_manifest_name(&manifest_name) {
             self.send_error(
                 msg.reply,
                 format!(
@@ -1197,30 +1201,6 @@ mod test {
         .await
         .context("failed to validate long image ref")?;
         Ok(())
-    }
-
-    #[tokio::test]
-    async fn manifest_name_regex_works() {
-        let regex = super::MANIFEST_NAME_REGEX
-            .get_or_init(|| async { regex::Regex::new(r"^[-\w]+$").unwrap() })
-            .await;
-
-        // Acceptable manifest names
-        let word = "mymanifest";
-        let word_with_dash = "my-manifest";
-        let word_with_underscore = "my_manifest";
-        let word_with_numbers = "mymanifest-v2-v3-final";
-
-        assert!(regex.is_match(word));
-        assert!(regex.is_match(word_with_dash));
-        assert!(regex.is_match(word_with_underscore));
-        assert!(regex.is_match(word_with_numbers));
-
-        // Not acceptable manifest names
-        let word_with_period = "my.manifest";
-        let word_with_space = "my manifest";
-        assert!(!regex.is_match(word_with_period));
-        assert!(!regex.is_match(word_with_space));
     }
 
     #[tokio::test]

@@ -1,0 +1,29 @@
+---
+apiVersion: core.oam.dev/v1beta1
+kind: Application
+metadata:
+  name: misnamed-interface
+  annotations:
+    version: v0.0.1
+    description: A component with a misnamed interface
+spec:
+  components:
+    - name: counter
+      type: component
+      properties:
+        image: ghcr.io/wasmcloud/component-http-keyvalue-counter:0.1.0
+      traits:
+        - type: spreadscaler
+          properties:
+            replicas: 1
+        - type: link
+          properties:
+            target: kvredis
+            namespace: wasi
+            package: keyvalue
+            interfaces: [atomic] # BUG: should be 'atomics'
+
+    - name: kvredis
+      type: capability
+      properties:
+        image: ghcr.io/wasmcloud/keyvalue-redis:0.24.0
