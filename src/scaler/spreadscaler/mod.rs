@@ -153,7 +153,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
             .collect();
         // If we found any components running on ineligible hosts, remove them before
         // attempting to scale up or down.
-        if remove_ineligible.len() > 0 {
+        if !remove_ineligible.is_empty() {
             let status = StatusInfo::reconciling(
                 "Found components running on ineligible hosts, removing them.",
             );
@@ -366,12 +366,9 @@ pub(crate) fn compute_ineligible_hosts<'a>(
     // Find all host IDs that are eligible for any spread
     let eligible_ids = spreads
         .iter()
-        .map(|spread| {
-            eligible_hosts(all_hosts, spread)
-                .into_iter()
-                .map(|(id, _)| id)
+        .flat_map(|spread| {
+            eligible_hosts(all_hosts, spread).into_keys()
         })
-        .flatten()
         .collect::<HashSet<_>>();
 
     // Filter out all hosts that are eligible for any spread, leaving only ineligible hosts
@@ -1571,8 +1568,7 @@ mod test {
 
     #[tokio::test]
     async fn can_calculate_ineligible_hosts() {
-        let spreads = vec![
-            Spread {
+        let spreads = [Spread {
                 name: "SimpleOne".to_string(),
                 requirements: BTreeMap::from_iter([("region".to_string(), "east".to_string())]),
                 weight: Some(75),
@@ -1581,8 +1577,7 @@ mod test {
                 name: "SimpleTwo".to_string(),
                 requirements: BTreeMap::from_iter([("resilient".to_string(), "true".to_string())]),
                 weight: Some(25),
-            },
-        ];
+            }];
 
         let hosts = HashMap::from_iter([
             (
