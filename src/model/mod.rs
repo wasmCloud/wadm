@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, HashMap};
 use serde::{Deserialize, Serialize};
 
 pub(crate) mod internal;
+pub mod validation;
 
 /// The default weight for a spread
 pub const DEFAULT_SPREAD_WEIGHT: usize = 100;
@@ -58,6 +59,38 @@ impl Manifest {
             .annotations
             .get(DESCRIPTION_ANNOTATION_KEY)
             .map(|v| v.as_str())
+    }
+
+    /// Returns the components in the manifest
+    pub fn components(&self) -> impl Iterator<Item = &Component> {
+        self.spec.components.iter()
+    }
+
+    /// Returns only the WebAssembly components in the manifest
+    pub fn wasm_components(&self) -> impl Iterator<Item = &Component> {
+        self.components()
+            .filter(|c| matches!(c.properties, Properties::Component { .. }))
+    }
+
+    /// Returns only the provider components in the manifest
+    pub fn capability_providers(&self) -> impl Iterator<Item = &Component> {
+        self.components()
+            .filter(|c| matches!(c.properties, Properties::Capability { .. }))
+    }
+
+    /// Returns a map of component names to components in the manifest
+    pub fn component_lookup(&self) -> HashMap<&String, &Component> {
+        self.components()
+            .map(|c| (&c.name, c))
+            .collect::<HashMap<&String, &Component>>()
+    }
+
+    /// Returns only links in the manifest
+    pub fn links(&self) -> impl Iterator<Item = &Trait> {
+        self.components()
+            .flat_map(|c| c.traits.as_ref())
+            .flatten()
+            .filter(|t| t.is_link())
     }
 }
 
@@ -151,6 +184,11 @@ impl Trait {
             trait_type: LINK_TRAIT.to_owned(),
             properties: TraitProperty::Link(props),
         }
+    }
+
+    /// Check if a trait is a link
+    pub fn is_link(&self) -> bool {
+        self.trait_type == LINK_TRAIT
     }
 
     /// Helper that creates a new spreadscaler type trait with the given properties

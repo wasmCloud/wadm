@@ -366,9 +366,7 @@ pub(crate) fn compute_ineligible_hosts<'a>(
     // Find all host IDs that are eligible for any spread
     let eligible_ids = spreads
         .iter()
-        .flat_map(|spread| {
-            eligible_hosts(all_hosts, spread).into_keys()
-        })
+        .flat_map(|spread| eligible_hosts(all_hosts, spread).into_keys())
         .collect::<HashSet<_>>();
 
     // Filter out all hosts that are eligible for any spread, leaving only ineligible hosts
@@ -1568,7 +1566,8 @@ mod test {
 
     #[tokio::test]
     async fn can_calculate_ineligible_hosts() {
-        let spreads = [Spread {
+        let spreads = [
+            Spread {
                 name: "SimpleOne".to_string(),
                 requirements: BTreeMap::from_iter([("region".to_string(), "east".to_string())]),
                 weight: Some(75),
@@ -1577,7 +1576,8 @@ mod test {
                 name: "SimpleTwo".to_string(),
                 requirements: BTreeMap::from_iter([("resilient".to_string(), "true".to_string())]),
                 weight: Some(25),
-            }];
+            },
+        ];
 
         let hosts = HashMap::from_iter([
             (
