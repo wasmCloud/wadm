@@ -994,16 +994,14 @@ pub(crate) async fn validate_manifest(manifest: Manifest) -> anyhow::Result<()> 
         if let Properties::Capability {
             properties:
                 CapabilityProperties {
-                    id,
+                    id: Some(component_id),
                     config: _capability_config,
                     ..
                 },
         } = &component.properties
         {
-            if let Some(component_id) = id {
-                if !id_registry.insert(component_id.to_string()) {
-                    bail!("Duplicate component identifier in manifest: {component_id}");
-                }
+            if !id_registry.insert(component_id.to_string()) {
+                bail!("Duplicate component identifier in manifest: {component_id}");
             }
         }
 

@@ -157,7 +157,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
             .collect();
         // If we found any providers running on ineligible hosts, remove them before
         // attempting to start new ones.
-        if remove_ineligible.len() > 0 {
+        if !remove_ineligible.is_empty() {
             let status = StatusInfo::reconciling(
                 "Found providers running on ineligible hosts, removing them.",
             );
