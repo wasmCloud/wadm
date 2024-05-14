@@ -3,7 +3,6 @@ kind: Application
 metadata:
   name: complex
   annotations:
-    version: v0.0.1
     description: "This is my CRUDdy complex blobby app with all configuration possibilities"
 spec:
   components:

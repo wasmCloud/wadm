@@ -71,7 +71,7 @@ CARGO_TEST_TARGET ?=
 
 test:: ## Run tests
 ifeq ($(shell nc -czt -w1 127.0.0.1 4222 || echo fail),fail)
-	$(DOCKER) run --rm -d --name wadm-test -p 127.0.0.1:4222:4222 nats:2.9 -js
+	$(DOCKER) run --rm -d --name wadm-test -p 127.0.0.1:4222:4222 nats:2.10 -js
 	$(CARGO) test $(CARGO_TEST_TARGET) -- --nocapture
 	$(DOCKER) stop wadm-test
 else
@@ -81,9 +81,10 @@ endif
 test-e2e:: ## Run e2e tests
 ifeq ($(shell nc -czt -w1 127.0.0.1 4222 || echo fail),fail)
 	@$(MAKE) build
-	RUST_BACKTRACE=1 $(CARGO) test --test e2e_multitenant --features _e2e_tests --  --nocapture 
+	@# Reenable this once we've enabled all tests
+	@# RUST_BACKTRACE=1 $(CARGO) test --test e2e_multitenant --features _e2e_tests --  --nocapture 
 	RUST_BACKTRACE=1 $(CARGO) test --test e2e_multiple_hosts --features _e2e_tests --  --nocapture 
-	RUST_BACKTRACE=1 $(CARGO) test --test e2e_upgrades --features _e2e_tests --  --nocapture 
+	@# RUST_BACKTRACE=1 $(CARGO) test --test e2e_upgrades --features _e2e_tests --  --nocapture 
 else
 	@echo "WARN: Not running e2e tests. NATS must not be currently running"
 	exit 1

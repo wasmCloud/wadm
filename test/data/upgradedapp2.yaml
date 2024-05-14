@@ -3,7 +3,6 @@ kind: Application
 metadata:
   name: updateapp
   annotations:
-    version: v0.0.3
     description: "Testing effect of linkdef values and provider config updates="
 spec:
   components:

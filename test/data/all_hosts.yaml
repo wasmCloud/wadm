@@ -3,7 +3,6 @@ kind: Application
 metadata:
   name: hello-all-hosts
   annotations:
-    version: v0.0.1
     description: "This is my app"
 spec:
   components:

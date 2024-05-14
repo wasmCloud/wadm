@@ -294,10 +294,7 @@ impl ClientInfo {
                 lattice_id.unwrap_or(DEFAULT_LATTICE_ID)
             )
         };
-        let data = serde_json::to_vec(&UndeployModelRequest {
-            non_destructive: false,
-        })
-        .unwrap();
+        let data = serde_json::to_vec(&UndeployModelRequest {}).unwrap();
         let msg = self
             .client
             .request(subject, data.into())

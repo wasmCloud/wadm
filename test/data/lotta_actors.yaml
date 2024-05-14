@@ -3,7 +3,6 @@ kind: Application
 metadata:
   name: lotta-actors
   annotations:
-    version: v0.0.1
     description: "This is my, big, app"
 spec:
   components:

@@ -3,7 +3,6 @@ kind: Application
 metadata:
   name: my-example-app
   annotations:
-    version: v0.0.2
     description: "This is my app revision 2"
 spec:
   components:
