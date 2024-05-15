@@ -4,14 +4,16 @@ use serde::{Deserialize, Serialize};
 
 use crate::model::Manifest;
 
-use super::LATEST_VERSION;
+use super::{LATEST_VERSION, VERSION_ANNOTATION_KEY};
 
-/// This struct represents a single manfiest, with its version history. Internally these are stored
+/// This struct represents a single manifest, with its version history. Internally these are stored
 /// as an indexmap keyed by version name
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub(crate) struct StoredManifest {
     // Ordering matters for how we store a manifest, so we need to use an index map to preserve
     // insertion order _and_ have quick access to specific versions
+    // NOTE(thomastaylor312): We probably should have a configurable limit for how many we keep
+    // around in history so they don't balloon forever
     manifests: IndexMap<String, Manifest>,
     // Set only if a version is deployed
     deployed_version: Option<String>,
@@ -28,8 +30,20 @@ impl StoredManifest {
 
     /// Adds the given manifest, returning `false` if unable to add (e.g. the version already
     /// exists)
-    pub fn add_version(&mut self, manifest: Manifest) -> bool {
-        let version = manifest.version().to_owned();
+    pub fn add_version(&mut self, mut manifest: Manifest) -> bool {
+        let version = match manifest.metadata.annotations.get(VERSION_ANNOTATION_KEY) {
+            Some(v) => v.to_string(),
+            None => {
+                // If a version is not given, automatically add a new version with a specific ULID (that way
+                // it can be sorted in order)
+                let v = ulid::Ulid::new().to_string();
+                manifest
+                    .metadata
+                    .annotations
+                    .insert(VERSION_ANNOTATION_KEY.to_string(), v.clone());
+                v
+            }
+        };
         if self.manifests.contains_key(&version) {
             return false;
         }
@@ -126,5 +140,44 @@ impl StoredManifest {
     /// Returns the total count of manifests
     pub fn count(&self) -> usize {
         self.manifests.len()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::model::{test::deserialize_yaml, VERSION_ANNOTATION_KEY};
+
+    use super::StoredManifest;
+
+    #[test]
+    fn test_versioning() {
+        let mut manifest = deserialize_yaml("./oam/simple2.yaml").expect("Should be able to parse");
+        let mut stored = StoredManifest::default();
+
+        assert!(
+            stored.add_version(manifest.clone()),
+            "Should be able to add manifest without a version set"
+        );
+
+        let updated = stored.get_current();
+        ulid::Ulid::from_string(updated.version()).expect("Should have had a ULID set");
+
+        // Now update the manifest and add a new custom version
+        manifest
+            .metadata
+            .annotations
+            .insert(VERSION_ANNOTATION_KEY.to_string(), "v0.0.1".to_string());
+        assert!(
+            stored.add_version(manifest.clone()),
+            "Should be able to add manifest with custom version"
+        );
+        let updated = stored.get_current();
+        assert_eq!(updated.version(), "v0.0.1", "Version should still be set");
+
+        // Try adding again and make sure that still fails
+        assert!(
+            !stored.add_version(manifest),
+            "Adding duplicate version should fail"
+        );
     }
 }

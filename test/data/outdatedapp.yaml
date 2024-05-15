@@ -10,7 +10,6 @@ kind: Application
 metadata:
   name: updateapp
   annotations:
-    version: v0.0.1
     description: "According to all known laws of aviation"
 spec:
   components:

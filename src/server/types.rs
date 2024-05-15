@@ -82,9 +82,7 @@ pub struct VersionInfo {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DeleteModelRequest {
     #[serde(default)]
-    pub version: String,
-    #[serde(default)]
-    pub delete_all: bool,
+    pub version: Option<String>,
 }
 
 /// A response from a delete request
@@ -133,10 +131,10 @@ pub enum DeployResult {
 }
 
 /// A request to undeploy a model
+///
+/// Right now this is just an empty struct, but it is reserved for future use
 #[derive(Debug, Serialize, Deserialize)]
-pub struct UndeployModelRequest {
-    pub non_destructive: bool,
-}
+pub struct UndeployModelRequest {}
 
 /// A response to a status request
 #[derive(Debug, Serialize, Deserialize)]

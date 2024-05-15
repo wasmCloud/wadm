@@ -3,7 +3,6 @@ kind: Application
 metadata:
   name: kvcounter-rust
   annotations:
-    version: v0.0.1
     description: "Kvcounter demo in Rust, using the WebAssembly Component Model and WebAssembly Interfaces Types (WIT)"
   labels:
     app.oam.io/name: kvcounter-rust

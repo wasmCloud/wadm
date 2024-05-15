@@ -3,7 +3,6 @@ kind: Application
 metadata:
   name: dontupdateapp
   annotations:
-    version: v0.0.1
     description: "Testing effect of duplicate providers"
 spec:
   components:

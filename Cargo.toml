@@ -60,6 +60,7 @@ tracing-subscriber = { version = "0.3.7", features = [
     "env-filter",
     "json",
 ], optional = true }
+ulid = { version = "1", features = ["serde"] }
 uuid = "1"
 wasmcloud-control-interface = "1.0.0"
 

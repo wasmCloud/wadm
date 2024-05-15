@@ -168,8 +168,6 @@ of these can be found below:
   us know and we will consider additional ways of how we can address it.
 - Manifest validation is implemented, but slightly clunky. Any PRs that make this better would be
   more than welcome!
-- Nondestructive (e.g. orphaning resources) undeploys are not currently implemented. You can set the
-  field in the request, but it won't do anything
 
 ## References
 

@@ -312,10 +312,6 @@ impl<P: Publisher> Handler<P> {
             .await
     }
 
-    // NOTE(thomastaylor312): This is different than wadm 0.3. I found it remarkably confusing that
-    // you could delete something without undeploying it. So the new behavior is that if a manifest
-    // that is deployed is deleted, it is automatically undeployed, and we indicate that to the
-    // user. This should be documented when we get to our documentation tasks
     #[instrument(level = "debug", skip(self, msg))]
     pub async fn delete_model(
         &self,
@@ -336,41 +332,19 @@ impl<P: Publisher> Handler<P> {
                     return;
                 }
             };
-        let reply_data = if req.delete_all {
-            match self.store.delete(account_id, lattice_id, name).await {
-                Ok(_) => {
-                    DeleteModelResponse {
-                        result: DeleteResult::Deleted,
-                        message: format!("Successfully deleted model {}", name),
-                        // By default if it is all gone, we definitely undeployed things
-                        undeploy: true,
-                    }
-                }
-                Err(e) => {
-                    error!(error = %e, "Unable to delete data");
-                    DeleteModelResponse {
-                        result: DeleteResult::Error,
-                        message: "Internal storage error".to_string(),
-                        undeploy: false,
-                    }
-                }
-            }
-        } else {
+        let reply_data = if let Some(version) = req.version {
             match self.store.get(account_id, lattice_id, name).await {
                 Ok(Some((mut current, current_revision))) => {
-                    let deleted = current.delete_version(&req.version);
+                    let deleted = current.delete_version(&version);
                     if deleted && !current.is_empty() {
                         // If the version we deleted was the deployed one, undeploy it
                         let deployed_version = current.deployed_version();
-                        let undeploy = if deployed_version
-                            .map(|v| v == req.version)
-                            .unwrap_or(false)
-                        {
-                            trace!(?deployed_version, deleted_version = %req.version, "Deployed version matches deleted. Will undeploy");
+                        let undeploy = if deployed_version.map(|v| v == version).unwrap_or(false) {
+                            trace!(?deployed_version, deleted_version = %version, "Deployed version matches deleted. Will undeploy");
                             current.undeploy();
                             true
                         } else {
-                            trace!(?deployed_version, deleted_version = %req.version, "Deployed version does not match deleted version. Will not undeploy");
+                            trace!(?deployed_version, deleted_version = %version, "Deployed version does not match deleted version. Will not undeploy");
                             false
                         };
                         self.store
@@ -380,7 +354,7 @@ impl<P: Publisher> Handler<P> {
                                 result: DeleteResult::Deleted,
                                 message: format!(
                                     "Successfully deleted version {} of model {}",
-                                    req.version, name
+                                    version, name
                                 ),
                                 undeploy,
                             })
@@ -417,7 +391,7 @@ impl<P: Publisher> Handler<P> {
                     } else {
                         DeleteModelResponse {
                             result: DeleteResult::Noop,
-                            message: format!("Model version {} doesn't exist", req.version),
+                            message: format!("Model version {} doesn't exist", version),
                             undeploy: false,
                         }
                     }
@@ -429,6 +403,25 @@ impl<P: Publisher> Handler<P> {
                 },
                 Err(e) => {
                     error!(error = %e, "Unable to fetch current data data");
+                    DeleteModelResponse {
+                        result: DeleteResult::Error,
+                        message: "Internal storage error".to_string(),
+                        undeploy: false,
+                    }
+                }
+            }
+        } else {
+            match self.store.delete(account_id, lattice_id, name).await {
+                Ok(_) => {
+                    DeleteModelResponse {
+                        result: DeleteResult::Deleted,
+                        message: format!("Successfully deleted model {}", name),
+                        // By default if it is all gone, we definitely undeployed things
+                        undeploy: true,
+                    }
+                }
+                Err(e) => {
+                    error!(error = %e, "Unable to delete data");
                     DeleteModelResponse {
                         result: DeleteResult::Error,
                         message: "Internal storage error".to_string(),
@@ -704,9 +697,6 @@ impl<P: Publisher> Handler<P> {
         .await;
     }
 
-    // NOTE(thomastaylor312): This is different than wadm 0.3. By default we destructively undeploy
-    // unless specified in the request. We also have the exact same acknowledgement types as a
-    // deploy request
     #[instrument(level = "debug", skip(self, msg))]
     pub async fn undeploy_model(
         &self,
@@ -716,9 +706,7 @@ impl<P: Publisher> Handler<P> {
         name: &str,
     ) {
         let req: UndeployModelRequest = if msg.payload.is_empty() {
-            UndeployModelRequest {
-                non_destructive: false,
-            }
+            UndeployModelRequest {}
         } else {
             match serde_json::from_reader(std::io::Cursor::new(msg.payload)) {
                 Ok(r) => r,

@@ -3,7 +3,6 @@ kind: Application
 metadata:
   name: hello-simple
   annotations:
-    version: "v0.0.1"
     description: "A Hello World app for testing, most basic HTTP link"
 spec:
   components:

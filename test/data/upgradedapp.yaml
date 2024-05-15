@@ -3,7 +3,6 @@ kind: Application
 metadata:
   name: updateapp
   annotations:
-    version: v0.0.2
     description: "Bees"
 spec:
   components:
