@@ -4,7 +4,7 @@ on:
     branches:
       - main
     tags:
-      - "v*" # Push events to matching v*, i.e. v1.0, v20.15.10
+      - 'v*' # Push events to matching v*, i.e. v1.0, v20.15.10
   workflow_dispatch: # Allow manual creation of artifacts without a release
 
 jobs:
@@ -21,34 +21,34 @@ jobs:
           # old versions. But if we build on the old version, it is compatible with the newer
           # versions running in ubuntu 22 and its ilk
           - {
-              os: "ubuntu-20.04",
-              arch: "amd64",
-              extension: "",
-              targetPath: "target/release/",
+              os: 'ubuntu-20.04',
+              arch: 'amd64',
+              extension: '',
+              targetPath: 'target/release/',
             }
           - {
-              os: "ubuntu-20.04",
-              arch: "aarch64",
-              extension: "",
-              targetPath: "target/aarch64-unknown-linux-gnu/release/",
+              os: 'ubuntu-20.04',
+              arch: 'aarch64',
+              extension: '',
+              targetPath: 'target/aarch64-unknown-linux-gnu/release/',
             }
           - {
-              os: "macos-latest",
-              arch: "amd64",
-              extension: "",
-              targetPath: "target/release/",
+              os: 'macos-13',
+              arch: 'amd64',
+              extension: '',
+              targetPath: 'target/release/',
             }
           - {
-              os: "windows-latest",
-              arch: "amd64",
-              extension: ".exe",
-              targetPath: "target/release/",
+              os: 'windows-latest',
+              arch: 'amd64',
+              extension: '.exe',
+              targetPath: 'target/release/',
             }
           - {
-              os: "macos-latest",
-              arch: "aarch64",
-              extension: "",
-              targetPath: "target/aarch64-apple-darwin/release/",
+              os: 'macos-latest',
+              arch: 'aarch64',
+              extension: '',
+              targetPath: 'target/release/',
             }
     steps:
       - uses: actions/checkout@v4
@@ -75,7 +75,7 @@ jobs:
 
       - name: Install latest Rust stable toolchain
         uses: dtolnay/rust-toolchain@stable
-        if: matrix.config.arch != 'aarch64'
+        if: matrix.config.arch != 'aarch64' || startsWith(matrix.config.os, 'macos')
         with:
           toolchain: stable
           components: clippy, rustfmt
@@ -93,31 +93,19 @@ jobs:
 
       - name: Install latest Rust stable toolchain
         uses: dtolnay/rust-toolchain@stable
-        if: matrix.config.arch == 'aarch64' && matrix.config.os == 'macos-latest'
-        with:
-          toolchain: stable
-          components: clippy, rustfmt
-          target: aarch64-apple-darwin
-
-      - name: Install latest Rust stable toolchain
-        uses: dtolnay/rust-toolchain@stable
         if: matrix.config.arch == 'aarch64' && matrix.config.os == 'ubuntu-20.04'
         with:
           toolchain: stable
           components: clippy, rustfmt
           target: aarch64-unknown-linux-gnu
 
-      - name: build release
-        if: matrix.config.arch != 'aarch64'
-        run: "cargo build --release --bin wadm --features cli"
+      - name: build release (amd64 linux, macos, windows)
+        if: matrix.config.arch != 'aarch64' || startsWith(matrix.config.os, 'macos')
+        run: 'cargo build --release --bin wadm --features cli'
 
-      - name: build release
-        if: matrix.config.arch == 'aarch64' && matrix.config.os == 'macos-latest'
-        run: "cargo build --release --bin wadm --features cli --target aarch64-apple-darwin"
-
-      - name: build release
+      - name: build release (arm64 linux)
         if: matrix.config.arch == 'aarch64' && matrix.config.os == 'ubuntu-20.04'
-        run: "cargo build --release --bin wadm --features cli --target aarch64-unknown-linux-gnu"
+        run: 'cargo build --release --bin wadm --features cli --target aarch64-unknown-linux-gnu'
 
       - uses: actions/upload-artifact@v3
         with:
