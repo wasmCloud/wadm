@@ -33,94 +33,96 @@ cd wadm-<version>-<os>-<arch>
 
 ### Deploying an application
 
-Take the following manifest and save it locally (you can also download this from
-[echo.yaml](./oam/echo.yaml)):
+Copy the following manifest and save it locally as `hello.yaml` (you can also find it in the `oam`
+[directory](./oam/hello.yaml)):
 
 ```yaml
+# Metadata
 apiVersion: core.oam.dev/v1beta1
 kind: Application
 metadata:
-  name: echo
+  name: hello-world
   annotations:
-    description: "This is my app"
+    version: v0.0.1
+    description: 'HTTP hello world demo'
 spec:
   components:
-    - name: echo
+    - name: http-component
       type: component
       properties:
-        image: wasmcloud.azurecr.io/echo:0.3.7
+        # Your manifest will point to the path of the built component, you can also
+        # start published components from OCI registries
+        image: wasmcloud.azurecr.io/http-hello-world:0.1.0
       traits:
+        # One replica of this component will run
         - type: spreadscaler
           properties:
-            instances: 1
-
+            replicas: 1
+    # The httpserver capability provider, started from the official wasmCloud OCI artifact
     - name: httpserver
       type: capability
       properties:
-        contract: wasmcloud:httpserver
-        image: wasmcloud.azurecr.io/httpserver:0.17.0
+        image: ghcr.io/wasmcloud/http-server:0.20.0
       traits:
-        - type: spreadscaler
-          properties:
-            instances: 1
+        # Link the HTTP server, and inform it to listen on port 8080
+        # on the local machine
         - type: link
           properties:
-            target: echo
+            target: http-component
             namespace: wasi
             package: http
-            interfaces:
-              - incoming-handler
+            interfaces: [incoming-handler]
             source_config:
-              - name: default-port
+              - name: default-http
                 properties:
-                  address: 0.0.0.0:8080
+                  ADDRESS: 127.0.0.1:8080
 ```
 
-Then, use **wadm** to put the manifest and deploy it.
+Then use `wash` to deploy the manifest:
 
 ```
-wash app put ./echo.yaml
-wash app deploy echo
+wash app deploy hello.yaml
 ```
 
-🎉 You've just launched your first application with **wadm**! Try `curl localhost:8080/wadm` and see
-the response from the [echo](https://github.com/wasmCloud/wasmCloud/tree/main/examples/golang/components/http-echo-tinygo) WebAssembly component.
+🎉 You've just launched your first application with **wadm**! Try `curl localhost:8080`.
 
-When you're done, you can use **wadm** to undeploy the application.
+When you're done, you can use `wash` to undeploy the application:
 
 ```
-wash app undeploy echo
+wash app undeploy hello-world
 ```
 
 ### Modifying applications
 
-**wadm** supports upgrading applications by `put`ting new versions of manifests and then `deploy`ing
-them. Try changing the manifest you created above by updating the number of echo instances.
+**wadm** supports upgrading applications by deploying new versions of manifests. Try changing the manifest you created above by updating the number of replicas.
 
 ```yaml
 <<ELIDED>>
+metadata:
+  name: hello-world
+  annotations:
+    version: v0.0.2 # Note the changed version
+    description: 'HTTP hello world demo'
 spec:
   components:
-    - name: echo
+    - name: http-component
       type: component
       properties:
-        image: wasmcloud.azurecr.io/echo:0.3.7
+        image: wasmcloud.azurecr.io/http-hello-world:0.1.0
       traits:
         - type: spreadscaler
           properties:
-            instances: 10 # Let's run 10!
+            replicas: 10 # Let's have 10!
 <<ELIDED>>
 ```
 
-Then, simply deploy the new version:
+Then simply deploy the new version:
 
 ```
-wash app put ./echo.yaml
-wash app deploy echo v0.0.2
+wash app deploy hello.yaml
 ```
 
-If you run `wash ui` and navigate to the [wasmCloud dashboard](http://localhost:3030/), you'll see that you now have
-10 instances of the echo component.
+Now wasmCloud is configured to automatically scale your component to 10 replicas based on incoming load.
 
 _Documentation for configuring the spreadscaler to spread components and providers across multiple hosts
 in a lattice is forthcoming._
