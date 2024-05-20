@@ -43,15 +43,13 @@ kind: Application
 metadata:
   name: hello-world
   annotations:
-    version: v0.0.1
     description: 'HTTP hello world demo'
 spec:
   components:
     - name: http-component
       type: component
       properties:
-        # Your manifest will point to the path of the built component, you can also
-        # start published components from OCI registries
+        # Run components from OCI registries as below or from a local .wasm component binary.
         image: wasmcloud.azurecr.io/http-hello-world:0.1.0
       traits:
         # One replica of this component will run
@@ -64,8 +62,7 @@ spec:
       properties:
         image: ghcr.io/wasmcloud/http-server:0.20.0
       traits:
-        # Link the HTTP server, and inform it to listen on port 8080
-        # on the local machine
+        # Link the HTTP server and set it to listen on the local machine's port 8080
         - type: link
           properties:
             target: http-component
@@ -101,7 +98,6 @@ wash app undeploy hello-world
 metadata:
   name: hello-world
   annotations:
-    version: v0.0.2 # Note the changed version
     description: 'HTTP hello world demo'
 spec:
   components:
@@ -116,16 +112,13 @@ spec:
 <<ELIDED>>
 ```
 
-Then simply deploy the new version:
+Then simply deploy the new manifest:
 
 ```
 wash app deploy hello.yaml
 ```
 
 Now wasmCloud is configured to automatically scale your component to 10 replicas based on incoming load.
-
-_Documentation for configuring the spreadscaler to spread components and providers across multiple hosts
-in a lattice is forthcoming._
 
 ## Responsibilities
 
@@ -142,13 +135,15 @@ in a lattice is forthcoming._
 
 ## 🚧 Advanced
 
+You can find a Docker Compose file for deploying an end-to-end multi-tenant example in the [test](https://github.com/wasmCloud/wadm/blob/main/test/docker-compose-e2e-multitenant.yaml) directory.
+
 In advanced use cases, **wadm** is also capable of:
 
 - Monitoring multiple lattices.
 - Running multiple instances to distribute load among multiple processes, or for a high-availability
   architecture.
 
-🚧 The above functionality is somewhat tested, but not as rigorously as a single instance monitoring
+🚧 Multi-lattice and multi-process functionality is somewhat tested, but not as rigorously as a single instance monitoring
 a single lattice. Proceed with caution while we do further testing.
 
 ### API

@@ -4,15 +4,13 @@ kind: Application
 metadata:
   name: hello-world
   annotations:
-    version: v0.0.1
     description: 'HTTP hello world demo'
 spec:
   components:
     - name: http-component
       type: component
       properties:
-        # Your manifest will point to the path of the built component, you can also
-        # start published components from OCI registries
+        # Run components from OCI registries as below or from a local .wasm component binary.
         image: wasmcloud.azurecr.io/http-hello-world:0.1.0
       traits:
         # One replica of this component will run
@@ -25,8 +23,7 @@ spec:
       properties:
         image: ghcr.io/wasmcloud/http-server:0.20.0
       traits:
-        # Link the HTTP server, and inform it to listen on port 8080
-        # on the local machine
+        # Link the HTTP server and set it to listen on the local machine's port 8080
         - type: link
           properties:
             target: http-component
