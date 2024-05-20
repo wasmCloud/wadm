@@ -4,7 +4,7 @@
 
 The wasmCloud Application Deployment Manager (**wadm**) enables declarative wasmCloud applications.
 It's responsible for managing a set of application deployment specifications, monitoring the current
-state of an entire [lattice](https://wasmcloud.com/docs/reference/lattice/), and issuing the
+state of an entire [lattice](https://wasmcloud.com/docs/deployment/lattice/), and issuing the
 appropriate lattice control commands required to close the gap between observed and desired state.
 
 ## Using wadm
@@ -13,12 +13,13 @@ appropriate lattice control commands required to close the gap between observed 
 
 ### Install & Run
 
-You can easily run **wadm** by downloading [wash](https://wasmcloud.com/docs/installation) and launching it alongside NATS and wasmCloud. Then, you can use the `wash app` command to query, create, and deploy applications.
+You can easily run **wadm** by downloading the [`wash`](https://wasmcloud.com/docs/installation) CLI, which automatically launches wadm alongside NATS and a wasmCloud host when you run `wash up`. You can use `wash` to query, create, and deploy applications.
 
 ```
 wash up -d    # Start NATS, wasmCloud, and wadm in the background
-wash app list # Query the list of applications
 ```
+
+Follow the [wasmCloud quickstart](https://wasmcloud.com/docs/tour/hello-world) to get started building and deploying an application, or follow the **Deploying an application** example below to simply try a deploy.
 
 If you prefer to run **wadm** separately and/or connect to running wasmCloud hosts, you can instead opt for using the latest GitHub release artifact and executing the binary. Simply replace the latest version, your operating system, and architecture below. Please note that wadm requires a wasmCloud host version >=0.63.0
 
@@ -32,97 +33,92 @@ cd wadm-<version>-<os>-<arch>
 
 ### Deploying an application
 
-Take the following manifest and save it locally (you can also download this from
-[echo.yaml](./oam/echo.yaml)):
+Copy the following manifest and save it locally as `hello.yaml` (you can also find it in the `oam`
+[directory](./oam/hello.yaml)):
 
 ```yaml
+# Metadata
 apiVersion: core.oam.dev/v1beta1
 kind: Application
 metadata:
-  name: echo
+  name: hello-world
   annotations:
-    version: v0.0.1
-    description: "This is my app"
+    description: 'HTTP hello world demo'
 spec:
   components:
-    - name: echo
+    - name: http-component
       type: component
       properties:
-        image: wasmcloud.azurecr.io/echo:0.3.7
+        # Run components from OCI registries as below or from a local .wasm component binary.
+        image: wasmcloud.azurecr.io/http-hello-world:0.1.0
       traits:
+        # One replica of this component will run
         - type: spreadscaler
           properties:
-            instances: 1
-        - type: linkdef
-          properties:
-            target: httpserver
-            values:
-              address: 0.0.0.0:8080
-
+            replicas: 1
+    # The httpserver capability provider, started from the official wasmCloud OCI artifact
     - name: httpserver
       type: capability
       properties:
-        contract: wasmcloud:httpserver
-        image: wasmcloud.azurecr.io/httpserver:0.17.0
+        image: ghcr.io/wasmcloud/http-server:0.20.0
       traits:
-        - type: spreadscaler
+        # Link the HTTP server and set it to listen on the local machine's port 8080
+        - type: link
           properties:
-            instances: 1
+            target: http-component
+            namespace: wasi
+            package: http
+            interfaces: [incoming-handler]
+            source_config:
+              - name: default-http
+                properties:
+                  ADDRESS: 127.0.0.1:8080
 ```
 
-Then, use **wadm** to put the manifest and deploy it.
+Then use `wash` to deploy the manifest:
 
 ```
-wash app put ./echo.yaml
-wash app deploy echo
+wash app deploy hello.yaml
 ```
 
-🎉 You've just launched your first application with **wadm**! Try `curl localhost:8080/wadm` and see
-the response from the [echo](https://github.com/wasmCloud/examples/tree/main/actor/echo) WebAssembly
-module.
+🎉 You've just launched your first application with **wadm**! Try `curl localhost:8080`.
 
-When you're done, you can use **wadm** to undeploy the application.
+When you're done, you can use `wash` to undeploy the application:
 
 ```
-wash app undeploy echo
+wash app undeploy hello-world
 ```
 
 ### Modifying applications
 
-**wadm** supports upgrading applications by `put`ting new versions of manifests and then `deploy`ing
-them. Try changing the manifest you created above by updating the number of echo instances.
+**wadm** supports upgrading applications by deploying new versions of manifests. Try changing the manifest you created above by updating the number of replicas.
 
 ```yaml
 <<ELIDED>>
-  name: echo
+metadata:
+  name: hello-world
   annotations:
-    version: v0.0.2 # Note the changed version
-    description: "wasmCloud echo Example"
+    description: 'HTTP hello world demo'
 spec:
   components:
-    - name: echo
+    - name: http-component
       type: component
       properties:
-        image: wasmcloud.azurecr.io/echo:0.3.5
+        image: wasmcloud.azurecr.io/http-hello-world:0.1.0
       traits:
         - type: spreadscaler
           properties:
-            instances: 10 # Let's run 10!
+            replicas: 10 # Let's have 10!
 <<ELIDED>>
 ```
 
-Then, simply deploy the new version:
+Then simply deploy the new manifest:
 
 ```
-wash app put ./echo.yaml
-wash app deploy echo v0.0.2
+wash app deploy hello.yaml
 ```
 
-If you navigate to the [wasmCloud dashboard](http://localhost:4000/), you'll see that you now have
-10 instances of the echo actor.
-
-_Documentation for configuring the spreadscaler to spread actors and providers across multiple hosts
-in a lattice is forthcoming._
+Now wasmCloud is configured to automatically scale your component to 10 replicas based on incoming load.
 
 ## Responsibilities
 
@@ -132,13 +128,14 @@ in a lattice is forthcoming._
   the creation and deletion and _rollback_ of models to previous versions. Application
   specifications are defined using the [Open Application Model](https://oam.dev/). For more
   information on wadm's specific OAM features, see our [OAM README](./oam/README.md).
-- **Observe State** - Monitor wasmCloud [CloudEvents](https://cloudevents.io/) from all hosts in a
-  lattice to build the current state.
+- **Observe State** - Monitor wasmCloud [CloudEvents](https://wasmcloud.com/docs/reference/cloud-event-list) from all hosts in a lattice to build the current state.
 - **Take Compensating Actions** - When indicated, issue commands to the [lattice control
   interface](https://github.com/wasmCloud/interfaces/tree/main/lattice-control) to bring about the
   changes necessary to make the desired and observed state match.
 
 ## 🚧 Advanced
+
+You can find a Docker Compose file for deploying an end-to-end multi-tenant example in the [test](https://github.com/wasmCloud/wadm/blob/main/test/docker-compose-e2e-multitenant.yaml) directory.
 
 In advanced use cases, **wadm** is also capable of:
 
@@ -146,7 +143,7 @@ In advanced use cases, **wadm** is also capable of:
 - Running multiple instances to distribute load among multiple processes, or for a high-availability
   architecture.
 
-🚧 The above functionality is somewhat tested, but not as rigorously as a single instance monitoring
+🚧 Multi-lattice and multi-process functionality is somewhat tested, but not as rigorously as a single instance monitoring
 a single lattice. Proceed with caution while we do further testing.
 
 ### API

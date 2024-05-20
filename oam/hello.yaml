@@ -1,0 +1,37 @@
+# Metadata
+apiVersion: core.oam.dev/v1beta1
+kind: Application
+metadata:
+  name: hello-world
+  annotations:
+    description: 'HTTP hello world demo'
+spec:
+  components:
+    - name: http-component
+      type: component
+      properties:
+        # Run components from OCI registries as below or from a local .wasm component binary.
+        image: wasmcloud.azurecr.io/http-hello-world:0.1.0
+      traits:
+        # One replica of this component will run
+        - type: spreadscaler
+          properties:
+            replicas: 1
+    # The httpserver capability provider, started from the official wasmCloud OCI artifact
+    - name: httpserver
+      type: capability
+      properties:
+        image: ghcr.io/wasmcloud/http-server:0.20.0
+      traits:
+        # Link the HTTP server and set it to listen on the local machine's port 8080
+        - type: link
+          properties:
+            target: http-component
+            namespace: wasi
+            package: http
+            interfaces: [incoming-handler]
+            source_config:
+              - name: default-http
+                properties:
+                  ADDRESS: 127.0.0.1:8080
+
