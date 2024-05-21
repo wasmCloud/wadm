@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::model::Manifest;
+use wadm_types::Manifest;
 
 /// The request body for getting a manifest
 #[derive(Debug, Serialize, Deserialize)]

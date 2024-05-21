@@ -8,11 +8,11 @@ use tokio::{
     task::JoinHandle,
 };
 use tracing::{error, instrument, trace, Instrument};
+use wadm_types::TraitProperty;
 
 use crate::{
     commands::Command,
     events::{Event, ProviderStartFailed, ProviderStarted},
-    model::TraitProperty,
     publisher::Publisher,
     server::StatusInfo,
     workers::{get_commands_and_result, ConfigSource},

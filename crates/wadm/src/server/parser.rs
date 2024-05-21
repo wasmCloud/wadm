@@ -1,6 +1,6 @@
 use async_nats::HeaderMap;
 
-use crate::model::Manifest;
+use wadm_types::Manifest;
 
 /// The name of the header in the NATS request to use for content type inference. The header value
 /// should be a valid MIME type

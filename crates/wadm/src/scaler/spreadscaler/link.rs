@@ -4,6 +4,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use tokio::sync::RwLock;
 use tracing::instrument;
+use wadm_types::TraitProperty;
 
 use crate::{
     commands::{Command, DeleteLink, PutLink},
@@ -11,7 +12,6 @@ use crate::{
         Event, LinkdefDeleted, LinkdefSet, ProviderHealthCheckInfo, ProviderHealthCheckPassed,
         ProviderHealthCheckStatus,
     },
-    model::TraitProperty,
     scaler::Scaler,
     server::StatusInfo,
     storage::ReadStore,

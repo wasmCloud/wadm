@@ -4,7 +4,7 @@ use anyhow::Result;
 use async_nats::jetstream::kv::{Operation, Store};
 use tracing::{debug, instrument, trace};
 
-use crate::{model::internal::StoredManifest, server::StatusType};
+use crate::{model::StoredManifest, server::StatusType};
 
 use super::ModelSummary;
 

@@ -1,9 +1,9 @@
 use cloudevents::Event as CloudEvent;
 use tracing::{instrument, trace};
+use wadm_types::Manifest;
 
 use crate::{
     events::{Event, ManifestPublished, ManifestUnpublished},
-    model::Manifest,
     publisher::Publisher,
 };
 

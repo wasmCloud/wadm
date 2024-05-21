@@ -5,9 +5,9 @@ use anyhow::Result;
 use async_trait::async_trait;
 use tokio::sync::RwLock;
 use tracing::{instrument, trace};
+use wadm_types::{Spread, SpreadScalerProperty, TraitProperty};
 
 use crate::events::HostHeartbeat;
-use crate::model::Spread;
 use crate::scaler::spreadscaler::{
     compute_ineligible_hosts, eligible_hosts, spreadscaler_annotations,
 };
@@ -15,7 +15,6 @@ use crate::server::StatusInfo;
 use crate::{
     commands::{Command, ScaleComponent},
     events::{Event, HostStarted, HostStopped},
-    model::{SpreadScalerProperty, TraitProperty},
     scaler::Scaler,
     storage::{Component, Host, ReadStore},
 };
@@ -343,13 +342,13 @@ mod test {
 
     use anyhow::Result;
     use chrono::Utc;
+    use wadm_types::{Spread, SpreadScalerProperty};
     use wasmcloud_control_interface::{HostInventory, InterfaceLinkDefinition};
 
     use crate::{
         commands::Command,
         consumers::{manager::Worker, ScopedMessage},
         events::{Event, LinkdefDeleted, LinkdefSet, ProviderStarted, ProviderStopped},
-        model::{Spread, SpreadScalerProperty},
         scaler::{daemonscaler::ActorDaemonScaler, manager::ScalerManager, Scaler},
         server::StatusType,
         storage::{Component, Host, Store, WadmComponentInfo},

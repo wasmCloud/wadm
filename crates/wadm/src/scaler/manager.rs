@@ -17,14 +17,13 @@ use tokio::{
     task::JoinHandle,
 };
 use tracing::{debug, error, instrument, trace, warn};
+use wadm_types::{
+    CapabilityProperties, Component, ComponentProperties, ConfigProperty, Manifest, Properties,
+    SpreadScalerProperty, Trait, TraitProperty, DAEMONSCALER_TRAIT, LINK_TRAIT, SPREADSCALER_TRAIT,
+};
 
 use crate::{
     events::Event,
-    model::{
-        CapabilityProperties, Component, ComponentProperties, ConfigProperty, Manifest, Properties,
-        SpreadScalerProperty, Trait, TraitProperty, DAEMONSCALER_TRAIT, LINK_TRAIT,
-        SPREADSCALER_TRAIT,
-    },
     publisher::Publisher,
     scaler::{spreadscaler::ActorSpreadScaler, Command, Scaler},
     server::StatusInfo,

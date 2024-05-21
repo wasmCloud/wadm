@@ -7,17 +7,13 @@ use jsonschema::{paths::PathChunk, Draft, JSONSchema};
 use serde_json::json;
 use tokio::sync::OnceCell;
 use tracing::{debug, error, instrument, log::warn, trace};
-
-use crate::{
-    model::{
-        internal::StoredManifest,
-        validation::{is_valid_manifest_name, validate_manifest_version, ValidationOutput},
-        CapabilityProperties, ComponentProperties, LinkProperty, Manifest, Properties, Trait,
-        TraitProperty, LATEST_VERSION,
-    },
-    publisher::Publisher,
-    server::StatusType,
+use wadm_types::validation::{is_valid_manifest_name, validate_manifest_version, ValidationOutput};
+use wadm_types::{
+    CapabilityProperties, ComponentProperties, LinkProperty, Manifest, Properties, Trait,
+    TraitProperty, LATEST_VERSION,
 };
+
+use crate::{model::StoredManifest, publisher::Publisher, server::StatusType};
 
 use super::{
     parser::parse_manifest, storage::ModelStorage, DeleteModelRequest, DeleteModelResponse,

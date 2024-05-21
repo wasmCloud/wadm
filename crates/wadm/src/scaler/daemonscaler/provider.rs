@@ -4,10 +4,10 @@ use anyhow::Result;
 use async_trait::async_trait;
 use tokio::sync::RwLock;
 use tracing::{instrument, trace};
+use wadm_types::{Spread, SpreadScalerProperty, TraitProperty};
 
 use crate::commands::StopProvider;
 use crate::events::{HostHeartbeat, ProviderInfo, ProviderStarted, ProviderStopped};
-use crate::model::Spread;
 use crate::scaler::compute_config_hash;
 use crate::scaler::spreadscaler::provider::ProviderSpreadConfig;
 use crate::scaler::spreadscaler::{
@@ -18,7 +18,6 @@ use crate::SCALER_KEY;
 use crate::{
     commands::{Command, StartProvider},
     events::{Event, HostStarted, HostStopped},
-    model::{SpreadScalerProperty, TraitProperty},
     scaler::Scaler,
     storage::{Host, ReadStore},
 };
@@ -284,10 +283,10 @@ mod test {
 
     use anyhow::Result;
     use chrono::Utc;
+    use wadm_types::{Spread, SpreadScalerProperty};
 
     use crate::{
         commands::{Command, StartProvider},
-        model::{Spread, SpreadScalerProperty},
         scaler::{spreadscaler::spreadscaler_annotations, Scaler},
         storage::{Host, Provider, Store},
         test_util::TestStore,

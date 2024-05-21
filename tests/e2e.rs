@@ -17,13 +17,13 @@ use tokio::{
     time::{interval, sleep},
 };
 use wadm::{
-    model::Manifest,
     server::{
         DeployModelRequest, DeployModelResponse, PutModelResponse, StatusInfo, StatusType,
         UndeployModelRequest,
     },
     APP_SPEC_ANNOTATION, MANAGED_BY_ANNOTATION, MANAGED_BY_IDENTIFIER,
 };
+use wadm_types::Manifest;
 use wasmcloud_control_interface::HostInventory;
 
 const LOG_DIR: &str = "test/e2e_log";
