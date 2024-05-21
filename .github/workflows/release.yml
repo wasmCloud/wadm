@@ -101,11 +101,11 @@ jobs:
 
       - name: build release (amd64 linux, macos, windows)
         if: matrix.config.arch != 'aarch64' || startsWith(matrix.config.os, 'macos')
-        run: 'cargo build --release --bin wadm --features cli'
+        run: 'cargo build --release --bin wadm'
 
       - name: build release (arm64 linux)
         if: matrix.config.arch == 'aarch64' && matrix.config.os == 'ubuntu-20.04'
-        run: 'cargo build --release --bin wadm --features cli --target aarch64-unknown-linux-gnu'
+        run: 'cargo build --release --bin wadm --target aarch64-unknown-linux-gnu'
 
       - uses: actions/upload-artifact@v3
         with:

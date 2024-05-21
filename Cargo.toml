@@ -1,5 +1,5 @@
 [package]
-name = "wadm"
+name = "wadm-cli"
 description = "wasmCloud Application Deployment Manager: A tool for running Wasm applications in wasmCloud"
 version = "0.11.2"
 edition = "2021"
@@ -11,24 +11,42 @@ repository = "https://github.com/wasmcloud/wadm"
 
 [features]
 default = []
-cli = [
-    "clap",
-    "tracing-opentelemetry",
-    "tracing-subscriber",
-    "opentelemetry",
-    "opentelemetry-otlp",
-]
 # internal feature for e2e tests
 _e2e_tests = []
 
+[workspace]
+members = ["crates/*"]
+
 [dependencies]
+anyhow = { workspace = true }
+async-nats = { workspace = true }
+async-trait = { workspace = true }
+clap = { workspace = true, features = ["derive", "cargo", "env"] }
+futures = { workspace = true }
+nkeys = { workspace = true }
+# One version back to avoid clashes with 0.10 of otlp
+opentelemetry = { workspace = true, features = ["rt-tokio"] }
+# 0.10 to avoid protoc dep
+opentelemetry-otlp = { workspace = true, features = [
+    "http-proto",
+    "reqwest-client",
+] }
+tokio = { workspace = true, features = ["full"] }
+tracing = { workspace = true, features = ["log"] }
+tracing-futures = { workspace = true }
+tracing-opentelemetry = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
+wasmcloud-control-interface = { workspace = true }
+wadm = { version = "0.11.2", path = "./crates/wadm" }
+
+[workspace.dependencies]
 anyhow = "1"
 async-nats = "0.33"
 async-trait = "0.1"
 base64 = "0.21.2"
 bytes = "1"
 chrono = "0.4"
-clap = { version = "4", features = ["derive", "cargo", "env"], optional = true }
+clap = { version = "4", features = ["derive", "cargo", "env"] }
 cloudevents-sdk = "0.7"
 futures = "0.3"
 indexmap = { version = "2", features = ["serde"] }
@@ -36,14 +54,12 @@ jsonschema = "0.17"
 lazy_static = "1"
 nkeys = "0.3.0"
 # One version back to avoid clashes with 0.10 of otlp
-opentelemetry = { version = "0.17", features = ["rt-tokio"], optional = true }
+opentelemetry = { version = "0.17", features = ["rt-tokio"] }
 # 0.10 to avoid protoc dep
 opentelemetry-otlp = { version = "0.10", features = [
     "http-proto",
     "reqwest-client",
-], optional = true }
-# TODO: Actually leverage prometheus
-prometheus = { version = "0.13", optional = true }
+] }
 rand = { version = "0.8", features = ["small_rng"] }
 regex = "1.9.3"
 semver = { version = "1.0.16", features = ["serde"] }
@@ -52,22 +68,22 @@ serde_json = "1"
 serde_yaml = "0.9"
 sha2 = "0.10.2"
 thiserror = "1"
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", default-features = false }
 tracing = { version = "0.1", features = ["log"] }
 tracing-futures = "0.2"
-tracing-opentelemetry = { version = "0.17", optional = true }
-tracing-subscriber = { version = "0.3.7", features = [
-    "env-filter",
-    "json",
-], optional = true }
+tracing-opentelemetry = { version = "0.17" }
+tracing-subscriber = { version = "0.3.7", features = ["env-filter", "json"] }
 ulid = { version = "1", features = ["serde"] }
 uuid = "1"
 wasmcloud-control-interface = "1.0.0"
 
 [dev-dependencies]
+base64 = { workspace = true }
+chrono = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
 serial_test = "1"
 
 [[bin]]
 name = "wadm"
-path = "bin/main.rs"
-required-features = ["cli"]
+path = "src/main.rs"
