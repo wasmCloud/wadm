@@ -9,7 +9,7 @@ use anyhow::{Context as _, Result};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
-use crate::model::{LinkProperty, Manifest, TraitProperty, LATEST_VERSION};
+use crate::{LinkProperty, Manifest, TraitProperty, LATEST_VERSION};
 
 /// A namespace -> package -> interface lookup
 type KnownInterfaceLookup = HashMap<String, HashMap<String, HashMap<String, ()>>>;

@@ -75,6 +75,7 @@ tracing-opentelemetry = { version = "0.17" }
 tracing-subscriber = { version = "0.3.7", features = ["env-filter", "json"] }
 ulid = { version = "1", features = ["serde"] }
 uuid = "1"
+wadm-types = { version = "0.11.2", path = "./crates/wadm-types" }
 wasmcloud-control-interface = "1.0.0"
 
 [dev-dependencies]
@@ -83,6 +84,7 @@ chrono = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 serial_test = "1"
+wadm-types = { workspace = true }
 
 [[bin]]
 name = "wadm"

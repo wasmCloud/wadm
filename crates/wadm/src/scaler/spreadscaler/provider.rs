@@ -7,6 +7,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use tokio::sync::{OnceCell, RwLock};
 use tracing::{instrument, trace};
+use wadm_types::{Spread, SpreadScalerProperty, TraitProperty};
 
 use crate::{
     commands::{Command, StartProvider, StopProvider},
@@ -14,7 +15,6 @@ use crate::{
         Event, HostHeartbeat, HostStarted, HostStopped, ProviderInfo, ProviderStarted,
         ProviderStopped,
     },
-    model::{Spread, SpreadScalerProperty, TraitProperty},
     scaler::{
         compute_config_hash,
         spreadscaler::{
@@ -345,11 +345,11 @@ mod test {
 
     use anyhow::Result;
     use chrono::Utc;
+    use wadm_types::{Spread, SpreadScalerProperty};
 
     use crate::{
         commands::{Command, StartProvider, StopProvider},
         events::ProviderInfo,
-        model::{Spread, SpreadScalerProperty},
         scaler::{
             spreadscaler::{provider::ProviderSpreadScaler, spreadscaler_annotations},
             Scaler,

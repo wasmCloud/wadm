@@ -15,7 +15,7 @@ use wasmcloud_control_interface::{
     ComponentDescription, InterfaceLinkDefinition, ProviderDescription,
 };
 
-use crate::model::Manifest;
+use wadm_types::Manifest;
 
 use super::data::*;
 

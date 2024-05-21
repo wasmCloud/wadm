@@ -5,13 +5,13 @@ use anyhow::Result;
 use async_trait::async_trait;
 use tokio::sync::RwLock;
 use tracing::{instrument, trace, warn};
+use wadm_types::{Spread, SpreadScalerProperty, TraitProperty, DEFAULT_SPREAD_WEIGHT};
 
 use crate::events::HostHeartbeat;
 use crate::server::StatusInfo;
 use crate::{
     commands::{Command, ScaleComponent},
     events::{Event, HostStarted, HostStopped},
-    model::{Spread, SpreadScalerProperty, TraitProperty, DEFAULT_SPREAD_WEIGHT},
     scaler::Scaler,
     storage::{Component, Host, ReadStore},
     SCALER_KEY,
@@ -461,6 +461,7 @@ mod test {
 
     use anyhow::Result;
     use chrono::Utc;
+    use wadm_types::{Spread, SpreadScalerProperty};
     use wasmcloud_control_interface::InterfaceLinkDefinition;
 
     use crate::{
@@ -469,7 +470,6 @@ mod test {
         events::{
             ComponentScaled, Event, LinkdefDeleted, LinkdefSet, ProviderStarted, ProviderStopped,
         },
-        model::{Spread, SpreadScalerProperty},
         scaler::{
             manager::ScalerManager,
             spreadscaler::{spreadscaler_annotations, ActorSpreadScaler},

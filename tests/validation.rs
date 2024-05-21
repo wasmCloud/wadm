@@ -1,6 +1,6 @@
 use anyhow::{Context as _, Result};
 
-use wadm::model::validation::{validate_manifest_file, ValidationFailureLevel, ValidationOutput};
+use wadm_types::validation::{validate_manifest_file, ValidationFailureLevel, ValidationOutput};
 
 /// Ensure that valid YAML manifests are valid
 #[tokio::test]

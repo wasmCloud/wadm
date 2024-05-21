@@ -4,7 +4,6 @@ pub mod commands;
 pub mod consumers;
 pub mod events;
 pub mod mirror;
-pub mod model;
 pub mod nats_utils;
 pub mod publisher;
 pub mod scaler;
@@ -12,6 +11,7 @@ pub mod server;
 pub mod storage;
 pub mod workers;
 
+pub(crate) mod model;
 #[cfg(test)]
 pub mod test_util;
 

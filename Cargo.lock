@@ -2815,6 +2815,7 @@ dependencies = [
  "tracing-futures",
  "ulid",
  "uuid",
+ "wadm-types",
  "wasmcloud-control-interface",
 ]
 
@@ -2841,6 +2842,71 @@ dependencies = [
  "tracing-opentelemetry 0.17.4",
  "tracing-subscriber",
  "wadm",
+ "wadm-types",
+ "wasmcloud-control-interface",
+]
+
+[[package]]
+name = "wadm-client"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-nats",
+ "async-trait",
+ "base64 0.21.7",
+ "bytes",
+ "chrono",
+ "cloudevents-sdk",
+ "futures",
+ "indexmap 2.2.6",
+ "jsonschema",
+ "lazy_static",
+ "nkeys",
+ "rand",
+ "regex",
+ "semver",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sha2",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-futures",
+ "ulid",
+ "uuid",
+ "wasmcloud-control-interface",
+]
+
+[[package]]
+name = "wadm-types"
+version = "0.11.2"
+dependencies = [
+ "anyhow",
+ "async-nats",
+ "async-trait",
+ "base64 0.21.7",
+ "bytes",
+ "chrono",
+ "cloudevents-sdk",
+ "futures",
+ "indexmap 2.2.6",
+ "jsonschema",
+ "lazy_static",
+ "nkeys",
+ "rand",
+ "regex",
+ "semver",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sha2",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-futures",
+ "ulid",
+ "uuid",
  "wasmcloud-control-interface",
 ]
 

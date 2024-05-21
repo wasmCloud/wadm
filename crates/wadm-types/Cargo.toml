@@ -1,6 +1,6 @@
 [package]
-name = "wadm"
-description = "wasmCloud Application Deployment Manager: A tool for running Wasm applications in wasmCloud"
+name = "wadm-types"
+description = "Types and validators for the wadm API"
 version = "0.11.2"
 edition = "2021"
 authors = ["wasmCloud Team"]
@@ -35,8 +35,4 @@ tracing = { workspace = true, features = ["log"] }
 tracing-futures = { workspace = true }
 ulid = { workspace = true, features = ["serde"] }
 uuid = { workspace = true }
-wadm-types = { workspace = true }
 wasmcloud-control-interface = { workspace = true }
-
-[dev-dependencies]
-serial_test = "1"

@@ -9,6 +9,7 @@ use tracing::debug;
 use tracing::error;
 use tracing::instrument;
 use tracing::trace;
+use wadm_types::TraitProperty;
 
 use crate::commands::{DeleteConfig, PutConfig};
 use crate::events::ConfigDeleted;
@@ -16,7 +17,7 @@ use crate::events::ConfigSet;
 use crate::server::StatusInfo;
 use crate::server::StatusType;
 use crate::workers::ConfigSource;
-use crate::{commands::Command, events::Event, model::TraitProperty, scaler::Scaler};
+use crate::{commands::Command, events::Event, scaler::Scaler};
 
 pub struct ConfigScaler<ConfigSource> {
     config_bucket: ConfigSource,
@@ -153,10 +154,11 @@ impl<C: ConfigSource> ConfigScaler<C> {
 mod test {
     use std::collections::{BTreeMap, HashMap};
 
+    use wadm_types::ConfigProperty;
+
     use crate::{
         commands::{Command, PutConfig},
         events::{ComponentScaled, ConfigDeleted, Event, HostHeartbeat},
-        model::ConfigProperty,
         scaler::{configscaler::ConfigScaler, Scaler},
         test_util::TestLatticeSource,
     };
