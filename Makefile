@@ -44,7 +44,7 @@ lint: check-cargo-clippy ## Run code lint
 	$(CARGO) clippy --all-features --all-targets --workspace
 
 build: ## Build wadm
-	$(CARGO) build --bin wadm --features cli
+	$(CARGO) build --bin wadm
 
 build-docker: ## Build wadm docker image
     ifndef BIN_AMD64

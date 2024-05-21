@@ -1621,21 +1621,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "prometheus"
-version = "0.13.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "449811d15fbdf5ceb5c1144416066429cf82316e2ec8ce0c1f6f8a02e7bbcf8c"
-dependencies = [
- "cfg-if",
- "fnv",
- "lazy_static",
- "memchr",
- "parking_lot",
- "protobuf",
- "thiserror",
-]
-
-[[package]]
 name = "prost"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1687,12 +1672,6 @@ dependencies = [
  "bytes",
  "prost",
 ]
-
-[[package]]
-name = "protobuf"
-version = "2.28.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "106dd99e98437432fed6519dedecfade6a06a73bb7b2a1e019fdd2bee5778d94"
 
 [[package]]
 name = "quote"
@@ -2816,16 +2795,12 @@ dependencies = [
  "base64 0.21.7",
  "bytes",
  "chrono",
- "clap",
  "cloudevents-sdk",
  "futures",
  "indexmap 2.2.6",
  "jsonschema",
  "lazy_static",
  "nkeys",
- "opentelemetry 0.17.0",
- "opentelemetry-otlp",
- "prometheus",
  "rand",
  "regex",
  "semver",
@@ -2838,10 +2813,34 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-futures",
- "tracing-opentelemetry 0.17.4",
- "tracing-subscriber",
  "ulid",
  "uuid",
+ "wasmcloud-control-interface",
+]
+
+[[package]]
+name = "wadm-cli"
+version = "0.11.2"
+dependencies = [
+ "anyhow",
+ "async-nats",
+ "async-trait",
+ "base64 0.21.7",
+ "chrono",
+ "clap",
+ "futures",
+ "nkeys",
+ "opentelemetry 0.17.0",
+ "opentelemetry-otlp",
+ "serde_json",
+ "serde_yaml",
+ "serial_test",
+ "tokio",
+ "tracing",
+ "tracing-futures",
+ "tracing-opentelemetry 0.17.4",
+ "tracing-subscriber",
+ "wadm",
  "wasmcloud-control-interface",
 ]
 

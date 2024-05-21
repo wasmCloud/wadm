@@ -25,7 +25,7 @@ use super::{
     GetModelResponse, GetResult, ManifestNotifier, PutModelResponse, PutResult, Status, StatusInfo,
     StatusResponse, StatusResult, UndeployModelRequest, VersionInfo, VersionResponse,
 };
-const JSON_SCHEMA: &str = include_str!("../../oam/oam.schema.json");
+const JSON_SCHEMA: &str = include_str!("../../../../oam/oam.schema.json");
 static JSON_SCHEMA_VALUE: OnceCell<serde_json::Value> = OnceCell::const_new();
 static OAM_JSON_SCHEMA: OnceCell<JSONSchema> = OnceCell::const_new();
 
