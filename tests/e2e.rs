@@ -1,5 +1,4 @@
 #![cfg(feature = "_e2e_tests")]
-use base64::{engine::general_purpose::STANDARD as B64decoder, Engine};
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
@@ -11,23 +10,22 @@ use async_nats::{
     jetstream::{self, stream::Stream},
     Client,
 };
+use base64::{engine::general_purpose::STANDARD as B64decoder, Engine};
 use futures::Future;
 use tokio::{
     process::{Child, Command},
     time::{interval, sleep},
 };
-use wadm::{
-    server::{
-        DeployModelRequest, DeployModelResponse, PutModelResponse, StatusInfo, StatusType,
-        UndeployModelRequest,
-    },
-    APP_SPEC_ANNOTATION, MANAGED_BY_ANNOTATION, MANAGED_BY_IDENTIFIER,
+use wadm::{APP_SPEC_ANNOTATION, MANAGED_BY_ANNOTATION, MANAGED_BY_IDENTIFIER};
+use wadm_client::ClientConnectOptions;
+use wadm_types::{
+    api::{StatusInfo, StatusType},
+    Manifest,
 };
-use wadm_types::Manifest;
 use wasmcloud_control_interface::HostInventory;
 
 const LOG_DIR: &str = "test/e2e_log";
-const DEFAULT_LATTICE_ID: &str = "default";
+pub const DEFAULT_LATTICE_ID: &str = "default";
 // Due to download times and the time needed to stabilize, we still need to wait for just a little bit
 // This number comes from 30s (max backoff time) + 5s of wiggle room
 pub const DEFAULT_WAIT_TIME: Duration = Duration::from_secs(35);
@@ -38,6 +36,8 @@ pub const DEFAULT_MAX_TRIES: usize = 3;
 /// interacting with wadm. On drop, it will cleanup all resources that it created
 pub struct ClientInfo {
     pub client: Client,
+    wadm_connect_opts: ClientConnectOptions,
+    wadm_clients: HashMap<String, wadm_client::Client>,
     // Map of lattice prefix to control client. Note that this is a direct kv store client here so
     // we don't have flaky tests by waiting for the local cache to update
     ctl_clients: HashMap<String, wasmcloud_control_interface::Client>,
@@ -102,6 +102,11 @@ impl ClientInfo {
 
         ClientInfo {
             client,
+            wadm_connect_opts: ClientConnectOptions {
+                url: Some("127.0.0.1:4222".to_string()),
+                ..Default::default()
+            },
+            wadm_clients: HashMap::new(),
             ctl_clients: HashMap::new(),
             manifest_dir: manifest_dir.as_ref().to_owned(),
             compose_file: compose_file.as_ref().to_owned(),
@@ -113,6 +118,12 @@ impl ClientInfo {
         self.ctl_clients
             .get(lattice_prefix)
             .expect("Should have ctl client for specified lattice")
+    }
+
+    pub fn wadm_client(&self, lattice_prefix: &str) -> &wadm_client::Client {
+        self.wadm_clients
+            .get(lattice_prefix)
+            .expect("Should have wadm client for specified lattice")
     }
 
     pub async fn add_ctl_client(&mut self, lattice_prefix: &str, topic_prefix: Option<&str>) {
@@ -127,6 +138,13 @@ impl ClientInfo {
 
         self.ctl_clients
             .insert(lattice_prefix.to_string(), builder.build());
+    }
+
+    pub async fn add_wadm_client(&mut self, lattice_prefix: &str) {
+        let client = wadm_client::Client::new(lattice_prefix, None, self.wadm_connect_opts.clone())
+            .await
+            .expect("Should be able to create wadm client");
+        self.wadm_clients.insert(lattice_prefix.to_string(), client);
     }
 
     pub async fn launch_wadm(&mut self) {
@@ -185,122 +203,6 @@ impl ClientInfo {
         tokio::fs::read(self.manifest_dir.join(file_name))
             .await
             .expect("Unable to load file")
-    }
-
-    /// Sends the given manifest to wadm, returning the response object
-    pub async fn put_manifest(
-        &self,
-        manifest: &Manifest,
-        account_id: Option<&str>,
-        lattice_id: Option<&str>,
-    ) -> PutModelResponse {
-        self.put_manifest_raw(
-            serde_yaml::to_string(manifest).unwrap().into_bytes(),
-            account_id,
-            lattice_id,
-        )
-        .await
-    }
-
-    /// Same as `put_manifest`, but does all the file loading for you
-    pub async fn put_manifest_from_file(
-        &self,
-        file_name: &str,
-        account_id: Option<&str>,
-        lattice_id: Option<&str>,
-    ) -> PutModelResponse {
-        self.put_manifest_raw(
-            self.load_raw_manifest(file_name).await,
-            account_id,
-            lattice_id,
-        )
-        .await
-    }
-
-    async fn put_manifest_raw(
-        &self,
-        data: Vec<u8>,
-        account_id: Option<&str>,
-        lattice_id: Option<&str>,
-    ) -> PutModelResponse {
-        let subject = if let Some(account) = account_id {
-            format!(
-                "{}.wadm.api.{}.model.put",
-                account,
-                lattice_id.unwrap_or(DEFAULT_LATTICE_ID)
-            )
-        } else {
-            format!(
-                "wadm.api.{}.model.put",
-                lattice_id.unwrap_or(DEFAULT_LATTICE_ID)
-            )
-        };
-        let msg = self
-            .client
-            .request(subject, data.into())
-            .await
-            .expect("Unable to put manifest");
-        serde_json::from_slice(&msg.payload).expect("Unable to decode put model response")
-    }
-
-    /// Deploys the manifest to the given version. If no version is set, it will deploy the latest version
-    pub async fn deploy_manifest(
-        &self,
-        name: &str,
-        account_id: Option<&str>,
-        lattice_id: Option<&str>,
-        version: Option<&str>,
-    ) -> DeployModelResponse {
-        let subject = if let Some(account) = account_id {
-            format!(
-                "{}.wadm.api.{}.model.deploy.{name}",
-                account,
-                lattice_id.unwrap_or(DEFAULT_LATTICE_ID)
-            )
-        } else {
-            format!(
-                "wadm.api.{}.model.deploy.{name}",
-                lattice_id.unwrap_or(DEFAULT_LATTICE_ID)
-            )
-        };
-        let data = serde_json::to_vec(&DeployModelRequest {
-            version: version.map(|s| s.to_owned()),
-        })
-        .unwrap();
-        let msg = self
-            .client
-            .request(subject, data.into())
-            .await
-            .expect("Unable to deploy manifest");
-        serde_json::from_slice(&msg.payload).expect("Unable to decode deploy model response")
-    }
-
-    /// Undeploys the manifest in the lattice
-    pub async fn undeploy_manifest(
-        &self,
-        name: &str,
-        account_id: Option<&str>,
-        lattice_id: Option<&str>,
-    ) -> DeployModelResponse {
-        let subject = if let Some(account) = account_id {
-            format!(
-                "{}.wadm.api.{}.model.undeploy.{name}",
-                account,
-                lattice_id.unwrap_or(DEFAULT_LATTICE_ID)
-            )
-        } else {
-            format!(
-                "wadm.api.{}.model.undeploy.{name}",
-                lattice_id.unwrap_or(DEFAULT_LATTICE_ID)
-            )
-        };
-        let data = serde_json::to_vec(&UndeployModelRequest {}).unwrap();
-        let msg = self
-            .client
-            .request(subject, data.into())
-            .await
-            .expect("Unable to undeploy manifest");
-        serde_json::from_slice(&msg.payload).expect("Unable to decode undeploy model response")
     }
 
     pub async fn get_status_stream(&self) -> Stream {

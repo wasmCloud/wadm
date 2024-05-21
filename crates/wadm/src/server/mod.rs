@@ -4,6 +4,7 @@ use async_nats::{
 };
 use futures::StreamExt;
 use tracing::{info, instrument, warn};
+use wadm_types::api::DEFAULT_WADM_TOPIC_PREFIX;
 
 use crate::publisher::Publisher;
 
@@ -11,16 +12,11 @@ mod handlers;
 mod notifier;
 mod parser;
 mod storage;
-mod types;
 
 use handlers::Handler;
 pub use notifier::ManifestNotifier;
 pub use parser::CONTENT_TYPE_HEADER;
 pub(crate) use storage::ModelStorage;
-pub use types::*;
-
-/// The default topic prefix for the wadm API;
-pub const DEFAULT_WADM_TOPIC_PREFIX: &str = "wadm.api";
 
 const QUEUE_GROUP: &str = "wadm_server";
 

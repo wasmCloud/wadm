@@ -3,10 +3,9 @@ use std::collections::BTreeSet;
 use anyhow::Result;
 use async_nats::jetstream::kv::{Operation, Store};
 use tracing::{debug, instrument, trace};
+use wadm_types::api::{ModelSummary, StatusType};
 
-use crate::{model::StoredManifest, server::StatusType};
-
-use super::ModelSummary;
+use crate::model::StoredManifest;
 
 // TODO(thomastaylor312): Once async nats has concrete error types for KV, we should switch out
 // anyhow for concrete error types so we can indicate whether a failure was due to something like a

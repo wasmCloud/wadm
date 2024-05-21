@@ -18,15 +18,15 @@ use tokio::{
 };
 use tracing::{debug, error, instrument, trace, warn};
 use wadm_types::{
-    CapabilityProperties, Component, ComponentProperties, ConfigProperty, Manifest, Properties,
-    SpreadScalerProperty, Trait, TraitProperty, DAEMONSCALER_TRAIT, LINK_TRAIT, SPREADSCALER_TRAIT,
+    api::StatusInfo, CapabilityProperties, Component, ComponentProperties, ConfigProperty,
+    Manifest, Properties, SpreadScalerProperty, Trait, TraitProperty, DAEMONSCALER_TRAIT,
+    LINK_TRAIT, SPREADSCALER_TRAIT,
 };
 
 use crate::{
     events::Event,
     publisher::Publisher,
     scaler::{spreadscaler::ActorSpreadScaler, Command, Scaler},
-    server::StatusInfo,
     storage::{snapshot::SnapshotStore, ReadStore},
     workers::{CommandPublisher, ConfigSource, LinkSource, StatusPublisher},
     DEFAULT_LINK_NAME,

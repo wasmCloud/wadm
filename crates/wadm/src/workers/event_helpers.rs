@@ -3,9 +3,10 @@ use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
 
 use tracing::{debug, instrument, trace, warn};
+use wadm_types::api::StatusInfo;
 use wasmcloud_control_interface::{CtlResponse, HostInventory, InterfaceLinkDefinition};
 
-use crate::{commands::Command, publisher::Publisher, server::StatusInfo, APP_SPEC_ANNOTATION};
+use crate::{commands::Command, publisher::Publisher, APP_SPEC_ANNOTATION};
 
 /// A subset of needed claims to help populate state
 #[derive(Debug, Clone)]

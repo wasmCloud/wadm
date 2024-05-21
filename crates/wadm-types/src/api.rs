@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-use wadm_types::Manifest;
+use crate::Manifest;
+
+/// The default topic prefix for the wadm API;
+pub const DEFAULT_WADM_TOPIC_PREFIX: &str = "wadm.api";
 
 /// The request body for getting a manifest
 #[derive(Debug, Serialize, Deserialize)]
@@ -113,7 +116,7 @@ pub struct DeployModelRequest {
     pub version: Option<String>,
 }
 
-/// A response from a deploy request
+/// A response from a deploy or undeploy request
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DeployModelResponse {
     pub result: DeployResult,

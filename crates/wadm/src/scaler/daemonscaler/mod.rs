@@ -5,16 +5,14 @@ use anyhow::Result;
 use async_trait::async_trait;
 use tokio::sync::RwLock;
 use tracing::{instrument, trace};
-use wadm_types::{Spread, SpreadScalerProperty, TraitProperty};
+use wadm_types::{api::StatusInfo, Spread, SpreadScalerProperty, TraitProperty};
 
-use crate::events::HostHeartbeat;
 use crate::scaler::spreadscaler::{
     compute_ineligible_hosts, eligible_hosts, spreadscaler_annotations,
 };
-use crate::server::StatusInfo;
 use crate::{
     commands::{Command, ScaleComponent},
-    events::{Event, HostStarted, HostStopped},
+    events::{Event, HostHeartbeat, HostStarted, HostStopped},
     scaler::Scaler,
     storage::{Component, Host, ReadStore},
 };
@@ -342,7 +340,7 @@ mod test {
 
     use anyhow::Result;
     use chrono::Utc;
-    use wadm_types::{Spread, SpreadScalerProperty};
+    use wadm_types::{api::StatusType, Spread, SpreadScalerProperty};
     use wasmcloud_control_interface::{HostInventory, InterfaceLinkDefinition};
 
     use crate::{
@@ -350,7 +348,6 @@ mod test {
         consumers::{manager::Worker, ScopedMessage},
         events::{Event, LinkdefDeleted, LinkdefSet, ProviderStarted, ProviderStopped},
         scaler::{daemonscaler::ActorDaemonScaler, manager::ScalerManager, Scaler},
-        server::StatusType,
         storage::{Component, Host, Store, WadmComponentInfo},
         test_util::{NoopPublisher, TestLatticeSource, TestStore},
         workers::{CommandPublisher, EventWorker, StatusPublisher},

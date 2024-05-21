@@ -6,6 +6,7 @@ use async_nats::jetstream::{stream::Stream, Context};
 use clap::Parser;
 use tokio::sync::Semaphore;
 use tracing::log::debug;
+use wadm_types::api::DEFAULT_WADM_TOPIC_PREFIX;
 
 use wadm::{
     consumers::{
@@ -15,7 +16,7 @@ use wadm::{
     mirror::Mirror,
     nats_utils::LatticeIdParser,
     scaler::manager::{ScalerManager, WADM_NOTIFY_PREFIX},
-    server::{ManifestNotifier, Server, DEFAULT_WADM_TOPIC_PREFIX},
+    server::{ManifestNotifier, Server},
     storage::{nats_kv::NatsKvStore, reaper::Reaper},
     workers::{CommandPublisher, CommandWorker, EventWorker, StatusPublisher},
     DEFAULT_COMMANDS_TOPIC, DEFAULT_EVENTS_TOPIC, DEFAULT_MULTITENANT_EVENTS_TOPIC,

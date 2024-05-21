@@ -4,7 +4,9 @@ on:
     branches:
       - main
     tags:
-      - 'v*' # Push events to matching v*, i.e. v1.0, v20.15.10
+      - 'v*'
+      - 'types-v*'
+      - 'client-v*'
   workflow_dispatch: # Allow manual creation of artifacts without a release
 
 jobs:
@@ -151,7 +153,7 @@ jobs:
   crate:
     name: Publish crate
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/types-v') || startsWith(github.ref, 'refs/tags/client-v')
     needs: build
     steps:
       - uses: actions/checkout@v4
@@ -163,8 +165,20 @@ jobs:
         run: cargo login ${{ secrets.CRATES_TOKEN }}
         shell: bash
 
-      - name: Cargo publish
+      - name: Cargo publish wadm-types
+        if: startsWith(github.ref, 'refs/tags/types-v')
         run: cargo publish
+        working-directory: ./crates/wadm-types
+        shell: bash
+      - name: Cargo publish wadm lib
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: cargo publish
+        working-directory: ./crates/wadm
+        shell: bash
+      - name: Cargo publish wadm-client
+        if: startsWith(github.ref, 'refs/tags/client-v')
+        run: cargo publish
+        working-directory: ./crates/wadm-client
         shell: bash
 
   docker-image:

@@ -4,7 +4,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use tokio::sync::RwLock;
 use tracing::instrument;
-use wadm_types::TraitProperty;
+use wadm_types::{api::StatusInfo, TraitProperty};
 
 use crate::{
     commands::{Command, DeleteLink, PutLink},
@@ -13,7 +13,6 @@ use crate::{
         ProviderHealthCheckStatus,
     },
     scaler::Scaler,
-    server::StatusInfo,
     storage::ReadStore,
     workers::LinkSource,
 };

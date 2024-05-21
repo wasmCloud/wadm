@@ -4,16 +4,15 @@ use anyhow::Result;
 use async_trait::async_trait;
 use tokio::sync::RwLock;
 use tracing::{instrument, trace};
-use wadm_types::{Spread, SpreadScalerProperty, TraitProperty};
+use wadm_types::{api::StatusInfo, Spread, SpreadScalerProperty, TraitProperty};
 
 use crate::commands::StopProvider;
 use crate::events::{HostHeartbeat, ProviderInfo, ProviderStarted, ProviderStopped};
 use crate::scaler::compute_config_hash;
-use crate::scaler::spreadscaler::provider::ProviderSpreadConfig;
 use crate::scaler::spreadscaler::{
-    compute_ineligible_hosts, eligible_hosts, spreadscaler_annotations,
+    compute_ineligible_hosts, eligible_hosts, provider::ProviderSpreadConfig,
+    spreadscaler_annotations,
 };
-use crate::server::StatusInfo;
 use crate::SCALER_KEY;
 use crate::{
     commands::{Command, StartProvider},
