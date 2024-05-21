@@ -8,13 +8,12 @@ use tokio::{
     task::JoinHandle,
 };
 use tracing::{error, instrument, trace, Instrument};
-use wadm_types::TraitProperty;
+use wadm_types::{api::StatusInfo, TraitProperty};
 
 use crate::{
     commands::Command,
     events::{Event, ProviderStartFailed, ProviderStarted},
     publisher::Publisher,
-    server::StatusInfo,
     workers::{get_commands_and_result, ConfigSource},
 };
 

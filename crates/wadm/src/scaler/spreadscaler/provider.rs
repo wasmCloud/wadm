@@ -7,7 +7,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use tokio::sync::{OnceCell, RwLock};
 use tracing::{instrument, trace};
-use wadm_types::{Spread, SpreadScalerProperty, TraitProperty};
+use wadm_types::{api::StatusInfo, Spread, SpreadScalerProperty, TraitProperty};
 
 use crate::{
     commands::{Command, StartProvider, StopProvider},
@@ -22,7 +22,6 @@ use crate::{
         },
         Scaler,
     },
-    server::StatusInfo,
     storage::{Host, ReadStore},
     SCALER_KEY,
 };

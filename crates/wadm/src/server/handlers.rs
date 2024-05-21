@@ -9,18 +9,20 @@ use tokio::sync::OnceCell;
 use tracing::{debug, error, instrument, log::warn, trace};
 use wadm_types::validation::{is_valid_manifest_name, validate_manifest_version, ValidationOutput};
 use wadm_types::{
+    api::{
+        DeleteModelRequest, DeleteModelResponse, DeleteResult, DeployModelRequest,
+        DeployModelResponse, DeployResult, GetModelRequest, GetModelResponse, GetResult,
+        PutModelResponse, PutResult, Status, StatusInfo, StatusResponse, StatusResult, StatusType,
+        UndeployModelRequest, VersionInfo, VersionResponse,
+    },
     CapabilityProperties, ComponentProperties, LinkProperty, Manifest, Properties, Trait,
     TraitProperty, LATEST_VERSION,
 };
 
-use crate::{model::StoredManifest, publisher::Publisher, server::StatusType};
+use crate::{model::StoredManifest, publisher::Publisher};
 
-use super::{
-    parser::parse_manifest, storage::ModelStorage, DeleteModelRequest, DeleteModelResponse,
-    DeleteResult, DeployModelRequest, DeployModelResponse, DeployResult, GetModelRequest,
-    GetModelResponse, GetResult, ManifestNotifier, PutModelResponse, PutResult, Status, StatusInfo,
-    StatusResponse, StatusResult, UndeployModelRequest, VersionInfo, VersionResponse,
-};
+use super::{parser::parse_manifest, storage::ModelStorage, ManifestNotifier};
+
 const JSON_SCHEMA: &str = include_str!("../../../../oam/oam.schema.json");
 static JSON_SCHEMA_VALUE: OnceCell<serde_json::Value> = OnceCell::const_new();
 static OAM_JSON_SCHEMA: OnceCell<JSONSchema> = OnceCell::const_new();

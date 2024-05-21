@@ -9,13 +9,13 @@ use tracing::debug;
 use tracing::error;
 use tracing::instrument;
 use tracing::trace;
-use wadm_types::TraitProperty;
+use wadm_types::{
+    api::{StatusInfo, StatusType},
+    TraitProperty,
+};
 
 use crate::commands::{DeleteConfig, PutConfig};
-use crate::events::ConfigDeleted;
-use crate::events::ConfigSet;
-use crate::server::StatusInfo;
-use crate::server::StatusType;
+use crate::events::{ConfigDeleted, ConfigSet};
 use crate::workers::ConfigSource;
 use crate::{commands::Command, events::Event, scaler::Scaler};
 
@@ -154,7 +154,7 @@ impl<C: ConfigSource> ConfigScaler<C> {
 mod test {
     use std::collections::{BTreeMap, HashMap};
 
-    use wadm_types::ConfigProperty;
+    use wadm_types::{api::StatusType, ConfigProperty};
 
     use crate::{
         commands::{Command, PutConfig},
@@ -187,7 +187,7 @@ mod test {
 
         assert_eq!(
             config_scaler.status().await.status_type,
-            crate::server::StatusType::Reconciling
+            StatusType::Reconciling
         );
         assert_eq!(
             config_scaler
@@ -201,7 +201,7 @@ mod test {
         );
         assert_eq!(
             config_scaler.status().await.status_type,
-            crate::server::StatusType::Reconciling
+            StatusType::Reconciling
         );
 
         // Configuration deleted, relevant
@@ -219,7 +219,7 @@ mod test {
         );
         assert_eq!(
             config_scaler.status().await.status_type,
-            crate::server::StatusType::Reconciling
+            StatusType::Reconciling
         );
         // Configuration deleted, irrelevant
         assert_eq!(
@@ -233,7 +233,7 @@ mod test {
         );
         assert_eq!(
             config_scaler.status().await.status_type,
-            crate::server::StatusType::Reconciling
+            StatusType::Reconciling
         );
         // Periodic reconcile with host heartbeat
         assert_eq!(
@@ -258,7 +258,7 @@ mod test {
         );
         assert_eq!(
             config_scaler.status().await.status_type,
-            crate::server::StatusType::Reconciling
+            StatusType::Reconciling
         );
         // Ignore other event
         assert_eq!(
@@ -277,7 +277,7 @@ mod test {
         );
         assert_eq!(
             config_scaler.status().await.status_type,
-            crate::server::StatusType::Reconciling
+            StatusType::Reconciling
         );
 
         // Create lattice where config is present
@@ -302,7 +302,7 @@ mod test {
         );
         assert_eq!(
             config_scaler2.status().await.status_type,
-            crate::server::StatusType::Deployed
+            StatusType::Deployed
         );
         // Periodic reconcile with host heartbeat
         assert_eq!(
@@ -324,7 +324,7 @@ mod test {
         );
         assert_eq!(
             config_scaler2.status().await.status_type,
-            crate::server::StatusType::Deployed
+            StatusType::Deployed
         );
 
         // Create lattice where config is present but with the wrong values
@@ -352,7 +352,7 @@ mod test {
         );
         assert_eq!(
             config_scaler3.status().await.status_type,
-            crate::server::StatusType::Reconciling
+            StatusType::Reconciling
         );
 
         // Test supplied name but not supplied config
@@ -366,7 +366,7 @@ mod test {
         );
         assert_eq!(
             config_scaler4.status().await.status_type,
-            crate::server::StatusType::Deployed
+            StatusType::Deployed
         );
 
         let config_scaler5 = ConfigScaler::new(lattice, &config.name, None);
@@ -379,7 +379,7 @@ mod test {
         );
         assert_eq!(
             config_scaler5.status().await.status_type,
-            crate::server::StatusType::Failed
+            StatusType::Failed
         );
     }
 }

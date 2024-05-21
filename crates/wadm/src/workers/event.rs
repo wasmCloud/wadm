@@ -3,6 +3,7 @@ use std::collections::{hash_map::Entry, HashMap, HashSet};
 
 use anyhow::Result;
 use tracing::{debug, instrument, trace, warn};
+use wadm_types::api::StatusInfo;
 use wasmcloud_control_interface::{ComponentDescription, ProviderDescription};
 
 use crate::commands::Command;
@@ -13,7 +14,6 @@ use crate::consumers::{
 use crate::events::*;
 use crate::publisher::Publisher;
 use crate::scaler::manager::{ScalerList, ScalerManager};
-use crate::server::StatusInfo;
 use crate::storage::{Component, Host, Provider, ProviderStatus, Store, WadmComponentInfo};
 use crate::APP_SPEC_ANNOTATION;
 

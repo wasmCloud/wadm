@@ -5,10 +5,11 @@ use anyhow::Result;
 use async_trait::async_trait;
 use tokio::sync::RwLock;
 use tracing::{instrument, trace, warn};
-use wadm_types::{Spread, SpreadScalerProperty, TraitProperty, DEFAULT_SPREAD_WEIGHT};
+use wadm_types::{
+    api::StatusInfo, Spread, SpreadScalerProperty, TraitProperty, DEFAULT_SPREAD_WEIGHT,
+};
 
 use crate::events::HostHeartbeat;
-use crate::server::StatusInfo;
 use crate::{
     commands::{Command, ScaleComponent},
     events::{Event, HostStarted, HostStopped},

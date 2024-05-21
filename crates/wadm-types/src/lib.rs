@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use serde::{Deserialize, Serialize};
 
+pub mod api;
 pub mod validation;
 
 /// The default weight for a spread

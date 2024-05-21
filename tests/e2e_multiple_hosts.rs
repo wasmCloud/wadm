@@ -3,12 +3,14 @@ use std::time::Duration;
 use std::{collections::HashMap, path::PathBuf};
 
 use futures::{FutureExt, StreamExt};
-use wadm::server::{DeployResult, PutResult, StatusType};
+use wadm_types::api::StatusType;
 
 mod e2e;
 mod helpers;
 
-use e2e::{assert_status, check_actors, check_providers, ClientInfo, ExpectedCount};
+use e2e::{
+    assert_status, check_actors, check_providers, ClientInfo, ExpectedCount, DEFAULT_LATTICE_ID,
+};
 use helpers::{HELLO_COMPONENT_ID, HTTP_SERVER_COMPONENT_ID};
 
 use crate::{
@@ -36,7 +38,8 @@ async fn run_multiple_host_tests() {
     let compose_file = root_dir.join(DOCKER_COMPOSE_FILE);
 
     let mut client_info = ClientInfo::new(manifest_dir, compose_file).await;
-    client_info.add_ctl_client("default", None).await;
+    client_info.add_ctl_client(DEFAULT_LATTICE_ID, None).await;
+    client_info.add_wadm_client(DEFAULT_LATTICE_ID).await;
     client_info.launch_wadm().await;
 
     // Wait for the first event on the lattice prefix before we start deploying and checking
@@ -52,7 +55,7 @@ async fn run_multiple_host_tests() {
     // Wait for hosts to start
     let mut did_start = false;
     for _ in 0..10 {
-        match client_info.ctl_client("default").get_hosts().await {
+        match client_info.ctl_client(DEFAULT_LATTICE_ID).get_hosts().await {
             Ok(hosts) if hosts.len() == 5 => {
                 eprintln!("Hosts {}/5 currently available", hosts.len());
                 did_start = true;
@@ -104,33 +107,25 @@ async fn test_no_requirements(client_info: &ClientInfo) {
         .purge()
         .await
         .expect("shouldn't have errored purging stream");
-    let resp = client_info
-        .put_manifest_from_file("simple.yaml", None, None)
-        .await;
+    let client = client_info.wadm_client(DEFAULT_LATTICE_ID);
+    let (name, _version) = client
+        .put_manifest(client_info.load_raw_manifest("simple.yaml").await)
+        .await
+        .expect("Shouldn't have errored when creating manifest");
 
-    assert_ne!(
-        resp.result,
-        PutResult::Error,
-        "Shouldn't have errored when creating manifest: {resp:?}"
-    );
-
-    let resp = client_info
-        .deploy_manifest("hello-simple", None, None, None)
-        .await;
-    assert_ne!(
-        resp.result,
-        DeployResult::Error,
-        "Shouldn't have errored when deploying manifest: {resp:?}"
-    );
+    client
+        .deploy_manifest(&name, None)
+        .await
+        .expect("Shouldn't have errored when deploying manifest");
 
     // NOTE: This runs for a while, but it's because we're waiting for the provider to download,
     // which can take a bit
     assert_status(None, Some(7), || async {
-        let inventory = client_info.get_all_inventory("default").await?;
+        let inventory = client_info.get_all_inventory(DEFAULT_LATTICE_ID).await?;
 
         // Ensure all configuration is set correctly
         let config = client_info
-            .ctl_client("default")
+            .ctl_client(DEFAULT_LATTICE_ID)
             .get_config("hello_simple-httpaddr")
             .await
             .expect("should have http provider source config")
@@ -145,7 +140,7 @@ async fn test_no_requirements(client_info: &ClientInfo) {
         check_providers(&inventory, HTTP_SERVER_IMAGE_REF, ExpectedCount::Exactly(1))?;
 
         let links = client_info
-            .ctl_client("default")
+            .ctl_client(DEFAULT_LATTICE_ID)
             .get_links()
             .await
             .map_err(|e| anyhow::anyhow!("{e:?}"))?
@@ -166,39 +161,44 @@ async fn test_no_requirements(client_info: &ClientInfo) {
             )
         }
 
-        check_status(&stream, "default", "hello-simple", StatusType::Deployed)
-            .await
-            .unwrap();
+        check_status(
+            &stream,
+            DEFAULT_LATTICE_ID,
+            "hello-simple",
+            StatusType::Deployed,
+        )
+        .await
+        .unwrap();
 
         Ok(())
     })
     .await;
 
     // Undeploy manifest
-    let resp = client_info
-        .undeploy_manifest("hello-simple", None, None)
-        .await;
-
-    assert_ne!(
-        resp.result,
-        DeployResult::Error,
-        "Shouldn't have errored when undeploying manifest: {resp:?}"
-    );
+    client
+        .undeploy_manifest("hello-simple")
+        .await
+        .expect("Shouldn't have errored when undeploying manifest");
 
     // Once manifest is undeployed, status should be undeployed
-    check_status(&stream, "default", "hello-simple", StatusType::Undeployed)
-        .await
-        .unwrap();
+    check_status(
+        &stream,
+        DEFAULT_LATTICE_ID,
+        "hello-simple",
+        StatusType::Undeployed,
+    )
+    .await
+    .unwrap();
 
     // assert that no components or providers with annotations exist
     assert_status(None, None, || async {
-        let inventory = client_info.get_all_inventory("default").await?;
+        let inventory = client_info.get_all_inventory(DEFAULT_LATTICE_ID).await?;
 
         check_actors(&inventory, HELLO_IMAGE_REF, "hello-simple", 0)?;
         check_providers(&inventory, HTTP_SERVER_IMAGE_REF, ExpectedCount::Exactly(0))?;
 
         let links = client_info
-            .ctl_client("default")
+            .ctl_client(DEFAULT_LATTICE_ID)
             .get_links()
             .await
             .map_err(|e| anyhow::anyhow!("{e:?}"))?
@@ -210,9 +210,14 @@ async fn test_no_requirements(client_info: &ClientInfo) {
             "The link between the http provider and hello component should be removed"
         );
 
-        check_status(&stream, "default", "hello-simple", StatusType::Undeployed)
-            .await
-            .unwrap();
+        check_status(
+            &stream,
+            DEFAULT_LATTICE_ID,
+            "hello-simple",
+            StatusType::Undeployed,
+        )
+        .await
+        .unwrap();
 
         Ok(())
     })
@@ -220,29 +225,21 @@ async fn test_no_requirements(client_info: &ClientInfo) {
 }
 
 async fn test_lotta_actors(client_info: &ClientInfo) {
-    let resp = client_info
-        .put_manifest_from_file("lotta_actors.yaml", None, None)
-        .await;
+    let client = client_info.wadm_client(DEFAULT_LATTICE_ID);
+    let (name, _version) = client
+        .put_manifest(client_info.load_raw_manifest("lotta_actors.yaml").await)
+        .await
+        .expect("Shouldn't have errored when creating manifest");
 
-    assert_ne!(
-        resp.result,
-        PutResult::Error,
-        "Shouldn't have errored when creating manifest: {resp:?}"
-    );
-
-    let resp = client_info
-        .deploy_manifest("lotta-actors", None, None, None)
-        .await;
-    assert_ne!(
-        resp.result,
-        DeployResult::Error,
-        "Shouldn't have errored when deploying manifest: {resp:?}"
-    );
+    client
+        .deploy_manifest(&name, None)
+        .await
+        .expect("Shouldn't have errored when deploying manifest");
 
     // NOTE: This runs for a while, but it's because we're waiting for the provider to download,
     // which can take a bit
     assert_status(None, Some(7), || async {
-        let inventory = client_info.get_all_inventory("default").await?;
+        let inventory = client_info.get_all_inventory(DEFAULT_LATTICE_ID).await?;
 
         check_actors(&inventory, HELLO_IMAGE_REF, "lotta-actors", 9001)?;
         check_providers(&inventory, HTTP_SERVER_IMAGE_REF, ExpectedCount::AtLeast(1))?;
@@ -253,28 +250,19 @@ async fn test_lotta_actors(client_info: &ClientInfo) {
 }
 
 async fn test_spread_all_hosts(client_info: &ClientInfo) {
-    let resp = client_info
-        .put_manifest_from_file("all_hosts.yaml", None, None)
-        .await;
+    let client = client_info.wadm_client(DEFAULT_LATTICE_ID);
+    let (name, _version) = client
+        .put_manifest(client_info.load_raw_manifest("all_hosts.yaml").await)
+        .await
+        .expect("Shouldn't have errored when creating manifest");
 
-    assert_ne!(
-        resp.result,
-        PutResult::Error,
-        "Shouldn't have errored when creating manifest: {resp:?}"
-    );
-
-    // Deploy manifest
-    let resp = client_info
-        .deploy_manifest("hello-all-hosts", None, None, None)
-        .await;
-    assert_ne!(
-        resp.result,
-        DeployResult::Error,
-        "Shouldn't have errored when deploying manifest: {resp:?}"
-    );
+    client
+        .deploy_manifest(&name, None)
+        .await
+        .expect("Shouldn't have errored when deploying manifest");
 
     assert_status(None, Some(7), || async {
-        let inventory = client_info.get_all_inventory("default").await?;
+        let inventory = client_info.get_all_inventory(DEFAULT_LATTICE_ID).await?;
 
         check_actors(&inventory, HELLO_IMAGE_REF, "hello-all-hosts", 5)?;
         check_providers(&inventory, HTTP_SERVER_IMAGE_REF, ExpectedCount::AtLeast(5))?;
@@ -285,19 +273,15 @@ async fn test_spread_all_hosts(client_info: &ClientInfo) {
 }
 
 async fn test_complex_app(client_info: &ClientInfo) {
-    let resp = client_info
-        .put_manifest_from_file("complex.yaml", None, None)
-        .await;
-
-    assert_ne!(
-        resp.result,
-        PutResult::Error,
-        "Shouldn't have errored when creating manifest: {resp:?}"
-    );
+    let client = client_info.wadm_client(DEFAULT_LATTICE_ID);
+    let (name, _version) = client
+        .put_manifest(client_info.load_raw_manifest("complex.yaml").await)
+        .await
+        .expect("Shouldn't have errored when creating manifest");
 
     // Put configuration that's mentioned in manifest but without properties
     client_info
-        .ctl_client("default")
+        .ctl_client(DEFAULT_LATTICE_ID)
         .put_config(
             "blobby-default-configuration-values",
             HashMap::from_iter([("littleblobby".to_string(), "tables".to_string())]),
@@ -306,21 +290,17 @@ async fn test_complex_app(client_info: &ClientInfo) {
         .expect("should be able to put blobby config");
 
     // Deploy manifest
-    let resp = client_info
-        .deploy_manifest("complex", None, None, None)
-        .await;
-    assert_ne!(
-        resp.result,
-        DeployResult::Error,
-        "Shouldn't have errored when deploying manifest: {resp:?}"
-    );
+    client
+        .deploy_manifest(&name, None)
+        .await
+        .expect("Shouldn't have errored when deploying manifest");
 
     assert_status(None, Some(7), || async {
-        let inventory = client_info.get_all_inventory("default").await?;
+        let inventory = client_info.get_all_inventory(DEFAULT_LATTICE_ID).await?;
 
         // Ensure all configuration is set correctly
         let blobby_config = client_info
-            .ctl_client("default")
+            .ctl_client(DEFAULT_LATTICE_ID)
             .get_config("complex-defaultcode")
             .await
             .expect("should have blobby component config")
@@ -331,7 +311,7 @@ async fn test_complex_app(client_info: &ClientInfo) {
             HashMap::from_iter(vec![("http".to_string(), "404".to_string())])
         );
         let blobby_target_config = client_info
-            .ctl_client("default")
+            .ctl_client(DEFAULT_LATTICE_ID)
             .get_config("complex-rootfs")
             .await
             .expect("should have target link config")
@@ -342,7 +322,7 @@ async fn test_complex_app(client_info: &ClientInfo) {
             HashMap::from_iter(vec![("root".to_string(), "/tmp".to_string())])
         );
         let http_source_config = client_info
-            .ctl_client("default")
+            .ctl_client(DEFAULT_LATTICE_ID)
             .get_config("complex-httpaddr")
             .await
             .expect("should have source link config")
@@ -353,7 +333,7 @@ async fn test_complex_app(client_info: &ClientInfo) {
             HashMap::from_iter(vec![("address".to_string(), "0.0.0.0:8081".to_string())])
         );
         let fileserver_config = client_info
-            .ctl_client("default")
+            .ctl_client(DEFAULT_LATTICE_ID)
             .get_config("complex-defaultfs")
             .await
             .expect("should have provider config")
@@ -373,7 +353,7 @@ async fn test_complex_app(client_info: &ClientInfo) {
         )?;
 
         let links = client_info
-            .ctl_client("default")
+            .ctl_client(DEFAULT_LATTICE_ID)
             .get_links()
             .await
             .map_err(|e| anyhow::anyhow!("{e:?}"))?
@@ -446,29 +426,20 @@ async fn test_complex_app(client_info: &ClientInfo) {
 
 // This test should be run after other tests have finished since we are stopping one of the hosts
 async fn test_stop_host_rebalance(client_info: &ClientInfo) {
-    let resp = client_info
-        .put_manifest_from_file("host_stop.yaml", None, None)
-        .await;
+    let client = client_info.wadm_client(DEFAULT_LATTICE_ID);
+    let (name, _version) = client
+        .put_manifest(client_info.load_raw_manifest("host_stop.yaml").await)
+        .await
+        .expect("Shouldn't have errored when creating manifest");
 
-    assert_ne!(
-        resp.result,
-        PutResult::Error,
-        "Shouldn't have errored when creating manifest: {resp:?}"
-    );
-
-    // Deploy manifest
-    let resp = client_info
-        .deploy_manifest("host-stop", None, None, None)
-        .await;
-    assert_ne!(
-        resp.result,
-        DeployResult::Error,
-        "Shouldn't have errored when deploying manifest: {resp:?}"
-    );
+    client
+        .deploy_manifest(&name, None)
+        .await
+        .expect("Shouldn't have errored when deploying manifest");
 
     // Make sure everything deploys first
     assert_status(None, Some(7), || async {
-        let inventory = client_info.get_all_inventory("default").await?;
+        let inventory = client_info.get_all_inventory(DEFAULT_LATTICE_ID).await?;
 
         check_actors(&inventory, HELLO_IMAGE_REF, "host-stop", 5)?;
 
@@ -479,7 +450,7 @@ async fn test_stop_host_rebalance(client_info: &ClientInfo) {
     // Now get the inventory and figure out which host is running the most actors of the spread and
     // stop that one
     let host_to_stop = client_info
-        .get_all_inventory("default")
+        .get_all_inventory(DEFAULT_LATTICE_ID)
         .await
         .expect("Unable to fetch inventory")
         .into_iter()
@@ -500,7 +471,7 @@ async fn test_stop_host_rebalance(client_info: &ClientInfo) {
         .unwrap();
 
     client_info
-        .ctl_client("default")
+        .ctl_client(DEFAULT_LATTICE_ID)
         .stop_host(&host_to_stop, None)
         .await
         .expect("Should have stopped host");
@@ -511,7 +482,7 @@ async fn test_stop_host_rebalance(client_info: &ClientInfo) {
 
     // Now wait for us to get to 5 again
     assert_status(None, Some(7), || async {
-        let inventory = client_info.get_all_inventory("default").await?;
+        let inventory = client_info.get_all_inventory(DEFAULT_LATTICE_ID).await?;
 
         check_actors(&inventory, HELLO_IMAGE_REF, "host-stop", 5)?;
 
