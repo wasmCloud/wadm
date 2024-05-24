@@ -23,7 +23,7 @@ use crate::{model::StoredManifest, publisher::Publisher};
 
 use super::{parser::parse_manifest, storage::ModelStorage, ManifestNotifier};
 
-const JSON_SCHEMA: &str = include_str!("../../../../oam/oam.schema.json");
+const JSON_SCHEMA: &str = include_str!("../../oam.schema.json");
 static JSON_SCHEMA_VALUE: OnceCell<serde_json::Value> = OnceCell::const_new();
 static OAM_JSON_SCHEMA: OnceCell<JSONSchema> = OnceCell::const_new();
 

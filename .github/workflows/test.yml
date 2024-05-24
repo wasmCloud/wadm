@@ -17,6 +17,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check that Wadm JSON Schema is up-to-date
+        shell: bash
+        run: |
+          diff ./oam/oam.schema.json ./crates/wadm/oam.schema.json || { echo 'Wadm JSON Schema is out of date. Please copy the file from oam/oam.schema.json to ./crates/wadm/oam.schema.json and commit the change.'; exit 1; }
+
       - name: Install latest Rust stable toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
