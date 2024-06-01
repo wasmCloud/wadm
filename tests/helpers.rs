@@ -244,7 +244,7 @@ impl StreamWrapper {
             .await
             .expect("Unable to setup nats command consumer client");
         let context = async_nats::jetstream::new(client.clone());
-        let topic = format!("{id}.cmd.default");
+        let topics = vec![format!("{id}.cmd.default")];
         // If the stream exists, purge it
         let stream = if let Ok(stream) = context.get_stream(&id).await {
             stream
@@ -259,7 +259,7 @@ impl StreamWrapper {
                     description: Some("A stream that stores all commands".to_string()),
                     num_replicas: 1,
                     retention: async_nats::jetstream::stream::RetentionPolicy::WorkQueue,
-                    subjects: vec![topic.clone()],
+                    subjects: topics.clone(),
                     max_age: wadm::DEFAULT_EXPIRY_TIME,
                     storage: async_nats::jetstream::stream::StorageType::Memory,
                     allow_rollup: false,
@@ -268,11 +268,11 @@ impl StreamWrapper {
                 .await
                 .expect("Should be able to create test stream")
         };
-        let stream = CommandConsumer::new(stream, &topic, "default", None)
+        let stream = CommandConsumer::new(stream, topics.clone(), "default", None)
             .await
             .expect("Unable to setup stream");
         StreamWrapper {
-            topic,
+            topic: topics.into_iter().next().unwrap(),
             client,
             stream,
         }

@@ -10,10 +10,9 @@ use wadm::{
         CommandConsumer, EventConsumer,
     },
     events::{EventType, HostHeartbeat, HostStarted},
-    mirror::Mirror,
     nats_utils::LatticeIdParser,
     storage::{nats_kv::NatsKvStore, reaper::Reaper, Store},
-    DEFAULT_COMMANDS_TOPIC, DEFAULT_WADM_EVENTS_TOPIC,
+    DEFAULT_COMMANDS_TOPIC, DEFAULT_EVENTS_TOPIC, DEFAULT_WADM_EVENTS_TOPIC,
 };
 
 use super::{CommandWorkerCreator, EventWorkerCreator};
@@ -22,7 +21,6 @@ pub(crate) struct Observer<StateStore> {
     pub(crate) parser: LatticeIdParser,
     pub(crate) command_manager: ConsumerManager<CommandConsumer>,
     pub(crate) event_manager: ConsumerManager<EventConsumer>,
-    pub(crate) mirror: Mirror,
     pub(crate) client: async_nats::Client,
     pub(crate) reaper: Reaper<NatsKvStore>,
     pub(crate) event_worker_creator: EventWorkerCreator<StateStore>,
@@ -59,24 +57,15 @@ where
                     // already running
                     self.reaper.observe(lattice_id);
 
-                    // Make sure the mirror consumer is up and running. This operation returns early
-                    // if it is already running
-                    if let Err(e) = self
-                        .mirror
-                        .monitor_lattice(&event_subject, lattice_id, multitenant_prefix)
-                        .await
-                    {
-                        // If we can't set up the mirror, we can't proceed, so exit early
-                        error!(error = %e, %lattice_id, "Couldn't add mirror consumer. Will retry on next heartbeat");
-                        continue;
-                    }
-
-                    let command_topic = DEFAULT_COMMANDS_TOPIC.replace('*', lattice_id);
-                    let events_topic = DEFAULT_WADM_EVENTS_TOPIC.replace('*', lattice_id);
-                    let needs_command = !self.command_manager.has_consumer(&command_topic).await;
-                    let needs_event = !self.event_manager.has_consumer(&events_topic).await;
+                    let command_topics = vec![DEFAULT_COMMANDS_TOPIC.replace('*', lattice_id)];
+                    let event_topics = vec![
+                        DEFAULT_WADM_EVENTS_TOPIC.replace('*', lattice_id),
+                        DEFAULT_EVENTS_TOPIC.replace('*', lattice_id),
+                    ];
+                    let needs_command = !self.command_manager.has_consumer(&command_topics).await;
+                    let needs_event = !self.event_manager.has_consumer(&event_topics).await;
                     if needs_command {
-                        debug!(%lattice_id, subject = %event_subject, mapped_subject = %command_topic, "Found unmonitored lattice, adding command consumer");
+                        debug!(%lattice_id, subject = %event_subject, mapped_subjects = ?command_topics, "Found unmonitored lattice, adding command consumer");
                         let worker = match self
                             .command_worker_creator
                             .create(lattice_id, multitenant_prefix)
@@ -89,14 +78,14 @@ where
                             }
                         };
                         self.command_manager
-                            .add_for_lattice(&command_topic, lattice_id, multitenant_prefix, worker)
+                            .add_for_lattice(command_topics, lattice_id, multitenant_prefix, worker)
                             .await
                             .unwrap_or_else(|e| {
                                 error!(error = %e, %lattice_id, "Couldn't add command consumer. Will retry on next heartbeat");
                             })
                     }
                     if needs_event {
-                        debug!(%lattice_id, subject = %event_subject, mapped_subject = %events_topic,  "Found unmonitored lattice, adding event consumer");
+                        debug!(%lattice_id, subject = %event_subject, mapped_subjects = ?event_topics,  "Found unmonitored lattice, adding event consumer");
                         let worker = match self
                             .event_worker_creator
                             .create(lattice_id, multitenant_prefix)
@@ -109,7 +98,7 @@ where
                             }
                         };
                         self.event_manager
-                            .add_for_lattice(&events_topic, lattice_id, multitenant_prefix, worker)
+                            .add_for_lattice(event_topics, lattice_id, multitenant_prefix, worker)
                             .await
                             .unwrap_or_else(|e| {
                                 error!(error = %e, %lattice_id, "Couldn't add event consumer. Will retry on next heartbeat");

@@ -13,7 +13,6 @@ use wadm::{
         manager::{ConsumerManager, WorkerCreator},
         *,
     },
-    mirror::Mirror,
     nats_utils::LatticeIdParser,
     scaler::manager::{ScalerManager, WADM_NOTIFY_PREFIX},
     server::{ManifestNotifier, Server},
@@ -33,8 +32,6 @@ use connections::ControlClientConstructor;
 const EVENT_STREAM_NAME: &str = "wadm_events";
 const COMMAND_STREAM_NAME: &str = "wadm_commands";
 const STATUS_STREAM_NAME: &str = "wadm_status";
-const MIRROR_STREAM_NAME: &str = "wadm_mirror";
-const MULTITENANT_MIRROR_STREAM_NAME: &str = "wadm_multitenant_mirror";
 const NOTIFY_STREAM_NAME: &str = "wadm_notify";
 
 #[derive(Parser, Debug)]
@@ -214,9 +211,9 @@ async fn main() -> anyhow::Result<()> {
     let event_stream = nats::ensure_stream(
         &context,
         internal_stream_name(EVENT_STREAM_NAME),
-        vec![DEFAULT_WADM_EVENTS_TOPIC.to_owned()],
+        vec![DEFAULT_WADM_EVENTS_TOPIC.to_owned(), DEFAULT_EVENTS_TOPIC.to_owned()],
         Some(
-            "A stream that stores all events coming in on the wasmbus.evt topics in a cluster"
+            "A stream that stores all events coming in on the wasmbus.evt and wadm.evt topics in a cluster"
                 .to_string(),
         ),
     )
@@ -239,25 +236,12 @@ async fn main() -> anyhow::Result<()> {
     )
     .await?;
 
-    let (event_stream_topics, mirror_stream) = if args.multitenant {
+    let event_stream_topics = if args.multitenant {
         debug!("Running in multitenant mode");
-        (
-            vec![DEFAULT_MULTITENANT_EVENTS_TOPIC.to_owned()],
-            MULTITENANT_MIRROR_STREAM_NAME,
-        )
+        vec![DEFAULT_MULTITENANT_EVENTS_TOPIC.to_owned()]
     } else {
-        (vec![DEFAULT_EVENTS_TOPIC.to_owned()], MIRROR_STREAM_NAME)
+        vec![DEFAULT_EVENTS_TOPIC.to_owned()]
     };
-
-    debug!("Ensuring mirror stream");
-
-    let mirror_stream = nats::ensure_stream(
-        &context,
-        internal_stream_name(mirror_stream),
-        event_stream_topics.clone(),
-        Some("A stream that publishes all events to the same stream".to_string()),
-    )
-    .await?;
 
     debug!("Ensuring notify stream");
 
@@ -322,7 +306,6 @@ async fn main() -> anyhow::Result<()> {
         parser: LatticeIdParser::new("wasmbus", args.multitenant),
         command_manager: commands_manager,
         event_manager: events_manager,
-        mirror: Mirror::new(mirror_stream, wadm_event_prefix),
         reaper,
         client: client.clone(),
         command_worker_creator,

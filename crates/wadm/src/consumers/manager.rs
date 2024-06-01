@@ -13,7 +13,7 @@ use super::{CreateConsumer, ScopedMessage};
 
 /// A convenience type for returning work results
 pub type WorkResult<T> = Result<T, WorkError>;
-type WorkHandles = Arc<RwLock<HashMap<String, JoinHandle<WorkResult<()>>>>>;
+type WorkHandles = Arc<RwLock<HashMap<Vec<String>, JoinHandle<WorkResult<()>>>>>;
 
 /// An error that describes possible work failures when performing actions based on incoming messages
 #[derive(Debug, thiserror::Error)]
@@ -129,7 +129,7 @@ impl<C> ConsumerManager<C> {
             phantom: PhantomData,
         };
 
-        let handles: HashMap<String, JoinHandle<WorkResult<()>>> = manager
+        let handles: HashMap<Vec<String>, JoinHandle<WorkResult<()>>> = manager
             .stream
             .consumers()
             .filter_map(|res| async {
@@ -160,7 +160,7 @@ impl<C> ConsumerManager<C> {
 
                 // NOTE(thomastaylor312): It might be nicer for logs if we add an extra param for a
                 // friendly consumer manager name
-                trace!(%lattice_id, subject = %info.config.filter_subject, "Adding consumer for lattice");
+                trace!(%lattice_id, subject = ?info.config.filter_subjects, "Adding consumer for lattice");
 
                 let worker = match worker_generator.create(&lattice_id, multitenant_prefix.as_deref()).await {
                     Ok(w) => w,
@@ -170,8 +170,8 @@ impl<C> ConsumerManager<C> {
                     }
                 };
 
-                match manager.spawn_handler(&info.config.filter_subject, &lattice_id, multitenant_prefix.as_deref(), worker).await {
-                    Ok(handle) => Some((info.config.filter_subject.to_owned(), handle)),
+                match manager.spawn_handler(info.config.filter_subjects.clone(), &lattice_id, multitenant_prefix.as_deref(), worker).await {
+                    Ok(handle) => Some((info.config.filter_subjects.clone(), handle)),
                     Err(e) => {
                         error!(error = %e, %lattice_id, "Unable to add consumer for lattice");
                         None
@@ -192,7 +192,7 @@ impl<C> ConsumerManager<C> {
     #[instrument(level = "trace", skip(self, worker))]
     pub async fn add_for_lattice<W>(
         &self,
-        topic: &str,
+        topics: Vec<String>,
         lattice_id: &str,
         multitenant_prefix: Option<&str>,
         worker: W,
@@ -205,20 +205,20 @@ impl<C> ConsumerManager<C> {
             + Unpin
             + 'static,
     {
-        if !self.has_consumer(topic).await {
+        if !self.has_consumer(&topics).await {
             trace!("Adding new consumer");
             let handle = self
-                .spawn_handler(topic, lattice_id, multitenant_prefix, worker)
+                .spawn_handler(topics.clone(), lattice_id, multitenant_prefix, worker)
                 .await?;
             let mut handles = self.handles.write().await;
-            handles.insert(topic.to_owned(), handle);
+            handles.insert(topics, handle);
         }
         Ok(())
     }
 
     async fn spawn_handler<W>(
         &self,
-        topic: &str,
+        topics: Vec<String>,
         lattice_id: &str,
         multitenant_prefix: Option<&str>,
         worker: W,
@@ -231,25 +231,30 @@ impl<C> ConsumerManager<C> {
             + Unpin
             + 'static,
     {
-        let consumer =
-            C::create(self.stream.clone(), topic, lattice_id, multitenant_prefix).await?;
+        let consumer = C::create(
+            self.stream.clone(),
+            topics.clone(),
+            lattice_id,
+            multitenant_prefix,
+        )
+        .await?;
         let permits = self.permits.clone();
         Ok(tokio::spawn(work_fn(consumer, permits, worker).instrument(
-            tracing::info_span!("consumer_worker", %topic, worker_type = %std::any::type_name::<W>()),
+            tracing::info_span!("consumer_worker", ?topics, worker_type = %std::any::type_name::<W>()),
         )))
     }
 
     /// Checks if this manager has a consumer for the given topic. Returns `false` if it doesn't
     /// exist or has stopped
-    pub async fn has_consumer(&self, topic: &str) -> bool {
+    pub async fn has_consumer(&self, topics: &[String]) -> bool {
         self.handles
             .read()
             .await
-            .get(topic)
+            .get(topics)
             .map(|handle| {
                 let is_finished = handle.is_finished();
                 if is_finished {
-                    warn!(%topic, "Work function stopped executing for topic")
+                    warn!(?topics, "Work function stopped executing for topics")
                 }
                 !is_finished
             })

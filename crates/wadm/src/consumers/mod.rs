@@ -157,7 +157,7 @@ pub trait CreateConsumer {
     /// Create a type of the specified `Output`
     async fn create(
         stream: async_nats::jetstream::stream::Stream,
-        topic: &str,
+        topics: Vec<String>,
         lattice_id: &str,
         multitenant_prefix: Option<&str>,
     ) -> Result<Self::Output, NatsError>;

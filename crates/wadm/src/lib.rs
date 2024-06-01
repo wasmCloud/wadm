@@ -3,7 +3,6 @@ use std::time::Duration;
 pub mod commands;
 pub mod consumers;
 pub mod events;
-pub mod mirror;
 pub mod nats_utils;
 pub mod publisher;
 pub mod scaler;
@@ -28,7 +27,7 @@ pub const DEFAULT_COMMANDS_TOPIC: &str = "wadm.cmd.*";
 pub const DEFAULT_STATUS_TOPIC: &str = "wadm.status.*.*";
 /// The default listen topic for the merged wadm events stream. This topic is an amalgamation of
 /// wasmbus.evt topics plus the wadm.internal topics
-pub const DEFAULT_WADM_EVENTS_TOPIC: &str = "wadm.evt.*";
+pub const DEFAULT_WADM_EVENTS_TOPIC: &str = "wadm.evt.*.>";
 /// Managed by annotation used for labeling things properly in wadm
 pub const MANAGED_BY_ANNOTATION: &str = "wasmcloud.dev/managed-by";
 /// Identifier for managed by annotation. This is the value [`MANAGED_BY_ANNOTATION`] is set to

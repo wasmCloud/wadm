@@ -107,7 +107,6 @@ stream-cleanup: ## Removes all streams that wadm creates
 	-$(NATS) stream del wadm_commands --force
 	-$(NATS) stream del wadm_events --force
 	-$(NATS) stream del wadm_notify --force
-	-$(NATS) stream del wadm_mirror --force
 	-$(NATS) stream del wadm_multitenant_mirror --force
 	-$(NATS) stream del wadm_status --force
 	-$(NATS) stream del KV_wadm_state --force
