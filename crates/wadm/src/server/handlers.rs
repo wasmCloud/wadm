@@ -600,37 +600,6 @@ impl<P: Publisher> Handler<P> {
             }
         }
 
-        // Compare if any of the provider refs in the staged model are duplicates
-        for component in staged_model.spec.components.iter() {
-            if let Properties::Capability {
-                properties:
-                    CapabilityProperties {
-                        image: image_name, ..
-                    },
-            } = &component.properties
-            {
-                if let Some((ref_link, ref_version)) = parse_image_ref(image_name) {
-                    if let Some((old_version, old_manifest_name)) =
-                        existing_provider_refs.get(&ref_link)
-                    {
-                        if old_version != &ref_version {
-                            error!(
-                                "Provider {image_name} is already deployed with a different version in {old_manifest_name}.",
-                            );
-                            self.send_error(
-                                msg.reply,
-                                format!(
-                                "Provider {image_name} is already deployed with a different version in {old_manifest_name}."
-                            ),
-                            )
-                            .await;
-                            return;
-                        }
-                    }
-                }
-            }
-        }
-
         if !manifests.deploy(req.version) {
             trace!("Requested version does not exist");
             self.send_reply(
