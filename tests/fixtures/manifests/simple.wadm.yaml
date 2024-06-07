@@ -7,9 +7,20 @@ metadata:
     version: v0.0.1
     description: Sample manifest that passes
 spec:
+  policies:
+    - name: vault-for-component
+      type: secrets.wasmcloud.dev/v1/vault
+      properties:
+        role-name: "test"
+        backend: "vault-prod"
+
   components:
     - name: http-component
       type: component
+      secrets:
+        - backend: "vault-for-component"
+          key: "secret/test"
+
       properties:
         image: ghcr.io/wasmcloud/component-http-hello-world:0.1.0
       traits:

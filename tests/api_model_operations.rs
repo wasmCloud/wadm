@@ -144,6 +144,8 @@ async fn test_crud_operations() {
         .get_response("default.model.put", raw, None)
         .await;
 
+    println!("Response: {resp:?}");
+
     assert_put_response(resp, PutResult::Created, "v0.0.1", 1);
 
     let raw = tokio::fs::read("./oam/simple1.yaml")

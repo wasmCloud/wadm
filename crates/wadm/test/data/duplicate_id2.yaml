@@ -1,0 +1,35 @@
+apiVersion: core.oam.dev/v1beta1
+kind: Application
+metadata:
+  name: petclinic
+  annotations:
+    description: "wasmCloud Pet Clinic Sample"
+spec:
+  components:
+    - name: ui
+      type: component
+      properties:
+        image: wasmcloud.azurecr.io/ui:0.3.2
+        id: ui
+      traits:
+        - type: spreadscaler
+          properties:
+            instances: 1
+            spread:
+              - name: uiclinicapp
+                requirements:
+                  app: petclinic
+
+    - name: ui2
+      type: component
+      properties:
+        image: wasmcloud.azurecr.io/ui:0.3.2
+        id: ui
+      traits:
+        - type: spreadscaler
+          properties:
+            instances: 1
+            spread:
+              - name: customersclinicapp
+                requirements:
+                  app: petclinic

@@ -18,7 +18,12 @@ spec:
             instances: 1
         - type: link
           properties:
-            target: kvredis
+            target:
+              name: kvredis
+              config:
+                - name: test
+                  properties:
+                    test: value
             namespace: wasi
             package: keyvalues # BUG: should be 'keyvalue'
             interfaces: [atomics]

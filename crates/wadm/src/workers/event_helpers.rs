@@ -3,10 +3,13 @@ use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
 
 use tracing::{debug, instrument, trace, warn};
-use wadm_types::api::StatusInfo;
+use wadm_types::{api::StatusInfo, SecretSourceProperty};
 use wasmcloud_control_interface::{CtlResponse, HostInventory, InterfaceLinkDefinition};
 
-use crate::{commands::Command, publisher::Publisher, APP_SPEC_ANNOTATION};
+use crate::{
+    commands::Command, publisher::Publisher, scaler::secretscaler::SECRET_CONFIG_PREFIX,
+    APP_SPEC_ANNOTATION,
+};
 
 /// A subset of needed claims to help populate state
 #[derive(Debug, Clone)]
@@ -52,6 +55,12 @@ pub trait LinkSource {
 #[async_trait::async_trait]
 pub trait ConfigSource {
     async fn get_config(&self, name: &str) -> anyhow::Result<Option<HashMap<String, String>>>;
+}
+
+/// A trait for anything that can fetch a secret.
+#[async_trait::async_trait]
+pub trait SecretSource {
+    async fn get_secret(&self, name: &str) -> anyhow::Result<Option<SecretSourceProperty>>;
 }
 
 #[async_trait::async_trait]
@@ -148,6 +157,35 @@ impl ConfigSource for wasmcloud_control_interface::Client {
             // instead of returning an error.
             CtlResponse { message, .. } => {
                 debug!("Failed to get config for {name}, {message}");
+                Ok(None)
+            }
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl SecretSource for wasmcloud_control_interface::Client {
+    async fn get_secret(&self, name: &str) -> anyhow::Result<Option<SecretSourceProperty>> {
+        match self
+            .get_config(format!("{SECRET_CONFIG_PREFIX}_{name}").as_str())
+            .await
+            .map_err(|e| anyhow::anyhow!("{e:?}"))?
+        {
+            CtlResponse {
+                success: true,
+                response: Some(secret),
+                ..
+            } => Ok(Some(secret.try_into()?)),
+            CtlResponse {
+                message,
+                response: None,
+                ..
+            } => {
+                debug!("Failed to get secret for {name}, {message}");
+                Ok(None)
+            }
+            CtlResponse { message, .. } => {
+                debug!("Failed to get secret for {name}, {message}");
                 Ok(None)
             }
         }

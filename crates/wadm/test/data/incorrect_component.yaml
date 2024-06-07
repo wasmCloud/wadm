@@ -100,7 +100,6 @@ spec:
       type: capability
       properties:
         image: wasmcloud.azurecr.io/httpserver:0.16.2
-        contract: wasmcloud:httpserver
       traits:
         - type: spreadscaler
           properties:
@@ -114,7 +113,6 @@ spec:
       type: capability
       properties:
         image: wasmcloud.azurecr.io/sqldb-postgres:0.3.1
-        contract: wasmcloud:sqldb
       traits:
         - type: spreadscaler
           properties:

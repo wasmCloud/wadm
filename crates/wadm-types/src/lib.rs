@@ -1,5 +1,6 @@
+use anyhow::Context;
 use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use serde::{de, Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 
 pub mod api;
@@ -32,6 +33,11 @@ pub const LINK_TRAIT: &str = "link";
 /// The string used for indicating a latest version. It is explicitly forbidden to use as a version
 /// for a manifest
 pub const LATEST_VERSION: &str = "latest";
+
+/// The type and version of the secret reference stored as configuration. This is meant as an
+/// internal marker of the format of the serialized secret and should not be referenced by
+/// anything else but wadm. It is intended to help with schema upgrades in the future.
+pub const SECRET_TYPE: &str = "secret-reference.wasmcloud.dev/v1alpha1";
 
 /// An OAM manifest
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, utoipa::ToSchema, JsonSchema)]
@@ -139,13 +145,14 @@ pub struct Specification {
     pub policies: Vec<Policy>,
 }
 
+/// A policy definition
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, JsonSchema)]
-#[serde(deny_unknown_fields)]
 pub struct Policy {
-    /// The name of the policy
+    /// The name of this policy
     pub name: String,
     /// The properties for this policy
     pub properties: BTreeMap<String, String>,
+    /// The type of the policy
     #[serde(rename = "type")]
     pub policy_type: String,
 }
@@ -165,6 +172,38 @@ pub struct Component {
     /// A list of various traits assigned to this component
     #[serde(skip_serializing_if = "Option::is_none")]
     pub traits: Option<Vec<Trait>>,
+}
+
+impl Component {
+    fn secrets(&self) -> Vec<SecretProperty> {
+        let mut secrets = Vec::new();
+        if let Some(traits) = self.traits.as_ref() {
+            let l: Vec<SecretProperty> = traits
+                .iter()
+                .filter_map(|t| {
+                    if let TraitProperty::Link(link) = &t.properties {
+                        let mut tgt_iter = link.target.secrets.clone();
+                        if let Some(src) = &link.source {
+                            tgt_iter.extend(src.secrets.clone());
+                        }
+                        Some(tgt_iter)
+                    } else {
+                        None
+                    }
+                })
+                .flatten()
+                .collect();
+            secrets.extend(l);
+        };
+
+        match &self.properties {
+            Properties::Component { properties } => {
+                secrets.extend(properties.secrets.clone());
+            }
+            Properties::Capability { properties } => secrets.extend(properties.secrets.clone()),
+        };
+        secrets
+    }
 }
 
 /// Properties that can be defined for a component
@@ -190,6 +229,90 @@ pub struct ComponentProperties {
     /// these values at runtime using `wasi:runtime/config.`
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub config: Vec<ConfigProperty>,
+    /// Named secret references to pass to the component. The component will be able to retrieve
+    /// these values at runtime using `wasmcloud:secrets/store`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub secrets: Vec<SecretProperty>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Default, JsonSchema)]
+pub struct ConfigDefinition {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub config: Vec<ConfigProperty>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub secrets: Vec<SecretProperty>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash, JsonSchema)]
+pub struct SecretProperty {
+    /// The name of the secret. This is used by a reference by the component or capability to
+    /// get the secret value as a resource.
+    pub name: String,
+    /// The source of the secret. This indicates how to retrieve the secret value from a secrets
+    /// backend and which backend to actually query.
+    pub source: SecretSourceProperty,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash, JsonSchema)]
+pub struct SecretSourceProperty {
+    /// The policy to use for retrieving the secret.
+    pub policy: String,
+    /// The key to use for retrieving the secret from the backend.
+    pub key: String,
+    /// The version of the secret to retrieve. If not supplied, the latest version will be used.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+}
+
+impl TryFrom<HashMap<String, String>> for SecretSourceProperty {
+    type Error = anyhow::Error;
+
+    // TODO should this actually just wrap serde_json?
+    fn try_from(value: HashMap<String, String>) -> Result<Self, Self::Error> {
+        let secret_type = value
+            .get("type")
+            .ok_or_else(|| anyhow::anyhow!("Secret source must have a type"))?;
+
+        // Do we actually care? Feels like we should use a proto or something if we do since
+        // versioning would be a lot easier
+        if secret_type != SECRET_TYPE {
+            return Err(anyhow::anyhow!(
+                "Secret source type must be {}",
+                SECRET_TYPE
+            ));
+        }
+
+        let policy = value
+            .get("policy")
+            .ok_or_else(|| anyhow::anyhow!("Secret source must have a policy"))?;
+
+        let key = value
+            .get("key")
+            .ok_or_else(|| anyhow::anyhow!("Secret source must have a key"))?;
+
+        let version = value.get("version").cloned();
+
+        Ok(Self {
+            policy: policy.clone(),
+            key: key.clone(),
+            version,
+        })
+    }
+}
+
+impl TryInto<HashMap<String, String>> for SecretSourceProperty {
+    type Error = anyhow::Error;
+
+    fn try_into(self) -> Result<HashMap<String, String>, Self::Error> {
+        let mut map = HashMap::new();
+        map.insert("type".to_string(), SECRET_TYPE.to_string());
+        map.insert("policy".to_string(), self.policy);
+        map.insert("key".to_string(), self.key);
+        if let Some(version) = self.version {
+            map.insert("version".to_string(), version);
+        }
+        Ok(map)
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, JsonSchema)]
@@ -205,6 +328,10 @@ pub struct CapabilityProperties {
     /// to the provider at runtime using the provider SDK's `init()` function.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub config: Vec<ConfigProperty>,
+    /// Named secret references to pass to the t. The provider will be able to retrieve
+    /// these values at runtime using `wasmcloud:secrets/store`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub secrets: Vec<SecretProperty>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, JsonSchema)]
@@ -312,11 +439,9 @@ impl PartialEq<ConfigProperty> for String {
 }
 
 /// Properties for links
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, JsonSchema)]
+#[derive(Debug, Serialize, Clone, PartialEq, Eq, JsonSchema, Default)]
 #[serde(deny_unknown_fields)]
 pub struct LinkProperty {
-    /// The target this link applies to. This should be the name of a component in the manifest
-    pub target: String,
     /// WIT namespace for the link
     pub namespace: String,
     /// WIT package for the link
@@ -324,14 +449,110 @@ pub struct LinkProperty {
     /// WIT interfaces for the link
     pub interfaces: Vec<String>,
     /// Configuration to apply to the source of the link
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub source_config: Vec<ConfigProperty>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<ConfigDefinition>,
     /// Configuration to apply to the target of the link
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub target_config: Vec<ConfigProperty>,
+    pub target: TargetConfig,
     /// The name of this link
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+
+    #[serde(default, skip_serializing)]
+    #[deprecated(since = "0.13.0")]
+    pub source_config: Option<Vec<ConfigProperty>>,
+
+    #[serde(default, skip_serializing)]
+    #[deprecated(since = "0.13.0")]
+    pub target_config: Option<Vec<ConfigProperty>>,
+}
+
+impl<'de> Deserialize<'de> for LinkProperty {
+    fn deserialize<D>(d: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let json = serde_json::value::Value::deserialize(d)?;
+        let mut target = TargetConfig::default();
+        let mut source = None;
+
+        // Handling the old configuration -- translate to a TargetConfig
+        if let Some(t) = json.get("target") {
+            if t.is_string() {
+                let name = t.as_str().unwrap();
+                let mut tgt = vec![];
+                if let Some(tgt_config) = json.get("target_config") {
+                    tgt = serde_json::from_value(tgt_config.clone()).map_err(de::Error::custom)?;
+                }
+                target = TargetConfig {
+                    name: name.to_string(),
+                    config: tgt,
+                    secrets: vec![],
+                };
+            } else {
+                // Otherwise handle normally
+                target =
+                    serde_json::from_value(json["target"].clone()).map_err(de::Error::custom)?;
+            }
+        }
+
+        if let Some(s) = json.get("source_config") {
+            let src: Vec<ConfigProperty> =
+                serde_json::from_value(s.clone()).map_err(de::Error::custom)?;
+            source = Some(ConfigDefinition {
+                config: src,
+                secrets: vec![],
+            });
+        }
+
+        // If the source block is present then it takes priority
+        if let Some(s) = json.get("source") {
+            source = Some(serde_json::from_value(s.clone()).map_err(de::Error::custom)?);
+        }
+
+        // Validate that the required keys are all present
+        if json.get("namespace").is_none() {
+            return Err(de::Error::custom("namespace is required"));
+        }
+
+        if json.get("package").is_none() {
+            return Err(de::Error::custom("package is required"));
+        }
+
+        if json.get("interfaces").is_none() {
+            return Err(de::Error::custom("interfaces is required"));
+        }
+
+        Ok(LinkProperty {
+            namespace: json["namespace"].as_str().unwrap().to_string(),
+            package: json["package"].as_str().unwrap().to_string(),
+            interfaces: json["interfaces"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_str().unwrap().to_string())
+                .collect(),
+            source,
+            target,
+            name: json.get("name").map(|v| v.as_str().unwrap().to_string()),
+            ..Default::default()
+        })
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Default, JsonSchema)]
+pub struct TargetConfig {
+    /// The target this link applies to. This should be the name of a component in the manifest
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub config: Vec<ConfigProperty>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub secrets: Vec<SecretProperty>,
+}
+
+impl PartialEq<TargetConfig> for String {
+    fn eq(&self, other: &TargetConfig) -> bool {
+        self == &other.name
+    }
 }
 
 /// Properties for spread scalers
@@ -525,8 +746,8 @@ mod test {
             "Should have link property"
         );
         if let TraitProperty::Link(ld) = &traits[0].properties {
-            assert_eq!(ld.source_config, vec![]);
-            assert_eq!(ld.target, "userinfo".to_string());
+            assert_eq!(ld.source.as_ref().unwrap().config, vec![]);
+            assert_eq!(ld.target.name, "userinfo".to_string());
         } else {
             panic!("trait property was not a link definition");
         }
@@ -555,16 +776,24 @@ mod test {
         let trait_item = Trait::new_spreadscaler(spreadscalerprop);
         trait_vec.push(trait_item);
         let linkdefprop = LinkProperty {
-            target: "webcap".to_string(),
+            target: TargetConfig {
+                name: "webcap".to_string(),
+                ..Default::default()
+            },
             namespace: "wasi".to_string(),
             package: "http".to_string(),
             interfaces: vec!["incoming-handler".to_string()],
-            source_config: vec![ConfigProperty {
-                name: "http".to_string(),
-                properties: Some(HashMap::from([("port".to_string(), "8080".to_string())])),
-            }],
-            target_config: vec![],
+            source: Some(ConfigDefinition {
+                config: {
+                    vec![ConfigProperty {
+                        name: "http".to_string(),
+                        properties: Some(HashMap::from([("port".to_string(), "8080".to_string())])),
+                    }]
+                },
+                ..Default::default()
+            }),
             name: Some("default".to_string()),
+            ..Default::default()
         };
         let trait_item = Trait::new_link(linkdefprop);
         trait_vec.push(trait_item);
@@ -576,6 +805,7 @@ mod test {
                     image: "wasmcloud.azurecr.io/fake:1".to_string(),
                     id: None,
                     config: vec![],
+                    secrets: vec![],
                 },
             },
             traits: Some(trait_vec),
@@ -588,6 +818,7 @@ mod test {
                     image: "wasmcloud.azurecr.io/httpserver:0.13.1".to_string(),
                     id: None,
                     config: vec![],
+                    secrets: vec![],
                 },
             },
             traits: None,
@@ -615,6 +846,7 @@ mod test {
                     image: "wasmcloud.azurecr.io/ledblinky:0.0.1".to_string(),
                     id: None,
                     config: vec![],
+                    secrets: vec![],
                 },
             },
             traits: Some(trait_vec),
@@ -623,6 +855,7 @@ mod test {
 
         let spec = Specification {
             components: component_vec,
+            policies: vec![],
         };
         let metadata = Metadata {
             name: "my-example-app".to_string(),
@@ -684,5 +917,28 @@ mod test {
                     .any(|t| matches!(t.properties, TraitProperty::Custom(_)))),
             "Should have found custom properties"
         );
+    }
+
+    #[test]
+    fn test_deprecated_fields_not_set() {
+        let manifest = deserialize_yaml("./oam/simple2.yaml").expect("Should be able to parse");
+        // Validate component traits
+        let traits = manifest
+            .spec
+            .components
+            .clone()
+            .into_iter()
+            .filter(|component| matches!(component.name.as_str(), "webcap"))
+            .find(|component| matches!(component.properties, Properties::Capability { .. }))
+            .expect("Should find component component")
+            .traits
+            .expect("Should have traits object");
+        assert_eq!(traits.len(), 1, "Should have 1 trait");
+        if let TraitProperty::Link(ld) = &traits[0].properties {
+            assert_eq!(ld.source.as_ref().unwrap().config, vec![]);
+            assert_eq!(ld.source_config, None);
+        } else {
+            panic!("trait property was not a link definition");
+        };
     }
 }

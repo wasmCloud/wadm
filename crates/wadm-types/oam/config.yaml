@@ -1,0 +1,28 @@
+apiVersion: core.oam.dev/v1beta1
+kind: Application
+metadata:
+  name: config-example
+  annotations:
+    description: 'This is my app'
+spec:
+  components:
+    - name: http
+      type: component
+      properties:
+        image: ghcr.io/wasmcloud/components/http-hello-world-rust:0.1.0
+        # You can pass any config data you'd like sent to your component as a string->string map
+        config:
+          - name: component_config
+            properties:
+              lang: EN-US
+
+    - name: webcap
+      type: capability
+      properties:
+        image: ghcr.io/wasmcloud/http-server:0.21.0
+        # You can pass any config data you'd like sent to your provider as a string->string map
+        config:
+          - name: provider_config
+            properties:
+              default-port: '8080'
+              cache_file: '/tmp/mycache.json'

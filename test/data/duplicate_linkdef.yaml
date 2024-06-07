@@ -24,16 +24,17 @@ spec:
       properties:
         image: wasmcloud.azurecr.io/customers:0.3.1
       traits:
-        - type: linkdef
+        - type: link
           properties:
-            target: postgres
             namespace: wasmcloud
             package: sql
             interfaces: ["query"]
-            target_config:
-              - name: petclinic-connect
-                properties:
-                  uri: postgres://user:pass@your.db.host.com/petclinic
+            target:
+              name: postgres
+              config:
+                - name: petclinic-connect
+                  properties:
+                    uri: postgres://user:pass@your.db.host.com/petclinic
         - type: spreadscaler
           properties:
             instances: 1
@@ -47,27 +48,29 @@ spec:
       properties:
         image: wasmcloud.azurecr.io/vets:0.3.1
       traits:
-        - type: linkdef
+        - type: link
           properties:
-            target: postgres
+            target:
+              name: postgres
+              config:
+                - name: petclinic-connect
+                  properties:
+                    uri: postgres://user:pass@your.db.host.com/petclinic
+                - name: foo
             namespace: wasmcloud
             package: sql
             interfaces: ["query"]
-            target_config:
-              - name: petclinic-connect
-                properties:
-                  uri: postgres://user:pass@your.db.host.com/petclinic
-              - name: foo
-        - type: linkdef
+        - type: link
           properties:
-            target: postgres
+            target:
+              name: postgres
+              config:
+                - name: petclinic-connect
+                  properties:
+                    uri: postgres://user:pass@your.db.host.com/petclinic
             namespace: wasmcloud
             package: sql
             interfaces: ["query"]
-            target_config:
-              - name: petclinic-connect
-                properties:
-                  uri: postgres://user:pass@your.db.host.com/petclinic
         - type: spreadscaler
           properties:
             instances: 1
@@ -81,16 +84,17 @@ spec:
       properties:
         image: wasmcloud.azurecr.io/visits:0.3.1
       traits:
-        - type: linkdef
+        - type: link
           properties:
-            target: postgres
             namespace: wasmcloud
             package: sql
             interfaces: ["query"]
-            target_config:
-              - name: petclinic-connect
-                properties:
-                  uri: postgres://user:pass@your.db.host.com/petclinic
+            target:
+              name: postgres
+              config:
+                - name: petclinic-connect
+                  properties:
+                    uri: postgres://user:pass@your.db.host.com/petclinic
 
         - type: spreadscaler
           properties:
@@ -125,16 +129,18 @@ spec:
               - name: httpserverspread
                 requirements:
                   app: petclinic
-        - type: linkdef
+        - type: link
           properties:
-            target: clinicapi
+            target:
+              name: clinicapi
             namespace: wasi
             package: http
             interfaces: ["incoming-handler"]
-            source_config:
-              - name: default-port
-                properties:
-                  address: "0.0.0.0:8080"
+            source:
+              config:
+                - name: default-port
+                  properties:
+                    address: "0.0.0.0:8080"
 
     - name: postgres
       type: capability

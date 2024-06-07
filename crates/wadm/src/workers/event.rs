@@ -30,7 +30,15 @@ pub struct EventWorker<StateStore, C: Clone, P: Clone> {
 impl<StateStore, C, P> EventWorker<StateStore, C, P>
 where
     StateStore: Store + Send + Sync + Clone + 'static,
-    C: ClaimsSource + InventorySource + LinkSource + ConfigSource + Clone + Send + Sync + 'static,
+    C: ClaimsSource
+        + InventorySource
+        + LinkSource
+        + ConfigSource
+        + SecretSource
+        + Clone
+        + Send
+        + Sync
+        + 'static,
     P: Publisher + Clone + Send + Sync + 'static,
 {
     /// Creates a new event worker configured to use the given store and control interface client for fetching state
@@ -843,7 +851,15 @@ where
 impl<StateStore, C, P> Worker for EventWorker<StateStore, C, P>
 where
     StateStore: Store + Send + Sync + Clone + 'static,
-    C: ClaimsSource + InventorySource + LinkSource + ConfigSource + Clone + Send + Sync + 'static,
+    C: ClaimsSource
+        + InventorySource
+        + LinkSource
+        + ConfigSource
+        + SecretSource
+        + Clone
+        + Send
+        + Sync
+        + 'static,
     P: Publisher + Clone + Send + Sync + 'static,
 {
     type Message = Event;

@@ -60,6 +60,13 @@
         "image": {
           "description": "The image reference to use",
           "type": "string"
+        },
+        "secrets": {
+          "description": "Named secret references to pass to the t. The provider will be able to retrieve these values at runtime using `wasmcloud:secrets/store`.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/SecretProperty"
+          }
         }
       },
       "additionalProperties": false
@@ -148,9 +155,33 @@
         "image": {
           "description": "The image reference to use",
           "type": "string"
+        },
+        "secrets": {
+          "description": "Named secret references to pass to the component. The component will be able to retrieve these values at runtime using `wasmcloud:secrets/store`.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/SecretProperty"
+          }
         }
       },
       "additionalProperties": false
+    },
+    "ConfigDefinition": {
+      "type": "object",
+      "properties": {
+        "config": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ConfigProperty"
+          }
+        },
+        "secrets": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/SecretProperty"
+          }
+        }
+      }
     },
     "ConfigProperty": {
       "description": "Properties for the config list associated with components, providers, and links\n\n## Usage Defining a config block, like so: ```yaml source_config: - name: \"external-secret-kv\" - name: \"default-port\" properties: port: \"8080\" ```\n\nWill result in two config scalers being created, one with the name `basic-kv` and one with the name `default-port`. Wadm will not resolve collisions with configuration names between manifests.",
@@ -208,26 +239,48 @@
           "description": "WIT package for the link",
           "type": "string"
         },
-        "source_config": {
+        "source": {
           "description": "Configuration to apply to the source of the link",
-          "type": "array",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ConfigDefinition"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source_config": {
+          "deprecated": true,
+          "writeOnly": true,
+          "type": [
+            "array",
+            "null"
+          ],
           "items": {
             "$ref": "#/definitions/ConfigProperty"
           }
         },
         "target": {
-          "description": "The target this link applies to. This should be the name of a component in the manifest",
-          "type": "string"
+          "description": "Configuration to apply to the target of the link",
+          "allOf": [
+            {
+              "$ref": "#/definitions/TargetConfig"
+            }
+          ]
         },
         "target_config": {
-          "description": "Configuration to apply to the target of the link",
-          "type": "array",
+          "deprecated": true,
+          "writeOnly": true,
+          "type": [
+            "array",
+            "null"
+          ],
           "items": {
             "$ref": "#/definitions/ConfigProperty"
           }
         }
-      },
-      "additionalProperties": false
+      }
     },
     "Metadata": {
       "description": "The metadata describing the manifest",
@@ -258,6 +311,7 @@
       }
     },
     "Policy": {
+      "description": "A policy definition",
       "type": "object",
       "required": [
         "name",
@@ -266,7 +320,7 @@
       ],
       "properties": {
         "name": {
-          "description": "The name of the policy",
+          "description": "The name of this policy",
           "type": "string"
         },
         "properties": {
@@ -277,10 +331,55 @@
           }
         },
         "type": {
+          "description": "The type of the policy",
           "type": "string"
         }
-      },
-      "additionalProperties": false
+      }
+    },
+    "SecretProperty": {
+      "type": "object",
+      "required": [
+        "name",
+        "source"
+      ],
+      "properties": {
+        "name": {
+          "description": "The name of the secret. This is used by a reference by the component or capability to get the secret value as a resource.",
+          "type": "string"
+        },
+        "source": {
+          "description": "The source of the secret. This indicates how to retrieve the secret value from a secrets backend and which backend to actually query.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/SecretSourceProperty"
+            }
+          ]
+        }
+      }
+    },
+    "SecretSourceProperty": {
+      "type": "object",
+      "required": [
+        "key",
+        "policy"
+      ],
+      "properties": {
+        "key": {
+          "description": "The key to use for retrieving the secret from the backend.",
+          "type": "string"
+        },
+        "policy": {
+          "description": "The policy to use for retrieving the secret.",
+          "type": "string"
+        },
+        "version": {
+          "description": "The version of the secret to retrieve. If not supplied, the latest version will be used.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
     },
     "Specification": {
       "description": "A representation of an OAM specification",
@@ -358,6 +457,30 @@
         }
       },
       "additionalProperties": false
+    },
+    "TargetConfig": {
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "config": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ConfigProperty"
+          }
+        },
+        "name": {
+          "description": "The target this link applies to. This should be the name of a component in the manifest",
+          "type": "string"
+        },
+        "secrets": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/SecretProperty"
+          }
+        }
+      }
     },
     "Trait": {
       "type": "object",
