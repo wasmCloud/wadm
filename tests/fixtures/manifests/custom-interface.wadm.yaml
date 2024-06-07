@@ -18,7 +18,8 @@ spec:
             instances: 1
         - type: link
           properties:
-            target: kvredis
+            target:
+              name: kvredis
             namespace: my-wasi
             package: my-keyvalue
             interfaces: [my-atomics]

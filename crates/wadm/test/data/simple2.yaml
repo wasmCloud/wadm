@@ -29,9 +29,7 @@ spec:
       type: capability
       properties:
         image: wasmcloud.azurecr.io/httpserver:0.18.2
-        contract: wasmcloud:httpserver
     - name: messaging
       type: capability
       properties:
         image: wasmcloud.azurecr.io/nats_messaging:0.17.2
-        contract: wasmcloud:messaging

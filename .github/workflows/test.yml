@@ -48,4 +48,4 @@ jobs:
       # Run all tests
       - name: Run tests
         run: |
-          cargo test -- --nocapture
+          cargo test --workspace -- --nocapture

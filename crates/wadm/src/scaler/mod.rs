@@ -14,17 +14,19 @@ use crate::{
     commands::Command,
     events::{Event, ProviderStartFailed, ProviderStarted},
     publisher::Publisher,
-    workers::{get_commands_and_result, ConfigSource},
+    workers::{get_commands_and_result, ConfigSource, SecretSource},
 };
 
 pub mod configscaler;
 pub mod daemonscaler;
 pub mod manager;
+pub mod secretscaler;
 pub mod spreadscaler;
 
 use manager::Notifications;
 
 use self::configscaler::ConfigScaler;
+use self::secretscaler::SecretScaler;
 
 const DEFAULT_WAIT_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -98,6 +100,7 @@ pub(crate) struct BackoffAwareScaler<T, P, C> {
     notify_subject: String,
     model_name: String,
     required_config: Vec<ConfigScaler<C>>,
+    required_secrets: Vec<SecretScaler<C>>,
     /// A list of (success, Option<failure>) events that the scaler is expecting
     #[allow(clippy::type_complexity)]
     expected_events: Arc<RwLock<Vec<(Event, Option<Event>)>>>,
@@ -111,7 +114,7 @@ impl<T, P, C> BackoffAwareScaler<T, P, C>
 where
     T: Scaler + Send + Sync,
     P: Publisher + Send + Sync + 'static,
-    C: ConfigSource + Send + Sync + Clone + 'static,
+    C: ConfigSource + SecretSource + Send + Sync + Clone + 'static,
 {
     /// Wraps the given scaler in a new backoff aware scaler. `cleanup_timeout` can be set to a
     /// desired waiting time, otherwise it will default to 30s
@@ -119,6 +122,7 @@ where
         scaler: T,
         notifier: P,
         required_config: Vec<ConfigScaler<C>>,
+        required_secrets: Vec<SecretScaler<C>>,
         notify_subject: &str,
         model_name: &str,
         cleanup_timeout: Option<Duration>,
@@ -127,6 +131,7 @@ where
             scaler,
             notifier,
             required_config,
+            required_secrets,
             notify_subject: notify_subject.to_owned(),
             model_name: model_name.to_string(),
             expected_events: Arc::new(RwLock::new(Vec::new())),
@@ -213,7 +218,7 @@ where
             Vec::with_capacity(0)
         } else {
             trace!("Scaler is not backing off, checking configuration");
-            let (commands, res) = get_commands_and_result(
+            let (mut commands, res) = get_commands_and_result(
                 self.required_config
                     .iter()
                     .map(|config| async { config.handle_event(event).await }),
@@ -228,7 +233,23 @@ where
                 );
             }
 
-            if !commands.is_empty() {
+            let (mut secret_commands, res) = get_commands_and_result(
+                self.required_secrets
+                    .iter()
+                    .map(|secret| async { secret.handle_event(event).await }),
+                "Errors occurred while handling event with secret scalers",
+            )
+            .await;
+
+            if let Err(e) = res {
+                error!(
+                    "Error occurred while handling event with secret scalers: {}",
+                    e
+                );
+            }
+
+            if !commands.is_empty() && !secret_commands.is_empty() {
+                commands.append(&mut secret_commands);
                 return Ok(commands);
             }
 
@@ -277,6 +298,14 @@ where
                 commands.push(cmd);
             });
         }
+
+        let mut secret_commands = Vec::new();
+        for secret in &self.required_secrets {
+            secret.reconcile().await?.into_iter().for_each(|cmd| {
+                secret_commands.push(cmd);
+            });
+        }
+        commands.append(secret_commands.as_mut());
 
         if !commands.is_empty() {
             return Ok(commands);
@@ -329,6 +358,18 @@ where
                 }
             }
         }
+
+        for secret in self.required_secrets.iter() {
+            match secret.cleanup().await {
+                Ok(cmds) => commands.extend(cmds),
+                // Explicitly logging, but continuing, in the case of an error to make sure
+                // we don't prevent other cleanup tasks from running
+                Err(e) => {
+                    error!("Error occurred while cleaning up secret scalers: {}", e);
+                }
+            }
+        }
+
         Ok(commands)
     }
 
@@ -368,7 +409,7 @@ impl<T, P, C> Scaler for BackoffAwareScaler<T, P, C>
 where
     T: Scaler + Send + Sync,
     P: Publisher + Send + Sync + 'static,
-    C: ConfigSource + Send + Sync + Clone + 'static,
+    C: ConfigSource + SecretSource + Send + Sync + Clone + 'static,
 {
     fn id(&self) -> &str {
         // Pass through the ID of the wrapped scaler

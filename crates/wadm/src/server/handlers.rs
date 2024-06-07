@@ -1,6 +1,6 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
-use anyhow::{anyhow, bail, ensure};
+use anyhow::anyhow;
 use async_nats::{jetstream::stream::Stream, Client, Message, Subject};
 use base64::{engine::general_purpose::STANDARD as B64decoder, Engine};
 use serde_json::json;
@@ -13,8 +13,7 @@ use wadm_types::{
         PutModelResponse, PutResult, Status, StatusInfo, StatusResponse, StatusResult, StatusType,
         UndeployModelRequest, VersionInfo, VersionResponse,
     },
-    CapabilityProperties, ComponentProperties, LinkProperty, Manifest, Properties, Trait,
-    TraitProperty,
+    CapabilityProperties, Manifest, Properties,
 };
 
 use crate::{model::StoredManifest, publisher::Publisher};
@@ -856,78 +855,14 @@ impl<P: Publisher> Handler<P> {
 
 // Manifest validation
 pub(crate) async fn validate_manifest(manifest: Manifest) -> anyhow::Result<()> {
-    let mut name_registry: HashSet<String> = HashSet::new();
-    let mut id_registry: HashSet<String> = HashSet::new();
-    let mut required_capability_components: HashSet<String> = HashSet::new();
-
-    ensure!(manifest.metadata.labels.iter().all(valid_oam_label));
-    ensure!(manifest.metadata.annotations.iter().all(valid_oam_label));
-
-    for component in manifest.spec.components.iter() {
-        // Component name validation : each component (components or providers) should have a unique name
-        if !name_registry.insert(component.name.clone()) {
-            return Err(anyhow!(
-                "Duplicate component name in manifest: {}",
-                component.name
-            ));
+    let failures = wadm_types::validation::validate_manifest(&manifest).await?;
+    for failure in failures {
+        if matches!(
+            failure.level,
+            wadm_types::validation::ValidationFailureLevel::Error
+        ) {
+            return Err(anyhow!(failure.msg));
         }
-        // Provider validation :
-        // Provider config should be serializable [For all components that have JSON config, validate that it can serialize.
-        // We need this so it doesn't trigger an error when sending a command down the line]
-        // Providers should have a unique image ref and link name
-        if let Properties::Capability {
-            properties:
-                CapabilityProperties {
-                    id: Some(component_id),
-                    config: _capability_config,
-                    ..
-                },
-        } = &component.properties
-        {
-            if !id_registry.insert(component_id.to_string()) {
-                bail!("Duplicate component identifier in manifest: {component_id}");
-            }
-        }
-
-        // Component validation : Components should have a unique identifier per manifest
-        if let Properties::Component {
-            properties: ComponentProperties { id: Some(id), .. },
-        } = &component.properties
-        {
-            if !id_registry.insert(id.to_string()) {
-                bail!("Duplicate component identifier in manifest: {id}");
-            }
-        }
-
-        // Linkdef validation : A linkdef from a component should have a unique target and reference
-        if let Some(traits_vec) = &component.traits {
-            for trait_item in traits_vec.iter() {
-                if let Trait {
-                    // TODO : add trait type validation after custom types are done. See TraitProperty enum.
-                    properties:
-                        TraitProperty::Link(LinkProperty {
-                            target: target_name,
-                            ..
-                        }),
-                    ..
-                } = &trait_item
-                {
-                    // Multiple components{ with type != 'capability'} can declare the same target, so we don't need to check for duplicates on insert
-                    required_capability_components.insert(target_name.to_string());
-                }
-            }
-        }
-    }
-
-    let missing_capability_components = required_capability_components
-        .difference(&name_registry)
-        .collect::<Vec<&String>>();
-
-    if !missing_capability_components.is_empty() {
-        return Err(anyhow!(
-            "The following capability component(s) are missing from the manifest:  {:?}",
-            missing_capability_components
-        ));
     }
 
     Ok(())
@@ -942,50 +877,6 @@ fn parse_image_ref(image_name: &str) -> Option<(String, String)> {
     }
 }
 
-/// This function validates that a key/value pair is a valid OAM label. It's using fairly
-/// basic validation rules to ensure that the manifest isn't doing anything horribly wrong. Keeping
-/// this function free of regex is intentional to keep this code functional but simple.
-///
-/// See <https://github.com/oam-dev/spec/blob/master/metadata.md#metadata> for details
-fn valid_oam_label(label: (&String, &String)) -> bool {
-    let (key, _) = label;
-    match key.split_once('/') {
-        Some((prefix, name)) => is_valid_dns_subdomain(prefix) && is_valid_label_name(name),
-        None => is_valid_label_name(key),
-    }
-}
-
-fn is_valid_dns_subdomain(s: &str) -> bool {
-    if s.is_empty() || s.len() > 253 {
-        return false;
-    }
-
-    s.split('.').all(|part| {
-        // Ensure each part is non-empty, <= 63 characters, starts with an alphabetic character,
-        // ends with an alphanumeric character, and contains only alphanumeric characters or hyphens
-        !part.is_empty()
-            && part.len() <= 63
-            && part.starts_with(|c: char| c.is_ascii_alphabetic())
-            && part.ends_with(|c: char| c.is_ascii_alphanumeric())
-            && part.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
-    })
-}
-
-// Ensure each name is non-empty, <= 63 characters, starts with an alphanumeric character,
-// ends with an alphanumeric character, and contains only alphanumeric characters, hyphens,
-// underscores, or periods
-fn is_valid_label_name(name: &str) -> bool {
-    if name.is_empty() || name.len() > 63 {
-        return false;
-    }
-
-    name.starts_with(|c: char| c.is_ascii_alphanumeric())
-        && name.ends_with(|c: char| c.is_ascii_alphanumeric())
-        && name
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
-}
-
 #[cfg(test)]
 mod test {
     use std::io::BufReader;
@@ -994,6 +885,7 @@ mod test {
     use super::*;
     use anyhow::{Context, Result};
     use serde_yaml;
+    use wadm_types::validation::valid_oam_label;
 
     pub(crate) fn deserialize_yaml(filepath: impl AsRef<Path>) -> Result<Manifest> {
         let file = std::fs::File::open(filepath)?;
@@ -1017,8 +909,7 @@ mod test {
             Err(e) => {
                 assert!(e
                     .to_string()
-                    // The 0th component in the spec list is incorrect and should be detected (indexing starts from 0)
-                    .contains("Should be able to parse object at: spec/components/ at index: 0"))
+                    .contains("Duplicate component name in manifest: ui"))
             }
         }
 
@@ -1052,14 +943,6 @@ mod test {
             Err(e) => assert!(e
                 .to_string()
                 .contains("Duplicate component identifier in manifest")),
-        }
-
-        let manifest = deserialize_yaml("./test/data/duplicate_linkdef.yaml")
-            .expect("Should be able to parse");
-
-        match validate_manifest(manifest).await {
-            Ok(()) => panic!("Should have detected duplicate linkdef"),
-            Err(e) => assert!(e.to_string().contains("Duplicate target")),
         }
 
         let manifest = deserialize_yaml("./test/data/missing_capability_component.yaml")

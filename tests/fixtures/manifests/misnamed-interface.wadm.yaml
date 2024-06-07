@@ -18,10 +18,11 @@ spec:
             instances: 1
         - type: link
           properties:
-            target: kvredis
             namespace: wasi
             package: keyvalue
             interfaces: [atomic] # BUG: should be 'atomics'
+            target:
+              name: kvredis
 
     - name: kvredis
       type: capability

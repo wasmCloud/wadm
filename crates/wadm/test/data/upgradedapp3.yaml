@@ -1,0 +1,14 @@
+apiVersion: core.oam.dev/v1beta1
+kind: Application
+metadata:
+  name: dontupdateapp
+  annotations:
+    description: 'Testing effect of duplicate providers'
+spec:
+  components:
+    - name: httpserver-other
+      type: capability
+      properties:
+        image: ghcr.io/wasmcloud/http-server:0.21.0
+        # This ID should not be allowed to be deployed
+        id: http_server

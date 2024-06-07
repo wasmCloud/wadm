@@ -1,7 +1,7 @@
 //! Logic for model ([`Manifest`]) validation
 //!
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::OnceLock;
 
@@ -9,7 +9,10 @@ use anyhow::{Context as _, Result};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
-use crate::{LinkProperty, Manifest, TraitProperty, LATEST_VERSION};
+use crate::{
+    CapabilityProperties, ComponentProperties, LinkProperty, Manifest, Properties, Trait,
+    TraitProperty, LATEST_VERSION,
+};
 
 /// A namespace -> package -> interface lookup
 type KnownInterfaceLookup = HashMap<String, HashMap<String, HashMap<String, ()>>>;
@@ -298,6 +301,7 @@ pub async fn validate_manifest_bytes(
 /// - unsupported interfaces (i.e. typos, etc)
 /// - unknown packages under known namespaces
 /// - "dangling" links (missing components)
+/// - secrets mapped to unknown policies
 ///
 /// Since `[ValidationFailure]` implements `ValidationOutput`, you can call `valid()` and other
 /// trait methods on it:
@@ -325,9 +329,112 @@ pub async fn validate_manifest(manifest: &Manifest) -> Result<Vec<ValidationFail
             .into_iter()
             .cloned(),
     );
+    failures.extend(core_validation(manifest));
     failures.extend(check_misnamed_interfaces(manifest));
     failures.extend(check_dangling_links(manifest));
+    failures.extend(check_secrets_mapped_to_policies(manifest));
     Ok(failures)
+}
+
+fn core_validation(manifest: &Manifest) -> Vec<ValidationFailure> {
+    let mut failures = Vec::new();
+    let mut name_registry: HashSet<String> = HashSet::new();
+    let mut id_registry: HashSet<String> = HashSet::new();
+    let mut required_capability_components: HashSet<String> = HashSet::new();
+
+    for label in manifest.metadata.labels.iter() {
+        if !valid_oam_label(label) {
+            failures.push(ValidationFailure::new(
+                ValidationFailureLevel::Error,
+                format!("Invalid OAM label: {:?}", label),
+            ));
+        }
+    }
+
+    for annotation in manifest.metadata.annotations.iter() {
+        if !valid_oam_label(annotation) {
+            failures.push(ValidationFailure::new(
+                ValidationFailureLevel::Error,
+                format!("Invalid OAM annotation: {:?}", annotation),
+            ));
+        }
+    }
+
+    for component in manifest.spec.components.iter() {
+        // Component name validation : each component (components or providers) should have a unique name
+        if !name_registry.insert(component.name.clone()) {
+            failures.push(ValidationFailure::new(
+                ValidationFailureLevel::Error,
+                format!("Duplicate component name in manifest: {}", component.name),
+            ));
+        }
+        // Provider validation :
+        // Provider config should be serializable [For all components that have JSON config, validate that it can serialize.
+        // We need this so it doesn't trigger an error when sending a command down the line]
+        // Providers should have a unique image ref and link name
+        if let Properties::Capability {
+            properties:
+                CapabilityProperties {
+                    id: Some(component_id),
+                    config: _capability_config,
+                    ..
+                },
+        } = &component.properties
+        {
+            if !id_registry.insert(component_id.to_string()) {
+                failures.push(ValidationFailure::new(
+                    ValidationFailureLevel::Error,
+                    format!(
+                        "Duplicate component identifier in manifest: {}",
+                        component_id
+                    ),
+                ));
+            }
+        }
+
+        // Component validation : Components should have a unique identifier per manifest
+        if let Properties::Component {
+            properties: ComponentProperties { id: Some(id), .. },
+        } = &component.properties
+        {
+            if !id_registry.insert(id.to_string()) {
+                failures.push(ValidationFailure::new(
+                    ValidationFailureLevel::Error,
+                    format!("Duplicate component identifier in manifest: {}", id),
+                ));
+            }
+        }
+
+        // Linkdef validation : A linkdef from a component should have a unique target and reference
+        if let Some(traits_vec) = &component.traits {
+            for trait_item in traits_vec.iter() {
+                if let Trait {
+                    // TODO : add trait type validation after custom types are done. See TraitProperty enum.
+                    properties: TraitProperty::Link(LinkProperty { target, .. }),
+                    ..
+                } = &trait_item
+                {
+                    // Multiple components{ with type != 'capability'} can declare the same target, so we don't need to check for duplicates on insert
+                    required_capability_components.insert(target.name.to_string());
+                }
+            }
+        }
+    }
+
+    let missing_capability_components = required_capability_components
+        .difference(&name_registry)
+        .collect::<Vec<&String>>();
+
+    if !missing_capability_components.is_empty() {
+        failures.push(ValidationFailure::new(
+            ValidationFailureLevel::Error,
+            format!(
+                "The following capability component(s) are missing from the manifest: {:?}",
+                missing_capability_components
+            ),
+        ));
+    };
+    failures
 }
 
 /// Check for misnamed host-supported interfaces in the manifest
@@ -338,6 +445,8 @@ fn check_misnamed_interfaces(manifest: &Manifest) -> Vec<ValidationFailure> {
             namespace,
             package,
             interfaces,
+            target: _target,
+            source: _source,
             ..
         }) = &link_trait.properties
         {
@@ -362,8 +471,16 @@ fn check_dangling_links(manifest: &Manifest) -> Vec<ValidationFailure> {
     for link_trait in manifest.links() {
         match &link_trait.properties {
             TraitProperty::Custom(obj) => {
-                // Ensure target property it present
-                match obj["target"].as_str() {
+                if obj.get("target").is_none() {
+                    failures.push(ValidationFailure::new(
+                        ValidationFailureLevel::Error,
+                        "custom link is missing 'target' property".into(),
+                    ));
+                    continue;
+                }
+
+                // Ensure target property is present
+                match obj["target"]["name"].as_str() {
                     // If target is present, ensure it's pointing to a known component
                     Some(target) if !lookup.contains_key(&String::from(target)) => {
                         failures.push(ValidationFailure::new(
@@ -376,21 +493,21 @@ fn check_dangling_links(manifest: &Manifest) -> Vec<ValidationFailure> {
                     // if target property is not present, note that it is missing
                     None => failures.push(ValidationFailure::new(
                         ValidationFailureLevel::Error,
-                        "custom link is missing 'target' property".into(),
+                        "custom link is missing 'target' name property".into(),
                     )),
                 }
             }
-
             TraitProperty::Link(LinkProperty { name, target, .. }) => {
                 let link_identifier = name
                     .as_ref()
                     .map(|n| format!("(name [{n}])"))
-                    .unwrap_or_else(|| format!("(target [{target}])"));
-                if !lookup.contains_key(target) {
+                    .unwrap_or_else(|| format!("(target [{}])", target.name));
+                if !lookup.contains_key(&target.name) {
                     failures.push(ValidationFailure::new(
                         ValidationFailureLevel::Warning,
                         format!(
-                            "link {link_identifier} target [{target}] is not a listed component"
+                            "link {link_identifier} target [{}] is not a listed component",
+                            target.name
                         ),
                     ))
                 }
@@ -401,6 +518,69 @@ fn check_dangling_links(manifest: &Manifest) -> Vec<ValidationFailure> {
     }
 
     failures
+}
+
+fn check_secrets_mapped_to_policies(manifest: &Manifest) -> Vec<ValidationFailure> {
+    let policies = manifest.policy_lookup();
+    let mut failures = Vec::new();
+    for c in manifest.components() {
+        for secret in c.secrets() {
+            if !policies.contains_key(&secret.source.policy) {
+                failures.push(ValidationFailure::new(
+                    ValidationFailureLevel::Error,
+                    format!(
+                        "secret '{}' is mapped to unknown policy '{}'",
+                        secret.name, secret.source.policy
+                    ),
+                ))
+            }
+        }
+    }
+    failures
+}
+
+/// This function validates that a key/value pair is a valid OAM label. It's using fairly
+/// basic validation rules to ensure that the manifest isn't doing anything horribly wrong. Keeping
+/// this function free of regex is intentional to keep this code functional but simple.
+///
+/// See <https://github.com/oam-dev/spec/blob/master/metadata.md#metadata> for details
+pub fn valid_oam_label(label: (&String, &String)) -> bool {
+    let (key, _) = label;
+    match key.split_once('/') {
+        Some((prefix, name)) => is_valid_dns_subdomain(prefix) && is_valid_label_name(name),
+        None => is_valid_label_name(key),
+    }
+}
+
+pub fn is_valid_dns_subdomain(s: &str) -> bool {
+    if s.is_empty() || s.len() > 253 {
+        return false;
+    }
+
+    s.split('.').all(|part| {
+        // Ensure each part is non-empty, <= 63 characters, starts with an alphabetic character,
+        // ends with an alphanumeric character, and contains only alphanumeric characters or hyphens
+        !part.is_empty()
+            && part.len() <= 63
+            && part.starts_with(|c: char| c.is_ascii_alphabetic())
+            && part.ends_with(|c: char| c.is_ascii_alphanumeric())
+            && part.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+    })
+}
+
+// Ensure each name is non-empty, <= 63 characters, starts with an alphanumeric character,
+// ends with an alphanumeric character, and contains only alphanumeric characters, hyphens,
+// underscores, or periods
+pub fn is_valid_label_name(name: &str) -> bool {
+    if name.is_empty() || name.len() > 63 {
+        return false;
+    }
+
+    name.starts_with(|c: char| c.is_ascii_alphanumeric())
+        && name.ends_with(|c: char| c.is_ascii_alphanumeric())
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
 }
 
 #[cfg(test)]

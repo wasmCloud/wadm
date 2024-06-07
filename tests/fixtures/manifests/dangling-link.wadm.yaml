@@ -18,6 +18,7 @@ spec:
             instances: 1
         - type: link
           properties:
-            target: httpserver
+            target:
+              name: httpserver
             values:
               address: 0.0.0.0:8080

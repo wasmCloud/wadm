@@ -3,11 +3,14 @@ use std::{collections::HashMap, sync::Arc};
 
 use serde::{de::DeserializeOwned, Serialize};
 use tokio::sync::RwLock;
+use wadm_types::SecretSourceProperty;
 use wasmcloud_control_interface::{HostInventory, InterfaceLinkDefinition};
 
 use crate::publisher::Publisher;
 use crate::storage::StateKind;
-use crate::workers::{Claims, ClaimsSource, ConfigSource, InventorySource, LinkSource};
+use crate::workers::{
+    Claims, ClaimsSource, ConfigSource, InventorySource, LinkSource, SecretSource,
+};
 
 fn generate_key<T: StateKind>(lattice_id: &str) -> String {
     format!("{}_{lattice_id}", T::KIND)
@@ -136,6 +139,24 @@ impl LinkSource for TestLatticeSource {
 impl ConfigSource for TestLatticeSource {
     async fn get_config(&self, name: &str) -> anyhow::Result<Option<HashMap<String, String>>> {
         Ok(self.config.get(name).cloned())
+    }
+}
+
+#[async_trait::async_trait]
+impl SecretSource for TestLatticeSource {
+    async fn get_secret(&self, name: &str) -> anyhow::Result<Option<SecretSourceProperty>> {
+        let cfg = self
+            .get_config(format!("secret_{name}").as_str())
+            .await
+            .map_err(|e| anyhow::anyhow!("{e:?}"))?;
+
+        match cfg {
+            Some(cfg) => {
+                let cfg: SecretSourceProperty = cfg.try_into()?;
+                Ok(Some(cfg))
+            }
+            None => Ok(None),
+        }
     }
 }
 
