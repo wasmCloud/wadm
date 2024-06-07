@@ -7,6 +7,11 @@ metadata:
     version: v0.0.1
     description: Sample manifest that passes
 spec:
+  policies:
+    - name: secrets
+      type: secrets-backend
+      properties:
+        role-name: "test"
   components:
     - name: http-component
       type: component

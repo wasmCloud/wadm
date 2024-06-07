@@ -385,12 +385,13 @@ fn check_dangling_links(manifest: &Manifest) -> Vec<ValidationFailure> {
                 let link_identifier = name
                     .as_ref()
                     .map(|n| format!("(name [{n}])"))
-                    .unwrap_or_else(|| format!("(target [{target}])"));
-                if !lookup.contains_key(target) {
+                    .unwrap_or_else(|| format!("(target [{}])", target.target));
+                if !lookup.contains_key(&target.target) {
                     failures.push(ValidationFailure::new(
                         ValidationFailureLevel::Warning,
                         format!(
-                            "link {link_identifier} target [{target}] is not a listed component"
+                            "link {link_identifier} target [{}] is not a listed component",
+                            target.target
                         ),
                     ))
                 }

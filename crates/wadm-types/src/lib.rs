@@ -29,6 +29,8 @@ pub const LINK_TRAIT: &str = "link";
 /// for a manifest
 pub const LATEST_VERSION: &str = "latest";
 
+pub const SECRET_TYPE: &str = "v1.secret.wasmcloud.dev";
+
 /// An OAM manifest
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
@@ -135,13 +137,14 @@ pub struct Specification {
     pub policies: Vec<Policy>,
 }
 
+/// A policy definition
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
 pub struct Policy {
-    /// The name of the policy
+    /// The name of this policy
     pub name: String,
     /// The properties for this policy
     pub properties: BTreeMap<String, String>,
+    /// The type of the policy
     #[serde(rename = "type")]
     pub policy_type: String,
 }
@@ -186,6 +189,96 @@ pub struct ComponentProperties {
     /// these values at runtime using `wasi:runtime/config.`
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub config: Vec<ConfigProperty>,
+    /// Named secret references to pass to the component. The component will be able to retrieve
+    /// these values at runtime using `wasmcloud:secrets/store`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub secrets: Vec<SecretProperty>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct ConfigDefinition {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub config: Vec<ConfigProperty>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub secrets: Vec<SecretProperty>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
+pub struct SecretProperty {
+    /// The name of the secret. This is used by a reference by the component or capability to
+    /// get the secret value as a resource.
+    pub name: String,
+    /// The source of the secret. This indicates how to retrieve the secret value from a secrets
+    /// backend and which backend to actually query.
+    pub source: SecretSourceProperty,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
+pub struct SecretSourceProperty {
+    /// The backend to use for retrieving the secret.
+    pub backend: String,
+    /// The key to use for retrieving the secret from the backend.
+    pub key: String,
+    /// The version of the secret to retrieve. If not supplied, the latest version will be used.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+}
+
+//{
+//    "type": "v1.secret.wasmcloud.dev",
+//    "backend": "whatever"
+//    "key": "abc123"
+//    "version": 1,
+//}
+impl TryFrom<HashMap<String, String>> for SecretSourceProperty {
+    type Error = anyhow::Error;
+
+    // TODO should this actually just wrap serde_json?
+    fn try_from(value: HashMap<String, String>) -> Result<Self, Self::Error> {
+        let secret_type = value
+            .get("type")
+            .ok_or_else(|| anyhow::anyhow!("Secret source must have a type"))?;
+
+        // Do we actually care? Feels like we should use a proto or something if we do since
+        // versioning would be a lot easier
+        if secret_type != SECRET_TYPE {
+            return Err(anyhow::anyhow!(
+                "Secret source type must be {}",
+                SECRET_TYPE
+            ));
+        }
+
+        let backend = value
+            .get("backend")
+            .ok_or_else(|| anyhow::anyhow!("Secret source must have a backend"))?;
+
+        let key = value
+            .get("key")
+            .ok_or_else(|| anyhow::anyhow!("Secret source must have a key"))?;
+
+        let version = value.get("version").cloned();
+
+        Ok(Self {
+            backend: backend.clone(),
+            key: key.clone(),
+            version,
+        })
+    }
+}
+
+impl TryInto<HashMap<String, String>> for SecretSourceProperty {
+    type Error = anyhow::Error;
+
+    fn try_into(self) -> Result<HashMap<String, String>, Self::Error> {
+        let mut map = HashMap::new();
+        map.insert("type".to_string(), SECRET_TYPE.to_string());
+        map.insert("backend".to_string(), self.backend);
+        map.insert("key".to_string(), self.key);
+        if let Some(version) = self.version {
+            map.insert("version".to_string(), version);
+        }
+        Ok(map)
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -312,7 +405,7 @@ impl PartialEq<ConfigProperty> for String {
 #[serde(deny_unknown_fields)]
 pub struct LinkProperty {
     /// The target this link applies to. This should be the name of a component in the manifest
-    pub target: String,
+    //pub target: String,
     /// WIT namespace for the link
     pub namespace: String,
     /// WIT package for the link
@@ -320,14 +413,28 @@ pub struct LinkProperty {
     /// WIT interfaces for the link
     pub interfaces: Vec<String>,
     /// Configuration to apply to the source of the link
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub source_config: Vec<ConfigProperty>,
+    pub source: ConfigDefinition,
     /// Configuration to apply to the target of the link
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub target_config: Vec<ConfigProperty>,
+    pub target: TargetConfig,
     /// The name of this link
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct TargetConfig {
+    /// The target this link applies to. This should be the name of a component in the manifest
+    pub target: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub config: Vec<ConfigProperty>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub secrets: Vec<SecretProperty>,
+}
+
+impl PartialEq<TargetConfig> for String {
+    fn eq(&self, other: &TargetConfig) -> bool {
+        self == &other.target
+    }
 }
 
 /// Properties for spread scalers

@@ -2,10 +2,11 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use tokio::sync::RwLock;
+use wadm_types::SecretSourceProperty;
 use wasmcloud_control_interface::InterfaceLinkDefinition;
 
 use crate::storage::{Component, Host, Provider, ReadStore, StateKind};
-use crate::workers::{ConfigSource, LinkSource};
+use crate::workers::{ConfigSource, LinkSource, SecretSource};
 
 // NOTE(thomastaylor312): This type is real ugly and we should probably find a better way to
 // structure the ReadStore trait so it doesn't have the generic T we have to work around here. This
@@ -48,7 +49,7 @@ where
 impl<S, L> SnapshotStore<S, L>
 where
     S: ReadStore,
-    L: LinkSource + ConfigSource,
+    L: LinkSource + ConfigSource + SecretSource,
 {
     /// Creates a new snapshot store that is scoped to the given lattice ID
     pub fn new(store: S, lattice_source: L, lattice_id: String) -> Self {
@@ -171,5 +172,16 @@ where
 {
     async fn get_config(&self, name: &str) -> anyhow::Result<Option<HashMap<String, String>>> {
         self.lattice_source.get_config(name).await
+    }
+}
+
+#[async_trait::async_trait]
+impl<S, L> SecretSource for SnapshotStore<S, L>
+where
+    S: Send + Sync,
+    L: SecretSource + Send + Sync,
+{
+    async fn get_secret(&self, name: &str) -> anyhow::Result<Option<SecretSourceProperty>> {
+        self.lattice_source.get_secret(name).await
     }
 }
