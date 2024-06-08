@@ -9,6 +9,7 @@ license = "Apache-2.0"
 repository = "https://github.com/wasmcloud/wadm"
 
 [dependencies]
+serde_yaml = { workspace = true }
 anyhow = { workspace = true }
 async-nats = { workspace = true }
 async-trait = { workspace = true }
@@ -16,7 +17,6 @@ base64 = { workspace = true }
 bytes = { workspace = true }
 chrono = { workspace = true }
 cloudevents-sdk = { workspace = true }
-futures = { workspace = true }
 indexmap = { workspace = true, features = ["serde"] }
 jsonschema = { workspace = true }
 lazy_static = { workspace = true }
@@ -26,7 +26,6 @@ regex = { workspace = true }
 semver = { workspace = true, features = ["serde"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
-serde_yaml = { workspace = true }
 sha2 = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
@@ -35,3 +34,4 @@ tracing-futures = { workspace = true }
 ulid = { workspace = true, features = ["serde"] }
 uuid = { workspace = true }
 wasmcloud-control-interface = { workspace = true }
+wit-bindgen-wrpc = { workspace = true }

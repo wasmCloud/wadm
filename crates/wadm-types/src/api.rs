@@ -4,6 +4,7 @@ use crate::Manifest;
 
 /// The default topic prefix for the wadm API;
 pub const DEFAULT_WADM_TOPIC_PREFIX: &str = "wadm.api";
+pub const WADM_STATUS_API_PREFIX: &str = "wadm.status";
 
 /// The request body for getting a manifest
 #[derive(Debug, Serialize, Deserialize)]
