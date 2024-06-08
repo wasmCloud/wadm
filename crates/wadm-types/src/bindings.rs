@@ -218,16 +218,6 @@ impl From<StatusType> for wadm::types::StatusType {
     }
 }
 
-// impl From<DeleteModelResponse> for wadm::types::DeleteModelResponse {
-//     fn from(response: DeleteModelResponse) -> Self {
-//         wadm::types::DeleteModelResponse {
-//             result: response.result.into(),
-//             message: response.message,
-//             undeploy: response.undeploy,
-//         }
-//     }
-// }
-
 impl From<wadm::types::StatusType> for StatusType {
     fn from(status: wadm::types::StatusType) -> Self {
         match status {
@@ -284,19 +274,6 @@ impl From<wadm::types::StatusResult> for StatusResult {
         }
     }
 }
-
-// impl From<wadm::types::DeployResponse> for DeployModelResponse {
-//     fn from(response: wadm::types::DeployResponse) -> Self {
-//         DeployModelResponse {
-//             result: match response.result {
-//                 wadm::types::DeployResult::Error => DeployResult::Error,
-//                 wadm::types::DeployResult::Acknowledged => DeployResult::Acknowledged,
-//                 wadm::types::DeployResult::NotFound => DeployResult::NotFound,
-//             },
-//             message: response.message,
-//         }
-//     }
-// }
 
 impl From<oam::types::OamManifest> for Manifest {
     fn from(manifest: oam::types::OamManifest) -> Self {
@@ -443,48 +420,6 @@ impl From<oam::types::Spread> for Spread {
     }
 }
 
-// impl From<DeployModelResponse> for wadm::types::DeployResponse {
-//     fn from(response: DeployModelResponse) -> Self {
-//         wadm::types::DeployResponse {
-//             result: match response.result {
-//                 DeployResult::Error => wadm::types::DeployResult::Error,
-//                 DeployResult::Acknowledged => wadm::types::DeployResult::Acknowledged,
-//                 DeployResult::NotFound => wadm::types::DeployResult::NotFound,
-//             },
-//             message: response.message,
-//         }
-//     }
-// }
-
-// impl From<PutModelResponse> for wadm::types::PutModelResponse {
-//     fn from(response: PutModelResponse) -> Self {
-//         wadm::types::PutModelResponse {
-//             result: response.result.into(),
-//             total_versions: response.total_versions as u32,
-//             current_version: response.current_version,
-//             message: response.message,
-//             name: response.name,
-//         }
-//     }
-// }
-
-// impl From<VersionResponse> for wadm::types::VersionResponse {
-//     fn from(response: VersionResponse) -> Self {
-//         wadm::types::VersionResponse {
-//             result: response.result.into(),
-//             message: response.message,
-//             versions: response
-//                 .versions
-//                 .into_iter()
-//                 .map(|v| wadm::types::VersionInfo {
-//                     version: v.version,
-//                     deployed: v.deployed,
-//                 })
-//                 .collect(),
-//         }
-//     }
-// }
-
 impl From<VersionInfo> for wadm::types::VersionInfo {
     fn from(info: VersionInfo) -> Self {
         wasmcloud::wadm::types::VersionInfo {
@@ -493,55 +428,6 @@ impl From<VersionInfo> for wadm::types::VersionInfo {
         }
     }
 }
-// impl From<StatusResponse> for wadm::types::StatusResponse {
-//     fn from(response: StatusResponse) -> Self {
-//         wadm::types::StatusResponse {
-//             result: response.result.into(),
-//             message: response.message,
-//             status: response.status.map(|s| wadm::types::Status {
-//                 version: s.version,
-//                 info: s.info.into(),
-//                 components: s
-//                     .components
-//                     .into_iter()
-//                     .map(|c| wadm::types::ComponentStatus {
-//                         name: c.name,
-//                         component_type: c.component_type,
-//                         info: c.info.into(),
-//                         traits: c
-//                             .traits
-//                             .into_iter()
-//                             .map(|t| wadm::types::TraitStatus {
-//                                 trait_type: t.trait_type,
-//                                 info: t.info.into(),
-//                             })
-//                             .collect(),
-//                     })
-//                     .collect(),
-//             }),
-//         }
-//     }
-// }
-
-// impl From<GetModelResponse> for wadm::types::GetModelResponse {
-//     fn from(response: GetModelResponse) -> Self {
-//         wadm::types::GetModelResponse {
-//             result: response.result.into(),
-//             message: response.message,
-//             manifest: response.manifest.map(|m| m.into()),
-//         }
-//     }
-// }
-
-// impl From<StatusResult> for wadm::types::StatusResult {
-//     fn from(result: StatusResult) -> Self {
-//         match result {
-//             StatusResult::Error => wadm::types::StatusResult::Error,
-//             StatusResult::Ok => wadm::types::StatusResult::Ok,
-//             StatusResult::NotFound => wadm::types::StatusResult::NotFound,
-//         }
-//     }
-// }
 
 // Implement the From trait for StatusInfo
 impl From<StatusInfo> for wadm::types::StatusInfo {
