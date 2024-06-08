@@ -12,6 +12,7 @@ repository = "https://github.com/wasmcloud/wadm"
 anyhow = { workspace = true }
 async-nats = { workspace = true }
 bytes = { workspace = true }
+futures.workspace = true
 nkeys = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
