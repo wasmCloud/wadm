@@ -80,7 +80,6 @@ wadm = { version = "0.12.0", path = "./crates/wadm" }
 wadm-client = { version = "0.1.0", path = "./crates/wadm-client" }
 wadm-types = { version = "0.1.0", path = "./crates/wadm-types" }
 wasmcloud-control-interface = "1.0.0"
-# wit-bindgen = { version = "0.26.0", features = ["macros"] }
 wit-bindgen-wrpc = { version = "0.3.7", default-features = false }
 
 [dev-dependencies]
