@@ -951,7 +951,6 @@ pub(crate) async fn validate_manifest(manifest: Manifest) -> anyhow::Result<()> 
         }
 
         // Linkdef validation : A linkdef from a component should have a unique target and reference
-        let mut linkdef_set: HashSet<String> = HashSet::new();
         if let Some(traits_vec) = &component.traits {
             for trait_item in traits_vec.iter() {
                 if let Trait {
@@ -964,14 +963,6 @@ pub(crate) async fn validate_manifest(manifest: Manifest) -> anyhow::Result<()> 
                     ..
                 } = &trait_item
                 {
-                    if !linkdef_set.insert(target_name.to_string()) {
-                        return Err(anyhow!(
-                            "Duplicate target {} for component {} linkdef trait in manifest",
-                            target_name,
-                            component.name,
-                        ));
-                    }
-
                     // Multiple components{ with type != 'capability'} can declare the same target, so we don't need to check for duplicates on insert
                     required_capability_components.insert(target_name.to_string());
                 }
