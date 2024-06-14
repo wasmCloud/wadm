@@ -102,10 +102,9 @@ pub fn configure_tracing(
     }
 }
 
-fn get_log_layer<S: for<'a> tracing_subscriber::registry::LookupSpan<'a>>(
-    structured_logging: bool,
-) -> Box<dyn Layer<S> + Send + Sync + 'static>
+fn get_log_layer<S>(structured_logging: bool) -> Box<dyn Layer<S> + Send + Sync + 'static>
 where
+    S: for<'a> tracing_subscriber::registry::LookupSpan<'a>,
     S: tracing::Subscriber,
 {
     let log_layer = tracing_subscriber::fmt::layer()
