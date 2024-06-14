@@ -51,13 +51,17 @@ impl Default for ProviderStatus {
     }
 }
 
-impl ToString for ProviderStatus {
-    fn to_string(&self) -> String {
-        match self {
-            Self::Pending => "pending".to_string(),
-            Self::Running => "running".to_string(),
-            Self::Failed => "failed".to_string(),
-        }
+impl std::fmt::Display for ProviderStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::Pending => "pending".to_string(),
+                Self::Running => "running".to_string(),
+                Self::Failed => "failed".to_string(),
+            }
+        )
     }
 }
 
