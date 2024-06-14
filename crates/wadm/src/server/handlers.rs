@@ -528,6 +528,7 @@ impl<P: Publisher> Handler<P> {
             }
         };
 
+        // Fetch the model that's being staged for deployment for validation
         let staged_model = match req.version.clone() {
             Some(v) if v == LATEST_VERSION => manifests.get_current(),
             Some(v) => {
@@ -555,8 +556,8 @@ impl<P: Publisher> Handler<P> {
             None => manifests.get_current(),
         };
 
-        // Retrieve all the existing provider refs in store that are currently deployed
-        let mut existing_provider_refs: HashMap<String, (String, String)> = HashMap::new();
+        // Retrieve all the existing identifiers of deployed components and providers, and check if the staged model has any duplicates
+        let mut existing_ids: HashMap<String, String> = HashMap::new();
         for model_summary in stored_models.iter() {
             // Excluding models that do not have a deployed version at present
             if model_summary.deployed_version.is_some() {
@@ -576,26 +577,51 @@ impl<P: Publisher> Handler<P> {
                 };
 
                 // Performing checks against all other manifests except previous versions of the current manifest
-                // Because upgrading versions is a valid case for adding providers of updated versions
+                // Because upgrading versions is a valid case for carrying over the same identifiers
                 if stored_manifest.name() != name {
                     if let Some(deployed_manifest) = stored_manifest.get_deployed() {
                         for component in deployed_manifest.spec.components.iter() {
-                            if let Properties::Capability {
-                                properties:
-                                    CapabilityProperties {
-                                        image: image_name, ..
-                                    },
-                            } = &component.properties
-                            {
-                                if let Some((ref_link, ref_version)) = parse_image_ref(image_name) {
-                                    existing_provider_refs.insert(
-                                        ref_link,
-                                        (ref_version, stored_manifest.name().to_string()),
-                                    );
-                                }
+                            let (Properties::Capability {
+                                properties: CapabilityProperties { id, .. },
+                            }
+                            | Properties::Component {
+                                properties: ComponentProperties { id, .. },
+                            }) = &component.properties;
+
+                            if let Some(id) = id.as_ref() {
+                                existing_ids
+                                    .insert(id.to_string(), stored_manifest.name().to_string());
                             }
                         }
                     };
+                }
+            }
+        }
+
+        // Compare if any of the identifiers in the staged model are duplicates
+        for component in staged_model.spec.components.iter() {
+            let (Properties::Capability {
+                properties: CapabilityProperties { id, .. },
+            }
+            | Properties::Component {
+                properties: ComponentProperties { id, .. },
+            }) = &component.properties;
+
+            if let Some(id) = id.as_ref() {
+                if let Some(conflicting_manifest_name) = existing_ids.get(id) {
+                    error!(
+                        id,
+                        conflicting_manifest_name,
+                        "Component identifier is already deployed in a different manifest.",
+                    );
+                    self.send_error(
+                                msg.reply,
+                                format!(
+                                    "Component identifier {id} is already deployed in a different manifest {conflicting_manifest_name}."
+                            ),
+                            )
+                            .await;
+                    return;
                 }
             }
         }
@@ -1015,15 +1041,6 @@ pub(crate) async fn validate_manifest(manifest: Manifest) -> anyhow::Result<()> 
     }
 
     Ok(())
-}
-
-fn parse_image_ref(image_name: &str) -> Option<(String, String)> {
-    if let Some((repository_reference, ref_version)) = image_name.split_once(':') {
-        Some((repository_reference.to_owned(), ref_version.to_owned()))
-    } else {
-        // ignore if image ref is not in the format some_url:some_version
-        None
-    }
 }
 
 /// This function validates that a key/value pair is a valid OAM label. It's using fairly
