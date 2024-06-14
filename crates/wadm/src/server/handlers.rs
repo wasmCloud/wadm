@@ -16,7 +16,7 @@ use wadm_types::{
         UndeployModelRequest, VersionInfo, VersionResponse,
     },
     CapabilityProperties, ComponentProperties, LinkProperty, Manifest, Properties, Trait,
-    TraitProperty, LATEST_VERSION,
+    TraitProperty,
 };
 
 use crate::{model::StoredManifest, publisher::Publisher};
@@ -322,7 +322,9 @@ impl<P: Publisher> Handler<P> {
         lattice_id: &str,
         name: &str,
     ) {
-        let req: DeleteModelRequest =
+        let req: DeleteModelRequest = if msg.payload.is_empty() {
+            DeleteModelRequest { version: None }
+        } else {
             match serde_json::from_reader(std::io::Cursor::new(msg.payload)) {
                 Ok(r) => r,
                 Err(e) => {
@@ -333,7 +335,8 @@ impl<P: Publisher> Handler<P> {
                     .await;
                     return;
                 }
-            };
+            }
+        };
         let reply_data = if let Some(version) = req.version {
             match self.store.get(account_id, lattice_id, name).await {
                 Ok(Some((mut current, current_revision))) => {
@@ -526,33 +529,6 @@ impl<P: Publisher> Handler<P> {
                     .await;
                 return;
             }
-        };
-
-        let staged_model = match req.version.clone() {
-            Some(v) if v == LATEST_VERSION => manifests.get_current(),
-            Some(v) => {
-                if let Some(model) = manifests.get_version(&v) {
-                    model
-                } else {
-                    trace!("Requested version does not exist");
-                    self.send_reply(
-                        msg.reply,
-                        // NOTE: We are constructing all data here, so this shouldn't fail, but just in
-                        // case we unwrap to nothing
-                        serde_json::to_vec(&DeployModelResponse {
-                            result: DeployResult::Error,
-                            message: format!(
-                        "Model with the name {name} does not have the specified version to deploy"
-                    ),
-                        })
-                        .unwrap_or_default(),
-                    )
-                    .await;
-                    return;
-                }
-            }
-            // Get the current version if payload version is None, since deploy() does the same
-            None => manifests.get_current(),
         };
 
         // Retrieve all the existing provider refs in store that are currently deployed
