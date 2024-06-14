@@ -1,13 +1,12 @@
 //! A client for interacting with Wadm.
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use async_nats::HeaderMap;
 
 pub use error::Result;
 use error::{ClientError, SerializationError};
 pub use loader::ManifestLoader;
-use once_cell::sync::Lazy;
 use topics::TopicGenerator;
 use wadm_types::{
     api::{
@@ -25,11 +24,16 @@ pub mod error;
 pub mod loader;
 pub mod topics;
 
-static CONTENT_TYPE_HEADERS: Lazy<HeaderMap> = Lazy::new(|| {
-    let mut headers = HeaderMap::new();
-    headers.insert("Content-Type", "application/json");
-    headers
-});
+/// Headers for `Content-Type: application/json`
+static HEADERS_CONTENT_TYPE_JSON: OnceLock<HeaderMap> = OnceLock::new();
+/// Retrieve static content type headers
+fn get_headers_content_type_json() -> &'static HeaderMap {
+    HEADERS_CONTENT_TYPE_JSON.get_or_init(|| {
+        let mut headers = HeaderMap::new();
+        headers.insert("Content-Type", "application/json");
+        headers
+    })
+}
 
 #[derive(Clone)]
 pub struct Client {
@@ -103,7 +107,11 @@ impl Client {
         let topic = self.topics.model_put_topic();
         let resp = self
             .client
-            .request_with_headers(topic, CONTENT_TYPE_HEADERS.clone(), manifest_bytes.into())
+            .request_with_headers(
+                topic,
+                get_headers_content_type_json().clone(),
+                manifest_bytes.into(),
+            )
             .await?;
         let body: PutModelResponse =
             serde_json::from_slice(&resp.payload).map_err(SerializationError::from)?;

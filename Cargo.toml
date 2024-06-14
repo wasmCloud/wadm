@@ -54,7 +54,6 @@ indexmap = { version = "2", features = ["serde"] }
 jsonschema = "0.17"
 lazy_static = "1"
 nkeys = "0.3.0"
-once_cell = "1"
 # One version back to avoid clashes with 0.10 of otlp
 opentelemetry = { version = "0.17", features = ["rt-tokio"] }
 # 0.10 to avoid protoc dep

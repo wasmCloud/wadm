@@ -13,7 +13,6 @@ anyhow = { workspace = true }
 async-nats = { workspace = true }
 bytes = { workspace = true }
 nkeys = { workspace = true }
-once_cell = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
