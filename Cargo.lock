@@ -2859,7 +2859,6 @@ dependencies = [
  "async-nats",
  "bytes",
  "nkeys",
- "once_cell",
  "serde",
  "serde_json",
  "serde_yaml",
