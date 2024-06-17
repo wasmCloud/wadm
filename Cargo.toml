@@ -76,6 +76,7 @@ tracing-futures = "0.2"
 tracing-opentelemetry = { version = "0.17" }
 tracing-subscriber = { version = "0.3.7", features = ["env-filter", "json"] }
 ulid = { version = "1", features = ["serde"] }
+utoipa = "4"
 uuid = "1"
 wadm = { version = "0.12.0", path = "./crates/wadm" }
 wadm-client = { version = "0.1.0", path = "./crates/wadm-client" }
