@@ -5,6 +5,11 @@ metadata:
   annotations:
     description: 'This is my app'
 spec:
+  policies:
+    - name: test-policy
+      type: test
+      properties:
+        test: "data"
   components:
     - name: hello
       type: component

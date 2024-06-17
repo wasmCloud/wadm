@@ -1,7 +1,7 @@
 [package]
 name = "wadm-cli"
 description = "wasmCloud Application Deployment Manager: A tool for running Wasm applications in wasmCloud"
-version = "0.12.2"
+version = "0.13.0"
 edition = "2021"
 authors = ["wasmCloud Team"]
 keywords = ["webassembly", "wasmcloud", "wadm"]
@@ -31,6 +31,8 @@ opentelemetry-otlp = { workspace = true, features = [
     "http-proto",
     "reqwest-client",
 ] }
+schemars = { workspace = true }
+serde_json = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 tracing = { workspace = true, features = ["log"] }
 tracing-futures = { workspace = true }
@@ -63,6 +65,7 @@ opentelemetry-otlp = { version = "0.10", features = [
 ] }
 rand = { version = "0.8", features = ["small_rng"] }
 regex = "1.9.3"
+schemars = "0.8"
 semver = { version = "1.0.16", features = ["serde"] }
 serde = "1"
 serde_json = "1"
@@ -75,8 +78,9 @@ tracing-futures = "0.2"
 tracing-opentelemetry = { version = "0.17" }
 tracing-subscriber = { version = "0.3.7", features = ["env-filter", "json"] }
 ulid = { version = "1", features = ["serde"] }
+utoipa = "4"
 uuid = "1"
-wadm = { version = "0.12.0", path = "./crates/wadm" }
+wadm = { version = "0.13.0", path = "./crates/wadm" }
 wadm-client = { version = "0.1.0", path = "./crates/wadm-client" }
 wadm-types = { version = "0.1.0", path = "./crates/wadm-types" }
 wasmcloud-control-interface = "1.0.0"
@@ -92,6 +96,15 @@ serial_test = "3"
 wadm-client = { workspace = true }
 wadm-types = { workspace = true }
 
+[build-dependencies]
+schemars = { workspace = true }
+serde_json = { workspace = true }
+wadm-types = { workspace = true }
+
 [[bin]]
 name = "wadm"
 path = "src/main.rs"
+
+[[bin]]
+name = "wadm-schema"
+path = "src/schema.rs"

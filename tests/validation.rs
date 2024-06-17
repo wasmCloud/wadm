@@ -91,3 +91,32 @@ async fn validate_custom_interface() -> Result<()> {
     );
     Ok(())
 }
+
+#[tokio::test]
+async fn validate_bad_manifest() -> Result<()> {
+    let result = validate_manifest_file("./tests/fixtures/manifests/made-up-block.wadm.yaml")
+        .await
+        .context("failed to validate manifest");
+    assert!(result.is_err(), "expected error");
+    Ok(())
+}
+
+#[tokio::test]
+async fn validate_bad_manifest_key() -> Result<()> {
+    let result = validate_manifest_file("./tests/fixtures/manifests/made-up-key.wadm.yaml")
+        .await
+        .context("failed to validate manifest");
+    assert!(result.is_err(), "expected error");
+    Ok(())
+}
+
+#[tokio::test]
+async fn validate_policy() -> Result<()> {
+    let (_manifest, failures) =
+        validate_manifest_file("./tests/fixtures/manifests/policy.wadm.yaml")
+            .await
+            .context("failed to validate manifest")?;
+    assert!(failures.is_empty(), "no failures");
+    assert!(failures.valid(), "manifest is valid");
+    Ok(())
+}
