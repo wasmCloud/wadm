@@ -1,0 +1,397 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Manifest",
+  "description": "An OAM manifest",
+  "type": "object",
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "properties": {
+    "apiVersion": {
+      "description": "The OAM version of the manifest",
+      "type": "string"
+    },
+    "kind": {
+      "description": "The kind or type of manifest described by the spec",
+      "type": "string"
+    },
+    "metadata": {
+      "description": "Metadata describing the manifest",
+      "allOf": [
+        {
+          "$ref": "#/definitions/Metadata"
+        }
+      ]
+    },
+    "spec": {
+      "description": "The specification for this manifest",
+      "allOf": [
+        {
+          "$ref": "#/definitions/Specification"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "CapabilityProperties": {
+      "type": "object",
+      "required": [
+        "image"
+      ],
+      "properties": {
+        "config": {
+          "description": "Named configuration to pass to the provider. The merged set of configuration will be passed to the provider at runtime using the provider SDK's `init()` function.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ConfigProperty"
+          }
+        },
+        "id": {
+          "description": "The component ID to use for this provider. If not supplied, it will be generated as a combination of the [Metadata::name] and the image reference.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "image": {
+          "description": "The image reference to use",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "Component": {
+      "description": "A component definition",
+      "type": "object",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "properties",
+            "type"
+          ],
+          "properties": {
+            "properties": {
+              "$ref": "#/definitions/ComponentProperties"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "component"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "properties",
+            "type"
+          ],
+          "properties": {
+            "properties": {
+              "$ref": "#/definitions/CapabilityProperties"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "capability"
+              ]
+            }
+          }
+        }
+      ],
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "description": "The name of this component",
+          "type": "string"
+        },
+        "traits": {
+          "description": "A list of various traits assigned to this component",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/Trait"
+          }
+        }
+      }
+    },
+    "ComponentProperties": {
+      "type": "object",
+      "required": [
+        "image"
+      ],
+      "properties": {
+        "config": {
+          "description": "Named configuration to pass to the component. The component will be able to retrieve these values at runtime using `wasi:runtime/config.`",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ConfigProperty"
+          }
+        },
+        "id": {
+          "description": "The component ID to use for this component. If not supplied, it will be generated as a combination of the [Metadata::name] and the image reference.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "image": {
+          "description": "The image reference to use",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ConfigProperty": {
+      "description": "Properties for the config list associated with components, providers, and links\n\n## Usage Defining a config block, like so: ```yaml source_config: - name: \"external-secret-kv\" - name: \"default-port\" properties: port: \"8080\" ```\n\nWill result in two config scalers being created, one with the name `basic-kv` and one with the name `default-port`. Wadm will not resolve collisions with configuration names between manifests.",
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "description": "Name of the config to ensure exists",
+          "type": "string"
+        },
+        "properties": {
+          "description": "Optional properties to put with the configuration. If the properties are omitted in the manifest, wadm will assume that the configuration is externally managed and will not attempt to create it, only reporting the status as failed if not found.",
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "LinkProperty": {
+      "description": "Properties for links",
+      "type": "object",
+      "required": [
+        "interfaces",
+        "namespace",
+        "package",
+        "target"
+      ],
+      "properties": {
+        "interfaces": {
+          "description": "WIT interfaces for the link",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "name": {
+          "description": "The name of this link",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "namespace": {
+          "description": "WIT namespace for the link",
+          "type": "string"
+        },
+        "package": {
+          "description": "WIT package for the link",
+          "type": "string"
+        },
+        "source_config": {
+          "description": "Configuration to apply to the source of the link",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ConfigProperty"
+          }
+        },
+        "target": {
+          "description": "The target this link applies to. This should be the name of a component in the manifest",
+          "type": "string"
+        },
+        "target_config": {
+          "description": "Configuration to apply to the target of the link",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ConfigProperty"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "Metadata": {
+      "description": "The metadata describing the manifest",
+      "type": "object",
+      "required": [
+        "annotations",
+        "name"
+      ],
+      "properties": {
+        "annotations": {
+          "description": "Optional data for annotating this manifest see <https://github.com/oam-dev/spec/blob/master/metadata.md#annotations-format>",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "labels": {
+          "description": "Optional data for labeling this manifest, see <https://github.com/oam-dev/spec/blob/master/metadata.md#label-format>",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "name": {
+          "description": "The name of the manifest. This must be unique per lattice",
+          "type": "string"
+        }
+      }
+    },
+    "Policy": {
+      "type": "object",
+      "required": [
+        "name",
+        "properties",
+        "type"
+      ],
+      "properties": {
+        "name": {
+          "description": "The name of the policy",
+          "type": "string"
+        },
+        "properties": {
+          "description": "The properties for this policy",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "Specification": {
+      "description": "A representation of an OAM specification",
+      "type": "object",
+      "required": [
+        "components"
+      ],
+      "properties": {
+        "components": {
+          "description": "The list of components for describing an application",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Component"
+          }
+        },
+        "policies": {
+          "description": "The list of policies describing an application. This is for providing application-wide setting such as configuration for a secrets backend, how to render Kubernetes services, etc. It can be omitted if no policies are needed for an application.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Policy"
+          }
+        }
+      }
+    },
+    "Spread": {
+      "description": "Configuration for various spreading requirements",
+      "type": "object",
+      "required": [
+        "name",
+        "requirements"
+      ],
+      "properties": {
+        "name": {
+          "description": "The name of this spread requirement",
+          "type": "string"
+        },
+        "requirements": {
+          "description": "An arbitrary map of labels to match on for scaling requirements",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "weight": {
+          "description": "An optional weight for this spread. Higher weights are given more precedence",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint",
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "SpreadScalerProperty": {
+      "description": "Properties for spread scalers",
+      "type": "object",
+      "required": [
+        "instances"
+      ],
+      "properties": {
+        "instances": {
+          "description": "Number of instances to spread across matching requirements",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0.0
+        },
+        "spread": {
+          "description": "Requirements for spreading those instances",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Spread"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "Trait": {
+      "type": "object",
+      "required": [
+        "properties",
+        "type"
+      ],
+      "properties": {
+        "properties": {
+          "description": "The properties of this trait",
+          "allOf": [
+            {
+              "$ref": "#/definitions/TraitProperty"
+            }
+          ]
+        },
+        "type": {
+          "description": "The type of trait specified. This should be a unique string for the type of scaler. As we plan on supporting custom scalers, these traits are not enumerated",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "TraitProperty": {
+      "description": "Properties for defining traits",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/LinkProperty"
+        },
+        {
+          "$ref": "#/definitions/SpreadScalerProperty"
+        },
+        true
+      ]
+    }
+  }
+}

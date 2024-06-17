@@ -1,6 +1,6 @@
-use std::collections::{BTreeMap, HashMap};
-
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, HashMap};
 
 pub mod api;
 pub mod validation;
@@ -30,7 +30,8 @@ pub const LINK_TRAIT: &str = "link";
 pub const LATEST_VERSION: &str = "latest";
 
 /// An OAM manifest
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, utoipa::ToSchema, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct Manifest {
     /// The OAM version of the manifest
     #[serde(rename = "apiVersion")]
@@ -92,10 +93,24 @@ impl Manifest {
             .flatten()
             .filter(|t| t.is_link())
     }
+
+    /// Returns only policies in the manifest
+    pub fn policies(&self) -> impl Iterator<Item = &Policy> {
+        self.spec.policies.iter()
+    }
+
+    /// Returns a map of policy names to policies in the manifest
+    pub fn policy_lookup(&self) -> HashMap<&String, &Policy> {
+        self.spec
+            .policies
+            .iter()
+            .map(|p| (&p.name, p))
+            .collect::<HashMap<&String, &Policy>>()
+    }
 }
 
 /// The metadata describing the manifest
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, JsonSchema)]
 pub struct Metadata {
     /// The name of the manifest. This must be unique per lattice
     pub name: String,
@@ -108,14 +123,33 @@ pub struct Metadata {
 }
 
 /// A representation of an OAM specification
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, JsonSchema)]
 pub struct Specification {
     /// The list of components for describing an application
     pub components: Vec<Component>,
+
+    /// The list of policies describing an application. This is for providing application-wide
+    /// setting such as configuration for a secrets backend, how to render Kubernetes services,
+    /// etc. It can be omitted if no policies are needed for an application.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub policies: Vec<Policy>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Policy {
+    /// The name of the policy
+    pub name: String,
+    /// The properties for this policy
+    pub properties: BTreeMap<String, String>,
+    #[serde(rename = "type")]
+    pub policy_type: String,
 }
 
 /// A component definition
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, JsonSchema)]
+// TODO: for some reason this works fine for capapilities but not components
+//#[serde(deny_unknown_fields)]
 pub struct Component {
     /// The name of this component
     pub name: String,
@@ -130,7 +164,7 @@ pub struct Component {
 }
 
 /// Properties that can be defined for a component
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, JsonSchema)]
 #[serde(tag = "type")]
 pub enum Properties {
     #[serde(rename = "component", alias = "actor")]
@@ -139,7 +173,8 @@ pub enum Properties {
     Capability { properties: CapabilityProperties },
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ComponentProperties {
     /// The image reference to use
     pub image: String,
@@ -153,7 +188,8 @@ pub struct ComponentProperties {
     pub config: Vec<ConfigProperty>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct CapabilityProperties {
     /// The image reference to use
     pub image: String,
@@ -167,7 +203,8 @@ pub struct CapabilityProperties {
     pub config: Vec<ConfigProperty>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct Trait {
     /// The type of trait specified. This should be a unique string for the type of scaler. As we
     /// plan on supporting custom scalers, these traits are not enumerated
@@ -208,7 +245,7 @@ impl Trait {
 }
 
 /// Properties for defining traits
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, JsonSchema)]
 #[serde(untagged)]
 pub enum TraitProperty {
     Link(LinkProperty),
@@ -251,7 +288,8 @@ impl From<serde_json::Value> for TraitProperty {
 ///
 /// Will result in two config scalers being created, one with the name `basic-kv` and one with the
 /// name `default-port`. Wadm will not resolve collisions with configuration names between manifests.
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ConfigProperty {
     /// Name of the config to ensure exists
     pub name: String,
@@ -270,7 +308,8 @@ impl PartialEq<ConfigProperty> for String {
 }
 
 /// Properties for links
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct LinkProperty {
     /// The target this link applies to. This should be the name of a component in the manifest
     pub target: String,
@@ -292,7 +331,8 @@ pub struct LinkProperty {
 }
 
 /// Properties for spread scalers
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct SpreadScalerProperty {
     /// Number of instances to spread across matching requirements
     #[serde(alias = "replicas")]
@@ -303,7 +343,8 @@ pub struct SpreadScalerProperty {
 }
 
 /// Configuration for various spreading requirements
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct Spread {
     /// The name of this spread requirement
     pub name: String,

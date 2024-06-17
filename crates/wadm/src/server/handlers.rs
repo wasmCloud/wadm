@@ -3,9 +3,7 @@ use std::collections::{HashMap, HashSet};
 use anyhow::{anyhow, bail, ensure};
 use async_nats::{jetstream::stream::Stream, Client, Message, Subject};
 use base64::{engine::general_purpose::STANDARD as B64decoder, Engine};
-use jsonschema::{paths::PathChunk, Draft, JSONSchema};
 use serde_json::json;
-use tokio::sync::OnceCell;
 use tracing::{debug, error, instrument, log::warn, trace};
 use wadm_types::validation::{is_valid_manifest_name, validate_manifest_version, ValidationOutput};
 use wadm_types::{
@@ -22,10 +20,6 @@ use wadm_types::{
 use crate::{model::StoredManifest, publisher::Publisher};
 
 use super::{parser::parse_manifest, storage::ModelStorage, ManifestNotifier};
-
-const JSON_SCHEMA: &str = include_str!("../../oam.schema.json");
-static JSON_SCHEMA_VALUE: OnceCell<serde_json::Value> = OnceCell::const_new();
-static OAM_JSON_SCHEMA: OnceCell<JSONSchema> = OnceCell::const_new();
 
 pub(crate) struct Handler<P> {
     pub(crate) store: ModelStorage,
@@ -865,51 +859,6 @@ pub(crate) async fn validate_manifest(manifest: Manifest) -> anyhow::Result<()> 
     let mut name_registry: HashSet<String> = HashSet::new();
     let mut id_registry: HashSet<String> = HashSet::new();
     let mut required_capability_components: HashSet<String> = HashSet::new();
-    JSON_SCHEMA_VALUE
-        .get_or_try_init(|| async {
-            serde_json::from_str(JSON_SCHEMA)
-                .map_err(|e| anyhow!("Unable to parse JSON schema: {}", e))
-        })
-        .await?;
-
-    let ok_schema = OAM_JSON_SCHEMA
-        .get_or_try_init(|| async {
-            JSONSchema::options().with_draft(Draft::Draft7).compile(
-                JSON_SCHEMA_VALUE
-                    .get()
-                    // SAFETY: We just initialized it above
-                    .expect("JSON schema should be initialized"),
-            )
-        })
-        .await?;
-
-    let json_instance = serde_json::to_value(manifest.clone())?;
-    let validation_result = ok_schema.validate(&json_instance);
-    if let Err(errors) = validation_result {
-        let mut error_message = String::new();
-        for error in errors {
-            trace!(error = ?error, "Validation error");
-            let instance_path = error
-                .instance_path
-                .into_iter()
-                .map(|item| match item {
-                    PathChunk::Property(value) => value.to_string(),
-                    PathChunk::Index(idx) => format!(" at index: {idx}"),
-                    PathChunk::Keyword(keyword) => keyword.to_string(),
-                })
-                .collect::<Vec<String>>()
-                .join("/");
-            error_message.push_str(&format!(
-                "Should be able to parse object at: {} \n",
-                // The path of the corresponding JSON error instance in that file
-                instance_path
-            ));
-        }
-        return Err(anyhow!(
-            "Validation Error: \n{}Please check for missing or incorrect elements",
-            error_message
-        ));
-    }
 
     ensure!(manifest.metadata.labels.iter().all(valid_oam_label));
     ensure!(manifest.metadata.annotations.iter().all(valid_oam_label));

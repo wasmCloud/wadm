@@ -5,6 +5,12 @@ metadata:
   annotations:
     description: 'This is my CRUDdy complex blobby app with all configuration possibilities'
 spec:
+  policies:
+    - name: whatever
+      type: a-sample-policy
+      properties:
+        some: value
+        another: kind
   components:
     - name: blobby
       type: component

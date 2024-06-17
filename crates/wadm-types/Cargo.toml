@@ -1,7 +1,7 @@
 [package]
 name = "wadm-types"
 description = "Types and validators for the wadm API"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["wasmCloud Team"]
 keywords = ["webassembly", "wasmcloud", "wadm"]
@@ -23,6 +23,7 @@ lazy_static = { workspace = true }
 nkeys = { workspace = true }
 rand = { workspace = true, features = ["small_rng"] }
 regex = { workspace = true }
+schemars = { workspace = true }
 semver = { workspace = true, features = ["serde"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -33,5 +34,6 @@ tokio = { workspace = true, features = ["full"] }
 tracing = { workspace = true, features = ["log"] }
 tracing-futures = { workspace = true }
 ulid = { workspace = true, features = ["serde"] }
+utoipa = { workspace = true }
 uuid = { workspace = true }
 wasmcloud-control-interface = { workspace = true }
