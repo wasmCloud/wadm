@@ -33,7 +33,7 @@ interface client {
     get-model-details: func(model-name: string, version: option<string>, lattice: option<string>) -> result<oam-manifest, string>;
 
     // Deletes a model version from the WADM system.
-    delete-model-version: func(model-name: string, version: option<string>, delete-all: bool, lattice: option<string>) -> result<bool, string>;
+    delete-model-version: func(model-name: string, version: option<string>, lattice: option<string>) -> result<bool, string>;
 
     // Retrieves all application manifests.
     get-models: func(lattice: option<string>) -> result<list<model-summary>, string>;
