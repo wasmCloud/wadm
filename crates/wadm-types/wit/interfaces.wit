@@ -1,6 +1,6 @@
 package wasmcloud:wadm-types@0.1.0;
 
 world interfaces {
-    import wasmcloud:oam/types@0.1.0;
+    import wasmcloud:wadm/types@0.1.0;
     import wasmcloud:wadm/client@0.1.0;
 }
