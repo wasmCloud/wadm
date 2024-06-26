@@ -1,0 +1,30 @@
+name: wit-wasmcloud-wadm-publish
+
+on:
+  push:
+    tags:
+      - 'wit-wasmcloud-wadm-v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        sparse-checkout: |
+          wit
+    - name: Extract tag context
+      id: ctx
+      run: |
+          version=${GITHUB_REF_NAME#wit-wasmcloud-wadm-v}
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "tarball=wit-wasmcloud-wadm-${version}.tar.gz" >> "$GITHUB_OUTPUT"
+          echo "version is ${version}"
+    - name: Build
+      run: |
+        tar cvzf ${{ steps.ctx.outputs.tarball }} -C wit wadm/wit
+    - name: Release
+      uses: softprops/action-gh-release@v2
+      with:
+        files: ${{ steps.ctx.outputs.tarball }}
+        make_latest: "false"

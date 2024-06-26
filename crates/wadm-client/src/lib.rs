@@ -3,10 +3,8 @@ use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 
 use async_nats::{HeaderMap, Message};
-
 use error::{ClientError, SerializationError};
-use futures::StreamExt;
-use tokio::sync::mpsc;
+use futures::Stream;
 use topics::TopicGenerator;
 use wadm_types::{
     api::{
@@ -279,28 +277,14 @@ impl Client {
         }
     }
 
-    /// Subscribes to the given status topic and returns an mpsc Receiver to receive messages.
-    pub async fn subscribe_to_status(&self, app_name: &str) -> Result<mpsc::Receiver<Message>> {
+    pub async fn subscribe_to_status(&self, app_name: &str) -> Result<impl Stream<Item = Message>> {
         let subject = self.topics.wadm_status_topic(app_name);
-        let mut subscriber = self
+        let subscriber = self
             .client
             .subscribe(subject)
             .await
             .map_err(|e| ClientError::ApiError(e.to_string()))?;
 
-        // Create a channel to send messages to the provider code
-        let (tx, rx) = mpsc::channel(100);
-
-        // Spawn a task to listen for messages and send them to the channel
-        tokio::spawn(async move {
-            while let Some(msg) = subscriber.next().await {
-                // If sending fails, it means the receiver was dropped. Exit the loop.
-                if tx.send(msg).await.is_err() {
-                    break;
-                }
-            }
-        });
-
-        Ok(rx)
+        Ok(subscriber)
     }
 }
