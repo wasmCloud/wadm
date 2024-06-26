@@ -2784,7 +2784,7 @@ checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 
 [[package]]
 name = "wadm"
-version = "0.12.0"
+version = "0.12.1"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -2818,7 +2818,7 @@ dependencies = [
 
 [[package]]
 name = "wadm-cli"
-version = "0.12.0"
+version = "0.12.2"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -2846,14 +2846,13 @@ dependencies = [
 
 [[package]]
 name = "wadm-client"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "async-nats",
  "bytes",
  "futures",
  "nkeys",
- "once_cell",
  "serde",
  "serde_json",
  "serde_yaml",

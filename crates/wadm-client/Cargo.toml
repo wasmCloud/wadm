@@ -1,7 +1,7 @@
 [package]
 name = "wadm-client"
 description = "A client library for interacting with the wadm API"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 authors = ["wasmCloud Team"]
 keywords = ["webassembly", "wasmcloud", "wadm"]
@@ -14,7 +14,6 @@ async-nats = { workspace = true }
 bytes = { workspace = true }
 futures = { workspace = true }
 nkeys = { workspace = true }
-once_cell = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }

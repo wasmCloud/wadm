@@ -44,7 +44,7 @@ impl TopicGenerator {
 
     /// Returns the full topic for a model delete operation
     pub fn model_delete_topic(&self, model_name: &str) -> String {
-        format!("{}.delete.{model_name}", self.model_prefix())
+        format!("{}.del.{model_name}", self.model_prefix())
     }
 
     /// Returns the full topic for a model list operation

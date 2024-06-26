@@ -177,11 +177,11 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
                 let (running, other): (HashMap<&String, &Host>, HashMap<&String, &Host>) =
                     eligible_hosts.into_iter().partition(|(_host_id, host)| {
                         host.providers
-                            .get(&ProviderInfo {
+                            .contains(&ProviderInfo {
                                 provider_id: provider_id.to_string(),
                                 provider_ref: provider_ref.to_string(),
                                 annotations: BTreeMap::default(),
-                            }).is_some()
+                            })
                     });
                 // Get the count of all running providers
                 let current_running = running.len();
