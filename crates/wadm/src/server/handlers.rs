@@ -100,32 +100,32 @@ impl<P: Publisher> Handler<P> {
             return;
         }
 
-        let mut resp = PutModelResponse {
+        let incoming_version = manifest.version().to_owned();
+        if !current_manifests.add_version(manifest) {
+            self.send_error(
+                msg.reply,
+                format!("Manifest version {} already exists", incoming_version),
+            )
+            .await;
+            return;
+        }
+
+        let resp = PutModelResponse {
             // If we successfully insert, the given manifest version will be the new current version
-            current_version: manifest.version().to_owned(),
-            result: if current_manifests.is_empty() {
+            current_version: current_manifests.current_version().to_string(),
+            result: if current_manifests.count() == 1 {
                 PutResult::Created
             } else {
                 PutResult::NewVersion
             },
             name: manifest_name.clone(),
-            total_versions: 0,
+            total_versions: current_manifests.count(),
             message: format!(
                 "Successfully put manifest {} {}",
                 manifest_name,
-                manifest.version()
+                current_manifests.current_version()
             ),
         };
-
-        if !current_manifests.add_version(manifest) {
-            self.send_error(
-                msg.reply,
-                format!("Manifest version {} already exists", resp.current_version),
-            )
-            .await;
-            return;
-        }
-        resp.total_versions = current_manifests.count();
 
         trace!(total_manifests = %resp.total_versions, "Storing manifests");
         if let Err(e) = self
