@@ -19,8 +19,8 @@ use tokio::{
 use tracing::{debug, error, instrument, trace, warn};
 use wadm_types::{
     api::StatusInfo, CapabilityProperties, Component, ComponentProperties, ConfigProperty,
-    Manifest, Properties, SpreadScalerProperty, Trait, TraitProperty, DAEMONSCALER_TRAIT,
-    LINK_TRAIT, SPREADSCALER_TRAIT,
+    Manifest, Properties, SecretProperty, SpreadScalerProperty, Trait, TraitProperty,
+    DAEMONSCALER_TRAIT, LINK_TRAIT, SPREADSCALER_TRAIT,
 };
 
 use crate::{
@@ -28,13 +28,14 @@ use crate::{
     publisher::Publisher,
     scaler::{spreadscaler::ActorSpreadScaler, Command, Scaler},
     storage::{snapshot::SnapshotStore, ReadStore},
-    workers::{CommandPublisher, ConfigSource, LinkSource, StatusPublisher},
+    workers::{CommandPublisher, ConfigSource, LinkSource, SecretSource, StatusPublisher},
     DEFAULT_LINK_NAME,
 };
 
 use super::{
     configscaler::ConfigScaler,
     daemonscaler::{provider::ProviderDaemonScaler, ActorDaemonScaler},
+    secretscaler::SecretScaler,
     spreadscaler::{
         link::{LinkScaler, LinkScalerConfig},
         provider::{ProviderSpreadConfig, ProviderSpreadScaler},
@@ -133,7 +134,7 @@ impl<StateStore, P, L> ScalerManager<StateStore, P, L>
 where
     StateStore: ReadStore + Send + Sync + Clone + 'static,
     P: Publisher + Clone + Send + Sync + 'static,
-    L: LinkSource + ConfigSource + Clone + Send + Sync + 'static,
+    L: LinkSource + ConfigSource + SecretSource + Clone + Send + Sync + 'static,
 {
     /// Creates a new ScalerManager configured to notify messages to `wadm.notify.{lattice_id}`
     /// using the given jetstream client. Also creates an ephemeral consumer for notifications on
@@ -574,7 +575,7 @@ pub(crate) fn components_to_scalers<S, P, L>(
 where
     S: ReadStore + Send + Sync + Clone + 'static,
     P: Publisher + Clone + Send + Sync + 'static,
-    L: LinkSource + ConfigSource + Clone + Send + Sync + 'static,
+    L: LinkSource + ConfigSource + SecretSource + Clone + Send + Sync + 'static,
 {
     let mut scalers: ScalerList = Vec::new();
     for component in components.iter() {
@@ -630,12 +631,18 @@ where
                                 let (mut config_scalers, source_config) = config_to_scalers(
                                     snapshot_data.clone(),
                                     name,
-                                    &p.source_config,
+                                    &p.source.config,
                                 );
                                 let (target_config_scalers, target_config) = config_to_scalers(
                                     snapshot_data.clone(),
                                     name,
-                                    &p.target_config,
+                                    &p.target.config,
+                                );
+
+                                let (target_secret_scalers, target_secrets) = secrets_to_scalers(
+                                    snapshot_data.clone(),
+                                    name,
+                                    &p.target.secrets,
                                 );
                                 config_scalers.extend(target_config_scalers);
                                 match &component.properties {
@@ -745,12 +752,12 @@ where
                                     let (mut config_scalers, source_config) = config_to_scalers(
                                         snapshot_data.clone(),
                                         name,
-                                        &p.source_config,
+                                        &p.source.config,
                                     );
                                     let (target_config_scalers, target_config) = config_to_scalers(
                                         snapshot_data.clone(),
                                         name,
-                                        &p.target_config,
+                                        &p.target.config,
                                     );
                                     config_scalers.extend(target_config_scalers);
                                     match &component.properties {
@@ -857,6 +864,19 @@ fn config_to_scalers<C: ConfigSource + Send + Sync + Clone>(
         .unzip()
 }
 
+fn secrets_to_scalers<S: SecretSource + Send + Sync + Clone>(
+    config_source: S,
+    model_name: &str,
+    secrets: &[SecretProperty],
+) -> (Vec<SecretScaler<S>>, Vec<String>) {
+    secrets.iter().map(|s| {
+        let name = compute_secret_id(model_name, None, &s.name);
+        (SecretScaler::new(s.name, s.source, config_source), name)
+    });
+
+    todo!()
+}
+
 /// Based on the name of the model and the optionally provided ID, returns a unique ID for the
 /// component that is a sanitized version of the component reference and model name, separated
 /// by a dash.
@@ -878,6 +898,15 @@ pub(crate) fn compute_component_id(
                 .replace(|c: char| !c.is_ascii_alphanumeric(), "_")
         )
     }
+}
+
+pub(crate) fn compute_secret_id(
+    model_name: &str,
+    component_id: Option<&String>,
+    component_name: &str,
+) -> String {
+    let name = compute_component_id(model_name, component_id, component_name);
+    format!("secret_{}", name)
 }
 
 #[cfg(test)]

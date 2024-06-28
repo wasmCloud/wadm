@@ -33,5 +33,6 @@ tokio = { workspace = true, features = ["full"] }
 tracing = { workspace = true, features = ["log"] }
 tracing-futures = { workspace = true }
 ulid = { workspace = true, features = ["serde"] }
+utoipa = { workspace = true }
 uuid = { workspace = true }
 wasmcloud-control-interface = { workspace = true }

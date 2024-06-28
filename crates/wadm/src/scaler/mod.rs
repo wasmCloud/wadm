@@ -20,6 +20,7 @@ use crate::{
 pub mod configscaler;
 pub mod daemonscaler;
 pub mod manager;
+pub mod secretscaler;
 pub mod spreadscaler;
 
 use manager::Notifications;

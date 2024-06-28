@@ -8,10 +8,10 @@ metadata:
     description: Sample manifest that passes
 spec:
   policies:
-    - name: secrets
+    - name: secrets-policy
       type: secrets-backend
       properties:
-        role-name: "test"
+        metadata: a-value
   components:
     - name: http-component
       type: component
