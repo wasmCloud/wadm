@@ -5,7 +5,7 @@ use async_nats::{
     jetstream::{
         self,
         kv::{Config as KvConfig, Store},
-        stream::{Config as StreamConfig, Stream},
+        stream::{Config as StreamConfig, Source, Stream, SubjectTransform},
         Context,
     },
     Client, ConnectOptions,
@@ -139,6 +139,108 @@ pub async fn ensure_stream(
         // want to alter the storage or replicas of a stream, for example,
         // we don't want to override that configuration.
         if stream.cached_info().config.subjects == stream_config.subjects {
+            return Ok(stream);
+        } else {
+            warn!("Found stream {name} with different configuration, deleting and recreating");
+            context.delete_stream(name).await?;
+        }
+    }
+
+    context
+        .get_or_create_stream(stream_config)
+        .await
+        .map_err(|e| anyhow::anyhow!("{e:?}"))
+}
+
+pub async fn ensure_limits_stream(
+    context: &Context,
+    name: String,
+    subjects: Vec<String>,
+    description: Option<String>,
+) -> Result<Stream> {
+    let stream_config = StreamConfig {
+        name: name.clone(),
+        description,
+        num_replicas: 1,
+        retention: async_nats::jetstream::stream::RetentionPolicy::Limits,
+        subjects,
+        max_age: DEFAULT_EXPIRY_TIME,
+        storage: async_nats::jetstream::stream::StorageType::File,
+        allow_rollup: false,
+        ..Default::default()
+    };
+
+    if let Ok(stream) = context.get_stream(&name).await {
+        // For now, we only check if the subjects are the same in order to make sure that
+        // newer versions of wadm adjust subjects appropriately. In the case that developers
+        // want to alter the storage or replicas of a stream, for example,
+        // we don't want to override that configuration.
+        if stream.cached_info().config.subjects == stream_config.subjects {
+            return Ok(stream);
+        } else {
+            warn!("Found stream {name} with different configuration, deleting and recreating");
+            context.delete_stream(name).await?;
+        }
+    }
+
+    context
+        .get_or_create_stream(stream_config)
+        .await
+        .map_err(|e| anyhow::anyhow!("{e:?}"))
+}
+
+pub async fn ensure_event_consumer_stream(
+    context: &Context,
+    name: String,
+    subject: String,
+    streams: Vec<&Stream>,
+    description: Option<String>,
+) -> Result<Stream> {
+    // This maps the upstream (wasmbus.evt.*.> & wadm.evt.*.>) Streams into
+    // a set of configuration for the downstream wadm event consumer Stream
+    // that consolidates them into a single set of subjects (wadm_event_consumer.evt.*.>)
+    // to be consumable by the wadm event consumer.
+    let sources = streams
+        .iter()
+        .map(|stream| stream.cached_info().config.clone())
+        .map(|stream_config| Source {
+            name: stream_config.name,
+            subject_transforms: stream_config
+                .subjects
+                .iter()
+                .map(|stream_subject| SubjectTransform {
+                    source: stream_subject.to_owned(),
+                    destination: match stream_subject.starts_with('*') {
+                        // If we have a multi-tenant stream subject, we need to replace
+                        // the second wildcard since the first one represents the account id,
+                        // otherwise replace the first one:
+                        //
+                        // multi-tenant:  <account-id>.<subject>.evt.<lattice-id>.<event-type>
+                        // single-tenant: <subject>.evt.<lattice-id>.<event-type>
+                        true => subject.replacen('*', "{{wildcard(2)}}", 1),
+                        false => subject.replacen('*', "{{wildcard(1)}}", 1),
+                    },
+                })
+                .collect(),
+            ..Default::default()
+        })
+        .collect();
+
+    let stream_config = StreamConfig {
+        name: name.clone(),
+        description,
+        num_replicas: 1,
+        retention: async_nats::jetstream::stream::RetentionPolicy::WorkQueue,
+        subjects: vec![],
+        max_age: DEFAULT_EXPIRY_TIME,
+        sources: Some(sources),
+        storage: async_nats::jetstream::stream::StorageType::File,
+        allow_rollup: false,
+        ..Default::default()
+    };
+
+    if let Ok(stream) = context.get_stream(&name).await {
+        if stream.cached_info().config.retention == stream_config.retention {
             return Ok(stream);
         } else {
             warn!("Found stream {name} with different configuration, deleting and recreating");

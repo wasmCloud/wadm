@@ -47,10 +47,13 @@ async fn run_multiple_host_tests() {
     // on the lattice will initialize the lattice monitor and for the following test we quickly assert things.
     let mut sub = client_info
         .client
-        .subscribe("wadm.evt.default".to_string())
+        .subscribe("wasmbus.evt.default.>".to_string())
         .await
         .expect("Should be able to subscribe to default events");
-    let _ = sub.next().await;
+    // Host heartbeats happen every 30 seconds, if we don't get a heartbeat in 2 minutes, bail.
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(120), sub.next())
+        .await
+        .expect("should have received a host heartbeat event before timeout");
 
     // Wait for hosts to start
     let mut did_start = false;

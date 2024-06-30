@@ -13,14 +13,13 @@ use wadm::{
         manager::{ConsumerManager, WorkerCreator},
         *,
     },
-    mirror::Mirror,
     nats_utils::LatticeIdParser,
     scaler::manager::{ScalerManager, WADM_NOTIFY_PREFIX},
     server::{ManifestNotifier, Server},
     storage::{nats_kv::NatsKvStore, reaper::Reaper},
     workers::{CommandPublisher, CommandWorker, EventWorker, StatusPublisher},
     DEFAULT_COMMANDS_TOPIC, DEFAULT_EVENTS_TOPIC, DEFAULT_MULTITENANT_EVENTS_TOPIC,
-    DEFAULT_STATUS_TOPIC, DEFAULT_WADM_EVENTS_TOPIC,
+    DEFAULT_STATUS_TOPIC, DEFAULT_WADM_EVENTS_TOPIC, DEFAULT_WADM_EVENT_CONSUMER_TOPIC,
 };
 
 mod connections;
@@ -30,12 +29,12 @@ mod observer;
 
 use connections::ControlClientConstructor;
 
-const EVENT_STREAM_NAME: &str = "wadm_events";
+const WADM_EVENT_STREAM_NAME: &str = "wadm_events";
+const WADM_EVENT_CONSUMER_STREAM_NAME: &str = "wadm_event_consumer";
 const COMMAND_STREAM_NAME: &str = "wadm_commands";
 const STATUS_STREAM_NAME: &str = "wadm_status";
-const MIRROR_STREAM_NAME: &str = "wadm_mirror";
-const MULTITENANT_MIRROR_STREAM_NAME: &str = "wadm_multitenant_mirror";
 const NOTIFY_STREAM_NAME: &str = "wadm_notify";
+const WASMBUS_EVENT_STREAM_NAME: &str = "wasmbus_events";
 
 #[derive(Parser, Debug)]
 #[command(name = clap::crate_name!(), version = clap::crate_version!(), about = "wasmCloud Application Deployment Manager", long_about = None)]
@@ -196,8 +195,6 @@ async fn main() -> anyhow::Result<()> {
 
     let manifest_storage = nats::ensure_kv_bucket(&context, args.manifest_bucket, 1).await?;
 
-    debug!("Ensuring event stream");
-
     let internal_stream_name = |stream_name: &str| -> String {
         match args.stream_prefix.clone() {
             Some(stream_prefix) => {
@@ -211,12 +208,14 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
-    let event_stream = nats::ensure_stream(
+    debug!("Ensuring wadm event stream");
+
+    let event_stream = nats::ensure_limits_stream(
         &context,
-        internal_stream_name(EVENT_STREAM_NAME),
+        internal_stream_name(WADM_EVENT_STREAM_NAME),
         vec![DEFAULT_WADM_EVENTS_TOPIC.to_owned()],
         Some(
-            "A stream that stores all events coming in on the wasmbus.evt topics in a cluster"
+            "A stream that stores all events coming in on the wadm.evt subject in a cluster"
                 .to_string(),
         ),
     )
@@ -239,23 +238,31 @@ async fn main() -> anyhow::Result<()> {
     )
     .await?;
 
-    let (event_stream_topics, mirror_stream) = if args.multitenant {
-        debug!("Running in multitenant mode");
-        (
-            vec![DEFAULT_MULTITENANT_EVENTS_TOPIC.to_owned()],
-            MULTITENANT_MIRROR_STREAM_NAME,
-        )
-    } else {
-        (vec![DEFAULT_EVENTS_TOPIC.to_owned()], MIRROR_STREAM_NAME)
+    debug!("Ensuring wasmbus event stream");
+
+    // Remove the previous wadm_(multitenant)_mirror streams so that they don't
+    // prevent us from creating the new wasmbus_(multitenant)_events stream
+    // TODO(joonas): Remove this some time in the future once we're confident
+    // enough that there are no more wadm_(multitenant)_mirror streams around.
+    for mirror_stream_name in &["wadm_mirror", "wadm_multitenant_mirror"] {
+        if (context.get_stream(mirror_stream_name).await).is_ok() {
+            context.delete_stream(mirror_stream_name).await?;
+        }
+    }
+
+    let wasmbus_event_subjects = match args.multitenant {
+        true => vec![DEFAULT_MULTITENANT_EVENTS_TOPIC.to_owned()],
+        false => vec![DEFAULT_EVENTS_TOPIC.to_owned()],
     };
 
-    debug!("Ensuring mirror stream");
-
-    let mirror_stream = nats::ensure_stream(
+    let wasmbus_event_stream = nats::ensure_limits_stream(
         &context,
-        internal_stream_name(mirror_stream),
-        event_stream_topics.clone(),
-        Some("A stream that publishes all events to the same stream".to_string()),
+        WASMBUS_EVENT_STREAM_NAME.to_string(),
+        wasmbus_event_subjects.clone(),
+        Some(
+            "A stream that stores all events coming in on the wasmbus.evt subject in a cluster"
+                .to_string(),
+        ),
     )
     .await?;
 
@@ -265,6 +272,20 @@ async fn main() -> anyhow::Result<()> {
         &context,
         NOTIFY_STREAM_NAME.to_owned(),
         vec![format!("{WADM_NOTIFY_PREFIX}.*")],
+    )
+    .await?;
+
+    debug!("Ensuring event consumer stream");
+
+    let event_consumer_stream = nats::ensure_event_consumer_stream(
+        &context,
+        WADM_EVENT_CONSUMER_STREAM_NAME.to_owned(),
+        DEFAULT_WADM_EVENT_CONSUMER_TOPIC.to_owned(),
+        vec![&wasmbus_event_stream, &event_stream],
+        Some(
+            "A stream that sources from wadm_events and wasmbus_events for wadm event consumer's use"
+                .to_string(),
+        ),
     )
     .await?;
 
@@ -284,7 +305,7 @@ async fn main() -> anyhow::Result<()> {
     };
     let events_manager: ConsumerManager<EventConsumer> = ConsumerManager::new(
         permit_pool.clone(),
-        event_stream,
+        event_consumer_stream,
         event_worker_creator.clone(),
         args.multitenant,
     )
@@ -322,7 +343,6 @@ async fn main() -> anyhow::Result<()> {
         parser: LatticeIdParser::new("wasmbus", args.multitenant),
         command_manager: commands_manager,
         event_manager: events_manager,
-        mirror: Mirror::new(mirror_stream, wadm_event_prefix),
         reaper,
         client: client.clone(),
         command_worker_creator,
@@ -344,7 +364,7 @@ async fn main() -> anyhow::Result<()> {
         res = server.serve() => {
             res?
         }
-        res = observer.observe(event_stream_topics) => {
+        res = observer.observe(wasmbus_event_subjects) => {
             res?
         }
         _ = tokio::signal::ctrl_c() => {}

@@ -10,10 +10,9 @@ use wadm::{
         CommandConsumer, EventConsumer,
     },
     events::{EventType, HostHeartbeat, HostStarted},
-    mirror::Mirror,
     nats_utils::LatticeIdParser,
     storage::{nats_kv::NatsKvStore, reaper::Reaper, Store},
-    DEFAULT_COMMANDS_TOPIC, DEFAULT_WADM_EVENTS_TOPIC,
+    DEFAULT_COMMANDS_TOPIC, DEFAULT_WADM_EVENT_CONSUMER_TOPIC,
 };
 
 use super::{CommandWorkerCreator, EventWorkerCreator};
@@ -22,7 +21,6 @@ pub(crate) struct Observer<StateStore> {
     pub(crate) parser: LatticeIdParser,
     pub(crate) command_manager: ConsumerManager<CommandConsumer>,
     pub(crate) event_manager: ConsumerManager<EventConsumer>,
-    pub(crate) mirror: Mirror,
     pub(crate) client: async_nats::Client,
     pub(crate) reaper: Reaper<NatsKvStore>,
     pub(crate) event_worker_creator: EventWorkerCreator<StateStore>,
@@ -59,20 +57,8 @@ where
                     // already running
                     self.reaper.observe(lattice_id);
 
-                    // Make sure the mirror consumer is up and running. This operation returns early
-                    // if it is already running
-                    if let Err(e) = self
-                        .mirror
-                        .monitor_lattice(&event_subject, lattice_id, multitenant_prefix)
-                        .await
-                    {
-                        // If we can't set up the mirror, we can't proceed, so exit early
-                        error!(error = %e, %lattice_id, "Couldn't add mirror consumer. Will retry on next heartbeat");
-                        continue;
-                    }
-
                     let command_topic = DEFAULT_COMMANDS_TOPIC.replace('*', lattice_id);
-                    let events_topic = DEFAULT_WADM_EVENTS_TOPIC.replace('*', lattice_id);
+                    let events_topic = DEFAULT_WADM_EVENT_CONSUMER_TOPIC.replace('*', lattice_id);
                     let needs_command = !self.command_manager.has_consumer(&command_topic).await;
                     let needs_event = !self.event_manager.has_consumer(&events_topic).await;
                     if needs_command {
