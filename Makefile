@@ -7,6 +7,13 @@ MAKEFLAGS += --no-builtin-rules
 MAKEFLAGS += --no-print-directory
 MAKEFLAGS += -S
 
+OS_NAME := $(shell uname -s | tr '[:upper:]' '[:lower:]')
+ifeq ($(OS_NAME),darwin)
+	NC_FLAGS := -czt
+else
+	NC_FLAGS := -Czt
+endif
+
 .DEFAULT: help
 
 CARGO ?= cargo
@@ -70,7 +77,7 @@ build-docker: ## Build wadm docker image
 CARGO_TEST_TARGET ?=
 
 test:: ## Run tests
-ifeq ($(shell nc -czt -w1 127.0.0.1 4222 || echo fail),fail)
+ifeq ($(shell nc $(NC_FLAGS) -w1 127.0.0.1 4222 || echo fail),fail)
 	$(DOCKER) run --rm -d --name wadm-test -p 127.0.0.1:4222:4222 nats:2.10 -js
 	$(CARGO) test $(CARGO_TEST_TARGET) -- --nocapture
 	$(DOCKER) stop wadm-test
@@ -79,7 +86,7 @@ else
 endif
 
 test-e2e:: ## Run e2e tests
-ifeq ($(shell nc -czt -w1 127.0.0.1 4222 || echo fail),fail)
+ifeq ($(shell nc $(NC_FLAGS) -w1 127.0.0.1 4222 || echo fail),fail)
 	@$(MAKE) build
 	@# Reenable this once we've enabled all tests
 	@# RUST_BACKTRACE=1 $(CARGO) test --test e2e_multitenant --features _e2e_tests --  --nocapture 
@@ -91,7 +98,7 @@ else
 endif
 
 test-individual-e2e:: ## Runs an individual e2e test based on the WADM_E2E_TEST env var
-ifeq ($(shell nc -czt -w1 127.0.0.1 4222 || echo fail),fail)
+ifeq ($(shell nc $(NC_FLAGS) -w1 127.0.0.1 4222 || echo fail),fail)
 	@$(MAKE) build
 	RUST_BACKTRACE=1 $(CARGO) test --test $(WADM_E2E_TEST) --features _e2e_tests --  --nocapture 
 else
@@ -106,9 +113,8 @@ endif
 stream-cleanup: ## Removes all streams that wadm creates
 	-$(NATS) stream del wadm_commands --force
 	-$(NATS) stream del wadm_events --force
+	-$(NATS) stream del wadm_event_consumer --force
 	-$(NATS) stream del wadm_notify --force
-	-$(NATS) stream del wadm_mirror --force
-	-$(NATS) stream del wadm_multitenant_mirror --force
 	-$(NATS) stream del wadm_status --force
 	-$(NATS) stream del KV_wadm_state --force
 	-$(NATS) stream del KV_wadm_manifests --force

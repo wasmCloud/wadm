@@ -120,7 +120,7 @@ async fn setup_server(id: String) -> TestServer {
     .expect("Should be able to setup server");
 
     let notify = client
-        .subscribe(format!("{prefix}.default"))
+        .subscribe(format!("{prefix}.default.>"))
         .await
         .expect("Unable to set up subscription");
 

@@ -18,7 +18,7 @@ use super::{CreateConsumer, ScopedMessage};
 use crate::events::*;
 
 /// The name of the durable NATS stream and consumer that contains incoming lattice events
-pub const EVENTS_CONSUMER_PREFIX: &str = "wadm_events";
+pub const EVENTS_CONSUMER_PREFIX: &str = "wadm_event_consumer";
 
 /// A stream of all events of a lattice, consumed from a durable NATS stream and consumer
 pub struct EventConsumer {
