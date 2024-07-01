@@ -1,3 +1,4 @@
+use anyhow::Result;
 use futures::{Stream, TryStreamExt};
 use serial_test::serial;
 use tokio::time::{timeout, Duration};
@@ -8,13 +9,14 @@ use wadm::{
 };
 
 mod helpers;
-use helpers::{setup_test_wash, TestWashConfig, ECHO_ACTOR_ID, HTTP_SERVER_PROVIDER_ID};
+use helpers::{
+    setup_test_wash, TestWashConfig, HELLO_COMPONENT_ID, HELLO_IMAGE_REF, HTTP_SERVER_COMPONENT_ID,
+    HTTP_SERVER_IMAGE_REF,
+};
 
-use anyhow::Result;
-
-const HTTP_SERVER_REFERENCE: &str = "wasmcloud.azurecr.io/httpserver:0.17.0";
-const ECHO_REFERENCE: &str = "wasmcloud.azurecr.io/echo:0.3.4";
-const CONTRACT_ID: &str = "wasmcloud:httpserver";
+const WASI: &str = "wasi";
+const HTTP: &str = "http";
+const HTTP_INTERFACE: &str = "incoming-handler";
 const WASMBUS_EVENT_TOPIC: &str = "wasmbus.evt.default.>";
 const STREAM_NAME: &str = "test_wadm_events";
 
@@ -93,18 +95,26 @@ async fn test_event_stream() -> Result<()> {
         .unwrap_or(crate::helpers::DEFAULT_NATS_PORT)
         .to_string();
 
-    // Start an actor
-    helpers::run_wash_command(["start", "actor", ECHO_REFERENCE, "--ctl-port", &ctl_port]).await;
+    // Start a component
+    helpers::run_wash_command([
+        "start",
+        "component",
+        HELLO_IMAGE_REF,
+        HELLO_COMPONENT_ID,
+        "--ctl-port",
+        &ctl_port,
+    ])
+    .await;
 
     let mut evt = wait_for_event(&mut stream, DEFAULT_TIMEOUT_DURATION).await;
-    if let Event::ActorsStarted(actor) = evt.as_ref() {
+    if let Event::ComponentScaled(event) = evt.as_ref() {
         assert_eq!(
-            actor.public_key, ECHO_ACTOR_ID,
-            "Expected to get a started event for the right actor, got ID: {}",
-            actor.public_key
+            event.component_id, HELLO_COMPONENT_ID,
+            "Expected to get a scaledevent for the right component, got ID: {}",
+            event.component_id
         );
     } else {
-        panic!("Event wasn't an actor started event");
+        panic!("Event wasn't an component started event");
     }
     evt.ack().await.expect("Should be able to ack event");
 
@@ -112,7 +122,8 @@ async fn test_event_stream() -> Result<()> {
     helpers::run_wash_command([
         "start",
         "provider",
-        HTTP_SERVER_REFERENCE,
+        HTTP_SERVER_IMAGE_REF,
+        HTTP_SERVER_COMPONENT_ID,
         "--ctl-port",
         &ctl_port,
     ])
@@ -121,9 +132,9 @@ async fn test_event_stream() -> Result<()> {
     let mut evt = wait_for_event(&mut stream, DEFAULT_TIMEOUT_DURATION).await;
     if let Event::ProviderStarted(provider) = evt.as_ref() {
         assert_eq!(
-            provider.public_key, HTTP_SERVER_PROVIDER_ID,
+            provider.provider_id, HTTP_SERVER_COMPONENT_ID,
             "Expected to get a started event for the right provider, got ID: {}",
-            provider.public_key
+            provider.provider_id
         );
     } else {
         println!("EVT: {:?}", evt);
@@ -135,25 +146,28 @@ async fn test_event_stream() -> Result<()> {
     helpers::run_wash_command([
         "link",
         "put",
-        ECHO_ACTOR_ID,
-        HTTP_SERVER_PROVIDER_ID,
-        CONTRACT_ID,
+        HELLO_COMPONENT_ID,
+        HTTP_SERVER_COMPONENT_ID,
+        WASI,
+        HTTP,
+        "--interface",
+        HTTP_INTERFACE,
         "--ctl-port",
         &ctl_port,
     ])
     .await;
 
     let mut evt = wait_for_event(&mut stream, LINK_OPERATION_TIMEOUT_DURATION).await;
-    if let Event::LinkdefSet(link) = evt.as_ref() {
+    if let Event::LinkdefSet(event) = evt.as_ref() {
         assert_eq!(
-            link.linkdef.component_id, ECHO_ACTOR_ID,
-            "Expected to get a linkdef event for the right actor and provider, got actor ID: {}",
-            link.linkdef.component_id,
+            event.linkdef.source_id, HELLO_COMPONENT_ID,
+            "Expected to get a linkdef event for the right component and provider, got component ID: {}",
+            event.linkdef.source_id,
         );
         assert_eq!(
-            link.linkdef.provider_id, HTTP_SERVER_PROVIDER_ID,
-            "Expected to get a linkdef event for the right actor and provider, got provider ID: {}",
-            link.linkdef.provider_id,
+            event.linkdef.target, HTTP_SERVER_COMPONENT_ID,
+            "Expected to get a linkdef event for the right component and provider, got provider ID: {}",
+            event.linkdef.target,
         );
     } else {
         panic!("Event wasn't an link set event");
@@ -168,24 +182,20 @@ async fn test_event_stream() -> Result<()> {
     helpers::run_wash_command([
         "link",
         "del",
-        ECHO_ACTOR_ID,
-        CONTRACT_ID,
+        HELLO_COMPONENT_ID,
+        "wasi",
+        "http",
         "--ctl-port",
         &ctl_port,
     ])
     .await;
 
     let mut evt = wait_for_event(&mut stream, LINK_OPERATION_TIMEOUT_DURATION).await;
-    if let Event::LinkdefDeleted(link) = evt.as_ref() {
+    if let Event::LinkdefDeleted(event) = evt.as_ref() {
         assert_eq!(
-            link.linkdef.component_id, ECHO_ACTOR_ID,
-            "Expected to get a linkdef event for the right actor and provider, got actor ID: {}",
-            link.linkdef.component_id,
-        );
-        assert_eq!(
-            link.linkdef.provider_id, HTTP_SERVER_PROVIDER_ID,
-            "Expected to get a linkdef event for the right actor and provider, got provider ID: {}",
-            link.linkdef.provider_id,
+            event.source_id, HELLO_COMPONENT_ID,
+            "Expected to get a linkdef event for the right component and provider, got component ID: {}",
+            event.source_id,
         );
     } else {
         panic!("Event wasn't an link del event");
@@ -206,8 +216,7 @@ async fn test_event_stream() -> Result<()> {
     helpers::run_wash_command([
         "stop",
         "provider",
-        HTTP_SERVER_PROVIDER_ID,
-        CONTRACT_ID,
+        HTTP_SERVER_COMPONENT_ID,
         "--host-id",
         &host_id,
         "--ctl-port",
@@ -216,22 +225,22 @@ async fn test_event_stream() -> Result<()> {
     .await;
 
     let mut evt = wait_for_event(&mut stream, DEFAULT_TIMEOUT_DURATION).await;
-    if let Event::ProviderStopped(provider) = evt.as_ref() {
+    if let Event::ProviderStopped(event) = evt.as_ref() {
         assert_eq!(
-            provider.public_key, HTTP_SERVER_PROVIDER_ID,
+            event.provider_id, HTTP_SERVER_COMPONENT_ID,
             "Expected to get a stopped event for the right provider, got ID: {}",
-            provider.public_key
+            event.provider_id
         );
     } else {
         panic!("Event wasn't an provider stopped event");
     }
     evt.ack().await.expect("Should be able to ack event");
 
-    // Stop an actor
+    // Stop a component
     helpers::run_wash_command([
         "stop",
-        "actor",
-        ECHO_ACTOR_ID,
+        "component",
+        HELLO_COMPONENT_ID,
         "--host-id",
         &host_id,
         "--ctl-port",
@@ -240,14 +249,14 @@ async fn test_event_stream() -> Result<()> {
     .await;
 
     let mut evt = wait_for_event(&mut stream, DEFAULT_TIMEOUT_DURATION).await;
-    if let Event::ActorsStopped(actor) = evt.as_ref() {
+    if let Event::ComponentScaled(event) = evt.as_ref() {
         assert_eq!(
-            actor.public_key, ECHO_ACTOR_ID,
-            "Expected to get a stopped event for the right actor, got ID: {}",
-            actor.public_key
+            event.component_id, HELLO_COMPONENT_ID,
+            "Expected to get a stopped event for the right component, got ID: {}",
+            event.component_id
         );
     } else {
-        panic!("Event wasn't an actor stopped event");
+        panic!("Event wasn't an component stopped event");
     }
     evt.ack().await.expect("Should be able to ack event");
 
@@ -262,7 +271,7 @@ async fn test_event_stream() -> Result<()> {
             host.id
         );
     } else {
-        panic!("Event wasn't an actor stopped event");
+        panic!("Event wasn't an component stopped event");
     }
     evt.ack().await.expect("Should be able to ack event");
 
@@ -285,34 +294,42 @@ async fn test_nack_and_rereceive() -> Result<()> {
         .nats_port
         .unwrap_or(crate::helpers::DEFAULT_NATS_PORT)
         .to_string();
-    // Start an actor
-    helpers::run_wash_command(["start", "actor", ECHO_REFERENCE, "--ctl-port", &ctl_port]).await;
+    // Start a component
+    helpers::run_wash_command([
+        "start",
+        "component",
+        HELLO_IMAGE_REF,
+        HELLO_COMPONENT_ID,
+        "--ctl-port",
+        &ctl_port,
+    ])
+    .await;
 
     // Get the event and then nack it
     let mut evt = wait_for_event(&mut stream, DEFAULT_TIMEOUT_DURATION).await;
     // Make sure we got the right event
-    if let Event::ActorsStarted(actor) = evt.as_ref() {
+    if let Event::ComponentScaled(component) = evt.as_ref() {
         assert_eq!(
-            actor.public_key, ECHO_ACTOR_ID,
-            "Expected to get a started event for the right actor, got ID: {}",
-            actor.public_key
+            component.component_id, HELLO_COMPONENT_ID,
+            "Expected to get a started event for the right component, got ID: {}",
+            component.component_id
         );
     } else {
-        panic!("Event wasn't an actor started event");
+        panic!("Event wasn't an component started event");
     }
 
     evt.nack().await;
 
     // Now do it again and make sure we get the same event
     let mut evt = wait_for_event(&mut stream, DEFAULT_TIMEOUT_DURATION).await;
-    if let Event::ActorsStarted(actor) = evt.as_ref() {
+    if let Event::ComponentScaled(component) = evt.as_ref() {
         assert_eq!(
-            actor.public_key, ECHO_ACTOR_ID,
-            "Expected to get a started event for the right actor, got ID: {}",
-            actor.public_key
+            component.component_id, HELLO_COMPONENT_ID,
+            "Expected to get a started event for the right component, got ID: {}",
+            component.component_id
         );
     } else {
-        panic!("Event wasn't an actor started event");
+        panic!("Event wasn't an component scaled event");
     }
 
     evt.ack().await.expect("Should be able to ack event");

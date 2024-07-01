@@ -2837,6 +2837,7 @@ dependencies = [
  "nkeys",
  "opentelemetry 0.17.0",
  "opentelemetry-otlp",
+ "serde",
  "serde_json",
  "serde_yaml",
  "serial_test",

@@ -1,15 +1,16 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use futures::StreamExt;
 use serial_test::serial;
 
 use wadm::{
-    commands::*, consumers::manager::Worker, model::CapabilityConfig, workers::CommandWorker,
+    commands::*, consumers::manager::Worker, workers::CommandWorker, MANAGED_BY_ANNOTATION,
 };
 
 mod helpers;
 use helpers::{
-    setup_test_wash, StreamWrapper, TestWashConfig, ECHO_ACTOR_ID, HTTP_SERVER_PROVIDER_ID,
+    setup_test_wash, StreamWrapper, TestWashConfig, HELLO_COMPONENT_ID, HELLO_IMAGE_REF,
+    HTTP_SERVER_COMPONENT_ID, HTTP_SERVER_IMAGE_REF,
 };
 
 #[tokio::test]
@@ -29,9 +30,13 @@ async fn test_commands() {
     let host_id = ctl_client
         .get_hosts()
         .await
-        .unwrap()
+        .expect("should get hosts back")
         .get(0)
+        .as_ref()
         .expect("Should be able to find hosts")
+        .response
+        .as_ref()
+        .expect("Should be able to get host")
         .id
         .to_owned();
 
@@ -41,15 +46,16 @@ async fn test_commands() {
         .await
         .unwrap();
 
-    // Start an actor
+    // Start an component
     wrapper
         .publish_command(ScaleComponent {
-            component_id: Some(ECHO_ACTOR_ID.to_string()),
-            reference: "wasmcloud.azurecr.io/echo:0.3.4".to_string(),
+            component_id: HELLO_COMPONENT_ID.to_string(),
+            reference: HELLO_IMAGE_REF.to_string(),
             host_id: host_id.clone(),
             count: 2,
             model_name: "fake".into(),
             annotations: BTreeMap::new(),
+            config: vec![],
         })
         .await;
 
@@ -59,39 +65,35 @@ async fn test_commands() {
         .await
         .expect("Should be able to handle command properly");
 
-    wait_for_event(&mut sub, "actors_started").await;
+    wait_for_event(&mut sub, "component_scaled").await;
     // Sorry for the lazy de-racing, but for some reason if we don't wait for a bit the host hasn't
     // finished updating its inventory
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
-    // Get the current actors and make sure stuff was started
+    // Get the current components and make sure stuff was started
     let inventory = ctl_client
         .get_host_inventory(&host_id)
         .await
-        .unwrap()
-        .actors;
+        .expect("should get host inventory back")
+        .response
+        .expect("should have host inventory")
+        .components;
     assert_eq!(
         inventory.len(),
         1,
-        "Should only have 1 actor: {:?}",
+        "Should only have 1 component: {:?}",
         inventory
     );
     assert_eq!(
-        inventory[0].image_ref.as_deref().unwrap(),
-        "wasmcloud.azurecr.io/echo:0.3.4",
-        "Should have started the correct actor"
+        inventory[0].image_ref, HELLO_IMAGE_REF,
+        "Should have started the correct component"
     );
     assert_eq!(
-        inventory[0].instances.len(),
-        1,
-        "Should have started the correct number of actors"
+        inventory[0].max_instances, 2,
+        "Should have started the component with correct concurrency"
     );
     assert_eq!(
-        inventory[0].instances[0].max_concurrent, 2,
-        "Should have started the actor with correct concurrency"
-    );
-    assert_eq!(
-        inventory[0].instances[0]
+        inventory[0]
             .annotations
             .as_ref()
             .unwrap()
@@ -101,7 +103,7 @@ async fn test_commands() {
         "Should have the proper identifier"
     );
     assert_eq!(
-        inventory[0].instances[0]
+        inventory[0]
             .annotations
             .as_ref()
             .unwrap()
@@ -111,17 +113,29 @@ async fn test_commands() {
         "Should have the proper identifier"
     );
 
+    // Create configuration for provider
+    wrapper
+        .publish_command(PutConfig {
+            config_name: "fake-http_address".to_string(),
+            config: HashMap::from_iter([("address".to_string(), "0.0.0.0:8080".to_string())]),
+        })
+        .await;
+
+    let msg = wrapper.wait_for_command().await;
+    worker
+        .do_work(msg)
+        .await
+        .expect("Should be able to handle command properly");
+
     // Start a provider
     wrapper
         .publish_command(StartProvider {
-            reference: "wasmcloud.azurecr.io/httpserver:0.17.0".to_string(),
+            reference: HTTP_SERVER_IMAGE_REF.to_string(),
+            provider_id: HTTP_SERVER_COMPONENT_ID.to_owned(),
             host_id: host_id.clone(),
-            link_name: None,
             model_name: "fake".into(),
             annotations: BTreeMap::new(),
-            config: Some(CapabilityConfig::Opaque(
-                "{\"address\":\"0.0.0.0:8080\"}".to_string(),
-            )),
+            config: vec!["fake-http_address".to_string()],
         })
         .await;
 
@@ -140,12 +154,14 @@ async fn test_commands() {
     let inventory = ctl_client
         .get_host_inventory(&host_id)
         .await
-        .unwrap()
+        .expect("should get host inventory back")
+        .response
+        .expect("should have host inventory")
         .providers;
     assert_eq!(inventory.len(), 1, "Should only have 1 provider");
     assert_eq!(
         inventory[0].image_ref.as_deref().unwrap(),
-        "wasmcloud.azurecr.io/httpserver:0.17.0",
+        HTTP_SERVER_IMAGE_REF,
         "Should have started the correct provider"
     );
     assert_eq!(
@@ -171,13 +187,15 @@ async fn test_commands() {
 
     // Put a linkdef
     wrapper
-        .publish_command(PutLinkdef {
-            component_id: ECHO_ACTOR_ID.to_owned(),
-            provider_id: HTTP_SERVER_PROVIDER_ID.to_owned(),
-            link_name: wadm::DEFAULT_LINK_NAME.to_owned(),
-            contract_id: "wasmcloud:httpserver".to_string(),
-            values: [("ADDRESS".to_string(), "0.0.0.0:9999".to_string())].into(),
-            model_name: "fake".into(),
+        .publish_command(PutLink {
+            source_id: HTTP_SERVER_COMPONENT_ID.to_owned(),
+            target: HELLO_COMPONENT_ID.to_owned(),
+            name: wadm::DEFAULT_LINK_NAME.to_owned(),
+            wit_namespace: "wasi".to_string(),
+            wit_package: "http".to_string(),
+            interfaces: vec!["incoming-handler".to_string()],
+            model_name: "fake".to_string(),
+            ..Default::default()
         })
         .await;
 
@@ -189,25 +207,31 @@ async fn test_commands() {
 
     wait_for_event(&mut sub, "linkdef_set").await;
 
-    // Get the current actors and make sure stuff was started
-    let inventory = ctl_client.query_links().await.unwrap();
+    // Get the current components and make sure stuff was started
+    let inventory = ctl_client
+        .get_links()
+        .await
+        .expect("should get links back")
+        .response
+        .expect("should have links");
     // We could have more than one link due to local testing, so search for the proper link
     inventory
         .into_iter()
         .find(|ld| {
-            ld.component_id == ECHO_ACTOR_ID
-                && ld.provider_id == HTTP_SERVER_PROVIDER_ID
-                && ld.contract_id == "wasmcloud:httpserver"
+            ld.source_id == HTTP_SERVER_COMPONENT_ID
+                && ld.target == HELLO_COMPONENT_ID
+                && ld.wit_namespace == "wasi"
+                && ld.wit_package == "http"
         })
         .expect("Linkdef should exist");
 
     // Delete the linkdef
     wrapper
-        .publish_command(DeleteLinkdef {
-            component_id: ECHO_ACTOR_ID.to_owned(),
-            provider_id: HTTP_SERVER_PROVIDER_ID.to_owned(),
+        .publish_command(DeleteLink {
+            source_id: HTTP_SERVER_COMPONENT_ID.to_owned(),
             link_name: wadm::DEFAULT_LINK_NAME.to_owned(),
-            contract_id: "wasmcloud:httpserver".to_string(),
+            wit_namespace: "wasi".to_string(),
+            wit_package: "http".to_string(),
             model_name: "fake".into(),
         })
         .await;
@@ -220,14 +244,20 @@ async fn test_commands() {
 
     wait_for_event(&mut sub, "linkdef_deleted").await;
 
-    // Get the current actors and make sure stuff was started
-    let inventory = ctl_client.query_links().await.unwrap();
+    // Get the current components and make sure stuff was started
+    let inventory = ctl_client
+        .get_links()
+        .await
+        .expect("should get links back")
+        .response
+        .expect("should have links");
     // We could have more than one link due to local testing, so search for the proper link
     assert!(
         !inventory.into_iter().any(|ld| {
-            ld.component_id == ECHO_ACTOR_ID
-                && ld.provider_id == HTTP_SERVER_PROVIDER_ID
-                && ld.contract_id == "wasmcloud:httpserver"
+            ld.target == HELLO_COMPONENT_ID
+                && ld.source_id == HTTP_SERVER_COMPONENT_ID
+                && ld.wit_namespace == "wasi"
+                && ld.wit_package == "http"
         }),
         "Linkdef should be deleted"
     );
@@ -235,9 +265,7 @@ async fn test_commands() {
     // Stop the provider
     wrapper
         .publish_command(StopProvider {
-            provider_id: HTTP_SERVER_PROVIDER_ID.to_owned(),
-            contract_id: "wasmcloud:httpserver".to_owned(),
-            link_name: None,
+            provider_id: HTTP_SERVER_COMPONENT_ID.to_owned(),
             host_id: host_id.clone(),
             model_name: "fake".into(),
             annotations: BTreeMap::new(),
@@ -256,19 +284,22 @@ async fn test_commands() {
     let inventory = ctl_client
         .get_host_inventory(&host_id)
         .await
-        .unwrap()
+        .expect("should get host inventory back")
+        .response
+        .expect("should have host inventory")
         .providers;
     assert!(inventory.is_empty(), "Should have no providers");
 
-    // Stop the actor
+    // Stop the component
     wrapper
         .publish_command(ScaleComponent {
-            component_id: Some(ECHO_ACTOR_ID.to_owned()),
-            reference: "wasmcloud.azurecr.io/echo:0.3.4".to_string(),
+            component_id: HELLO_COMPONENT_ID.to_owned(),
+            reference: HELLO_IMAGE_REF.to_string(),
             count: 0,
             host_id: host_id.clone(),
             model_name: "fake".into(),
             annotations: BTreeMap::new(),
+            config: vec![],
         })
         .await;
 
@@ -278,15 +309,17 @@ async fn test_commands() {
         .await
         .expect("Should be able to handle command properly");
 
-    wait_for_event(&mut sub, "actors_stopped").await;
+    wait_for_event(&mut sub, "component_scaled").await;
 
     // Get the current providers and make sure stuff was started
     let inventory = ctl_client
         .get_host_inventory(&host_id)
         .await
-        .unwrap()
-        .actors;
-    assert!(inventory.is_empty(), "Should have no actors");
+        .expect("should get host inventory back")
+        .response
+        .expect("should have host inventory")
+        .components;
+    assert!(inventory.is_empty(), "Should have no components");
 }
 
 #[tokio::test]
@@ -294,7 +327,7 @@ async fn test_commands() {
 // note this test should probably be changed to an e2e test as the order of events is somewhat flaky
 #[serial]
 async fn test_annotation_stop() {
-    // This test is a sanity check that we only stop annotated actors
+    // This test is a sanity check that we only stop annotated components
     let config = TestWashConfig::random().await.unwrap();
     let _guard = setup_test_wash(&config).await;
 
@@ -316,32 +349,43 @@ async fn test_annotation_stop() {
         .unwrap()
         .get(0)
         .expect("Should be able to find hosts")
+        .response
+        .as_ref()
+        .unwrap()
         .id
         .to_owned();
 
-    // Start an unmangaged actor
+    // Start an unmangaged component
     // NOTE(thomastaylor312): This is a workaround with current behavior where empty annotations
     // acts on _everything_. We could technically move this back down after the initial scale up of
-    // the managed actors after https://github.com/wasmCloud/wasmCloud/issues/746 is resolved
+    // the managed components after https://github.com/wasmCloud/wasmCloud/issues/746 is resolved
     ctl_client
-        .scale_component(&host_id, "wasmcloud.azurecr.io/echo:0.3.4", Some(1), None)
+        .scale_component(
+            &host_id,
+            HELLO_IMAGE_REF,
+            "unmanaged-hello",
+            1,
+            None,
+            vec![],
+        )
         .await
         .unwrap();
 
-    wait_for_event(&mut sub, "actors_started").await;
+    wait_for_event(&mut sub, "component_scaled").await;
     // Sorry for the lazy de-racing, but for some reason if we don't wait for a bit the host hasn't
     // finished updating its inventory
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
-    // Start an actor
+    // Start an component
     wrapper
         .publish_command(ScaleComponent {
-            component_id: Some(ECHO_ACTOR_ID.to_string()),
-            reference: "wasmcloud.azurecr.io/echo:0.3.4".to_string(),
+            component_id: HELLO_COMPONENT_ID.to_string(),
+            reference: HELLO_IMAGE_REF.to_string(),
             host_id: host_id.clone(),
             count: 2,
             model_name: "fake".into(),
             annotations: BTreeMap::from_iter([("fake".to_string(), "wake".to_string())]),
+            ..Default::default()
         })
         .await;
 
@@ -351,49 +395,58 @@ async fn test_annotation_stop() {
         .await
         .expect("Should be able to handle command properly");
 
-    // Wait for the actors_started event
-    wait_for_event(&mut sub, "actors_started").await;
+    // Wait for the component_scaled event
+    wait_for_event(&mut sub, "component_scaled").await;
     // Sorry for the lazy de-racing, but for some reason if we don't wait for a bit the host hasn't
     // finished updating its inventory
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
-    // Get the current actors and make sure stuff was started
+    // Get the current components and make sure stuff was started
     let inventory = ctl_client
         .get_host_inventory(&host_id)
         .await
-        .unwrap()
-        .actors;
-    assert_eq!(inventory.len(), 1, "Should only have 1 actor");
+        .expect("should get host inventory back")
+        .response
+        .expect("should have host inventory")
+        .components;
+    let managed_inventory = inventory
+        .iter()
+        .filter(|c| {
+            c.annotations
+                .as_ref()
+                .is_some_and(|a| a.contains_key(MANAGED_BY_ANNOTATION))
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(inventory.len(), 2, "Should only have 2 components");
     assert_eq!(
-        inventory[0].image_ref.as_deref().unwrap(),
-        "wasmcloud.azurecr.io/echo:0.3.4",
-        "Should have started the correct actor"
+        managed_inventory.len(),
+        1,
+        "Should only have 1 managed component"
     );
     assert_eq!(
-        inventory[0]
-            .instances
-            .iter()
-            // Only select the managed actors
-            .filter(|inst| inst
-                .annotations
-                .as_ref()
-                .map(|annotations| !annotations.is_empty())
-                .unwrap_or(false))
-            .map(|i| { i.max_concurrent })
-            .sum::<u16>(),
-        2,
-        "Should have started the correct number of actors"
+        managed_inventory[0].image_ref, HELLO_IMAGE_REF,
+        "Should have started the correct component"
+    );
+    assert!(managed_inventory[0]
+        .annotations
+        .as_ref()
+        .map(|annotations| annotations.contains_key(MANAGED_BY_ANNOTATION))
+        .unwrap_or(false));
+    assert_eq!(
+        managed_inventory[0].max_instances, 2,
+        "Should have started the correct concurrency of components"
     );
 
-    // Stop the managed actors
+    // Stop the managed components
     wrapper
         .publish_command(ScaleComponent {
-            component_id: Some(ECHO_ACTOR_ID.to_owned()),
-            reference: "wasmcloud.azurecr.io/echo:0.3.4".to_string(),
+            component_id: HELLO_COMPONENT_ID.to_owned(),
+            reference: HELLO_IMAGE_REF.to_string(),
             count: 0,
             host_id: host_id.clone(),
             model_name: "fake".into(),
             annotations: BTreeMap::from_iter([("fake".to_string(), "wake".to_string())]),
+            config: vec![],
         })
         .await;
 
@@ -403,24 +456,24 @@ async fn test_annotation_stop() {
         .await
         .expect("Should be able to handle command properly");
 
-    wait_for_event(&mut sub, "actors_stopped").await;
+    wait_for_event(&mut sub, "component_scaled").await;
 
     // Get the current providers and make sure stuff was started
     let inventory = ctl_client
         .get_host_inventory(&host_id)
         .await
         .unwrap()
-        .actors;
-    assert_eq!(inventory.len(), 1, "Should only have 1 actor");
+        .response
+        .unwrap()
+        .components;
+    assert_eq!(inventory.len(), 1, "Should only have 1 component");
     assert_eq!(
-        inventory[0].image_ref.as_deref().unwrap(),
-        "wasmcloud.azurecr.io/echo:0.3.4",
-        "Should have started the correct actor"
+        inventory[0].image_ref, HELLO_IMAGE_REF,
+        "Should have started the correct component"
     );
     assert_eq!(
-        inventory[0].instances.len(),
-        1,
-        "Should have 1 unmanaged actor still running"
+        inventory[0].max_instances, 1,
+        "Should have 1 unmanaged component still running"
     );
 }
 
