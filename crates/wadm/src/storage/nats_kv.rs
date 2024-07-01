@@ -160,7 +160,7 @@ impl Store for NatsKvStore {
             .internal_list::<T>(lattice_id)
             .in_current_span()
             .await?;
-        debug!("Updating data in store");
+        debug!(revision, "Updating data in store");
         for (id, item) in data.into_iter() {
             if current_data.insert(id, item).is_some() {
                 // NOTE: We may want to return the old data in the future. For now, keeping it simple
