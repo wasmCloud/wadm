@@ -766,7 +766,7 @@ where
             scaler_status(&scalers).await
         } else {
             StatusInfo::reconciling(&format!(
-                "Event {event} modified app \"{name}\" state, running compensating commands"
+                "Event {event} modified app '{name}' state, running compensating commands"
             ))
         };
         trace!(?status, "Setting status");
@@ -796,7 +796,7 @@ where
                 scaler_status(scalers).await
             } else {
                 StatusInfo::reconciling(&format!(
-                    "Event {event} modified app \"{}\" state, running compensating commands",
+                    "Event {event} modified app '{}' state, running compensating commands",
                     name.to_owned(),
                 ))
             };

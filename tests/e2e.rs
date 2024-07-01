@@ -323,17 +323,45 @@ where
     }
 }
 
-pub fn check_actors(
+#[allow(dead_code)]
+pub async fn check_config(
+    client: &wasmcloud_control_interface::Client,
+    config_name: &str,
+    values: &HashMap<String, String>,
+) -> anyhow::Result<()> {
+    let config: HashMap<String, String> = client
+        .get_config(config_name)
+        .await
+        .map_err(|e| anyhow::anyhow!(e))?
+        .response
+        .expect("Should have config response");
+    for (key, value) in values {
+        if let Some(expected) = config.get(key) {
+            if expected != value {
+                anyhow::bail!(
+                    "Expected {key} to be {value}, found {expected} in config {config_name}"
+                )
+            }
+        } else {
+            anyhow::bail!(
+                "Expected {key} to be {value}, but it was not found in config {config_name}"
+            )
+        }
+    }
+    Ok(())
+}
+
+pub fn check_components(
     inventory: &HashMap<String, HostInventory>,
     image_ref: &str,
     manifest_name: &str,
     expected_count: usize,
 ) -> anyhow::Result<()> {
-    let all_actors = inventory.values().flat_map(|inv| &inv.components);
-    let actor_count: usize = all_actors
-        .filter(|actor| {
-            actor.image_ref == image_ref
-                && actor
+    let all_components = inventory.values().flat_map(|inv| &inv.components);
+    let component_count: usize = all_components
+        .filter(|component| {
+            component.image_ref == image_ref
+                && component
                     .annotations
                     .as_ref()
                     .and_then(|annotations| {
@@ -343,11 +371,11 @@ pub fn check_actors(
                     })
                     .unwrap_or(false)
         })
-        .map(|actor| actor.max_instances as usize)
+        .map(|component| component.max_instances as usize)
         .sum();
-    if actor_count != expected_count {
+    if component_count != expected_count {
         anyhow::bail!(
-            "Should have had {expected_count} actors managed by wadm running, found {actor_count}"
+            "Should have had {expected_count} components managed by wadm running, found {component_count}"
         )
     }
     Ok(())

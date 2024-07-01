@@ -1,11 +1,11 @@
 services:
   nats:
-    image: nats:2.9-alpine
-    command: ["-js"]
+    image: nats:2.10-alpine
+    command: ['-js']
     ports:
       - 4222:4222
   wasmcloud:
-    image: wasmcloud/wasmcloud:0.81.0
+    image: wasmcloud/wasmcloud:1.0.4
     depends_on:
       - nats
     deploy:
@@ -13,7 +13,7 @@ services:
     environment:
       LC_ALL: en_US.UTF-8
       RUST_LOG: debug,hyper=info
-      NATS_HOST: nats
+      WASMCLOUD_NATS_HOST: nats
       WASMCLOUD_CLUSTER_SEED: SCAOGJWX53TGI4233T6GAXWYWBIB5ZDGPTCO6ODJQYELS52YCQCBQSRPA4
       HOST_app: upgradey
       HOST_region: us-brooks-east
