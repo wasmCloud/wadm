@@ -9,7 +9,7 @@ mod e2e;
 mod helpers;
 
 use e2e::{
-    assert_status, check_actors, check_providers, ClientInfo, ExpectedCount, DEFAULT_LATTICE_ID,
+    assert_status, check_components, check_providers, ClientInfo, ExpectedCount, DEFAULT_LATTICE_ID,
 };
 use helpers::{HELLO_COMPONENT_ID, HTTP_SERVER_COMPONENT_ID};
 
@@ -136,7 +136,7 @@ async fn test_no_requirements(client_info: &ClientInfo) {
             HashMap::from_iter(vec![("address".to_string(), "0.0.0.0:8080".to_string())])
         );
 
-        check_actors(&inventory, HELLO_IMAGE_REF, "hello-simple", 4)?;
+        check_components(&inventory, HELLO_IMAGE_REF, "hello-simple", 4)?;
         check_providers(&inventory, HTTP_SERVER_IMAGE_REF, ExpectedCount::Exactly(1))?;
 
         let links = client_info
@@ -194,7 +194,7 @@ async fn test_no_requirements(client_info: &ClientInfo) {
     assert_status(None, None, || async {
         let inventory = client_info.get_all_inventory(DEFAULT_LATTICE_ID).await?;
 
-        check_actors(&inventory, HELLO_IMAGE_REF, "hello-simple", 0)?;
+        check_components(&inventory, HELLO_IMAGE_REF, "hello-simple", 0)?;
         check_providers(&inventory, HTTP_SERVER_IMAGE_REF, ExpectedCount::Exactly(0))?;
 
         let links = client_info
@@ -241,7 +241,7 @@ async fn test_lotta_actors(client_info: &ClientInfo) {
     assert_status(None, Some(7), || async {
         let inventory = client_info.get_all_inventory(DEFAULT_LATTICE_ID).await?;
 
-        check_actors(&inventory, HELLO_IMAGE_REF, "lotta-actors", 9001)?;
+        check_components(&inventory, HELLO_IMAGE_REF, "lotta-actors", 9001)?;
         check_providers(&inventory, HTTP_SERVER_IMAGE_REF, ExpectedCount::AtLeast(1))?;
 
         Ok(())
@@ -264,7 +264,7 @@ async fn test_spread_all_hosts(client_info: &ClientInfo) {
     assert_status(None, Some(7), || async {
         let inventory = client_info.get_all_inventory(DEFAULT_LATTICE_ID).await?;
 
-        check_actors(&inventory, HELLO_IMAGE_REF, "hello-all-hosts", 5)?;
+        check_components(&inventory, HELLO_IMAGE_REF, "hello-all-hosts", 5)?;
         check_providers(&inventory, HTTP_SERVER_IMAGE_REF, ExpectedCount::AtLeast(5))?;
 
         Ok(())
@@ -344,7 +344,7 @@ async fn test_complex_app(client_info: &ClientInfo) {
             HashMap::from_iter(vec![("root".to_string(), "/tmp/blobby".to_string())])
         );
 
-        check_actors(&inventory, BLOBBY_IMAGE_REF, "complex", 5)?;
+        check_components(&inventory, BLOBBY_IMAGE_REF, "complex", 5)?;
         check_providers(&inventory, HTTP_SERVER_IMAGE_REF, ExpectedCount::AtLeast(3))?;
         check_providers(
             &inventory,
@@ -441,7 +441,7 @@ async fn test_stop_host_rebalance(client_info: &ClientInfo) {
     assert_status(None, Some(7), || async {
         let inventory = client_info.get_all_inventory(DEFAULT_LATTICE_ID).await?;
 
-        check_actors(&inventory, HELLO_IMAGE_REF, "host-stop", 5)?;
+        check_components(&inventory, HELLO_IMAGE_REF, "host-stop", 5)?;
 
         Ok(())
     })
@@ -484,7 +484,7 @@ async fn test_stop_host_rebalance(client_info: &ClientInfo) {
     assert_status(None, Some(7), || async {
         let inventory = client_info.get_all_inventory(DEFAULT_LATTICE_ID).await?;
 
-        check_actors(&inventory, HELLO_IMAGE_REF, "host-stop", 5)?;
+        check_components(&inventory, HELLO_IMAGE_REF, "host-stop", 5)?;
 
         Ok(())
     })

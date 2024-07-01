@@ -3,12 +3,12 @@ kind: Application
 metadata:
   name: dontupdateapp
   annotations:
-    description: "Testing effect of duplicate providers"
+    description: 'Testing effect of duplicate providers'
 spec:
   components:
-    # Provider component of an old version that should not be allowed
-    - name: httpserver
+    - name: httpserver-other
       type: capability
       properties:
-        contract: wasmcloud:httpserver
-        image: wasmcloud.azurecr.io/httpserver:0.17.0
+        image: ghcr.io/wasmcloud/http-server:0.20.0
+        # This ID should not be allowed to be deployed
+        id: http_server
