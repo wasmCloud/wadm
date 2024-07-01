@@ -1,7 +1,7 @@
 package wasmcloud:wadm@0.1.0;
 
 interface types {
-    use wasmcloud:oam/types@0.1.0.{oam-manifest};
+    use types.{oam-manifest};
 
     record model-summary {
         name: string,
