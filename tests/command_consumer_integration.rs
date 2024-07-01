@@ -16,43 +16,52 @@ async fn test_consumer_stream() {
     // Publish a whole bunch of commands to the stream
     wrapper
         .publish_command(ScaleComponent {
-            component_id: None,
+            component_id: "barfood".to_string(),
             reference: "foobar".to_string(),
             host_id: "fakehost".to_string(),
             count: 3,
             model_name: "fake".into(),
             annotations: BTreeMap::new(),
+            config: vec![],
         })
         .await;
     wrapper
         .publish_command(StartProvider {
             reference: "baz".to_string(),
+            provider_id: "fakepay".to_string(),
             host_id: "fakehost".to_string(),
             model_name: "fake".into(),
-            ..Default::default()
+            config: vec![],
+            annotations: BTreeMap::new(),
         })
         .await;
     wrapper
-        .publish_command(PutLinkdef {
-            component_id: "foobar".to_string(),
-            provider_id: "fakehost".to_string(),
-            contract_id: "wasmcloud:httpserver".to_string(),
-            model_name: "fake".into(),
+        .publish_command(PutLink {
+            source_id: "barfood".to_string(),
+            target: "fakepay".to_string(),
+            name: "default".to_string(),
+            wit_namespace: "dontreallycare".to_string(),
+            wit_package: "doesitmatter".to_string(),
+            model_name: "fake".to_string(),
+            interfaces: vec!["something".to_string()],
             ..Default::default()
         })
         .await;
 
     // Make sure we get the right data back, in the right order
     let mut cmd = wrapper.wait_for_command().await;
-    if let Command::ScaleComponent(actor) = cmd.as_ref() {
+    if let Command::ScaleComponent(event) = cmd.as_ref() {
         assert_eq!(
-            actor.reference,
+            event.reference,
             "foobar",
-            "Expected to get a valid start actor command, got command: {:?}",
+            "Expected to get a valid start component command, got command: {:?}",
             cmd.as_ref()
         );
     } else {
-        panic!("Event wasn't a start actor command. Got {:?}", cmd.as_ref());
+        panic!(
+            "Event wasn't a start component command. Got {:?}",
+            cmd.as_ref()
+        );
     }
     cmd.ack().await.expect("Should be able to ack message");
 
@@ -73,10 +82,16 @@ async fn test_consumer_stream() {
     cmd.ack().await.expect("Should be able to ack message");
 
     let mut cmd = wrapper.wait_for_command().await;
-    if let Command::PutLinkdef(ld) = cmd.as_ref() {
+    if let Command::PutLink(link) = cmd.as_ref() {
         assert_eq!(
-            ld.contract_id,
-            "wasmcloud:httpserver",
+            link.wit_namespace,
+            "dontreallycare",
+            "Expected to get a valid put linkdef command, got command: {:?}",
+            cmd.as_ref()
+        );
+        assert_eq!(
+            link.wit_package,
+            "doesitmatter",
             "Expected to get a valid put linkdef command, got command: {:?}",
             cmd.as_ref()
         );
@@ -99,25 +114,29 @@ async fn test_consumer_stream() {
 
     wrapper
         .publish_command(ScaleComponent {
-            component_id: Some("foobar".to_string()),
+            component_id: "foobar".to_string(),
             reference: "foobarref".to_string(),
             host_id: "fakehost".to_string(),
             count: 0,
             model_name: "fake".into(),
             annotations: BTreeMap::new(),
+            ..Default::default()
         })
         .await;
 
     let mut cmd = wrapper.wait_for_command().await;
-    if let Command::ScaleComponent(actor) = cmd.as_ref() {
+    if let Command::ScaleComponent(event) = cmd.as_ref() {
         assert_eq!(
-            actor.component_id,
-            Some("foobar".to_string()),
-            "Expected to get a valid stop actor command, got command: {:?}",
+            event.component_id,
+            "foobar".to_string(),
+            "Expected to get a valid stop component command, got command: {:?}",
             cmd.as_ref()
         );
     } else {
-        panic!("Event wasn't a stop actor command. Got {:?}", cmd.as_ref());
+        panic!(
+            "Event wasn't a stop component command. Got {:?}",
+            cmd.as_ref()
+        );
     }
     cmd.ack().await.expect("Should be able to ack message");
 }
@@ -129,40 +148,47 @@ async fn test_nack_and_rereceive() {
     // Send an event
     wrapper
         .publish_command(ScaleComponent {
-            component_id: None,
+            component_id: "barfood".to_string(),
             reference: "foobar".to_string(),
             host_id: "fakehost".to_string(),
             count: 3,
             model_name: "fake".into(),
             annotations: BTreeMap::new(),
+            config: vec![],
         })
         .await;
 
     // Get the event and then nack it
     let mut cmd = wrapper.wait_for_command().await;
     // Make sure we got the right event
-    if let Command::ScaleComponent(actor) = cmd.as_ref() {
+    if let Command::ScaleComponent(event) = cmd.as_ref() {
         assert_eq!(
-            actor.reference,
+            event.reference,
             "foobar",
-            "Expected to get a valid start actor command, got command: {:?}",
+            "Expected to get a valid start component command, got command: {:?}",
             cmd.as_ref()
         );
     } else {
-        panic!("Event wasn't a start actor command. Got {:?}", cmd.as_ref());
+        panic!(
+            "Event wasn't a start component command. Got {:?}",
+            cmd.as_ref()
+        );
     }
 
     cmd.nack().await;
     // Now do it again and make sure we get the same event
-    if let Command::ScaleComponent(actor) = wrapper.wait_for_command().await.as_ref() {
+    if let Command::ScaleComponent(event) = wrapper.wait_for_command().await.as_ref() {
         assert_eq!(
-            actor.reference,
+            event.reference,
             "foobar",
-            "Expected to get a valid start actor command, got command: {:?}",
+            "Expected to get a valid start component command, got command: {:?}",
             cmd.as_ref()
         );
     } else {
-        panic!("Event wasn't a start actor command. Got {:?}", cmd.as_ref());
+        panic!(
+            "Event wasn't a start component command. Got {:?}",
+            cmd.as_ref()
+        );
     }
     cmd.ack().await.expect("Should be able to ack");
 }

@@ -99,7 +99,7 @@ async fn start_wash_instance(cfg: &TestWashConfig) -> Result<CleanupGuard> {
         "--host-seed",
         &seed,
         "--wasmcloud-version",
-        "v0.81.0",
+        "v1.0.4",
     ]);
     if cfg.nats_connect_only {
         args.push("--nats-connect-only");

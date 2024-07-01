@@ -3,7 +3,7 @@ kind: Application
 metadata:
   name: echo
   annotations:
-    description: "This is my app"
+    description: 'This is my app'
 spec:
   components:
     - name: echo
@@ -18,7 +18,6 @@ spec:
     - name: httpserver
       type: capability
       properties:
-        contract: wasmcloud:httpserver
         image: wasmcloud.azurecr.io/httpserver:0.17.0
       traits:
         - type: spreadscaler

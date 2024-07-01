@@ -3,10 +3,8 @@ use std::{collections::HashMap, time::Duration};
 use async_nats::{jetstream, Subscriber};
 use futures::StreamExt;
 use serde::de::DeserializeOwned;
-use wadm::{
-    model::{Manifest, VERSION_ANNOTATION_KEY},
-    server::*,
-};
+use wadm::server::*;
+use wadm_types::{api::*, *};
 
 mod helpers;
 
@@ -139,7 +137,7 @@ async fn test_crud_operations() {
     let test_server = setup_server("crud_operations".to_owned()).await;
 
     // First test with a raw file (a common operation)
-    let raw = tokio::fs::read("./oam/petclinic.yaml")
+    let raw = tokio::fs::read("./oam/sqldbpostgres.yaml")
         .await
         .expect("Unable to load file");
     let resp: PutModelResponse = test_server
@@ -158,12 +156,18 @@ async fn test_crud_operations() {
     let resp: PutModelResponse = test_server
         .get_response("default.model.put", raw, None)
         .await;
-    assert_put_response(resp, PutResult::Created, "v0.0.1", 1);
+    // This manifest has no version, so it's assigned on as a ULID
+    let example_version = resp.current_version.clone();
+    assert_put_response(resp, PutResult::Created, &example_version, 1);
 
     // Check that we can get back the manifest
     let resp: GetModelResponse = test_server
         .get_response("default.model.get.my-example-app", Vec::new(), None)
         .await;
+    manifest
+        .metadata
+        .annotations
+        .insert(VERSION_ANNOTATION_KEY.to_owned(), example_version.clone());
     assert_manifest(
         &manifest,
         resp.manifest
@@ -181,10 +185,13 @@ async fn test_crud_operations() {
         .iter()
         .find(|m| m.name == "my-example-app")
         .expect("Should be able to find the correct model");
-    assert_eq!(summary.version, "v0.0.1", "Should have the correct data");
+    assert_eq!(
+        summary.version, example_version,
+        "Should have the correct data"
+    );
     let summary = resp
         .iter()
-        .find(|m| m.name == "petclinic")
+        .find(|m| m.name == "rust-sqldb-postgres-query")
         .expect("Should be able to find the correct model");
     assert_eq!(summary.version, "v0.0.1", "Should have the correct data");
 
@@ -233,7 +240,7 @@ async fn test_crud_operations() {
     let mut iter = resp.versions.into_iter();
     assert_eq!(
         iter.next().unwrap().version,
-        "v0.0.1",
+        example_version,
         "Should find the correct version"
     );
     assert_eq!(
@@ -274,8 +281,7 @@ async fn test_crud_operations() {
         .get_response(
             "default.model.del.my-example-app",
             serde_json::to_vec(&DeleteModelRequest {
-                version: "v0.0.2".to_owned(),
-                delete_all: false,
+                version: Some("v0.0.2".to_owned()),
             })
             .unwrap(),
             None,
@@ -298,7 +304,7 @@ async fn test_crud_operations() {
     let mut iter = resp.versions.into_iter();
     assert_eq!(
         iter.next().unwrap().version,
-        "v0.0.1",
+        example_version,
         "Should find the correct version"
     );
     assert_eq!(
@@ -312,11 +318,7 @@ async fn test_crud_operations() {
     let resp: DeleteModelResponse = test_server
         .get_response(
             "default.model.del.my-example-app",
-            serde_json::to_vec(&DeleteModelRequest {
-                version: String::new(),
-                delete_all: true,
-            })
-            .unwrap(),
+            serde_json::to_vec(&DeleteModelRequest { version: None }).unwrap(),
             None,
         )
         .await;
@@ -337,10 +339,9 @@ async fn test_crud_operations() {
     // Delete last remaining
     let resp: DeleteModelResponse = test_server
         .get_response(
-            "default.model.del.petclinic",
+            "default.model.del.rust-sqldb-postgres-query",
             serde_json::to_vec(&DeleteModelRequest {
-                version: "v0.0.1".to_owned(),
-                delete_all: false,
+                version: Some("v0.0.1".to_owned()),
             })
             .unwrap(),
             None,
@@ -352,7 +353,11 @@ async fn test_crud_operations() {
     );
 
     let resp: GetModelResponse = test_server
-        .get_response("default.model.get.petclinic", Vec::new(), None)
+        .get_response(
+            "default.model.get.rust-sqldb-postgres-query",
+            Vec::new(),
+            None,
+        )
         .await;
     assert!(
         matches!(resp.result, GetResult::NotFound),
@@ -364,7 +369,7 @@ async fn test_crud_operations() {
 async fn test_bad_requests() {
     let test_server = setup_server("bad_requests".to_owned()).await;
     // Duplicate version
-    let raw = tokio::fs::read("./oam/petclinic.yaml")
+    let raw = tokio::fs::read("./oam/sqldbpostgres.yaml")
         .await
         .expect("Unable to load file");
     let resp: PutModelResponse = test_server
@@ -374,7 +379,7 @@ async fn test_bad_requests() {
     assert_put_response(resp, PutResult::Created, "v0.0.1", 1);
 
     // https://imgflip.com/memegenerator/195657242/Do-it-again
-    let raw = tokio::fs::read("./oam/petclinic.yaml")
+    let raw = tokio::fs::read("./oam/sqldbpostgres.yaml")
         .await
         .expect("Unable to load file");
     let resp: PutModelResponse = test_server
@@ -388,7 +393,7 @@ async fn test_bad_requests() {
     assert!(!resp.message.is_empty(), "Should not have an empty message");
 
     // Setting manifest to latest
-    let raw = tokio::fs::read("./oam/petclinic.yaml")
+    let raw = tokio::fs::read("./oam/sqldbpostgres.yaml")
         .await
         .expect("Unable to load file");
     let mut manifest: Manifest = serde_yaml::from_slice(&raw).unwrap();
@@ -407,7 +412,7 @@ async fn test_bad_requests() {
     assert!(!resp.message.is_empty(), "Should not have an empty message");
 
     // Mismatched name on put
-    let raw = tokio::fs::read("./oam/petclinic.yaml")
+    let raw = tokio::fs::read("./oam/sqldbpostgres.yaml")
         .await
         .expect("Unable to load file");
     let resp: PutModelResponse = test_server
@@ -430,8 +435,7 @@ async fn test_delete_noop() {
         .get_response(
             "default.model.del.my-example-app",
             serde_json::to_vec(&DeleteModelRequest {
-                version: "v0.0.2".to_owned(),
-                delete_all: false,
+                version: Some("v0.0.2".to_owned()),
             })
             .unwrap(),
             None,
@@ -444,7 +448,7 @@ async fn test_delete_noop() {
     assert!(!resp.message.is_empty(), "Should have a message set");
 
     // Delete a non-existent version
-    let raw = tokio::fs::read("./oam/petclinic.yaml")
+    let raw = tokio::fs::read("./oam/sqldbpostgres.yaml")
         .await
         .expect("Unable to load file");
     let resp: PutModelResponse = test_server
@@ -455,10 +459,9 @@ async fn test_delete_noop() {
 
     let resp: DeleteModelResponse = test_server
         .get_response(
-            "default.model.del.petclinic",
+            "default.model.del.rust-sqldb-postgres-query",
             serde_json::to_vec(&DeleteModelRequest {
-                version: "v0.0.2".to_owned(),
-                delete_all: false,
+                version: Some("v0.0.2".to_owned()),
             })
             .unwrap(),
             None,
@@ -477,7 +480,7 @@ async fn test_invalid_topics() {
 
     // Put in a manifest to make sure we have something that could be fetched if we aren't handing
     // invalid topics correctly
-    let raw = tokio::fs::read("./oam/petclinic.yaml")
+    let raw = tokio::fs::read("./oam/sqldbpostgres.yaml")
         .await
         .expect("Unable to load file");
     let resp: PutModelResponse = test_server
@@ -504,7 +507,11 @@ async fn test_invalid_topics() {
 
     // Extra things on end
     let resp: HashMap<String, String> = test_server
-        .get_response("default.model.get.petclinic.foo.bar", Vec::new(), None)
+        .get_response(
+            "default.model.get.rust-sqldb-postgres-query.foo.bar",
+            Vec::new(),
+            None,
+        )
         .await;
 
     assert_eq!(
@@ -520,7 +527,11 @@ async fn test_invalid_topics() {
 
     // Random topic
     let resp: HashMap<String, String> = test_server
-        .get_response("default.blah.get.petclinic", Vec::new(), None)
+        .get_response(
+            "default.blah.get.rust-sqldb-postgres-query",
+            Vec::new(),
+            None,
+        )
         .await;
 
     assert_eq!(
@@ -548,10 +559,13 @@ async fn test_manifest_parsing() {
         .get_response("default.model.put", raw, None)
         .await;
 
-    assert_put_response(resp, PutResult::Created, "v0.0.1", 1);
+    // This manifest has no version, so it's assigned on as a ULID
+    let version = resp.current_version.clone();
+
+    assert_put_response(resp, PutResult::Created, &version, 1);
 
     // Test yaml manifest with hint
-    let raw = tokio::fs::read("./oam/petclinic.yaml")
+    let raw = tokio::fs::read("./oam/sqldbpostgres.yaml")
         .await
         .expect("Unable to load file");
     let resp: PutModelResponse = test_server
@@ -587,8 +601,10 @@ async fn test_manifest_parsing() {
     let resp: PutModelResponse = test_server
         .get_response("default.model.put", raw, None)
         .await;
+    // This manifest has no version, so it's assigned on as a ULID
+    let version = resp.current_version.clone();
 
-    assert_put_response(resp, PutResult::Created, "v0.0.1", 1);
+    assert_put_response(resp, PutResult::Created, &version, 1);
 }
 
 #[tokio::test]
@@ -596,7 +612,7 @@ async fn test_deploy() {
     let mut test_server = setup_server("deploy_ops".to_owned()).await;
 
     // Create a manifest with 2 versions
-    let raw = tokio::fs::read("./oam/petclinic.yaml")
+    let raw = tokio::fs::read("./oam/sqldbpostgres.yaml")
         .await
         .expect("Unable to load file");
     let mut manifest: Manifest = serde_yaml::from_slice(&raw).unwrap();
@@ -637,7 +653,11 @@ async fn test_deploy() {
 
     // Deploy using no body
     let resp: DeployModelResponse = test_server
-        .get_response("default.model.deploy.petclinic", Vec::new(), None)
+        .get_response(
+            "default.model.deploy.rust-sqldb-postgres-query",
+            Vec::new(),
+            None,
+        )
         .await;
     assert!(
         matches!(resp.result, DeployResult::Acknowledged),
@@ -649,7 +669,11 @@ async fn test_deploy() {
         .await;
 
     let resp: VersionResponse = test_server
-        .get_response("default.model.versions.petclinic", Vec::new(), None)
+        .get_response(
+            "default.model.versions.rust-sqldb-postgres-query",
+            Vec::new(),
+            None,
+        )
         .await;
     for info in resp.versions.into_iter() {
         match info.version.as_str() {
@@ -662,7 +686,7 @@ async fn test_deploy() {
     // Now deploy with a specific version
     let resp: DeployModelResponse = test_server
         .get_response(
-            "default.model.deploy.petclinic",
+            "default.model.deploy.rust-sqldb-postgres-query",
             serde_json::to_vec(&DeployModelRequest {
                 version: Some("v0.0.1".to_string()),
             })
@@ -676,7 +700,11 @@ async fn test_deploy() {
     );
 
     let resp: VersionResponse = test_server
-        .get_response("default.model.versions.petclinic", Vec::new(), None)
+        .get_response(
+            "default.model.versions.rust-sqldb-postgres-query",
+            Vec::new(),
+            None,
+        )
         .await;
     for info in resp.versions.into_iter() {
         match info.version.as_str() {
@@ -689,7 +717,7 @@ async fn test_deploy() {
     // Try to deploy latest
     let resp: DeployModelResponse = test_server
         .get_response(
-            "default.model.deploy.petclinic",
+            "default.model.deploy.rust-sqldb-postgres-query",
             serde_json::to_vec(&DeployModelRequest {
                 version: Some("latest".to_string()),
             })
@@ -703,7 +731,11 @@ async fn test_deploy() {
     );
 
     let resp: VersionResponse = test_server
-        .get_response("default.model.versions.petclinic", Vec::new(), None)
+        .get_response(
+            "default.model.versions.rust-sqldb-postgres-query",
+            Vec::new(),
+            None,
+        )
         .await;
     for info in resp.versions.into_iter() {
         match info.version.as_str() {
@@ -715,7 +747,11 @@ async fn test_deploy() {
 
     // Undeploy stuff
     let resp: DeployModelResponse = test_server
-        .get_response("default.model.undeploy.petclinic", Vec::new(), None)
+        .get_response(
+            "default.model.undeploy.rust-sqldb-postgres-query",
+            Vec::new(),
+            None,
+        )
         .await;
     assert!(
         matches!(resp.result, DeployResult::Acknowledged),
@@ -727,7 +763,11 @@ async fn test_deploy() {
         .await;
 
     let resp: VersionResponse = test_server
-        .get_response("default.model.versions.petclinic", Vec::new(), None)
+        .get_response(
+            "default.model.versions.rust-sqldb-postgres-query",
+            Vec::new(),
+            None,
+        )
         .await;
     assert!(
         resp.versions.into_iter().all(|info| !info.deployed),
@@ -740,7 +780,7 @@ async fn test_delete_deploy() {
     let mut test_server = setup_server("deploy_delete".to_owned()).await;
 
     // Create a manifest with 2 versions
-    let raw = tokio::fs::read("./oam/petclinic.yaml")
+    let raw = tokio::fs::read("./oam/sqldbpostgres.yaml")
         .await
         .expect("Unable to load file");
     let mut manifest: Manifest = serde_yaml::from_slice(&raw).unwrap();
@@ -763,7 +803,11 @@ async fn test_delete_deploy() {
     assert_put_response(resp, PutResult::NewVersion, "v0.0.2", 2);
 
     let resp: DeployModelResponse = test_server
-        .get_response("default.model.deploy.petclinic", Vec::new(), None)
+        .get_response(
+            "default.model.deploy.rust-sqldb-postgres-query",
+            Vec::new(),
+            None,
+        )
         .await;
     assert!(
         matches!(resp.result, DeployResult::Acknowledged),
@@ -772,10 +816,9 @@ async fn test_delete_deploy() {
 
     let resp: DeleteModelResponse = test_server
         .get_response(
-            "default.model.del.petclinic",
+            "default.model.del.rust-sqldb-postgres-query",
             serde_json::to_vec(&DeleteModelRequest {
-                version: "v0.0.2".to_owned(),
-                delete_all: false,
+                version: Some("v0.0.2".to_owned()),
             })
             .unwrap(),
             None,
@@ -792,7 +835,11 @@ async fn test_delete_deploy() {
 
     // Deploy again and then delete all
     let resp: DeployModelResponse = test_server
-        .get_response("default.model.deploy.petclinic", Vec::new(), None)
+        .get_response(
+            "default.model.deploy.rust-sqldb-postgres-query",
+            Vec::new(),
+            None,
+        )
         .await;
     assert!(
         matches!(resp.result, DeployResult::Acknowledged),
@@ -801,12 +848,8 @@ async fn test_delete_deploy() {
 
     let resp: DeleteModelResponse = test_server
         .get_response(
-            "default.model.del.petclinic",
-            serde_json::to_vec(&DeleteModelRequest {
-                version: String::new(),
-                delete_all: true,
-            })
-            .unwrap(),
+            "default.model.del.rust-sqldb-postgres-query",
+            serde_json::to_vec(&DeleteModelRequest { version: None }).unwrap(),
             None,
         )
         .await;
@@ -824,7 +867,7 @@ async fn test_delete_deploy() {
 async fn test_status() {
     let test_server = setup_server("status".to_owned()).await;
 
-    let raw = tokio::fs::read("./oam/petclinic.yaml")
+    let raw = tokio::fs::read("./oam/sqldbpostgres.yaml")
         .await
         .expect("Unable to load file");
     let resp: PutModelResponse = test_server
@@ -833,7 +876,11 @@ async fn test_status() {
     assert_put_response(resp, PutResult::Created, "v0.0.1", 1);
 
     let resp: StatusResponse = test_server
-        .get_response("default.model.status.petclinic", Vec::new(), None)
+        .get_response(
+            "default.model.status.rust-sqldb-postgres-query",
+            Vec::new(),
+            None,
+        )
         .await;
 
     // This is just checking it returns a valid default status. e2e tests will have to check actual
