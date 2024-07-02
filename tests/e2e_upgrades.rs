@@ -42,10 +42,13 @@ async fn run_upgrade_tests() {
     // on the lattice will initialize the lattice monitor and for the following test we quickly assert things.
     let mut sub = client_info
         .client
-        .subscribe("wadm.evt.default".to_string())
+        .subscribe("wasmbus.evt.default.>".to_string())
         .await
         .expect("Should be able to subscribe to default events");
-    let _ = sub.next().await;
+    // Host heartbeats happen every 30 seconds, if we don't get a heartbeat in 2 minutes, bail.
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(120), sub.next())
+        .await
+        .expect("should have received a host heartbeat event before timeout");
 
     // Wait for hosts to start
     let mut did_start = false;
@@ -102,7 +105,6 @@ async fn test_upgrade(client_info: &ClientInfo) {
     let generated_dogfetcher_id = format!("updateapp-{DOG_FETCHER_GENERATED_ID}");
 
     assert_status(None, Some(5), || async {
-        eprintln!("Checking initial deploy ...");
         let inventory = client_info.get_all_inventory("default").await?;
 
         check_components(
@@ -261,7 +263,6 @@ async fn test_upgrade(client_info: &ClientInfo) {
         .unwrap();
 
     assert_status(None, Some(5), || async {
-        eprintln!("Checking upgraded deploy ...");
         let inventory = client_info.get_all_inventory("default").await?;
 
         check_components(
@@ -381,7 +382,6 @@ async fn test_upgrade(client_info: &ClientInfo) {
 
     assert_status(None, None, || async {
         let inventory = client_info.get_all_inventory("default").await?;
-        println!("Inventory: {:?}", inventory);
 
         check_components(
             &inventory,
@@ -515,7 +515,7 @@ async fn test_upgrade(client_info: &ClientInfo) {
     //     )?;
     //     check_providers(
     //         &inventory,
-    //         "ghcr.io/wasmcloud/http-server:0.20.0",
+    //         "ghcr.io/wasmcloud/http-server:0.21.0",
     //         ExpectedCount::Exactly(0),
     //     )?;
     //     Ok(())

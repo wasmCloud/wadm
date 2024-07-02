@@ -2,6 +2,7 @@
 use std::time::Duration;
 use std::{collections::HashMap, path::PathBuf};
 
+use anyhow::Context as _;
 use futures::{FutureExt, StreamExt};
 use wadm_types::api::StatusType;
 
@@ -22,7 +23,7 @@ const MANIFESTS_PATH: &str = "test/data";
 const DOCKER_COMPOSE_FILE: &str = "test/docker-compose-e2e.yaml";
 const BLOBSTORE_FS_IMAGE_REF: &str = "ghcr.io/wasmcloud/blobstore-fs:0.6.0";
 const BLOBSTORE_FS_PROVIDER_ID: &str = "fileserver";
-const BLOBBY_IMAGE_REF: &str = "wasmcloud.azurecr.io/blobby:0.1.0";
+const BLOBBY_IMAGE_REF: &str = "ghcr.io/wasmcloud/components/blobby-rust:0.4.0";
 const BLOBBY_COMPONENT_ID: &str = "littleblobbytables";
 
 // NOTE(thomastaylor312): This exists because we need to have setup happen only once for all tests
@@ -131,9 +132,9 @@ async fn test_no_requirements(client_info: &ClientInfo) {
             .ctl_client(DEFAULT_LATTICE_ID)
             .get_config("hello_simple-httpaddr")
             .await
-            .expect("should have http provider source config")
+            .map_err(|e| anyhow::anyhow!("should have http provider source config {e}"))?
             .response
-            .expect("should have http provider source config response");
+            .context("should have http provider source config response")?;
         assert_eq!(
             config,
             HashMap::from_iter(vec![("address".to_string(), "0.0.0.0:8080".to_string())])
@@ -148,7 +149,7 @@ async fn test_no_requirements(client_info: &ClientInfo) {
             .await
             .map_err(|e| anyhow::anyhow!("{e:?}"))?
             .response
-            .expect("Should have links");
+            .context("Should have links")?;
 
         if !links.iter().any(|ld| {
             ld.source_id == HTTP_SERVER_COMPONENT_ID
@@ -194,7 +195,7 @@ async fn test_no_requirements(client_info: &ClientInfo) {
     .unwrap();
 
     // assert that no components or providers with annotations exist
-    assert_status(None, None, || async {
+    assert_status(None, Some(3), || async {
         let inventory = client_info.get_all_inventory(DEFAULT_LATTICE_ID).await?;
 
         check_components(&inventory, HELLO_IMAGE_REF, "hello-simple", 0)?;
@@ -206,12 +207,13 @@ async fn test_no_requirements(client_info: &ClientInfo) {
             .await
             .map_err(|e| anyhow::anyhow!("{e:?}"))?
             .response
-            .expect("Should have links");
+            .context("Should have links")?;
 
-        assert!(
-            links.is_empty(),
-            "The link between the http provider and hello component should be removed"
-        );
+        if !links.is_empty() {
+            anyhow::bail!(
+                "The link between the http provider and hello component should be removed"
+            )
+        }
 
         check_status(
             &stream,
@@ -306,9 +308,9 @@ async fn test_complex_app(client_info: &ClientInfo) {
             .ctl_client(DEFAULT_LATTICE_ID)
             .get_config("complex-defaultcode")
             .await
-            .expect("should have blobby component config")
+            .map_err(|e| anyhow::anyhow!("should have blobby component config: {e:?}"))?
             .response
-            .expect("should have blobby component config response");
+            .context("should have blobby component config response")?;
         assert_eq!(
             blobby_config,
             HashMap::from_iter(vec![("http".to_string(), "404".to_string())])
@@ -317,9 +319,9 @@ async fn test_complex_app(client_info: &ClientInfo) {
             .ctl_client(DEFAULT_LATTICE_ID)
             .get_config("complex-rootfs")
             .await
-            .expect("should have target link config")
+            .map_err(|e| anyhow::anyhow!("should have target link config {e:?}"))?
             .response
-            .expect("should have target link config response");
+            .context("should have target link config response")?;
         assert_eq!(
             blobby_target_config,
             HashMap::from_iter(vec![("root".to_string(), "/tmp".to_string())])
@@ -328,9 +330,9 @@ async fn test_complex_app(client_info: &ClientInfo) {
             .ctl_client(DEFAULT_LATTICE_ID)
             .get_config("complex-httpaddr")
             .await
-            .expect("should have source link config")
+            .map_err(|e| anyhow::anyhow!("should have source link config {e:?}"))?
             .response
-            .expect("should have target link config response");
+            .context("should have target link config response")?;
         assert_eq!(
             http_source_config,
             HashMap::from_iter(vec![("address".to_string(), "0.0.0.0:8081".to_string())])
@@ -339,9 +341,9 @@ async fn test_complex_app(client_info: &ClientInfo) {
             .ctl_client(DEFAULT_LATTICE_ID)
             .get_config("complex-defaultfs")
             .await
-            .expect("should have provider config")
+            .map_err(|e| anyhow::anyhow!("should have provider config {e:?}"))?
             .response
-            .expect("should have provider config response");
+            .context("should have provider config response")?;
         assert_eq!(
             fileserver_config,
             HashMap::from_iter(vec![("root".to_string(), "/tmp/blobby".to_string())])
@@ -361,7 +363,7 @@ async fn test_complex_app(client_info: &ClientInfo) {
             .await
             .map_err(|e| anyhow::anyhow!("{e:?}"))?
             .response
-            .expect("Should have links");
+            .context("Should have links")?;
 
         if !links.iter().any(|ld| {
             ld.source_id == HTTP_SERVER_COMPONENT_ID
@@ -419,7 +421,7 @@ async fn test_complex_app(client_info: &ClientInfo) {
             .iter()
             .any(|component| component.id == BLOBBY_COMPONENT_ID)
         {
-            anyhow::bail!("Components shouldn't be running on the moon");
+            anyhow::bail!("Actors shouldn't be running on the moon");
         }
 
         Ok(())

@@ -3,13 +3,13 @@ kind: Application
 metadata:
   name: host-stop
   annotations:
-    description: "This is my app"
+    description: 'This is my app'
 spec:
   components:
     - name: hello
       type: component
       properties:
-        image: wasmcloud.azurecr.io/http-hello-world:0.1.0
+        image: ghcr.io/wasmcloud/components/http-hello-world-rust:0.1.0
       traits:
         - type: spreadscaler
           properties:
