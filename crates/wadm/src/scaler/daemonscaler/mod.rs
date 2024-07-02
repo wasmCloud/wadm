@@ -17,19 +17,19 @@ use crate::{
     storage::{Component, Host, ReadStore},
 };
 
-use super::compute_config_hash;
+use super::compute_id_sha256;
 
 pub mod provider;
 
 // Annotation constants
 pub const COMPONENT_DAEMON_SCALER_TYPE: &str = "componentdaemonscaler";
 
-/// Config for an ActorDaemonScaler
+/// Config for an ComponentDaemonScaler
 #[derive(Clone, Debug)]
-struct ActorSpreadConfig {
-    /// OCI, Bindle, or File reference for an actor
-    actor_reference: String,
-    /// Unique component identifier for an actor
+struct ComponentSpreadConfig {
+    /// OCI, Bindle, or File reference for a component
+    component_reference: String,
+    /// Unique component identifier for a component
     component_id: String,
     /// Lattice ID that this DaemonScaler monitors
     lattice_id: String,
@@ -39,13 +39,13 @@ struct ActorSpreadConfig {
     spread_config: SpreadScalerProperty,
 }
 
-/// The ActorDaemonScaler ensures that a certain number of instances are running on every host, according to a
+/// The ComponentDaemonScaler ensures that a certain number of instances are running on every host, according to a
 /// [SpreadScalerProperty](crate::model::SpreadScalerProperty)
 ///
 /// If no [Spreads](crate::model::Spread) are specified, this Scaler simply maintains the number of instances
 /// on every available host.
-pub struct ActorDaemonScaler<S> {
-    spread_config: ActorSpreadConfig,
+pub struct ComponentDaemonScaler<S> {
+    spread_config: ComponentSpreadConfig,
     store: S,
     id: String,
     status: RwLock<StatusInfo>,
@@ -53,7 +53,7 @@ pub struct ActorDaemonScaler<S> {
 }
 
 #[async_trait]
-impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorDaemonScaler<S> {
+impl<S: ReadStore + Send + Sync + Clone> Scaler for ComponentDaemonScaler<S> {
     fn id(&self) -> &str {
         &self.id
     }
@@ -141,7 +141,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorDaemonScaler<S> {
                 if host.components.contains_key(component_id) {
                     Some(Command::ScaleComponent(ScaleComponent {
                         component_id: component_id.to_owned(),
-                        reference: self.spread_config.actor_reference.to_owned(),
+                        reference: self.spread_config.component_reference.to_owned(),
                         host_id: host_id.to_string(),
                         count: 0,
                         model_name: self.spread_config.model_name.to_owned(),
@@ -176,14 +176,14 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorDaemonScaler<S> {
                 let eligible_hosts = eligible_hosts(&hosts, spread);
                 if !eligible_hosts.is_empty() {
                     // Create a list of (host_id, current_count) tuples
-                    // current_count is the number of actor instances that are running for this spread on this host
-                    let actors_per_host = eligible_hosts
+                    // current_count is the number of component instances that are running for this spread on this host
+                    let components_per_host = eligible_hosts
                         .into_keys()
                         .map(|id| {
                             let count = component
                                 .as_ref()
-                                .and_then(|actor| {
-                                    actor.instances.get(&id.to_string()).map(|instances| {
+                                .and_then(|component| {
+                                    component.instances.get(&id.to_string()).map(|instances| {
                                         instances
                                             .iter()
                                             .filter_map(|info| {
@@ -206,19 +206,19 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorDaemonScaler<S> {
                         .collect::<Vec<(&String, usize)>>();
 
                     Some(
-                        actors_per_host
+                        components_per_host
                             .iter()
                             .filter_map(|(host_id, current_count)| {
                                 // Here we'll generate commands for the proper host depending on where they are running
                                 match current_count.cmp(&self.spread_config.spread_config.instances)
                                 {
                                     Ordering::Equal => None,
-                                    // Scale actor can handle both up and down scaling
+                                    // Scale component can handle both up and down scaling
                                     Ordering::Less | Ordering::Greater => {
                                         Some(Command::ScaleComponent(ScaleComponent {
                                             reference: self
                                                 .spread_config
-                                                .actor_reference
+                                                .component_reference
                                                 .to_owned(),
                                             component_id: component_id.to_owned(),
                                             host_id: host_id.to_string(),
@@ -237,18 +237,18 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorDaemonScaler<S> {
                             .collect::<Vec<Command>>(),
                     )
                 } else {
-                    // No hosts were eligible, so we can't attempt to add or remove actors
+                    // No hosts were eligible, so we can't attempt to add or remove components
                     trace!(?spread.name, "Found no eligible hosts for daemon scaler");
                     spread_status.push(StatusInfo::failed(&format!(
                         "Could not satisfy daemonscaler {} for {}, 0 eligible hosts found.",
-                        spread.name, self.spread_config.actor_reference
+                        spread.name, self.spread_config.component_reference
                     )));
                     None
                 }
             })
             .flatten()
             .collect::<Vec<Command>>();
-        trace!(?commands, "Calculated commands for actor daemon scaler");
+        trace!(?commands, "Calculated commands for component daemon scaler");
 
         let status = match (spread_status.is_empty(), commands.is_empty()) {
             (true, true) => StatusInfo::deployed(""),
@@ -272,7 +272,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorDaemonScaler<S> {
         let mut config_clone = self.spread_config.clone();
         config_clone.spread_config.instances = 0;
 
-        let cleanerupper = ActorDaemonScaler {
+        let cleanerupper = ComponentDaemonScaler {
             spread_config: config_clone,
             store: self.store.clone(),
             id: self.id.clone(),
@@ -284,12 +284,12 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorDaemonScaler<S> {
     }
 }
 
-impl<S: ReadStore + Send + Sync> ActorDaemonScaler<S> {
-    /// Construct a new ActorDaemonScaler with specified configuration values
+impl<S: ReadStore + Send + Sync> ComponentDaemonScaler<S> {
+    /// Construct a new ComponentDaemonScaler with specified configuration values
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         store: S,
-        actor_reference: String,
+        component_reference: String,
         component_id: String,
         lattice_id: String,
         model_name: String,
@@ -297,12 +297,18 @@ impl<S: ReadStore + Send + Sync> ActorDaemonScaler<S> {
         component_name: &str,
         config: Vec<String>,
     ) -> Self {
-        let mut id =
-            format!("{COMPONENT_DAEMON_SCALER_TYPE}-{model_name}-{component_name}-{component_id}");
-        if !config.is_empty() {
-            id.push('-');
-            id.push_str(&compute_config_hash(&config));
-        }
+        // Compute the id of this scaler based on all of the configuration values
+        // that make it unique. This is used during upgrades to determine if a
+        // scaler is the same as a previous one.
+        let mut id_parts = vec![
+            COMPONENT_DAEMON_SCALER_TYPE,
+            &model_name,
+            component_name,
+            &component_id,
+            &component_reference,
+        ];
+        id_parts.extend(config.iter().map(std::string::String::as_str));
+        let id = compute_id_sha256(&id_parts);
         // If no spreads are specified, an empty spread is sufficient to match _every_ host
         // in a lattice
         let spread_config = if spread_config.spread.is_empty() {
@@ -315,8 +321,8 @@ impl<S: ReadStore + Send + Sync> ActorDaemonScaler<S> {
         };
         Self {
             store,
-            spread_config: ActorSpreadConfig {
-                actor_reference,
+            spread_config: ComponentSpreadConfig {
+                component_reference,
                 component_id,
                 lattice_id,
                 spread_config,
@@ -347,7 +353,7 @@ mod test {
         commands::Command,
         consumers::{manager::Worker, ScopedMessage},
         events::{Event, LinkdefDeleted, LinkdefSet, ProviderStarted, ProviderStopped},
-        scaler::{daemonscaler::ActorDaemonScaler, manager::ScalerManager, Scaler},
+        scaler::{daemonscaler::ComponentDaemonScaler, manager::ScalerManager, Scaler},
         storage::{Component, Host, Store, WadmComponentInfo},
         test_util::{NoopPublisher, TestLatticeSource, TestStore},
         workers::{CommandPublisher, EventWorker, StatusPublisher},
@@ -358,7 +364,7 @@ mod test {
     #[tokio::test]
     async fn can_compute_spread_commands() -> Result<()> {
         let lattice_id = "one_host";
-        let actor_reference = "fakecloud.azurecr.io/echo:0.3.4".to_string();
+        let component_reference = "fakecloud.azurecr.io/echo:0.3.4".to_string();
         let component_id = "fakecloud_azurecr_io_echo_0_3_4".to_string();
         let host_id = "NASDASDIMAREALHOST";
 
@@ -409,9 +415,9 @@ mod test {
             ],
         };
 
-        let daemonscaler = ActorDaemonScaler::new(
+        let daemonscaler = ComponentDaemonScaler::new(
             store.clone(),
-            actor_reference.to_string(),
+            component_reference.to_string(),
             component_id.to_string(),
             lattice_id.to_string(),
             MODEL_NAME.to_string(),
@@ -424,7 +430,7 @@ mod test {
         assert_eq!(cmds.len(), 4);
         assert!(cmds.contains(&Command::ScaleComponent(ScaleComponent {
             component_id: component_id.to_string(),
-            reference: actor_reference.to_string(),
+            reference: component_reference.to_string(),
             host_id: host_id.to_string(),
             count: 13,
             model_name: MODEL_NAME.to_string(),
@@ -433,7 +439,7 @@ mod test {
         })));
         assert!(cmds.contains(&Command::ScaleComponent(ScaleComponent {
             component_id: component_id.to_string(),
-            reference: actor_reference.to_string(),
+            reference: component_reference.to_string(),
             host_id: host_id.to_string(),
             count: 13,
             model_name: MODEL_NAME.to_string(),
@@ -442,7 +448,7 @@ mod test {
         })));
         assert!(cmds.contains(&Command::ScaleComponent(ScaleComponent {
             component_id: component_id.to_string(),
-            reference: actor_reference.to_string(),
+            reference: component_reference.to_string(),
             host_id: host_id.to_string(),
             count: 13,
             model_name: MODEL_NAME.to_string(),
@@ -451,7 +457,7 @@ mod test {
         })));
         assert!(cmds.contains(&Command::ScaleComponent(ScaleComponent {
             component_id: component_id.to_string(),
-            reference: actor_reference.to_string(),
+            reference: component_reference.to_string(),
             host_id: host_id.to_string(),
             count: 13,
             model_name: MODEL_NAME.to_string(),
@@ -466,9 +472,9 @@ mod test {
     async fn can_scale_up_and_down() -> Result<()> {
         let lattice_id = "computing_spread_commands";
         let echo_ref = "fakecloud.azurecr.io/echo:0.3.4".to_string();
-        let echo_id = "MASDASDIAMAREALACTORECHO";
+        let echo_id = "MASDASDIAMAREALCOMPONENTECHO";
         let blobby_ref = "fakecloud.azurecr.io/blobby:0.5.2".to_string();
-        let blobby_id = "MASDASDIAMAREALACTORBLOBBY";
+        let blobby_id = "MASDASDIAMAREALCOMPONENTBLOBBY";
 
         let host_id_one = "NASDASDIMAREALHOSTONE";
         let host_id_two = "NASDASDIMAREALHOSTTWO";
@@ -530,7 +536,7 @@ mod test {
             ],
         };
 
-        let echo_daemonscaler = ActorDaemonScaler::new(
+        let echo_daemonscaler = ComponentDaemonScaler::new(
             store.clone(),
             echo_ref.to_string(),
             echo_id.to_string(),
@@ -541,7 +547,7 @@ mod test {
             vec![],
         );
 
-        let blobby_daemonscaler = ActorDaemonScaler::new(
+        let blobby_daemonscaler = ComponentDaemonScaler::new(
             store.clone(),
             blobby_ref.to_string(),
             blobby_id.to_string(),
@@ -647,7 +653,7 @@ mod test {
                     components: HashMap::from_iter([
                         (echo_id.to_string(), 1),
                         (blobby_id.to_string(), 3),
-                        ("MSOMEOTHERACTOR".to_string(), 3),
+                        ("MSOMEOTHERCOMPONENT".to_string(), 3),
                     ]),
                     friendly_name: "hey".to_string(),
                     labels: HashMap::from_iter([
@@ -763,7 +769,7 @@ mod test {
     async fn can_react_to_host_events() -> Result<()> {
         let lattice_id = "computing_spread_commands";
         let blobby_ref = "fakecloud.azurecr.io/blobby:0.5.2".to_string();
-        let blobby_id = "MASDASDIAMAREALACTORBLOBBY";
+        let blobby_id = "MASDASDIAMAREALCOMPONENTBLOBBY";
 
         let host_id_one = "NASDASDIMAREALHOSTONE";
         let host_id_two = "NASDASDIMAREALHOSTTWO";
@@ -818,7 +824,7 @@ mod test {
                 weight: None,
             }],
         };
-        let blobby_daemonscaler = ActorDaemonScaler::new(
+        let blobby_daemonscaler = ComponentDaemonScaler::new(
             store.clone(),
             blobby_ref.to_string(),
             blobby_id.to_string(),
@@ -879,7 +885,7 @@ mod test {
                 Host {
                     components: HashMap::from_iter([
                         (blobby_id.to_string(), 10),
-                        ("MSOMEOTHERACTOR".to_string(), 3),
+                        ("MSOMEOTHERCOMPONENT".to_string(), 3),
                     ]),
                     friendly_name: "hey".to_string(),
                     labels: HashMap::from_iter([
