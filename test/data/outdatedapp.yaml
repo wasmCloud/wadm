@@ -1,70 +1,82 @@
-# This is an application for use in the update test suite. It contains
-# 1. An actor component that is up to date and shouldn't change (xkcd)
-# 2. An actor component that is out of date and should be updated (echo)
-#    - This component also has an out of date trait that should be updated (linkdef)
-# 3. An actor component that is no longer needed and should be deleted (kvcounter)
-# 4. A provider component that is out of date and should be updated (httpserver)
-# 5. A provider component that is no longer needed and should be deleted (redis)
 apiVersion: core.oam.dev/v1beta1
 kind: Application
 metadata:
   name: updateapp
   annotations:
-    description: "According to all known laws of aviation"
+    description: 'According to all known laws of aviation'
 spec:
   components:
-    # Latest, no modifications needed, actor component
-    - name: xkcd
+    - name: dog-fetcher
       type: component
       properties:
-        image: wasmcloud.azurecr.io/xkcd:0.1.1
+        image: ghcr.io/wasmcloud/components/dog-fetcher-rust:0.1.0
       traits:
         - type: spreadscaler
           properties:
             instances: 5
-        - type: linkdef
-          properties:
-            target: httpserver
-            values:
-              address: 0.0.0.0:8081
-    # Old actor component
-    - name: echo
+
+    - name: hello-world
       type: component
       properties:
-        image: wasmcloud.azurecr.io/echo:0.3.4
+        image: ghcr.io/wasmcloud/components/http-hello-world-rust:0.1.0
+        id: http_hello_world
       traits:
         - type: spreadscaler
           properties:
             instances: 3
-        # Old linkdef trait
-        - type: linkdef
-          properties:
-            target: httpserver
-            values:
-              address: 0.0.0.0:8080
-    # No longer needed actor component
+
     - name: kvcounter
       type: component
       properties:
-        image: wasmcloud.azurecr.io/kvcounter:0.4.0
+        image: ghcr.io/wasmcloud/components/http-keyvalue-counter-rust:0.1.0
       traits:
         - type: spreadscaler
           properties:
             instances: 3
-        - type: linkdef
+        - type: link
           properties:
             target: redis
-            values:
-              URL: redis://127.0.0.1:6379
-    # Old provider component
+            namespace: wasi
+            package: keyvalue
+            interfaces:
+              - atomics
+              - store
+            target_config:
+              - name: kvconfig
+                properties:
+                  URL: redis://127.0.0.1:6379
+
     - name: httpserver
       type: capability
       properties:
-        contract: wasmcloud:httpserver
-        image: wasmcloud.azurecr.io/httpserver:0.17.0
-    # No longer needed provider component
+        image: ghcr.io/wasmcloud/http-server:0.20.1
+        id: http_server
+      traits:
+        - type: link
+          properties:
+            target: hello-world
+            namespace: wasi
+            package: http
+            interfaces:
+              - incoming-handler
+            source_config:
+              - name: hello-world-address
+                properties:
+                  address: 0.0.0.0:8080
+        - type: link
+          properties:
+            target: dog-fetcher
+            namespace: wasi
+            package: http
+            interfaces:
+              - incoming-handler
+            source_config:
+              - name: dog-fetcher-address
+                properties:
+                  address: 0.0.0.0:8081
+
     - name: redis
       type: capability
       properties:
-        contract: wasmcloud:keyvalue
-        image: wasmcloud.azurecr.io/kvredis:0.22.0
+        image: ghcr.io/wasmcloud/keyvalue-redis:0.26.0
+        id: keyvalue_redis

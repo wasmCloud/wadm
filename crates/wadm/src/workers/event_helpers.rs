@@ -16,7 +16,7 @@ pub struct Claims {
     pub issuer: String,
 }
 
-/// A trait for anything that can fetch a set of claims information about actors.
+/// A trait for anything that can fetch a set of claims information about components.
 ///
 /// NOTE: This trait right now exists as a convenience for two things: First, testing. Without
 /// something like this we require a network connection to unit test. Second, there is no concrete
@@ -29,7 +29,7 @@ pub trait ClaimsSource {
 
 /// NOTE(brooksmtownsend): This trait exists in order to query the hosts inventory
 /// upon receiving a heartbeat since the heartbeat doesn't contain enough
-/// information to properly update the stored data for actors
+/// information to properly update the stored data for components
 #[async_trait::async_trait]
 pub trait InventorySource {
     async fn get_inventory(&self, host_id: &str) -> anyhow::Result<HostInventory>;
@@ -69,7 +69,7 @@ impl ClaimsSource for wasmcloud_control_interface::Client {
                         // NOTE(thomastaylor312): I'm removing instead of getting since we own the data and I
                         // don't want to clone every time we do this
 
-                        // If we don't find a subject, we can't actually get the actor ID, so skip this one
+                        // If we don't find a subject, we can't actually get the component ID, so skip this one
                         Some((
                             claim.remove("sub")?,
                             Claims {

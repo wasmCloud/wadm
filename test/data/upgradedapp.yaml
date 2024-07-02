@@ -3,51 +3,67 @@ kind: Application
 metadata:
   name: updateapp
   annotations:
-    description: "Bees"
+    description: 'Bees'
 spec:
   components:
-    # Latest, no modifications needed, actor component
-    - name: xkcd
+    # Updated imageref component
+    - name: dog-fetcher
       type: component
       properties:
-        image: wasmcloud.azurecr.io/xkcd:0.1.1
+        image: ghcr.io/wasmcloud/components/dog-fetcher-rust:0.1.1
       traits:
         - type: spreadscaler
           properties:
             instances: 5
-        - type: linkdef
-          properties:
-            target: httpserver
-            values:
-              address: 0.0.0.0:8081
-    # Totally new actor component
-    - name: messagepub
+    # Totally new component
+    - name: echo-messaging
       type: component
       properties:
-        image: wasmcloud.azurecr.io/message-pub:0.1.3
+        image: ghcr.io/wasmcloud/components/echo-messaging-rust:0.1.0
       traits:
         - type: spreadscaler
           properties:
             instances: 1
-    # Updated actor component
-    - name: echo
+    # Latest, no modifications needed, component
+    - name: hello-world
       type: component
       properties:
-        image: wasmcloud.azurecr.io/echo:0.3.8
+        image: ghcr.io/wasmcloud/components/http-hello-world-rust:0.1.0
+        id: http_hello_world
       traits:
         - type: spreadscaler
           properties:
             instances: 3
-        # Updated linkdef trait
-        - type: linkdef
-          properties:
-            target: httpserver
-            values:
-              address: 0.0.0.0:8082
+    # kvredis component no longer present
 
     # Updated provider component
     - name: httpserver
       type: capability
       properties:
-        contract: wasmcloud:httpserver
-        image: wasmcloud.azurecr.io/httpserver:0.19.0
+        image: ghcr.io/wasmcloud/http-server:0.21.0
+        id: http_server
+      traits:
+        # Updated linkdef trait
+        - type: link
+          properties:
+            target: hello-world
+            namespace: wasi
+            package: http
+            interfaces:
+              - incoming-handler
+            source_config:
+              - name: hello-world-address
+                properties:
+                  address: 0.0.0.0:8082
+        - type: link
+          properties:
+            target: dog-fetcher
+            namespace: wasi
+            package: http
+            interfaces:
+              - incoming-handler
+            source_config:
+              - name: dog-fetcher-address
+                properties:
+                  address: 0.0.0.0:8081
+# Redis provider no longer present

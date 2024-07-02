@@ -6,7 +6,7 @@ The wasmCloud Application Deployment Manager uses the [Open Application Model](h
 
 The following is a list of the `component`s wasmCloud has added to the model.
 
-- `actor` - An actor
+- `component` - A WebAssembly component
 - `provider` - A capability provider
 
 ## wasmCloud OAM Traits
@@ -14,7 +14,7 @@ The following is a list of the `component`s wasmCloud has added to the model.
 The following is a list of the `traits` wasmCloud has added via customization to its application model.
 
 - `spreadscaler` - Defines the spread of instances of a particular entity across multiple hosts with affinity requirements
-- `linkdef` - A link definition that describes a link between an actor and a capability provider
+- `link` - A link definition that describes a link between a component and a capability provider or a component and another component
 
 ## Example Application YAML
 
@@ -27,7 +27,7 @@ metadata:
   name: my-example-app
   annotations:
     version: v0.0.1
-    description: "This is my app"
+    description: 'This is my app'
 spec:
   components:
     - name: userinfo
@@ -51,7 +51,7 @@ spec:
           properties:
             target: webcap
             values:
-              port: "8080"
+              port: '8080'
 
     - name: webcap
       type: capability
@@ -73,6 +73,6 @@ spec:
             spread:
               - name: haslights
                 requirements:
-                  ledenabled: "true"
+                  ledenabled: 'true'
                 # default weight is 100
 ```

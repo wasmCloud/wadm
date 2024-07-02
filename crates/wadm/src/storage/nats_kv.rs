@@ -9,8 +9,8 @@
 //! the encoding in the future. Because of this, DO NOT depend on accessing this data other than
 //! through this module
 //!
-//! All data is currently stored in a single encoded map per type (host, actor, provider), where the
-//! keys are the ID as given by [`StateId::id`]. Once again, we reserve the right to change this
+//! All data is currently stored in a single encoded map per type (host, component, provider), where
+//! the keys are the ID as given by [`StateId::id`]. Once again, we reserve the right to change this
 //! structure in the future
 use std::collections::HashMap;
 use std::io::Error as IoError;
@@ -141,7 +141,7 @@ impl Store for NatsKvStore {
     ///
     /// The given data can be anything that can be turned into an iterator of (key, value). This
     /// means you can pass a [`HashMap`](std::collections::HashMap) or something like
-    /// `["key".to_string(), Actor{...}]`
+    /// `["key".to_string(), Component{...}]`
     ///
     /// This function has several required bounds. It needs to be serialize and deserialize because
     /// some implementations will need to deserialize the current data before modifying it.
@@ -160,7 +160,7 @@ impl Store for NatsKvStore {
             .internal_list::<T>(lattice_id)
             .in_current_span()
             .await?;
-        debug!("Updating data in store");
+        debug!(revision, "Updating data in store");
         for (id, item) in data.into_iter() {
             if current_data.insert(id, item).is_some() {
                 // NOTE: We may want to return the old data in the future. For now, keeping it simple

@@ -151,7 +151,7 @@ pub struct Component {
 }
 
 impl Component {
-    /// A helper method that returns the total count of running copies of this actor, regardless of
+    /// A helper method that returns the total count of running copies of this component, regardless of
     /// which host they are running on
     pub fn count(&self) -> usize {
         self.instances
@@ -160,7 +160,7 @@ impl Component {
             .sum()
     }
 
-    /// A helper method that returns the total count of running copies of this actor on a specific
+    /// A helper method that returns the total count of running copies of this component on a specific
     /// host
     pub fn count_for_host(&self, host_id: &str) -> usize {
         self.instances
@@ -281,13 +281,13 @@ impl From<&HostStarted> for Host {
 
 impl From<HostHeartbeat> for Host {
     fn from(value: HostHeartbeat) -> Self {
-        let actors = value
+        let components = value
             .components
             .into_iter()
-            .map(|actor| {
+            .map(|component| {
                 (
-                    actor.id, // SAFETY: Unlikely to not fit into a usize, but fallback just in case
-                    actor.max_instances.try_into().unwrap_or(usize::MAX),
+                    component.id, // SAFETY: Unlikely to not fit into a usize, but fallback just in case
+                    component.max_instances.try_into().unwrap_or(usize::MAX),
                 )
             })
             .collect();
@@ -307,7 +307,7 @@ impl From<HostHeartbeat> for Host {
             .collect();
 
         Host {
-            components: actors,
+            components,
             friendly_name: value.friendly_name,
             labels: value.labels,
             providers,
@@ -321,14 +321,14 @@ impl From<HostHeartbeat> for Host {
 
 impl From<&HostHeartbeat> for Host {
     fn from(value: &HostHeartbeat) -> Self {
-        let actors = value
+        let components = value
             .components
             .iter()
-            .map(|actor| {
+            .map(|component| {
                 (
-                    actor.id.to_owned(),
+                    component.id.to_owned(),
                     // SAFETY: Unlikely to not fit into a usize, but fallback just in case
-                    actor.max_instances.try_into().unwrap_or(usize::MAX),
+                    component.max_instances.try_into().unwrap_or(usize::MAX),
                 )
             })
             .collect();
@@ -348,7 +348,7 @@ impl From<&HostHeartbeat> for Host {
             .collect();
 
         Host {
-            components: actors,
+            components,
             friendly_name: value.friendly_name.clone(),
             labels: value.labels.clone(),
             providers,

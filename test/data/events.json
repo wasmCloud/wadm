@@ -33,7 +33,7 @@
     "time": "2024-01-22T20:15:26.855859Z",
     "data": {
       "annotations": {},
-      "error": "actor is already running with a different image reference `wasmcloud.azurecr.io/echo:0.3.4`",
+      "error": "component is already running with a different image reference `wasmcloud.azurecr.io/echo:0.3.4`",
       "host_id": "NCBAWBHRT6JNSQIYQEURM3AQZ74I6HTQRRCFMTVPC3OAX4BUTCNTYADZ",
       "image_ref": "wasmcloud.azurecr.io/echo:0.3.8",
       "component_id": "wasmcloud_azurecr_io_echo_0_3_4",

@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use anyhow::Result;
 use async_trait::async_trait;
-use base64::{engine::general_purpose, Engine as _};
+use sha2::{Digest, Sha256};
 use tokio::{
     sync::{Mutex, RwLock},
     task::JoinHandle,
@@ -437,10 +437,12 @@ fn evt_matches_expected(incoming: &Event, expected: &Event) -> bool {
     }
 }
 
-/// Hash the named configurations to generate a unique identifier for the scaler
-///
-/// This is only called when the config is not empty so we don't need to worry about
-/// returning empty strings.
-pub(crate) fn compute_config_hash(config: &[String]) -> String {
-    general_purpose::STANDARD.encode(config.join("_"))
+/// Computes the sha256 digest of the given parameters to form a unique ID for a scaler
+pub(crate) fn compute_id_sha256(params: &[&str]) -> String {
+    let mut hasher = Sha256::new();
+    for param in params {
+        hasher.update(param.as_bytes())
+    }
+    let hash = hasher.finalize();
+    format!("{hash:x}")
 }
