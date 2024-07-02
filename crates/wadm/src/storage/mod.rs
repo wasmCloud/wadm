@@ -62,7 +62,7 @@ pub trait Store: ReadStore {
     ///
     /// The given data can be anything that can be turned into an iterator of (key, value). This
     /// means you can pass a [`HashMap`](std::collections::HashMap) or something like
-    /// `["key".to_string(), Actor{...}]`
+    /// `["key".to_string(), Component{...}]`
     ///
     /// This function has several required bounds. It needs to be serialize and deserialize because
     /// some implementations will need to deserialize the current data before modifying it.

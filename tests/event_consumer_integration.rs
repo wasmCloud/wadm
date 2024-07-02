@@ -114,7 +114,7 @@ async fn test_event_stream() -> Result<()> {
             event.component_id
         );
     } else {
-        panic!("Event wasn't an component started event");
+        panic!("Event wasn't a component scaled event");
     }
     evt.ack().await.expect("Should be able to ack event");
 
@@ -256,7 +256,7 @@ async fn test_event_stream() -> Result<()> {
             event.component_id
         );
     } else {
-        panic!("Event wasn't an component stopped event");
+        panic!("Event wasn't a component scaled event");
     }
     evt.ack().await.expect("Should be able to ack event");
 
@@ -271,7 +271,7 @@ async fn test_event_stream() -> Result<()> {
             host.id
         );
     } else {
-        panic!("Event wasn't an component stopped event");
+        panic!("Event wasn't a component scaled event");
     }
     evt.ack().await.expect("Should be able to ack event");
 
@@ -315,7 +315,7 @@ async fn test_nack_and_rereceive() -> Result<()> {
             component.component_id
         );
     } else {
-        panic!("Event wasn't an component started event");
+        panic!("Event wasn't a component scaled event");
     }
 
     evt.nack().await;
@@ -329,7 +329,7 @@ async fn test_nack_and_rereceive() -> Result<()> {
             component.component_id
         );
     } else {
-        panic!("Event wasn't an component scaled event");
+        panic!("Event wasn't a component scaled event");
     }
 
     evt.ack().await.expect("Should be able to ack event");

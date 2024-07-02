@@ -3,7 +3,7 @@ kind: Application
 metadata:
   name: kvcounter-rust
   annotations:
-    description: "Kvcounter demo in Rust, using the WebAssembly Component Model and WebAssembly Interfaces Types (WIT)"
+    description: 'Kvcounter demo in Rust, using the WebAssembly Component Model and WebAssembly Interfaces Types (WIT)'
   labels:
     app.oam.io/name: kvcounter-rust
 spec:
@@ -13,7 +13,7 @@ spec:
       properties:
         image: file:///Users/brooks/github.com/wasmcloud/wadm/kvc/build/http_hello_world_s.wasm
       traits:
-        # Govern the spread/scheduling of the actor
+        # Govern the spread/scheduling of the component
         - type: spreadscaler
           properties:
             replicas: 1

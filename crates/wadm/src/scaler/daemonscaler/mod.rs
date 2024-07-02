@@ -24,7 +24,7 @@ pub mod provider;
 // Annotation constants
 pub const COMPONENT_DAEMON_SCALER_TYPE: &str = "componentdaemonscaler";
 
-/// Config for an ComponentDaemonScaler
+/// Config for a ComponentDaemonScaler
 #[derive(Clone, Debug)]
 struct ComponentSpreadConfig {
     /// OCI, Bindle, or File reference for a component

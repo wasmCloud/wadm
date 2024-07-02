@@ -143,7 +143,7 @@ pub enum Properties {
 pub struct ComponentProperties {
     /// The image reference to use
     pub image: String,
-    /// The component ID to use for this actor. If not supplied, it will be generated
+    /// The component ID to use for this component. If not supplied, it will be generated
     /// as a combination of the [Metadata::name] and the image reference.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
@@ -367,13 +367,13 @@ mod test {
     #[ignore] // see TODO in TraitProperty enum
     fn test_custom_traits() {
         let manifest = deserialize_yaml("./oam/custom.yaml").expect("Should be able to parse");
-        let actor_component = manifest
+        let component = manifest
             .spec
             .components
             .into_iter()
             .find(|comp| matches!(comp.properties, Properties::Component { .. }))
-            .expect("Should be able to find actor component");
-        let traits = actor_component.traits.expect("Should have Vec of traits");
+            .expect("Should be able to find component");
+        let traits = component.traits.expect("Should have Vec of traits");
         assert!(
             traits
                 .iter()
@@ -426,7 +426,7 @@ mod test {
                 .filter(|component| matches!(component.properties, Properties::Component { .. }))
                 .count(),
             1,
-            "Should have found 1 actor property"
+            "Should have found 1 component property"
         );
         assert_eq!(
             manifest
@@ -443,14 +443,14 @@ mod test {
     #[test]
     fn test_trait_matching() {
         let manifest = deserialize_yaml("./oam/simple2.yaml").expect("Should be able to parse");
-        // Validate actor component traits
+        // Validate component traits
         let traits = manifest
             .spec
             .components
             .clone()
             .into_iter()
             .find(|component| matches!(component.properties, Properties::Component { .. }))
-            .expect("Should find actor component")
+            .expect("Should find component component")
             .traits
             .expect("Should have traits object");
         assert_eq!(traits.len(), 1, "Should have 1 trait");

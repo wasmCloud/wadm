@@ -46,7 +46,7 @@ async fn test_commands() {
         .await
         .unwrap();
 
-    // Start an component
+    // Start a component
     wrapper
         .publish_command(ScaleComponent {
             component_id: HELLO_COMPONENT_ID.to_string(),
@@ -376,7 +376,7 @@ async fn test_annotation_stop() {
     // finished updating its inventory
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
-    // Start an component
+    // Start a component
     wrapper
         .publish_command(ScaleComponent {
             component_id: HELLO_COMPONENT_ID.to_string(),
