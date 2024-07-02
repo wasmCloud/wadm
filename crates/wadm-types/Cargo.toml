@@ -34,6 +34,4 @@ tracing-futures = { workspace = true }
 ulid = { workspace = true, features = ["serde"] }
 uuid = { workspace = true }
 wasmcloud-control-interface = { workspace = true }
-
-[target.family.wasm.dependencies]
 wit-bindgen-wrpc = { workspace = true }
