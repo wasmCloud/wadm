@@ -8,6 +8,10 @@ keywords = ["webassembly", "wasmcloud", "wadm"]
 license = "Apache-2.0"
 repository = "https://github.com/wasmcloud/wadm"
 
+[features]
+default = []
+wit = ["wit-bindgen-wrpc"]
+
 [dependencies]
 serde_yaml = { workspace = true }
 anyhow = { workspace = true }
@@ -34,4 +38,4 @@ tracing-futures = { workspace = true }
 ulid = { workspace = true, features = ["serde"] }
 uuid = { workspace = true }
 wasmcloud-control-interface = { workspace = true }
-wit-bindgen-wrpc = { workspace = true }
+wit-bindgen-wrpc = { workspace = true, optional = true }

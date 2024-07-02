@@ -3,7 +3,9 @@ use std::collections::{BTreeMap, HashMap};
 use serde::{Deserialize, Serialize};
 
 pub mod api;
+#[cfg(feature = "wit")]
 pub mod bindings;
+#[cfg(feature = "wit")]
 pub use bindings::*;
 pub mod validation;
 
