@@ -47,10 +47,12 @@ async fn run_multiple_host_tests() {
     // on the lattice will initialize the lattice monitor and for the following test we quickly assert things.
     let mut sub = client_info
         .client
-        .subscribe("wadm.evt.default".to_string())
+        .subscribe("wasmbus.evt.default.>".to_string())
         .await
         .expect("Should be able to subscribe to default events");
-    let _ = sub.next().await;
+    let _ = tokio::time::timeout(Duration::from_secs(45), sub.next())
+        .await
+        .expect("Timed out waiting for first event");
 
     // Wait for hosts to start
     let mut did_start = false;

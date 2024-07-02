@@ -34,12 +34,12 @@ impl CommandConsumer {
     /// contained in the topic
     pub async fn new(
         stream: JsStream,
-        topic: &str,
+        topics: Vec<String>,
         lattice_id: &str,
         multitenant_prefix: Option<&str>,
     ) -> Result<CommandConsumer, NatsError> {
-        if !topic.contains(lattice_id) {
-            return Err(format!("Topic {topic} does not match for lattice ID {lattice_id}").into());
+        if !topics.iter().all(|t| t.contains(lattice_id)) {
+            return Err(format!("Filter topics do not match for lattice ID {lattice_id}").into());
         }
 
         let consumer_name = if let Some(prefix) = multitenant_prefix {
@@ -60,7 +60,7 @@ impl CommandConsumer {
                     ack_wait: super::DEFAULT_ACK_TIME,
                     max_deliver: 3,
                     deliver_policy: async_nats::jetstream::consumer::DeliverPolicy::All,
-                    filter_subject: topic.to_owned(),
+                    filter_subjects: topics,
                     ..Default::default()
                 },
             )
@@ -129,10 +129,10 @@ impl CreateConsumer for CommandConsumer {
 
     async fn create(
         stream: async_nats::jetstream::stream::Stream,
-        topic: &str,
+        topics: Vec<String>,
         lattice_id: &str,
         multitenant_prefix: Option<&str>,
     ) -> Result<Self::Output, NatsError> {
-        CommandConsumer::new(stream, topic, lattice_id, multitenant_prefix).await
+        CommandConsumer::new(stream, topics, lattice_id, multitenant_prefix).await
     }
 }

@@ -25,14 +25,19 @@ impl<P: Publisher> ManifestNotifier<P> {
     }
 
     #[instrument(level = "trace", skip(self))]
-    async fn send_event(&self, lattice_id: &str, event: Event) -> anyhow::Result<()> {
+    async fn send_event(
+        &self,
+        lattice_id: &str,
+        event_subject_key: &str,
+        event: Event,
+    ) -> anyhow::Result<()> {
         let event: CloudEvent = event.try_into()?;
         // NOTE(thomastaylor312): A future improvement could be retries here
         trace!("Sending notification event");
         self.publisher
             .publish(
                 serde_json::to_vec(&event)?,
-                Some(&format!("{}.{lattice_id}", self.prefix)),
+                Some(&format!("{}.{lattice_id}.{event_subject_key}", self.prefix)),
             )
             .await
     }
@@ -40,6 +45,7 @@ impl<P: Publisher> ManifestNotifier<P> {
     pub async fn deployed(&self, lattice_id: &str, manifest: Manifest) -> anyhow::Result<()> {
         self.send_event(
             lattice_id,
+            "manifest_published",
             Event::ManifestPublished(ManifestPublished { manifest }),
         )
         .await
@@ -48,6 +54,7 @@ impl<P: Publisher> ManifestNotifier<P> {
     pub async fn undeployed(&self, lattice_id: &str, name: &str) -> anyhow::Result<()> {
         self.send_event(
             lattice_id,
+            "manifest_unpublished",
             Event::ManifestUnpublished(ManifestUnpublished {
                 name: name.to_owned(),
             }),
