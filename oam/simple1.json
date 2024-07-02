@@ -53,9 +53,7 @@
               "target": "webcap",
               "namespace": "wasi",
               "package": "http",
-              "interfaces": [
-                "incoming-handler"
-              ],
+              "interfaces": ["incoming-handler"],
               "name": "default"
             }
           }

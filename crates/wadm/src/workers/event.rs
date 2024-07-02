@@ -56,47 +56,47 @@ where
     // multiple error cases, it was just easier to catch it into an anyhow Error and then convert at
     // the end
 
-    #[instrument(level = "debug", skip(self, actor), fields(component_id = %actor.component_id, host_id = %actor.host_id))]
+    #[instrument(level = "debug", skip(self, component), fields(component_id = %component.component_id, host_id = %component.host_id))]
     async fn handle_component_scaled(
         &self,
         lattice_id: &str,
-        actor: &ComponentScaled,
+        component: &ComponentScaled,
     ) -> anyhow::Result<()> {
-        trace!("Scaling actor in store");
-        debug!("Fetching current data for actor");
+        trace!("Scaling component in store");
+        debug!("Fetching current data for component");
 
-        // Update actor count in the actor state, adding to the state if it didn't exist or removing
+        // Update component count in the component state, adding to the state if it didn't exist or removing
         // if the scale is down to zero.
-        let mut actor_data = Component::from(actor);
+        let mut component_data = Component::from(component);
         if let Some(mut current) = self
             .store
-            .get::<Component>(lattice_id, &actor.component_id)
+            .get::<Component>(lattice_id, &component.component_id)
             .await?
         {
-            trace!(actor = ?current, "Found existing actor data");
+            trace!(component = ?current, "Found existing component data");
 
-            match current.instances.get_mut(&actor.host_id) {
-                // If the actor is running and is now scaled down to zero, remove it
-                Some(current_instances) if actor.max_instances == 0 => {
-                    current_instances.remove(&actor.annotations);
+            match current.instances.get_mut(&component.host_id) {
+                // If the component is running and is now scaled down to zero, remove it
+                Some(current_instances) if component.max_instances == 0 => {
+                    current_instances.remove(&component.annotations);
                 }
-                // If an actor is already running on a host, update the running count to the scaled max_instances value
+                // If a component is already running on a host, update the running count to the scaled max_instances value
                 Some(current_instances) => {
                     current_instances.replace(WadmComponentInfo {
-                        count: actor.max_instances,
-                        annotations: actor.annotations.clone(),
+                        count: component.max_instances,
+                        annotations: component.annotations.clone(),
                     });
                 }
-                // Actor is not running and now scaled to zero, no action required. This can happen if we
+                // Component is not running and now scaled to zero, no action required. This can happen if we
                 // update the state before we receive the ComponentScaled event
-                None if actor.max_instances == 0 => (),
-                // If an actor isn't running yet, add it with the scaled max_instances value
+                None if component.max_instances == 0 => (),
+                // If a component isn't running yet, add it with the scaled max_instances value
                 None => {
                     current.instances.insert(
-                        actor.host_id.clone(),
+                        component.host_id.clone(),
                         HashSet::from([WadmComponentInfo {
-                            count: actor.max_instances,
-                            annotations: actor.annotations.clone(),
+                            count: component.max_instances,
+                            annotations: component.annotations.clone(),
                         }]),
                     );
                 }
@@ -105,27 +105,31 @@ where
             // If we stopped the last instance on a host, remove the host from the component data
             if current
                 .instances
-                .get(&actor.host_id)
+                .get(&component.host_id)
                 .is_some_and(|instances| instances.is_empty())
             {
-                current.instances.remove(&actor.host_id);
+                current.instances.remove(&component.host_id);
             }
 
-            // Take the updated counts and store them in the actor data
-            actor_data.instances = current.instances;
+            // Take the updated counts and store them in the component data
+            component_data.instances = current.instances;
         };
 
-        // Update actor count in the host state, removing the actor if the scale is zero
-        if let Some(mut host) = self.store.get::<Host>(lattice_id, &actor.host_id).await? {
+        // Update component count in the host state, removing the component if the scale is zero
+        if let Some(mut host) = self
+            .store
+            .get::<Host>(lattice_id, &component.host_id)
+            .await?
+        {
             trace!(host = ?host, "Found existing host data");
 
-            if actor.max_instances == 0 {
-                host.components.remove(&actor.component_id);
+            if component.max_instances == 0 {
+                host.components.remove(&component.component_id);
             } else {
                 host.components
-                    .entry(actor.component_id.clone())
-                    .and_modify(|count| *count = actor.max_instances)
-                    .or_insert(actor.max_instances);
+                    .entry(component.component_id.clone())
+                    .and_modify(|count| *count = component.max_instances)
+                    .or_insert(component.max_instances);
             }
 
             self.store
@@ -133,14 +137,14 @@ where
                 .await?
         }
 
-        if actor_data.instances.is_empty() {
+        if component_data.instances.is_empty() {
             self.store
-                .delete::<Component>(lattice_id, &actor.component_id)
+                .delete::<Component>(lattice_id, &component.component_id)
                 .await
                 .map_err(anyhow::Error::from)
         } else {
             self.store
-                .store(lattice_id, actor.component_id.clone(), actor_data)
+                .store(lattice_id, component.component_id.clone(), component_data)
                 .await
                 .map_err(anyhow::Error::from)
         }
@@ -165,7 +169,7 @@ where
 
         // NOTE: We can return an error here and then nack because we'll just reupdate the host data
         // with the exact same host heartbeat entry. There is no possibility of a duplicate
-        self.heartbeat_actor_update(lattice_id, host, &host.components)
+        self.heartbeat_component_update(lattice_id, host, &host.components)
             .await?;
 
         Ok(())
@@ -193,8 +197,8 @@ where
     ) -> anyhow::Result<()> {
         debug!("Handling host stopped event");
         // NOTE(thomastaylor312): Generally to get a host stopped event, the host should have
-        // already sent a bunch of stop actor/provider events, but for correctness sake, we fetch
-        // the current host and make sure all the actors and providers are removed
+        // already sent a bunch of stop component/provider events, but for correctness sake, we fetch
+        // the current host and make sure all the components and providers are removed
         trace!("Fetching current host data");
         let current: Host = match self.store.get(lattice_id, &host.id).await? {
             Some(h) => h,
@@ -204,32 +208,34 @@ where
             }
         };
 
-        trace!("Fetching actors from store to remove stopped instances");
+        trace!("Fetching components from store to remove stopped instances");
         let all_components = self.store.list::<Component>(lattice_id).await?;
 
         #[allow(clippy::type_complexity)]
-        let (actors_to_update, actors_to_delete): (
+        let (components_to_update, components_to_delete): (
             Vec<(String, Component)>,
             Vec<(String, Component)>,
         ) = all_components
             .into_iter()
-            .filter_map(|(id, mut actor)| {
+            .filter_map(|(id, mut component)| {
                 if current.components.contains_key(&id) {
-                    actor.instances.remove(&current.id);
-                    Some((id, actor))
+                    component.instances.remove(&current.id);
+                    Some((id, component))
                 } else {
                     None
                 }
             })
-            .partition(|(_, actor)| !actor.instances.is_empty());
-        trace!("Storing updated actors in store");
-        self.store.store_many(lattice_id, actors_to_update).await?;
+            .partition(|(_, component)| !component.instances.is_empty());
+        trace!("Storing updated components in store");
+        self.store
+            .store_many(lattice_id, components_to_update)
+            .await?;
 
-        trace!("Removing actors with no more running instances");
+        trace!("Removing components with no more running instances");
         self.store
             .delete_many::<Component, _, _>(
                 lattice_id,
-                actors_to_delete.into_iter().map(|(id, _)| id),
+                components_to_delete.into_iter().map(|(id, _)| id),
             )
             .await?;
 
@@ -271,7 +277,7 @@ where
 
         // Order matters here: Now that we've cleaned stuff up, remove the host. We do this last
         // because if any of the above fails after we remove the host, we won't be able to fetch the
-        // data to remove the actors and providers on a retry.
+        // data to remove the components and providers on a retry.
         debug!("Deleting host from store");
         self.store
             .delete::<Host>(lattice_id, &host.id)
@@ -469,9 +475,9 @@ where
     }
 
     // END HANDLER FUNCTIONS
-    async fn populate_actor_info(
+    async fn populate_component_info(
         &self,
-        actors: &HashMap<String, Component>,
+        components: &HashMap<String, Component>,
         host_id: &str,
         instance_map: Vec<ComponentDescription>,
     ) -> anyhow::Result<Vec<(String, Component)>> {
@@ -479,48 +485,48 @@ where
 
         Ok(instance_map
             .into_iter()
-            .map(|actor_description| {
+            .map(|component_description| {
                 let instance = HashSet::from_iter([WadmComponentInfo {
-                    count: actor_description.max_instances as usize,
-                    annotations: actor_description
+                    count: component_description.max_instances as usize,
+                    annotations: component_description
                         .annotations
                         .map(|a| a.into_iter().collect())
                         .unwrap_or_default(),
                 }]);
-                if let Some(actor) = actors.get(&actor_description.id) {
-                    // Construct modified Actor with new instances included
-                    let mut new_instances = actor.instances.clone();
+                if let Some(component) = components.get(&component_description.id) {
+                    // Construct modified Component with new instances included
+                    let mut new_instances = component.instances.clone();
                     new_instances.insert(host_id.to_owned(), instance);
                     let component = Component {
                         instances: new_instances,
-                        reference: actor_description.image_ref,
-                        name: actor_description.name.unwrap_or(actor.name.clone()),
-                        ..actor.clone()
+                        reference: component_description.image_ref,
+                        name: component_description.name.unwrap_or(component.name.clone()),
+                        ..component.clone()
                     };
 
-                    (actor_description.id, component)
-                } else if let Some(claim) = claims.get(&actor_description.id) {
+                    (component_description.id, component)
+                } else if let Some(claim) = claims.get(&component_description.id) {
                     (
-                        actor_description.id.clone(),
+                        component_description.id.clone(),
                         Component {
-                            id: actor_description.id,
+                            id: component_description.id,
                             name: claim.name.to_owned(),
                             issuer: claim.issuer.to_owned(),
                             instances: HashMap::from_iter([(host_id.to_owned(), instance)]),
-                            reference: actor_description.image_ref,
+                            reference: component_description.image_ref,
                         },
                     )
                 } else {
                     debug!("Claims not found for component on host, component is unsigned");
 
                     (
-                        actor_description.id.clone(),
+                        component_description.id.clone(),
                         Component {
-                            id: actor_description.id,
+                            id: component_description.id,
                             name: "".to_owned(),
                             issuer: "".to_owned(),
                             instances: HashMap::from_iter([(host_id.to_owned(), instance)]),
-                            reference: actor_description.image_ref,
+                            reference: component_description.image_ref,
                         },
                     )
                 }
@@ -529,45 +535,46 @@ where
     }
 
     #[instrument(level = "debug", skip(self, host), fields(host_id = %host.host_id))]
-    async fn heartbeat_actor_update(
+    async fn heartbeat_component_update(
         &self,
         lattice_id: &str,
         host: &HostHeartbeat,
-        inventory_actors: &Vec<ComponentDescription>,
+        inventory_components: &Vec<ComponentDescription>,
     ) -> anyhow::Result<()> {
-        debug!("Fetching current actor state");
-        let actors = self.store.list::<Component>(lattice_id).await?;
+        debug!("Fetching current component state");
+        let components = self.store.list::<Component>(lattice_id).await?;
 
-        // Compare stored Actors to the "true" list on this host, updating stored
-        // Actors when they differ from the authoratative heartbeat
-        let actors_to_update = inventory_actors
+        // Compare stored Components to the "true" list on this host, updating stored
+        // Components when they differ from the authoratative heartbeat
+        let components_to_update = inventory_components
             .iter()
-            .filter_map(|actor_description| {
-                if actors
-                    .get(&actor_description.id)
-                    // NOTE(brooksmtownsend): This code maps the actor to a boolean indicating if it's up-to-date with the heartbeat or not.
-                    // If the actor matches what the heartbeat says, we return None, otherwise we return Some(actor_description).
-                    .map(|actor| {
+            .filter_map(|component_description| {
+                if components
+                    .get(&component_description.id)
+                    // NOTE(brooksmtownsend): This code maps the component to a boolean indicating if it's up-to-date with the heartbeat or not.
+                    // If the component matches what the heartbeat says, we return None, otherwise we return Some(component_description).
+                    .map(|component| {
                         // If the stored reference isn't what we receive on the heartbeat, update
-                        actor_description.image_ref == actor.reference
-                            && actor
+                        component_description.image_ref == component.reference
+                            && component
                                 .instances
                                 .get(&host.host_id)
                                 .map(|store_instances| {
                                     // Update if the number of instances is different
-                                    if store_instances.len() != actor.instances.len() {
+                                    if store_instances.len() != component.instances.len() {
                                         return false;
                                     }
                                     // Update if annotations or counts are different
-                                    let annotations: BTreeMap<String, String> = actor_description
-                                        .annotations
-                                        .clone()
-                                        .map(|a| a.into_iter().collect())
-                                        .unwrap_or_default();
+                                    let annotations: BTreeMap<String, String> =
+                                        component_description
+                                            .annotations
+                                            .clone()
+                                            .map(|a| a.into_iter().collect())
+                                            .unwrap_or_default();
                                     store_instances.get(&annotations).map_or(
                                         false,
                                         |store_instance| {
-                                            actor_description.max_instances as usize
+                                            component_description.max_instances as usize
                                                 == store_instance.count
                                         },
                                     )
@@ -578,19 +585,21 @@ where
                 {
                     None
                 } else {
-                    Some(actor_description.to_owned())
+                    Some(component_description.to_owned())
                 }
             })
-            // actor ID to all instances on this host
+            // component ID to all instances on this host
             .collect::<Vec<ComponentDescription>>();
 
-        let actors_to_store = self
-            .populate_actor_info(&actors, &host.host_id, actors_to_update)
+        let components_to_store = self
+            .populate_component_info(&components, &host.host_id, components_to_update)
             .await?;
 
-        trace!("Updating actors with new status from host");
+        trace!("Updating components with new status from host");
 
-        self.store.store_many(lattice_id, actors_to_store).await?;
+        self.store
+            .store_many(lattice_id, components_to_store)
+            .await?;
 
         Ok(())
     }
@@ -732,7 +741,7 @@ where
         self.command_publisher.publish_commands(commands).await?;
 
         // Now publish the cleanup commands from the old scalers. This will cause the new scalers to
-        // react to the actors/providers/linkdefs disappearing and create new ones with the new
+        // react to the components/providers/linkdefs disappearing and create new ones with the new
         // versions
         if let Err(e) = self
             .command_publisher
@@ -843,11 +852,11 @@ where
     async fn do_work(&self, mut message: ScopedMessage<Self::Message>) -> WorkResult<()> {
         // Everything in this block returns a name hint for the success case and an error otherwise
         let res = match message.as_ref() {
-            Event::ComponentScaled(actor) => self
-                .handle_component_scaled(&message.lattice_id, actor)
+            Event::ComponentScaled(component) => self
+                .handle_component_scaled(&message.lattice_id, component)
                 .await
                 .map(|_| {
-                    actor
+                    component
                         .annotations
                         .get(APP_SPEC_ANNOTATION)
                         .map(|s| s.as_str())
@@ -1113,10 +1122,10 @@ mod test {
         assert_eq!(host.labels, labels, "Host should have the correct labels");
 
         /***********************************************************/
-        /******************** Actor Scale Tests ********************/
+        /****************** Component Scale Tests ******************/
         /***********************************************************/
 
-        let actor1_scaled = ComponentScaled {
+        let component1_scaled = ComponentScaled {
             claims: Some(ComponentClaims {
                 call_alias: Some("Grand Moff".into()),
                 issuer: "Sheev Palpatine".into(),
@@ -1131,25 +1140,27 @@ mod test {
             max_instances: 500,
         };
         worker
-            .handle_component_scaled(lattice_id, &actor1_scaled)
+            .handle_component_scaled(lattice_id, &component1_scaled)
             .await
-            .expect("Should be able to handle actor event");
-        let actors = store.list::<Component>(lattice_id).await.unwrap();
-        let actor = actors.get("TARKIN").expect("Actor should exist in state");
+            .expect("Should be able to handle component event");
+        let components = store.list::<Component>(lattice_id).await.unwrap();
+        let component = components
+            .get("TARKIN")
+            .expect("Component should exist in state");
         let hosts = store.list::<Host>(lattice_id).await.unwrap();
         let host = hosts.get(&host1_id).expect("Host should exist in state");
         assert_eq!(
-            host.components.get(&actor1_scaled.component_id),
+            host.components.get(&component1_scaled.component_id),
             Some(&500),
-            "Actor count in host should be updated"
+            "Component count in host should be updated"
         );
         assert_eq!(
-            actor.count_for_host(&host1_id),
+            component.count_for_host(&host1_id),
             500,
-            "Actor count should be modified with an increase in scale"
+            "Component count should be modified with an increase in scale"
         );
 
-        let actor1_scaled = ComponentScaled {
+        let component1_scaled = ComponentScaled {
             claims: Some(ComponentClaims {
                 call_alias: Some("Grand Moff".into()),
                 issuer: "Sheev Palpatine".into(),
@@ -1164,25 +1175,27 @@ mod test {
             max_instances: 200,
         };
         worker
-            .handle_component_scaled(lattice_id, &actor1_scaled)
+            .handle_component_scaled(lattice_id, &component1_scaled)
             .await
-            .expect("Should be able to handle actor event");
-        let actors = store.list::<Component>(lattice_id).await.unwrap();
-        let actor = actors.get("TARKIN").expect("Actor should exist in state");
+            .expect("Should be able to handle component event");
+        let components = store.list::<Component>(lattice_id).await.unwrap();
+        let component = components
+            .get("TARKIN")
+            .expect("Component should exist in state");
         let hosts = store.list::<Host>(lattice_id).await.unwrap();
         let host = hosts.get(&host1_id).expect("Host should exist in state");
         assert_eq!(
-            host.components.get(&actor1_scaled.component_id),
+            host.components.get(&component1_scaled.component_id),
             Some(&200),
-            "Actor count in host should be updated"
+            "Component count in host should be updated"
         );
         assert_eq!(
-            actor.count_for_host(&host1_id),
+            component.count_for_host(&host1_id),
             200,
-            "Actor count should be modified with a decrease in scale"
+            "Component count should be modified with a decrease in scale"
         );
 
-        let actor1_scaled = ComponentScaled {
+        let component1_scaled = ComponentScaled {
             claims: Some(ComponentClaims {
                 call_alias: Some("Grand Moff".into()),
                 issuer: "Sheev Palpatine".into(),
@@ -1197,23 +1210,23 @@ mod test {
             max_instances: 0,
         };
         worker
-            .handle_component_scaled(lattice_id, &actor1_scaled)
+            .handle_component_scaled(lattice_id, &component1_scaled)
             .await
-            .expect("Should be able to handle actor event");
-        let actors = store.list::<Component>(lattice_id).await.unwrap();
+            .expect("Should be able to handle component event");
+        let components = store.list::<Component>(lattice_id).await.unwrap();
         let hosts = store.list::<Host>(lattice_id).await.unwrap();
         let host = hosts.get(&host1_id).expect("Host should exist in state");
         assert_eq!(
-            host.components.get(&actor1_scaled.component_id),
+            host.components.get(&component1_scaled.component_id),
             None,
-            "Actor in host should be removed"
+            "Component in host should be removed"
         );
         assert!(
-            actors.get("TARKIN").is_none(),
-            "Actor should be removed from state"
+            components.get("TARKIN").is_none(),
+            "Component should be removed from state"
         );
 
-        let actor1_scaled = ComponentScaled {
+        let component1_scaled = ComponentScaled {
             claims: Some(ComponentClaims {
                 call_alias: Some("Grand Moff".into()),
                 issuer: "Sheev Palpatine".into(),
@@ -1228,35 +1241,37 @@ mod test {
             max_instances: 1,
         };
         worker
-            .handle_component_scaled(lattice_id, &actor1_scaled)
+            .handle_component_scaled(lattice_id, &component1_scaled)
             .await
-            .expect("Should be able to handle actor event");
-        let actors = store.list::<Component>(lattice_id).await.unwrap();
-        let actor = actors.get("TARKIN").expect("Actor should exist in state");
+            .expect("Should be able to handle component event");
+        let components = store.list::<Component>(lattice_id).await.unwrap();
+        let component = components
+            .get("TARKIN")
+            .expect("Component should exist in state");
         let hosts = store.list::<Host>(lattice_id).await.unwrap();
         let host = hosts.get(&host1_id).expect("Host should exist in state");
         assert_eq!(
-            host.components.get(&actor1_scaled.component_id),
+            host.components.get(&component1_scaled.component_id),
             Some(&1),
-            "Actor in host should be readded from scratch"
+            "Component in host should be readded from scratch"
         );
         assert_eq!(
-            actor.count_for_host(&host1_id),
+            component.count_for_host(&host1_id),
             1,
-            "Actor count should be modified with an initial start"
+            "Component count should be modified with an initial start"
         );
         worker
             .handle_component_scaled(
                 lattice_id,
                 &ComponentScaled {
                     host_id: host2_id.clone(),
-                    ..actor1_scaled.clone()
+                    ..component1_scaled.clone()
                 },
             )
             .await
-            .expect("Should be able to handle actor event");
+            .expect("Should be able to handle component event");
 
-        let actor2_scaled = ComponentScaled {
+        let component2_scaled = ComponentScaled {
             claims: Some(ComponentClaims {
                 call_alias: Some("Darth".into()),
                 issuer: "Sheev Palpatine".into(),
@@ -1272,7 +1287,7 @@ mod test {
         };
 
         worker
-            .handle_component_scaled(lattice_id, &actor2_scaled)
+            .handle_component_scaled(lattice_id, &component2_scaled)
             .await
             .expect("Should be able to handle component scaled event");
         worker
@@ -1280,11 +1295,11 @@ mod test {
                 lattice_id,
                 &ComponentScaled {
                     host_id: host2_id.clone(),
-                    ..actor2_scaled.clone()
+                    ..component2_scaled.clone()
                 },
             )
             .await
-            .expect("Should be able to handle actor event");
+            .expect("Should be able to handle component event");
 
         /***********************************************************/
         /****************** Provider Start Tests *******************/
@@ -1351,7 +1366,7 @@ mod test {
         assert_eq!(
             host.components.len(),
             2,
-            "Should have two different actors running"
+            "Should have two different components running"
         );
         assert_eq!(
             host.providers.len(),
@@ -1362,7 +1377,7 @@ mod test {
         assert_eq!(
             host.components.len(),
             2,
-            "Should have two different actors running"
+            "Should have two different components running"
         );
         assert_eq!(
             host.providers.len(),
@@ -1370,8 +1385,8 @@ mod test {
             "Should have a single provider running"
         );
 
-        let actor_1_id = "TARKIN".to_string();
-        let actor_2_id = "DARTHVADER".to_string();
+        let component_1_id = "TARKIN".to_string();
+        let component_2_id = "DARTHVADER".to_string();
 
         worker
             .handle_host_heartbeat(
@@ -1379,7 +1394,7 @@ mod test {
                 &HostHeartbeat {
                     components: vec![
                         ComponentDescription {
-                            id: actor_1_id.to_string(),
+                            id: component_1_id.to_string(),
                             image_ref: "ref1".to_string(),
                             annotations: None,
                             revision: 0,
@@ -1387,7 +1402,7 @@ mod test {
                             name: None,
                         },
                         ComponentDescription {
-                            id: actor_2_id.to_string(),
+                            id: component_2_id.to_string(),
                             image_ref: "ref2".to_string(),
                             annotations: None,
                             revision: 0,
@@ -1429,7 +1444,7 @@ mod test {
                 &HostHeartbeat {
                     components: vec![
                         ComponentDescription {
-                            id: actor_1_id.to_string(),
+                            id: component_1_id.to_string(),
                             image_ref: "ref1".to_string(),
                             annotations: None,
                             revision: 0,
@@ -1437,7 +1452,7 @@ mod test {
                             name: None,
                         },
                         ComponentDescription {
-                            id: actor_2_id.to_string(),
+                            id: component_2_id.to_string(),
                             image_ref: "ref2".to_string(),
                             annotations: None,
                             revision: 0,
@@ -1464,16 +1479,28 @@ mod test {
             .await
             .expect("Should be able to handle host heartbeat");
 
-        // Check that our actor and provider data is still correct.
+        // Check that our component and provider data is still correct.
         let providers = store.list::<Provider>(lattice_id).await.unwrap();
         assert_eq!(providers.len(), 2, "Should still have 2 providers in state");
         assert_provider(&providers, &provider1, &[&host1_id]);
         assert_provider(&providers, &provider2, &[&host1_id, &host2_id]);
 
-        let actors = store.list::<Component>(lattice_id).await.unwrap();
-        assert_eq!(actors.len(), 2, "Should still have 2 actors in state");
-        assert_actor(&actors, &actor_1_id, &[(&host1_id, 2), (&host2_id, 2)]);
-        assert_actor(&actors, &actor_2_id, &[(&host1_id, 2), (&host2_id, 2)]);
+        let components = store.list::<Component>(lattice_id).await.unwrap();
+        assert_eq!(
+            components.len(),
+            2,
+            "Should still have 2 components in state"
+        );
+        assert_component(
+            &components,
+            &component_1_id,
+            &[(&host1_id, 2), (&host2_id, 2)],
+        );
+        assert_component(
+            &components,
+            &component_2_id,
+            &[(&host1_id, 2), (&host2_id, 2)],
+        );
 
         /***********************************************************/
         /************** Component Scale Down Tests *****************/
@@ -1484,7 +1511,7 @@ mod test {
             claims: None,
             image_ref: "coruscant.galactic.empire/tarkin:0.1.0".into(),
             annotations: BTreeMap::default(),
-            component_id: actor_1_id.clone(),
+            component_id: component_1_id.clone(),
             host_id: host1_id.clone(),
             max_instances: 0,
         };
@@ -1492,20 +1519,28 @@ mod test {
         worker
             .handle_component_scaled(lattice_id, &stopped)
             .await
-            .expect("Should be able to handle actor stop event");
+            .expect("Should be able to handle component stop event");
 
-        let actors = store.list::<Component>(lattice_id).await.unwrap();
-        assert_eq!(actors.len(), 2, "Should still have 2 actors in state");
-        assert_actor(&actors, &actor_1_id, &[(&host2_id, 2)]);
-        assert_actor(&actors, &actor_2_id, &[(&host1_id, 2), (&host2_id, 2)]);
+        let components = store.list::<Component>(lattice_id).await.unwrap();
+        assert_eq!(
+            components.len(),
+            2,
+            "Should still have 2 components in state"
+        );
+        assert_component(&components, &component_1_id, &[(&host2_id, 2)]);
+        assert_component(
+            &components,
+            &component_2_id,
+            &[(&host1_id, 2), (&host2_id, 2)],
+        );
 
         let host = store
             .get::<Host>(lattice_id, &host2_id)
             .await
             .expect("Should be able to access store")
             .expect("Should have the host in the store");
-        assert_eq!(*host.components.get(&actor_1_id).unwrap_or(&0), 2_usize);
-        assert_eq!(*host.components.get(&actor_2_id).unwrap_or(&0), 2_usize);
+        assert_eq!(*host.components.get(&component_1_id).unwrap_or(&0), 2_usize);
+        assert_eq!(*host.components.get(&component_2_id).unwrap_or(&0), 2_usize);
 
         // Now stop on the other
         let stopped2 = ComponentScaled {
@@ -1518,10 +1553,14 @@ mod test {
             .await
             .expect("Should be able to handle component scale event");
 
-        let actors = store.list::<Component>(lattice_id).await.unwrap();
-        assert_eq!(actors.len(), 1, "Should only have 1 actor in state");
+        let components = store.list::<Component>(lattice_id).await.unwrap();
+        assert_eq!(components.len(), 1, "Should only have 1 component in state");
         // Double check the the old one is still ok
-        assert_actor(&actors, &actor_2_id, &[(&host1_id, 2), (&host2_id, 2)]);
+        assert_component(
+            &components,
+            &component_2_id,
+            &[(&host1_id, 2), (&host2_id, 2)],
+        );
 
         /***********************************************************/
         /******************* Provider Stop Tests *******************/
@@ -1549,10 +1588,10 @@ mod test {
         let hosts = store.list::<Host>(lattice_id).await.unwrap();
         assert_eq!(hosts.len(), 2, "Should only have 2 hosts");
         let host = hosts.get(&host1_id).expect("Host should still exist");
-        assert_eq!(host.components.len(), 1, "Should have 1 actor running");
+        assert_eq!(host.components.len(), 1, "Should have 1 component running");
         assert_eq!(host.providers.len(), 1, "Should have 1 provider running");
         let host = hosts.get(&host2_id).expect("Host should still exist");
-        assert_eq!(host.components.len(), 1, "Should have 1 actor running");
+        assert_eq!(host.components.len(), 1, "Should have 1 component running");
         assert_eq!(
             host.providers.len(),
             1,
@@ -1571,7 +1610,7 @@ mod test {
                 HostInventory {
                     friendly_name: "my-host-3".to_string(),
                     components: vec![ComponentDescription {
-                        id: actor_2_id.to_string(),
+                        id: component_2_id.to_string(),
                         image_ref: "ref2".to_string(),
                         annotations: None,
                         revision: 0,
@@ -1591,7 +1630,7 @@ mod test {
                 HostInventory {
                     friendly_name: "my-host-4".to_string(),
                     components: vec![ComponentDescription {
-                        id: actor_2_id.to_string(),
+                        id: component_2_id.to_string(),
                         image_ref: "ref2".to_string(),
                         annotations: None,
                         revision: 0,
@@ -1614,7 +1653,7 @@ mod test {
                 lattice_id,
                 &HostHeartbeat {
                     components: vec![ComponentDescription {
-                        id: actor_2_id.to_string(),
+                        id: component_2_id.to_string(),
                         image_ref: "ref2".to_string(),
                         annotations: None,
                         revision: 0,
@@ -1645,7 +1684,7 @@ mod test {
                 lattice_id,
                 &HostHeartbeat {
                     components: vec![ComponentDescription {
-                        id: actor_2_id.to_string(),
+                        id: component_2_id.to_string(),
                         image_ref: "ref2".to_string(),
                         annotations: None,
                         revision: 0,
@@ -1675,20 +1714,24 @@ mod test {
         let hosts = store.list::<Host>(lattice_id).await.unwrap();
         assert_eq!(hosts.len(), 2, "Should only have 2 hosts");
         let host = hosts.get(&host1_id).expect("Host should still exist");
-        assert_eq!(host.components.len(), 1, "Should have 1 actor running");
+        assert_eq!(host.components.len(), 1, "Should have 1 component running");
         assert_eq!(host.providers.len(), 1, "Should have 1 provider running");
         let host = hosts.get(&host2_id).expect("Host should still exist");
-        assert_eq!(host.components.len(), 1, "Should have 1 actor running");
+        assert_eq!(host.components.len(), 1, "Should have 1 component running");
         assert_eq!(
             host.providers.len(),
             1,
             "Should have a single provider running"
         );
 
-        // Double check providers and actors are the same
-        let actors = store.list::<Component>(lattice_id).await.unwrap();
-        assert_eq!(actors.len(), 1, "Should only have 1 actor in state");
-        assert_actor(&actors, &actor_2_id, &[(&host1_id, 2), (&host2_id, 2)]);
+        // Double check providers and components are the same
+        let components = store.list::<Component>(lattice_id).await.unwrap();
+        assert_eq!(components.len(), 1, "Should only have 1 component in state");
+        assert_component(
+            &components,
+            &component_2_id,
+            &[(&host1_id, 2), (&host2_id, 2)],
+        );
 
         let providers = store.list::<Provider>(lattice_id).await.unwrap();
         assert_eq!(providers.len(), 2, "Should still have 2 providers in state");
@@ -1713,17 +1756,17 @@ mod test {
         let hosts = store.list::<Host>(lattice_id).await.unwrap();
         assert_eq!(hosts.len(), 1, "Should only have 1 host");
         let host = hosts.get(&host2_id).expect("Host should still exist");
-        assert_eq!(host.components.len(), 1, "Should have 1 actor running");
+        assert_eq!(host.components.len(), 1, "Should have 1 component running");
         assert_eq!(
             host.providers.len(),
             1,
             "Should have a single provider running"
         );
 
-        // Double check providers and actors are the same
-        let actors = store.list::<Component>(lattice_id).await.unwrap();
-        assert_eq!(actors.len(), 1, "Should only have 1 actor in state");
-        assert_actor(&actors, &actor_2_id, &[(&host2_id, 2)]);
+        // Double check providers and components are the same
+        let components = store.list::<Component>(lattice_id).await.unwrap();
+        assert_eq!(components.len(), 1, "Should only have 1 component in state");
+        assert_component(&components, &component_2_id, &[(&host2_id, 2)]);
 
         let providers = store.list::<Provider>(lattice_id).await.unwrap();
         assert_eq!(providers.len(), 1, "Should now have 1 provider in state");
@@ -1732,14 +1775,14 @@ mod test {
 
     #[tokio::test]
     async fn test_discover_running_host() {
-        let actor1_id = "SKYWALKER".to_string();
-        let actor1_ref = "fakecloud.io/skywalker:0.1.0".to_string();
-        let actor2_id = "ORGANA".to_string();
-        let actor2_ref = "fakecloud.io/organa:0.1.0".to_string();
+        let component1_id = "SKYWALKER".to_string();
+        let component1_ref = "fakecloud.io/skywalker:0.1.0".to_string();
+        let component2_id = "ORGANA".to_string();
+        let component2_ref = "fakecloud.io/organa:0.1.0".to_string();
         let lattice_id = "discover_running_host";
         let claims = HashMap::from([
             (
-                actor1_id.clone(),
+                component1_id.clone(),
                 Claims {
                     name: "tosche_station".to_string(),
                     capabilities: vec!["wasmcloud:httpserver".to_string()],
@@ -1747,7 +1790,7 @@ mod test {
                 },
             ),
             (
-                actor2_id.clone(),
+                component2_id.clone(),
                 Claims {
                     name: "alderaan".to_string(),
                     capabilities: vec!["wasmcloud:keyvalue".to_string()],
@@ -1790,16 +1833,16 @@ mod test {
                 friendly_name: "my-host-5".to_string(),
                 components: vec![
                     ComponentDescription {
-                        id: actor1_id.to_string(),
-                        image_ref: actor1_ref.to_string(),
+                        id: component1_id.to_string(),
+                        image_ref: component1_ref.to_string(),
                         annotations: None,
                         revision: 0,
                         max_instances: 2,
                         name: None,
                     },
                     ComponentDescription {
-                        id: actor2_id.to_string(),
-                        image_ref: actor2_ref.to_string(),
+                        id: component2_id.to_string(),
+                        image_ref: component2_ref.to_string(),
                         annotations: None,
                         revision: 0,
                         max_instances: 1,
@@ -1821,23 +1864,23 @@ mod test {
             },
         )]);
 
-        // Heartbeat with actors and providers that don't exist in the store yet
+        // Heartbeat with components and providers that don't exist in the store yet
         worker
             .handle_host_heartbeat(
                 lattice_id,
                 &HostHeartbeat {
                     components: vec![
                         ComponentDescription {
-                            id: actor1_id.to_string(),
-                            image_ref: actor1_ref.to_string(),
+                            id: component1_id.to_string(),
+                            image_ref: component1_ref.to_string(),
                             annotations: None,
                             revision: 0,
                             max_instances: 2,
                             name: None,
                         },
                         ComponentDescription {
-                            id: actor2_id.to_string(),
-                            image_ref: actor2_ref.to_string(),
+                            id: component2_id.to_string(),
+                            image_ref: component2_ref.to_string(),
                             annotations: None,
                             revision: 0,
                             max_instances: 1,
@@ -1863,38 +1906,42 @@ mod test {
             .await
             .expect("Should be able to handle host heartbeat");
 
-        // We test that the host is created in other tests, so just check that the actors and
+        // We test that the host is created in other tests, so just check that the components and
         // providers were created properly
-        let actors = store.list::<Component>(lattice_id).await.unwrap();
-        assert_eq!(actors.len(), 2, "Store should now have two actors");
-        let actor = actors.get(&actor1_id).expect("Actor should exist");
-        let expected = claims.get(&actor1_id).unwrap();
-        assert_eq!(actor.name, expected.name, "Data should match");
-        assert_eq!(actor.issuer, expected.issuer, "Data should match");
+        let components = store.list::<Component>(lattice_id).await.unwrap();
+        assert_eq!(components.len(), 2, "Store should now have two components");
+        let component = components
+            .get(&component1_id)
+            .expect("component should exist");
+        let expected = claims.get(&component1_id).unwrap();
+        assert_eq!(component.name, expected.name, "Data should match");
+        assert_eq!(component.issuer, expected.issuer, "Data should match");
         assert_eq!(
-            actor
+            component
                 .instances
                 .get(&host_id)
                 .expect("Host should exist in count")
                 .get(&BTreeMap::new())
-                .expect("Should find an actor with the correct annotations")
+                .expect("Should find a component with the correct annotations")
                 .count,
             2,
-            "Should have the right number of actors running"
+            "Should have the right number of components running"
         );
 
-        let actor = actors.get(&actor2_id).expect("Actor should exist");
-        let expected = claims.get(&actor2_id).unwrap();
-        assert_eq!(actor.name, expected.name, "Data should match");
-        assert_eq!(actor.issuer, expected.issuer, "Data should match");
+        let component = components
+            .get(&component2_id)
+            .expect("Component should exist");
+        let expected = claims.get(&component2_id).unwrap();
+        assert_eq!(component.name, expected.name, "Data should match");
+        assert_eq!(component.issuer, expected.issuer, "Data should match");
         assert_eq!(
-            actor
+            component
                 .instances
                 .get(&host_id)
                 .expect("Host should exist in count")
                 .len(),
             1,
-            "Should have the right number of actors running"
+            "Should have the right number of components running"
         );
 
         let providers = store.list::<Provider>(lattice_id).await.unwrap();
@@ -2036,7 +2083,7 @@ mod test {
 
         let host_id = "jabbaspalace";
 
-        // Store existing actors and providers as-if they had the minimum
+        // Store existing components and providers as-if they had the minimum
         // amount of information
         store
             .store(
@@ -2117,21 +2164,21 @@ mod test {
             .await
             .expect("Should be able to handle host heartbeat");
 
-        let actors = store.list::<Component>(lattice_id).await.unwrap();
-        assert_eq!(actors.len(), 2, "Should have 2 actors in the store");
-        let actor = actors.get("jabba").expect("Actor should exist");
+        let components = store.list::<Component>(lattice_id).await.unwrap();
+        assert_eq!(components.len(), 2, "Should have 2 components in the store");
+        let component = components.get("jabba").expect("Component should exist");
         assert_eq!(
-            actor.count(),
+            component.count(),
             5,
-            "Actor should have the correct number of instances"
+            "Component should have the correct number of instances"
         );
-        assert_eq!(actor.name, "Da Hutt", "Should have the correct name");
+        assert_eq!(component.name, "Da Hutt", "Should have the correct name");
         assert_eq!(
-            actor.reference, "jabba.tatooinecr.io/jabba:latest",
+            component.reference, "jabba.tatooinecr.io/jabba:latest",
             "Should have the correct reference"
         );
         assert_eq!(
-            actor
+            component
                 .instances
                 .get(host_id)
                 .expect("instances to be on our specified host")
@@ -2184,23 +2231,28 @@ mod test {
         );
     }
 
-    fn assert_actor(
-        actors: &HashMap<String, Component>,
-        actor_id: &str,
+    fn assert_component(
+        components: &HashMap<String, Component>,
+        component_id: &str,
         expected_counts: &[(&str, usize)],
     ) {
-        let actor = actors.get(actor_id).expect("Actor should exist in store");
-        assert_eq!(actor.id, actor_id, "Actor ID stored should be correct");
+        let component = components
+            .get(component_id)
+            .expect("Component should exist in store");
+        assert_eq!(
+            component.id, component_id,
+            "Component ID stored should be correct"
+        );
         assert_eq!(
             expected_counts.len(),
-            actor.instances.len(),
-            "Should have the proper number of hosts the actor is running on"
+            component.instances.len(),
+            "Should have the proper number of hosts the component is running on"
         );
         for (expected_host, expected_count) in expected_counts.iter() {
             assert_eq!(
-                actor.count_for_host(expected_host),
+                component.count_for_host(expected_host),
                 *expected_count,
-                "Actor count on host should be correct"
+                "Component count on host should be correct"
             );
         }
     }

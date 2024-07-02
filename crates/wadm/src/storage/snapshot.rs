@@ -71,7 +71,7 @@ where
             .into_iter()
             .map(|(key, val)| (key, serde_json::to_value(val).unwrap()))
             .collect::<HashMap<_, _>>();
-        let actors = self
+        let components = self
             .store
             .list::<Component>(&self.lattice_id)
             .await?
@@ -90,7 +90,7 @@ where
         {
             let mut stored_state = self.stored_state.write().await;
             stored_state.insert(Provider::KIND.to_owned(), providers);
-            stored_state.insert(Component::KIND.to_owned(), actors);
+            stored_state.insert(Component::KIND.to_owned(), components);
             stored_state.insert(Host::KIND.to_owned(), hosts);
         }
 

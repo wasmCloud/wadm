@@ -23,7 +23,7 @@ spec:
         # image: file://./build/sqldb_postgres_query_s.wasm
         image: ghcr.io/wasmcloud/components/sqldb-postgres-query-rust:0.1.0
       traits:
-        # Govern the spread/scheduling of the actor
+        # Govern the spread/scheduling of the component
         - type: spreadscaler
           properties:
             replicas: 1
