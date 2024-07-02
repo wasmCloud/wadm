@@ -18,7 +18,7 @@ use crate::{
     SCALER_KEY,
 };
 
-use super::compute_config_hash;
+use super::compute_id_sha256;
 
 pub mod link;
 pub mod provider;
@@ -28,12 +28,12 @@ const SPREAD_KEY: &str = "wasmcloud.dev/spread_name";
 
 pub const COMPONENT_SPREAD_SCALER_TYPE: &str = "componentspreadscaler";
 
-/// Config for an ActorSpreadScaler
+/// Config for an ComponentSpreadScaler
 #[derive(Clone)]
-struct ActorSpreadConfig {
-    /// OCI, Bindle, or File reference for an actor
-    actor_reference: String,
-    /// Unique component identifier for an actor
+struct ComponentSpreadConfig {
+    /// OCI, Bindle, or File reference for an component
+    component_reference: String,
+    /// Unique component identifier for an component
     component_id: String,
     /// Lattice ID that this SpreadScaler monitors
     lattice_id: String,
@@ -43,13 +43,13 @@ struct ActorSpreadConfig {
     spread_config: SpreadScalerProperty,
 }
 
-/// The ActorSpreadScaler ensures that a certain number of instances are running,
+/// The ComponentSpreadScaler ensures that a certain number of instances are running,
 /// spread across a number of hosts according to a [SpreadScalerProperty](crate::model::SpreadScalerProperty)
 ///
 /// If no [Spreads](crate::model::Spread) are specified, this Scaler simply maintains the number of instances
 /// on an available host
-pub struct ActorSpreadScaler<S> {
-    spread_config: ActorSpreadConfig,
+pub struct ComponentSpreadScaler<S> {
+    spread_config: ComponentSpreadConfig,
     spread_requirements: Vec<(Spread, usize)>,
     store: S,
     id: String,
@@ -59,7 +59,7 @@ pub struct ActorSpreadScaler<S> {
 }
 
 #[async_trait]
-impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
+impl<S: ReadStore + Send + Sync + Clone> Scaler for ComponentSpreadScaler<S> {
     fn id(&self) -> &str {
         &self.id
     }
@@ -140,7 +140,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
                 if host.components.contains_key(component_id) {
                     Some(Command::ScaleComponent(ScaleComponent {
                         component_id: component_id.to_owned(),
-                        reference: self.spread_config.actor_reference.to_owned(),
+                        reference: self.spread_config.component_reference.to_owned(),
                         host_id: host_id.to_string(),
                         count: 0,
                         model_name: self.spread_config.model_name.to_owned(),
@@ -172,13 +172,13 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
                 let eligible_hosts = eligible_hosts(&hosts, spread);
                 if !eligible_hosts.is_empty() {
                     // In the future we may want more information from this chain, but for now
-                    // we just need the number of running actors that match this spread's annotations
+                    // we just need the number of running components that match this spread's annotations
 
-                    // Parse the instances into a map of host_id -> number of running actors managed
+                    // Parse the instances into a map of host_id -> number of running components managed
                     // by this scaler. Ignoring ones where we aren't running anything
-                    let running_actors_per_host: HashMap<&String, usize> = component
+                    let running_components_per_host: HashMap<&String, usize> = component
                         .as_ref()
-                        .map(|actor| &actor.instances)
+                        .map(|component| &component.instances)
                         .map(|instances| {
                             instances
                                 .iter()
@@ -200,17 +200,17 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
                                 }).collect()
                         })
                         .unwrap_or_default();
-                    let current_count: usize = running_actors_per_host.values().sum();
-                    trace!(current = %current_count, expected = %count, "Calculated running actors, reconciling with expected count");
+                    let current_count: usize = running_components_per_host.values().sum();
+                    trace!(current = %current_count, expected = %count, "Calculated running components, reconciling with expected count");
                     // Here we'll generate commands for the proper host depending on where they are running
                     match current_count.cmp(count) {
                         Ordering::Equal => None,
-                        // Start actors to reach desired instances
+                        // Start components to reach desired instances
                         Ordering::Less =>{
                             // Right now just start on the first available host. We can be smarter about it later
                             Some(vec![Command::ScaleComponent(ScaleComponent {
                                 component_id: component_id.to_owned(),
-                                reference: self.spread_config.actor_reference.to_owned(),
+                                reference: self.spread_config.component_reference.to_owned(),
                                 // SAFETY: We already checked that the list of hosts is not empty, so we can unwrap here
                                 host_id: eligible_hosts.keys().next().unwrap().to_string(),
                                 count: *count as u32,
@@ -219,11 +219,11 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
                                         config: self.config.clone(),
                             })])
                         }
-                        // Stop actors to reach desired instances
+                        // Stop components to reach desired instances
                         Ordering::Greater => {
-                            // Actors across all available hosts that exceed our desired number
+                            // Components across all available hosts that exceed our desired number
                             let count_to_stop = current_count - count;
-                            let (_, commands) = running_actors_per_host.into_iter().fold((0usize, Vec::new()), |(mut current_stopped, mut commands), (host_id, instance_count)| {
+                            let (_, commands) = running_components_per_host.into_iter().fold((0usize, Vec::new()), |(mut current_stopped, mut commands), (host_id, instance_count)| {
                                 let remaining_to_stop = count_to_stop - current_stopped;
                                 // Desired count on the host, subtracting the number we need to stop
                                 // from the total number of instances on the host, down to 0.
@@ -235,7 +235,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
                                     current_stopped += std::cmp::min(instance_count, remaining_to_stop);
                                     commands.push(Command::ScaleComponent(ScaleComponent {
                                         component_id: component_id.to_owned(),
-                                        reference: self.spread_config.actor_reference.to_owned(),
+                                        reference: self.spread_config.component_reference.to_owned(),
                                         host_id: host_id.to_owned(),
                                         count: count as u32,
                                         model_name: self.spread_config.model_name.to_owned(),
@@ -249,15 +249,15 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
                         }
                     }
                 } else {
-                    // No hosts were eligible, so we can't attempt to add or remove actors
+                    // No hosts were eligible, so we can't attempt to add or remove components
                     trace!(?spread.name, "Found no eligible hosts for spread");
-                    spread_status.push(StatusInfo::failed(&format!("Could not satisfy spread {} for {}, 0/1 eligible hosts found.", spread.name, self.spread_config.actor_reference)));
+                    spread_status.push(StatusInfo::failed(&format!("Could not satisfy spread {} for {}, 0/1 eligible hosts found.", spread.name, self.spread_config.component_reference)));
                     None
                 }
             })
             .flatten()
             .collect::<Vec<Command>>();
-        trace!(?commands, "Calculated commands for actor scaler");
+        trace!(?commands, "Calculated commands for component scaler");
 
         let status = if spread_status.is_empty() {
             StatusInfo::deployed("")
@@ -282,7 +282,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
         config_clone.spread_config.instances = 0;
         let spread_requirements = compute_spread(&config_clone.spread_config);
 
-        let cleanerupper = ActorSpreadScaler {
+        let cleanerupper = ComponentSpreadScaler {
             spread_config: config_clone,
             store: self.store.clone(),
             spread_requirements,
@@ -295,12 +295,12 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ActorSpreadScaler<S> {
     }
 }
 
-impl<S: ReadStore + Send + Sync> ActorSpreadScaler<S> {
-    /// Construct a new ActorSpreadScaler with specified configuration values
+impl<S: ReadStore + Send + Sync> ComponentSpreadScaler<S> {
+    /// Construct a new ComponentSpreadScaler with specified configuration values
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         store: S,
-        actor_reference: String,
+        component_reference: String,
         component_id: String,
         lattice_id: String,
         model_name: String,
@@ -308,18 +308,24 @@ impl<S: ReadStore + Send + Sync> ActorSpreadScaler<S> {
         component_name: &str,
         config: Vec<String>,
     ) -> Self {
-        let mut id =
-            format!("{COMPONENT_SPREAD_SCALER_TYPE}-{model_name}-{component_name}-{component_id}");
+        // Compute the id of this scaler based on all of the configuration values
+        // that make it unique. This is used during upgrades to determine if a
+        // scaler is the same as a previous one.
+        let mut id_parts = vec![
+            COMPONENT_SPREAD_SCALER_TYPE,
+            &model_name,
+            component_name,
+            &component_id,
+            &component_reference,
+        ];
+        id_parts.extend(config.iter().map(std::string::String::as_str));
+        let id = compute_id_sha256(&id_parts);
 
-        if !config.is_empty() {
-            id.push('-');
-            id.push_str(&compute_config_hash(&config));
-        }
         Self {
             store,
             spread_requirements: compute_spread(&spread_config),
-            spread_config: ActorSpreadConfig {
-                actor_reference,
+            spread_config: ComponentSpreadConfig {
+                component_reference,
                 component_id,
                 lattice_id,
                 spread_config,
@@ -378,7 +384,7 @@ pub(crate) fn compute_ineligible_hosts<'a>(
 }
 
 /// Given a spread config, return a vector of tuples that represents the spread
-/// and the actual number of actors to start for a specific spread requirement
+/// and the actual number of components to start for a specific spread requirement
 fn compute_spread(spread_config: &SpreadScalerProperty) -> Vec<(Spread, usize)> {
     let requested_instances = spread_config.instances;
     let mut requested_spreads = spread_config.spread.clone();
@@ -431,7 +437,7 @@ fn compute_spread(spread_config: &SpreadScalerProperty) -> Vec<(Spread, usize)> 
         // This isn't possible (usizes round down) but I added an arm _just in case_
         // there was a case that I didn't imagine
         Ordering::Greater => {
-            warn!("Requesting more actor instances than were specified");
+            warn!("Requesting more component instances than were specified");
             computed_spreads
         }
         Ordering::Equal => computed_spreads,
@@ -473,7 +479,7 @@ mod test {
         },
         scaler::{
             manager::ScalerManager,
-            spreadscaler::{spreadscaler_annotations, ActorSpreadScaler},
+            spreadscaler::{spreadscaler_annotations, ComponentSpreadScaler},
             Scaler,
         },
         storage::{Component, Host, Store, WadmComponentInfo},
@@ -635,8 +641,8 @@ mod test {
 
     #[tokio::test]
     async fn can_compute_spread_commands() -> Result<()> {
-        let lattice_id = "hoohah_multi_stop_actor";
-        let actor_reference = "fakecloud.azurecr.io/echo:0.3.4".to_string();
+        let lattice_id = "hoohah_multi_stop_component";
+        let component_reference = "fakecloud.azurecr.io/echo:0.3.4".to_string();
         let component_id = "fakecloud_azurecr_io_echo_0_3_4".to_string();
         let host_id = "NASDASDIMAREALHOST";
 
@@ -691,9 +697,9 @@ mod test {
             ],
         };
 
-        let spreadscaler = ActorSpreadScaler::new(
+        let spreadscaler = ComponentSpreadScaler::new(
             store.clone(),
-            actor_reference.to_string(),
+            component_reference.to_string(),
             component_id.to_string(),
             lattice_id.to_string(),
             MODEL_NAME.to_string(),
@@ -706,7 +712,7 @@ mod test {
         assert_eq!(cmds.len(), 3);
         assert!(cmds.contains(&Command::ScaleComponent(ScaleComponent {
             component_id: component_id.to_string(),
-            reference: actor_reference.to_string(),
+            reference: component_reference.to_string(),
             host_id: host_id.to_string(),
             count: 10,
             model_name: MODEL_NAME.to_string(),
@@ -715,7 +721,7 @@ mod test {
         })));
         assert!(cmds.contains(&Command::ScaleComponent(ScaleComponent {
             component_id: component_id.to_string(),
-            reference: actor_reference.to_string(),
+            reference: component_reference.to_string(),
             host_id: host_id.to_string(),
             count: 8,
             model_name: MODEL_NAME.to_string(),
@@ -724,7 +730,7 @@ mod test {
         })));
         assert!(cmds.contains(&Command::ScaleComponent(ScaleComponent {
             component_id: component_id.to_string(),
-            reference: actor_reference.to_string(),
+            reference: component_reference.to_string(),
             host_id: host_id.to_string(),
             count: 85,
             model_name: MODEL_NAME.to_string(),
@@ -739,9 +745,9 @@ mod test {
     async fn can_scale_up_and_down() -> Result<()> {
         let lattice_id = "computing_spread_commands";
         let echo_ref = "fakecloud.azurecr.io/echo:0.3.4".to_string();
-        let echo_id = "MASDASDIAMAREALACTORECHO";
+        let echo_id = "MASDASDIAMAREALCOMPONENTECHO";
         let blobby_ref = "fakecloud.azurecr.io/blobby:0.5.2".to_string();
-        let blobby_id = "MASDASDIAMAREALACTORBLOBBY";
+        let blobby_id = "MASDASDIAMAREALCOMPONENTBLOBBY";
 
         let host_id_one = "NASDASDIMAREALHOSTONE";
         let host_id_two = "NASDASDIMAREALHOSTTWO";
@@ -803,7 +809,7 @@ mod test {
             ],
         };
 
-        let echo_spreadscaler = ActorSpreadScaler::new(
+        let echo_spreadscaler = ComponentSpreadScaler::new(
             store.clone(),
             echo_ref.to_string(),
             echo_id.to_string(),
@@ -814,7 +820,7 @@ mod test {
             vec![],
         );
 
-        let blobby_spreadscaler = ActorSpreadScaler::new(
+        let blobby_spreadscaler = ComponentSpreadScaler::new(
             store.clone(),
             blobby_ref.to_string(),
             blobby_id.to_string(),
@@ -920,7 +926,7 @@ mod test {
                     components: HashMap::from_iter([
                         (echo_id.to_string(), 1),
                         (blobby_id.to_string(), 3),
-                        ("MSOMEOTHERACTOR".to_string(), 3),
+                        ("MSOMEOTHERCOMPONENT".to_string(), 3),
                     ]),
                     friendly_name: "hey".to_string(),
                     labels: HashMap::from_iter([
@@ -1036,7 +1042,7 @@ mod test {
     #[tokio::test]
     async fn can_handle_multiple_spread_matches() -> Result<()> {
         let lattice_id = "multiple_spread_matches";
-        let actor_reference = "fakecloud.azurecr.io/echo:0.3.4".to_string();
+        let component_reference = "fakecloud.azurecr.io/echo:0.3.4".to_string();
         let component_id = "fakecloud_azurecr_io_echo_0_3_4".to_string();
         let host_id = "NASDASDIMAREALHOST";
 
@@ -1062,9 +1068,9 @@ mod test {
             ],
         };
 
-        let spreadscaler = ActorSpreadScaler::new(
+        let spreadscaler = ComponentSpreadScaler::new(
             store.clone(),
-            actor_reference.to_string(),
+            component_reference.to_string(),
             component_id.to_string(),
             lattice_id.to_string(),
             MODEL_NAME.to_string(),
@@ -1110,7 +1116,7 @@ mod test {
                             annotations: spreadscaler_annotations("SimpleOne", spreadscaler.id()),
                         }]),
                     )]),
-                    reference: actor_reference.to_string(),
+                    reference: component_reference.to_string(),
                 },
             )
             .await?;
@@ -1121,7 +1127,7 @@ mod test {
         // Should be enforcing 10 instances per spread
         assert!(cmds.contains(&Command::ScaleComponent(ScaleComponent {
             component_id: "fakecloud_azurecr_io_echo_0_3_4".to_string(),
-            reference: actor_reference.to_string(),
+            reference: component_reference.to_string(),
             host_id: host_id.to_string(),
             count: 15,
             model_name: MODEL_NAME.to_string(),
@@ -1130,7 +1136,7 @@ mod test {
         })));
         assert!(cmds.contains(&Command::ScaleComponent(ScaleComponent {
             component_id: "fakecloud_azurecr_io_echo_0_3_4".to_string(),
-            reference: actor_reference.to_string(),
+            reference: component_reference.to_string(),
             host_id: host_id.to_string(),
             count: 5,
             model_name: MODEL_NAME.to_string(),
@@ -1144,7 +1150,7 @@ mod test {
     #[tokio::test]
     async fn calculates_proper_scale_commands() -> Result<()> {
         let lattice_id = "calculates_proper_scale_commands";
-        let actor_reference = "fakecloud.azurecr.io/echo:0.3.4".to_string();
+        let component_reference = "fakecloud.azurecr.io/echo:0.3.4".to_string();
         let component_id = "fakecloud_azurecr_io_echo_0_3_4".to_string();
         let host_id = "NASDASDIMAREALHOST";
         let host_id2 = "NASDASDIMAREALHOST2";
@@ -1157,9 +1163,9 @@ mod test {
             spread: Vec::new(),
         };
 
-        let spreadscaler = ActorSpreadScaler::new(
+        let spreadscaler = ComponentSpreadScaler::new(
             store.clone(),
-            actor_reference.to_string(),
+            component_reference.to_string(),
             component_id.to_string(),
             lattice_id.to_string(),
             MODEL_NAME.to_string(),
@@ -1229,7 +1235,7 @@ mod test {
                             }]),
                         ),
                     ]),
-                    reference: actor_reference.to_string(),
+                    reference: component_reference.to_string(),
                 },
             )
             .await?;
@@ -1240,8 +1246,8 @@ mod test {
         assert_eq!(cmds.len(), 2);
         assert!(
             cmds.iter().any(|command| {
-                if let Command::ScaleComponent(actor) = command {
-                    actor.host_id == host_id
+                if let Command::ScaleComponent(component) = command {
+                    component.host_id == host_id
                 } else {
                     false
                 }
@@ -1250,8 +1256,8 @@ mod test {
         );
         assert!(
             cmds.iter().any(|command| {
-                if let Command::ScaleComponent(actor) = command {
-                    actor.host_id == host_id2
+                if let Command::ScaleComponent(component) = command {
+                    component.host_id == host_id2
                 } else {
                     false
                 }
@@ -1265,7 +1271,7 @@ mod test {
         // Should stop 10 on each host
         assert!(cmds.contains(&Command::ScaleComponent(ScaleComponent {
             component_id: component_id.clone(),
-            reference: actor_reference.clone(),
+            reference: component_reference.clone(),
             host_id: host_id.to_string(),
             count: 0,
             model_name: MODEL_NAME.to_string(),
@@ -1274,7 +1280,7 @@ mod test {
         })));
         assert!(cmds.contains(&Command::ScaleComponent(ScaleComponent {
             component_id: component_id.clone(),
-            reference: actor_reference.clone(),
+            reference: component_reference.clone(),
             host_id: host_id2.to_string(),
             count: 0,
             model_name: MODEL_NAME.to_string(),
@@ -1288,7 +1294,7 @@ mod test {
     async fn can_react_to_events() -> Result<()> {
         let lattice_id = "computing_spread_commands";
         let blobby_ref = "fakecloud.azurecr.io/blobby:0.5.2".to_string();
-        let blobby_id = "MASDASDIAMAREALACTORBLOBBY";
+        let blobby_id = "MASDASDIAMAREALCOMPONENTBLOBBY";
 
         let host_id_one = "NASDASDIMAREALHOSTONE";
         let host_id_two = "NASDASDIMAREALHOSTTWO";
@@ -1344,7 +1350,7 @@ mod test {
             ],
         };
 
-        let blobby_spreadscaler = ActorSpreadScaler::new(
+        let blobby_spreadscaler = ComponentSpreadScaler::new(
             store.clone(),
             blobby_ref.to_string(),
             blobby_id.to_string(),
@@ -1400,7 +1406,7 @@ mod test {
                 Host {
                     components: HashMap::from_iter([
                         (blobby_id.to_string(), 3),
-                        ("MSOMEOTHERACTOR".to_string(), 3),
+                        ("MSOMEOTHERCOMPONENT".to_string(), 3),
                     ]),
                     friendly_name: "hey".to_string(),
                     labels: HashMap::from_iter([
