@@ -1,5 +1,3 @@
-use std::hash::{Hash, Hasher};
-
 use anyhow::Result;
 use async_trait::async_trait;
 use tokio::sync::RwLock;
@@ -12,7 +10,7 @@ use crate::{
         Event, LinkdefDeleted, LinkdefSet, ProviderHealthCheckInfo, ProviderHealthCheckPassed,
         ProviderHealthCheckStatus,
     },
-    scaler::Scaler,
+    scaler::{compute_id_sha256, Scaler},
     storage::ReadStore,
     workers::LinkSource,
 };
@@ -78,7 +76,7 @@ where
     #[instrument(level = "trace", skip_all, fields(scaler_id = %self.id))]
     async fn handle_event(&self, event: &Event) -> Result<Vec<Command>> {
         match event {
-            // Trigger linkdef creation if this actor starts and belongs to this model
+            // Trigger linkdef creation if this component starts and belongs to this model
             Event::ComponentScaled(evt) if evt.component_id == self.config.source_id => {
                 self.reconcile().await
             }
@@ -136,7 +134,7 @@ where
             .map(|linkdef| {
                 (
                     true,
-                    // TODO: reverse compare too
+                    // TODO(#88): reverse compare too
                     // Ensure all named configs are the same
                     linkdef.source_config.iter().all(|config_name| {
                         self.config.source_config.iter().any(|c| c == config_name)
@@ -147,9 +145,7 @@ where
             })
             .unwrap_or((false, false));
 
-        // TODO(brooksmtownsend): Now that links are ID based not public key based, we should be able to reenable this
-        // TODO: Reenable this functionality once we figure out https://github.com/wasmCloud/wadm/issues/123
-
+        // TODO(#88)
         // If it already exists, but values are different, we need to have a delete event first
         // and recreate it with the correct values second
         // let mut commands = values_different
@@ -215,14 +211,37 @@ where
 impl<S: ReadStore + Send + Sync, L: LinkSource> LinkScaler<S, L> {
     /// Construct a new LinkScaler with specified configuration values
     pub fn new(store: S, link_config: LinkScalerConfig, ctl_client: L) -> Self {
-        // NOTE(thomastaylor312): Yep, this is gnarly, but it was all the information that would be
-        // useful to have if uniquely identifying a link scaler
-        let linkscaler_config_hash =
-            compute_linkscaler_config_hash(&link_config.source_config, &link_config.target_config);
-        let id = format!(
-            "{LINK_SCALER_TYPE}-{}-{}-{}-{}-{linkscaler_config_hash}",
-            link_config.model_name, link_config.name, link_config.source_id, link_config.target,
+        // Compute the id of this scaler based on all of the configuration values
+        // that make it unique. This is used during upgrades to determine if a
+        // scaler is the same as a previous one.
+        let mut id_parts = vec![
+            LINK_SCALER_TYPE,
+            &link_config.model_name,
+            &link_config.name,
+            &link_config.source_id,
+            &link_config.target,
+            &link_config.wit_namespace,
+            &link_config.wit_package,
+        ];
+        id_parts.extend(
+            link_config
+                .wit_interfaces
+                .iter()
+                .map(std::string::String::as_str),
         );
+        id_parts.extend(
+            link_config
+                .source_config
+                .iter()
+                .map(std::string::String::as_str),
+        );
+        id_parts.extend(
+            link_config
+                .target_config
+                .iter()
+                .map(std::string::String::as_str),
+        );
+        let id = compute_id_sha256(&id_parts);
 
         Self {
             store,
@@ -232,18 +251,6 @@ impl<S: ReadStore + Send + Sync, L: LinkSource> LinkScaler<S, L> {
             status: RwLock::new(StatusInfo::reconciling("")),
         }
     }
-}
-
-fn compute_linkscaler_config_hash(source: &[String], target: &[String]) -> u64 {
-    let mut linkscaler_config_hasher = std::collections::hash_map::DefaultHasher::new();
-    // Hash each of the names in the source and target
-    source.iter().for_each(|s| {
-        s.hash(&mut linkscaler_config_hasher);
-    });
-    target.iter().for_each(|t| {
-        t.hash(&mut linkscaler_config_hasher);
-    });
-    linkscaler_config_hasher.finish()
 }
 
 #[cfg(test)]
@@ -267,20 +274,20 @@ mod test {
         APP_SPEC_ANNOTATION,
     };
 
-    async fn create_store(lattice_id: &str, actor_ref: &str, provider_ref: &str) -> TestStore {
+    async fn create_store(lattice_id: &str, component_ref: &str, provider_ref: &str) -> TestStore {
         let store = TestStore::default();
         store
             .store(
                 lattice_id,
-                "actor".to_string(),
+                "component".to_string(),
                 Component {
-                    id: "actor".to_string(),
-                    reference: actor_ref.to_owned(),
+                    id: "component".to_string(),
+                    reference: component_ref.to_owned(),
                     ..Default::default()
                 },
             )
             .await
-            .expect("Couldn't store actor");
+            .expect("Couldn't store component");
         store
             .store(
                 lattice_id,
@@ -292,14 +299,14 @@ mod test {
                 },
             )
             .await
-            .expect("Couldn't store actor");
+            .expect("Couldn't store component");
         store
     }
 
     #[tokio::test]
-    async fn test_id_generator() {
+    async fn test_different_ids() {
         let lattice_id = "id_generator".to_string();
-        let actor_ref = "actor_ref".to_string();
+        let component_ref = "component_ref".to_string();
         let component_id = "component_id".to_string();
         let provider_ref = "provider_ref".to_string();
         let provider_id = "provider_id".to_string();
@@ -308,7 +315,7 @@ mod test {
         let target_config = vec!["target_config".to_string()];
 
         let scaler = LinkScaler::new(
-            create_store(&lattice_id, &actor_ref, &provider_ref).await,
+            create_store(&lattice_id, &component_ref, &provider_ref).await,
             LinkScalerConfig {
                 source_id: provider_id.clone(),
                 target: component_id.clone(),
@@ -324,87 +331,59 @@ mod test {
             TestLatticeSource::default(),
         );
 
-        let id = format!(
-            "{LINK_SCALER_TYPE}-{model_name}-{link_name}-{provider_id}-{component_id}-{linkscaler_values_hash}",
-            LINK_SCALER_TYPE = LINK_SCALER_TYPE,
-            model_name = "model",
-            link_name = "default",
-            linkscaler_values_hash = compute_linkscaler_config_hash(&source_config, &target_config)
+        let other_same_scaler = LinkScaler::new(
+            create_store(&lattice_id, &component_ref, &provider_ref).await,
+            LinkScalerConfig {
+                source_id: provider_id.clone(),
+                target: component_id.clone(),
+                wit_namespace: "wit_namespace".to_string(),
+                wit_package: "wit_package".to_string(),
+                wit_interfaces: vec!["wit_interface".to_string()],
+                name: "default".to_string(),
+                lattice_id: lattice_id.clone(),
+                model_name: "model".to_string(),
+                source_config: source_config.clone(),
+                target_config: target_config.clone(),
+            },
+            TestLatticeSource::default(),
         );
 
-        assert_eq!(scaler.id(), id, "LinkScaler ID should be the same when scalers have the same type, model name, provider link name, actor reference, provider reference, and values");
+        assert_eq!(scaler.id(), other_same_scaler.id(), "LinkScaler ID should be the same when scalers have the same type, model name, provider link name, component reference, provider reference, and values");
 
-        let id = format!(
-            "{LINK_SCALER_TYPE}-{model_name}-{link_name}-{component_id}-{provider_id}-{linkscaler_values_hash}",
-            LINK_SCALER_TYPE = LINK_SCALER_TYPE,
-            model_name = "model",
-            link_name = "default",
-            linkscaler_values_hash = compute_linkscaler_config_hash(&["foo".to_string()], &["bar".to_string()])
+        let different_scaler = LinkScaler::new(
+            create_store(&lattice_id, &component_ref, &provider_ref).await,
+            LinkScalerConfig {
+                source_id: provider_id.clone(),
+                target: component_id.clone(),
+                wit_namespace: "wit_namespace".to_string(),
+                wit_package: "wit_package".to_string(),
+                wit_interfaces: vec!["wit_interface".to_string()],
+                name: "default".to_string(),
+                lattice_id: lattice_id.clone(),
+                model_name: "model".to_string(),
+                source_config: vec!["foo".to_string()],
+                target_config: vec!["bar".to_string()],
+            },
+            TestLatticeSource::default(),
         );
 
         assert_ne!(
             scaler.id(),
-            id,
+            different_scaler.id(),
             "LinkScaler ID should be different when scalers have different configured values"
         );
-
-        let scaler = LinkScaler::new(
-            create_store(&lattice_id, &actor_ref, &provider_ref).await,
-            LinkScalerConfig {
-                source_id: component_id.clone(),
-                target: provider_id.clone(),
-                wit_namespace: "contr".to_string(),
-                wit_package: "act".to_string(),
-                wit_interfaces: vec!["interface".to_string()],
-                name: "default".to_string(),
-                lattice_id: lattice_id.clone(),
-                model_name: "model".to_string(),
-                source_config: vec![],
-                target_config: vec![],
-            },
-            TestLatticeSource::default(),
-        );
-
-        let id = format!(
-            "{LINK_SCALER_TYPE}-{model_name}-{link_name}-{component_id}-{provider_id}-{linkscaler_values_hash}",
-            LINK_SCALER_TYPE = LINK_SCALER_TYPE,
-            model_name = "model",
-            link_name = "default",
-            linkscaler_values_hash = compute_linkscaler_config_hash(&[], &[])
-        );
-
-        assert_eq!(scaler.id(), id, "LinkScaler ID should be the same when their type, model name, provider link name, actor reference, and provider reference are the same and they both have no values configured");
-
-        let scaler = LinkScaler::new(
-            create_store(&lattice_id, &actor_ref, &provider_ref).await,
-            LinkScalerConfig {
-                source_id: component_id.clone(),
-                target: provider_id.clone(),
-                wit_namespace: "contr".to_string(),
-                wit_package: "act".to_string(),
-                wit_interfaces: vec!["interface".to_string()],
-                name: "default".to_string(),
-                lattice_id: lattice_id.clone(),
-                model_name: "model".to_string(),
-                source_config: vec!["default-http".to_string()],
-                target_config: vec!["outbound-cert".to_string()],
-            },
-            TestLatticeSource::default(),
-        );
-
-        assert_ne!(scaler.id(), id, "Expected LinkScaler values hash to differiantiate scalers with the same type, model name, provider link name, actor reference, and provider reference");
     }
 
     #[tokio::test]
     async fn test_no_linkdef() {
         let lattice_id = "no-linkdef".to_string();
-        let actor_ref = "actor_ref".to_string();
-        let component_id = "actor".to_string();
+        let component_ref = "component_ref".to_string();
+        let component_id = "component".to_string();
         let provider_ref = "provider_ref".to_string();
         let provider_id = "provider".to_string();
 
         let scaler = LinkScaler::new(
-            create_store(&lattice_id, &actor_ref, &provider_ref).await,
+            create_store(&lattice_id, &component_ref, &provider_ref).await,
             LinkScalerConfig {
                 source_id: component_id.clone(),
                 target: provider_id.clone(),
@@ -426,49 +405,11 @@ mod test {
         assert!(matches!(commands[0], Command::PutLink(_)));
     }
 
-    // TODO: Uncomment once https://github.com/wasmCloud/wadm/issues/123 is fixed
-
-    // #[tokio::test]
-    // async fn test_different_values() {
-    //     let lattice_id = "different-values".to_string();
-    //     let actor_ref = "actor_ref".to_string();
-    //     let provider_ref = "provider_ref".to_string();
-
-    //     let values = HashMap::from([("foo".to_string(), "bar".to_string())]);
-
-    //     let mut linkdef = LinkDefinition::default();
-    //     linkdef.component_id = "actor".to_string();
-    //     linkdef.provider_id = "provider".to_string();
-    //     linkdef.contract_id = "contract".to_string();
-    //     linkdef.link_name = "default".to_string();
-    //     linkdef.values = [("foo".to_string(), "nope".to_string())].into();
-
-    //     let scaler = LinkScaler::new(
-    //         create_store(&lattice_id, &actor_ref, &provider_ref).await,
-    //         actor_ref,
-    //         provider_ref,
-    //         "contract".to_string(),
-    //         None,
-    //         lattice_id.clone(),
-    //         "model".to_string(),
-    //         Some(values),
-    //         TestLatticeSource {
-    //             links: vec![linkdef],
-    //             ..Default::default()
-    //         },
-    //     );
-
-    //     let commands = scaler.reconcile().await.expect("Couldn't reconcile");
-    //     assert_eq!(commands.len(), 2);
-    //     assert!(matches!(commands[0], Command::DeleteLinkdef(_)));
-    //     assert!(matches!(commands[1], Command::PutLinkdef(_)));
-    // }
-
     #[tokio::test]
     async fn test_existing_linkdef() {
         let lattice_id = "existing-linkdef".to_string();
-        let actor_ref = "actor_ref".to_string();
-        let component_id = "actor".to_string();
+        let component_ref = "component_ref".to_string();
+        let component_id = "component".to_string();
         let provider_ref = "provider_ref".to_string();
         let provider_id = "provider".to_string();
 
@@ -484,7 +425,7 @@ mod test {
         };
 
         let scaler = LinkScaler::new(
-            create_store(&lattice_id, &actor_ref, &provider_ref).await,
+            create_store(&lattice_id, &component_ref, &provider_ref).await,
             LinkScalerConfig {
                 source_id: linkdef.source_id.clone(),
                 target: linkdef.target.clone(),
@@ -515,7 +456,7 @@ mod test {
     async fn can_put_linkdef_from_triggering_events() {
         let lattice_id = "can_put_linkdef_from_triggering_events";
         let echo_ref = "fakecloud.azurecr.io/echo:0.3.4".to_string();
-        let echo_id = "MASDASDIAMAREALACTORECHO";
+        let echo_id = "MASDASDIAMAREALCOMPONENTECHO";
         let httpserver_ref = "fakecloud.azurecr.io/httpserver:0.5.2".to_string();
 
         let host_id_one = "NASDASDIMAREALHOSTONE";
@@ -592,7 +533,7 @@ mod test {
         // Since no link exists, we should expect a put link command
         assert_eq!(commands.len(), 1);
 
-        // Actor starts, put into state and then handle event
+        // Component starts, put into state and then handle event
         store
             .store(
                 lattice_id,
@@ -604,7 +545,7 @@ mod test {
                 },
             )
             .await
-            .expect("should be able to store actor");
+            .expect("should be able to store component");
 
         let commands = link_scaler
             .handle_event(&Event::ComponentScaled(ComponentScaled {
@@ -619,14 +560,14 @@ mod test {
                 host_id: host_id_one.to_string(),
             }))
             .await
-            .expect("should be able to handle actors started event");
+            .expect("should be able to handle components started event");
 
         assert_eq!(commands.len(), 1);
 
         let commands = link_scaler
             .handle_event(&Event::LinkdefSet(LinkdefSet {
                 linkdef: InterfaceLinkDefinition {
-                    // NOTE: contract, link, and provider id matches but the actor is different
+                    // NOTE: contract, link, and provider id matches but the component is different
                     source_id: "nm0001772".to_string(),
                     target: "VASDASD".to_string(),
                     wit_namespace: "wasmcloud".to_string(),

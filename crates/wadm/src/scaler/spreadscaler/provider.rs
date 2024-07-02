@@ -16,7 +16,7 @@ use crate::{
         ProviderStopped,
     },
     scaler::{
-        compute_config_hash,
+        compute_id_sha256,
         spreadscaler::{
             compute_ineligible_hosts, compute_spread, eligible_hosts, spreadscaler_annotations,
         },
@@ -315,14 +315,23 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
 impl<S: ReadStore + Send + Sync> ProviderSpreadScaler<S> {
     /// Construct a new ProviderSpreadScaler with specified configuration values
     pub fn new(store: S, config: ProviderSpreadConfig, component_name: &str) -> Self {
-        let mut id = format!(
-            "{PROVIDER_SPREAD_SCALER_TYPE}-{}-{component_name}-{}",
-            config.model_name, config.provider_id,
+        // Compute the id of this scaler based on all of the configuration values
+        // that make it unique. This is used during upgrades to determine if a
+        // scaler is the same as a previous one.
+        let mut id_parts = vec![
+            PROVIDER_SPREAD_SCALER_TYPE,
+            &config.model_name,
+            component_name,
+            &config.provider_id,
+            &config.provider_reference,
+        ];
+        id_parts.extend(
+            config
+                .provider_config
+                .iter()
+                .map(std::string::String::as_str),
         );
-        if !config.provider_config.is_empty() {
-            id.push('-');
-            id.push_str(&compute_config_hash(&config.provider_config))
-        }
+        let id = compute_id_sha256(&id_parts);
 
         Self {
             store,
@@ -362,7 +371,7 @@ mod test {
     const MODEL_NAME: &str = "test_provider_spreadscaler";
 
     #[test]
-    fn test_id_generator() {
+    fn test_different_ids() {
         let config = ProviderSpreadConfig {
             lattice_id: "lattice".to_string(),
             provider_reference: "provider_ref".to_string(),
@@ -375,15 +384,8 @@ mod test {
             provider_config: vec![],
         };
 
-        let scaler = ProviderSpreadScaler::new(Arc::new(TestStore::default()), config, "component");
-        assert_eq!(
-            scaler.id(),
-            format!(
-                "{PROVIDER_SPREAD_SCALER_TYPE}-{}-component-provider_id",
-                MODEL_NAME
-            ),
-            "ProviderSpreadScaler ID should be valid"
-        );
+        let scaler1 =
+            ProviderSpreadScaler::new(Arc::new(TestStore::default()), config, "component");
 
         let config = ProviderSpreadConfig {
             lattice_id: "lattice".to_string(),
@@ -397,27 +399,12 @@ mod test {
             provider_config: vec!["foobar".to_string()],
         };
 
-        let scaler = ProviderSpreadScaler::new(Arc::new(TestStore::default()), config, "component");
-        assert_eq!(
-            scaler.id(),
-            format!(
-                "{PROVIDER_SPREAD_SCALER_TYPE}-{}-component-provider_id-{}",
-                MODEL_NAME,
-                compute_config_hash(&["foobar".to_string()])
-            ),
-            "ProviderSpreadScaler ID should be valid"
-        );
-
-        let mut scaler_id_tokens = scaler.id().split('-');
-        scaler_id_tokens.next_back();
-        let scaler_id_tokens = scaler_id_tokens.collect::<Vec<&str>>().join("-");
-        assert_eq!(
-            scaler_id_tokens,
-            format!(
-                "{PROVIDER_SPREAD_SCALER_TYPE}-{}-component-provider_id",
-                MODEL_NAME
-            ),
-            "ProviderSpreadScaler ID should be valid and depends on provider_config"
+        let scaler2 =
+            ProviderSpreadScaler::new(Arc::new(TestStore::default()), config, "component");
+        assert_ne!(
+            scaler1.id(),
+            scaler2.id(),
+            "ProviderSpreadScaler IDs should be different with different configuration"
         );
     }
 
