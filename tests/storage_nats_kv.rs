@@ -20,9 +20,9 @@ async fn test_round_trip() {
 
     let lattice_id = "roundtrip";
 
-    let actor1 = Component {
-        id: "testactor".to_string(),
-        name: "Test Actor".to_string(),
+    let component1 = Component {
+        id: "testcomponent".to_string(),
+        name: "Test Component".to_string(),
         issuer: "afakekey".to_string(),
         instances: HashMap::from([(
             "testhost".to_string(),
@@ -31,12 +31,12 @@ async fn test_round_trip() {
                 annotations: BTreeMap::new(),
             }]),
         )]),
-        reference: "fake.oci.repo/testactor:0.1.0".to_string(),
+        reference: "fake.oci.repo/testcomponent:0.1.0".to_string(),
     };
 
-    let actor2 = Component {
-        id: "anotheractor".to_string(),
-        name: "Another Actor".to_string(),
+    let component2 = Component {
+        id: "anothercomponent".to_string(),
+        name: "Another Component".to_string(),
         issuer: "afakekey".to_string(),
         instances: HashMap::from([(
             "testhost".to_string(),
@@ -45,11 +45,11 @@ async fn test_round_trip() {
                 annotations: BTreeMap::new(),
             }]),
         )]),
-        reference: "fake.oci.repo/anotheractor:0.1.0".to_string(),
+        reference: "fake.oci.repo/anothercomponent:0.1.0".to_string(),
     };
 
     let host = Host {
-        components: HashMap::from([("testactor".to_string(), 1)]),
+        components: HashMap::from([("testcomponent".to_string(), 1)]),
         id: "testhost".to_string(),
         providers: HashSet::from([ProviderInfo {
             provider_id: "testprovider".to_string(),
@@ -82,9 +82,9 @@ async fn test_round_trip() {
         .expect("Should be able to store a provider");
 
     store
-        .store(lattice_id, actor1.id.clone(), actor1.clone())
+        .store(lattice_id, component1.id.clone(), component1.clone())
         .await
-        .expect("Should be able to store actor");
+        .expect("Should be able to store component");
 
     // Now test we can retrieve all the data properly
     let stored_host: Host = store
@@ -107,60 +107,63 @@ async fn test_round_trip() {
         "Provider should be correct"
     );
 
-    let stored_actor: Component = store
-        .get(lattice_id, &actor1.id)
+    let stored_component: Component = store
+        .get(lattice_id, &component1.id)
         .await
-        .expect("Unable to fetch stored actor")
-        .expect("Actor should exist");
-    assert_eq!(stored_actor.name, actor1.name, "Actor should be correct");
+        .expect("Unable to fetch stored component")
+        .expect("Component should exist");
+    assert_eq!(
+        stored_component.name, component1.name,
+        "Component should be correct"
+    );
 
     // Add something to the state and then fetch it to make sure it updated properly
     store
-        .store(lattice_id, actor2.id.clone(), actor2.clone())
+        .store(lattice_id, component2.id.clone(), component2.clone())
         .await
-        .expect("Should be able to add a new actor");
+        .expect("Should be able to add a new component");
 
-    let all_actors = store
+    let all_components = store
         .list::<Component>(lattice_id)
         .await
-        .expect("Should be able to get all actors");
+        .expect("Should be able to get all components");
 
     assert_eq!(
-        all_actors.len(),
+        all_components.len(),
         2,
-        "Should have found the correct number of actors"
+        "Should have found the correct number of components"
     );
     assert!(
-        all_actors.contains_key(&actor1.id),
-        "Should have found actor with id {}",
-        actor1.id
+        all_components.contains_key(&component1.id),
+        "Should have found component with id {}",
+        component1.id
     );
     assert!(
-        all_actors.contains_key(&actor2.id),
-        "Should have found actor with id {}",
-        actor2.id
+        all_components.contains_key(&component2.id),
+        "Should have found component with id {}",
+        component2.id
     );
 
-    // Delete one of the actors and make sure the data is correct
+    // Delete one of the components and make sure the data is correct
     store
-        .delete::<Component>(lattice_id, &actor1.id)
+        .delete::<Component>(lattice_id, &component1.id)
         .await
-        .expect("Should be able to delete an actor");
+        .expect("Should be able to delete a component");
 
-    let all_actors = store
+    let all_components = store
         .list::<Component>(lattice_id)
         .await
-        .expect("Should be able to get all actors");
+        .expect("Should be able to get all components");
 
     assert_eq!(
-        all_actors.len(),
+        all_components.len(),
         1,
-        "Should have found the correct number of actors"
+        "Should have found the correct number of components"
     );
     assert!(
-        !all_actors.contains_key(&actor1.id),
-        "Should not have found actor with id {}",
-        actor1.id
+        !all_components.contains_key(&component1.id),
+        "Should not have found component with id {}",
+        component1.id
     );
 }
 
@@ -200,9 +203,9 @@ async fn test_multiple_lattice() {
 
     let lattice_id1 = "multiple_lattice";
     let lattice_id2 = "other_lattice";
-    let actor1 = Component {
-        id: "testactor".to_string(),
-        name: "Test Actor".to_string(),
+    let component1 = Component {
+        id: "testcomponent".to_string(),
+        name: "Test Component".to_string(),
         issuer: "afakekey".to_string(),
         instances: HashMap::from([(
             "testhost".to_string(),
@@ -211,12 +214,12 @@ async fn test_multiple_lattice() {
                 annotations: BTreeMap::new(),
             }]),
         )]),
-        reference: "fake.oci.repo/testactor:0.1.0".to_string(),
+        reference: "fake.oci.repo/testcomponent:0.1.0".to_string(),
     };
 
-    let actor2 = Component {
-        id: "anotheractor".to_string(),
-        name: "Another Actor".to_string(),
+    let component2 = Component {
+        id: "anothercomponent".to_string(),
+        name: "Another Component".to_string(),
         issuer: "afakekey".to_string(),
         instances: HashMap::from([(
             "testhost".to_string(),
@@ -225,16 +228,16 @@ async fn test_multiple_lattice() {
                 annotations: BTreeMap::new(),
             }]),
         )]),
-        reference: "fake.oci.repo/anotheractor:0.1.0".to_string(),
+        reference: "fake.oci.repo/anothercomponent:0.1.0".to_string(),
     };
 
-    // Store both actors first with the different lattice id
+    // Store both components first with the different lattice id
     store
-        .store(lattice_id1, actor1.id.clone(), actor1.clone())
+        .store(lattice_id1, component1.id.clone(), component1.clone())
         .await
         .expect("Should be able to store data");
     store
-        .store(lattice_id2, actor2.id.clone(), actor2.clone())
+        .store(lattice_id2, component2.id.clone(), component2.clone())
         .await
         .expect("Should be able to store data");
 
@@ -242,13 +245,17 @@ async fn test_multiple_lattice() {
         .list::<Component>(lattice_id1)
         .await
         .expect("Should be able to list data");
-    assert_eq!(first.len(), 1, "First lattice should have exactly 1 actor");
-    let component = first
-        .get(&actor1.id)
-        .expect("First lattice should have the right actor");
     assert_eq!(
-        component.name, actor1.name,
-        "Should have returned the correct actor"
+        first.len(),
+        1,
+        "First lattice should have exactly 1 component"
+    );
+    let component = first
+        .get(&component1.id)
+        .expect("First lattice should have the right component");
+    assert_eq!(
+        component.name, component1.name,
+        "Should have returned the correct component"
     );
 
     let second = store
@@ -258,14 +265,14 @@ async fn test_multiple_lattice() {
     assert_eq!(
         second.len(),
         1,
-        "Second lattice should have exactly 1 actor"
+        "Second lattice should have exactly 1 component"
     );
     let component = second
-        .get(&actor2.id)
-        .expect("Second lattice should have the right actor");
+        .get(&component2.id)
+        .expect("Second lattice should have the right component");
     assert_eq!(
-        component.name, actor2.name,
-        "Should have returned the correct actor"
+        component.name, component2.name,
+        "Should have returned the correct component"
     );
 }
 
@@ -275,9 +282,9 @@ async fn test_store_and_delete_many() {
 
     let lattice_id = "storemany";
 
-    let actor1 = Component {
-        id: "testactor".to_string(),
-        name: "Test Actor".to_string(),
+    let component1 = Component {
+        id: "testcomponent".to_string(),
+        name: "Test Component".to_string(),
         issuer: "afakekey".to_string(),
         instances: HashMap::from([(
             "testhost".to_string(),
@@ -286,12 +293,12 @@ async fn test_store_and_delete_many() {
                 annotations: BTreeMap::new(),
             }]),
         )]),
-        reference: "fake.oci.repo/testactor:0.1.0".to_string(),
+        reference: "fake.oci.repo/testcomponent:0.1.0".to_string(),
     };
 
-    let actor2 = Component {
-        id: "anotheractor".to_string(),
-        name: "Another Actor".to_string(),
+    let component2 = Component {
+        id: "anothercomponent".to_string(),
+        name: "Another Component".to_string(),
         issuer: "afakekey".to_string(),
         instances: HashMap::from([(
             "testhost".to_string(),
@@ -300,52 +307,55 @@ async fn test_store_and_delete_many() {
                 annotations: BTreeMap::new(),
             }]),
         )]),
-        reference: "fake.oci.repo/anotheractor:0.1.0".to_string(),
+        reference: "fake.oci.repo/anothercomponent:0.1.0".to_string(),
     };
 
     store
         .store_many(
             lattice_id,
             [
-                (actor1.id.clone(), actor1.clone()),
-                (actor2.id.clone(), actor2.clone()),
+                (component1.id.clone(), component1.clone()),
+                (component2.id.clone(), component2.clone()),
             ],
         )
         .await
-        .expect("Should be able to store multiple actors");
+        .expect("Should be able to store multiple components");
 
-    let all_actors = store
+    let all_components = store
         .list::<Component>(lattice_id)
         .await
-        .expect("Should be able to get all actors");
+        .expect("Should be able to get all components");
 
     assert_eq!(
-        all_actors.len(),
+        all_components.len(),
         2,
-        "Should have found the correct number of actors"
+        "Should have found the correct number of components"
     );
     assert!(
-        all_actors.contains_key(&actor1.id),
-        "Should have found actor with id {}",
-        actor1.id
+        all_components.contains_key(&component1.id),
+        "Should have found component with id {}",
+        component1.id
     );
     assert!(
-        all_actors.contains_key(&actor2.id),
-        "Should have found actor with id {}",
-        actor2.id
+        all_components.contains_key(&component2.id),
+        "Should have found component with id {}",
+        component2.id
     );
 
     // Now try to delete them all
     store
-        .delete_many::<Component, _, _>(lattice_id, [&actor1.id, &actor2.id])
+        .delete_many::<Component, _, _>(lattice_id, [&component1.id, &component2.id])
         .await
         .expect("Should be able to delete many");
 
     // Double check that the list is empty now
-    let all_actors = store
+    let all_components = store
         .list::<Component>(lattice_id)
         .await
-        .expect("Should be able to get all actors");
+        .expect("Should be able to get all components");
 
-    assert!(all_actors.is_empty(), "All actors should have no items");
+    assert!(
+        all_components.is_empty(),
+        "All components should have no items"
+    );
 }

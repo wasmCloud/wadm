@@ -337,7 +337,7 @@ async fn test_upgrade(client_info: &ClientInfo) {
                 && ld.wit_package == "keyvalue"
         }) {
             anyhow::bail!(
-                "Link between kvcounter actor and redis provider should not exist: {:#?}",
+                "Link between kvcounter component and redis provider should not exist: {:#?}",
                 links
             )
         }
@@ -479,7 +479,7 @@ async fn test_upgrade(client_info: &ClientInfo) {
                 && ld.wit_package == "keyvalue"
         }) {
             anyhow::bail!(
-                "Link between kvcounter actor and redis provider should not exist: {:#?}",
+                "Link between kvcounter component and redis provider should not exist: {:#?}",
                 links
             )
         }

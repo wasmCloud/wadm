@@ -915,7 +915,7 @@ pub(crate) async fn validate_manifest(manifest: Manifest) -> anyhow::Result<()> 
     ensure!(manifest.metadata.annotations.iter().all(valid_oam_label));
 
     for component in manifest.spec.components.iter() {
-        // Component name validation : each component (actors or providers) should have a unique name
+        // Component name validation : each component (components or providers) should have a unique name
         if !name_registry.insert(component.name.clone()) {
             return Err(anyhow!(
                 "Duplicate component name in manifest: {}",
@@ -940,7 +940,7 @@ pub(crate) async fn validate_manifest(manifest: Manifest) -> anyhow::Result<()> 
             }
         }
 
-        // Actor validation : Actors should have a unique identifier per manifest
+        // Component validation : Components should have a unique identifier per manifest
         if let Properties::Component {
             properties: ComponentProperties { id: Some(id), .. },
         } = &component.properties
@@ -1099,7 +1099,7 @@ mod test {
             deserialize_yaml("./test/data/duplicate_id2.yaml").expect("Should be able to parse");
 
         match validate_manifest(manifest).await {
-            Ok(()) => panic!("Should have detected duplicate component ID in actor properties"),
+            Ok(()) => panic!("Should have detected duplicate component ID in component properties"),
             Err(e) => assert!(e
                 .to_string()
                 .contains("Duplicate component identifier in manifest")),
@@ -1125,7 +1125,7 @@ mod test {
     }
 
     /// Ensure that a long image ref in a manifest works,
-    /// for both providers and actors
+    /// for both providers and components
     #[tokio::test]
     async fn manifest_name_long_image_ref() -> Result<()> {
         validate_manifest(

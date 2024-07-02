@@ -91,7 +91,7 @@ async fn run_multiple_host_tests() {
     // The futures must be boxed or they're technically different types
     let tests = [
         test_spread_all_hosts(&client_info).boxed(),
-        test_lotta_actors(&client_info).boxed(),
+        test_lotta_components(&client_info).boxed(),
         test_complex_app(&client_info).boxed(),
     ];
     futures::future::join_all(tests).await;
@@ -224,10 +224,10 @@ async fn test_no_requirements(client_info: &ClientInfo) {
     .await;
 }
 
-async fn test_lotta_actors(client_info: &ClientInfo) {
+async fn test_lotta_components(client_info: &ClientInfo) {
     let client = client_info.wadm_client(DEFAULT_LATTICE_ID);
     let (name, _version) = client
-        .put_manifest(client_info.load_raw_manifest("lotta_actors.yaml").await)
+        .put_manifest(client_info.load_raw_manifest("lotta_components.yaml").await)
         .await
         .expect("Shouldn't have errored when creating manifest");
 
@@ -241,7 +241,7 @@ async fn test_lotta_actors(client_info: &ClientInfo) {
     assert_status(None, Some(7), || async {
         let inventory = client_info.get_all_inventory(DEFAULT_LATTICE_ID).await?;
 
-        check_components(&inventory, HELLO_IMAGE_REF, "lotta-actors", 9001)?;
+        check_components(&inventory, HELLO_IMAGE_REF, "lotta-components", 9001)?;
         check_providers(&inventory, HTTP_SERVER_IMAGE_REF, ExpectedCount::AtLeast(1))?;
 
         Ok(())
@@ -414,9 +414,9 @@ async fn test_complex_app(client_info: &ClientInfo) {
         if moon_inventory
             .components
             .iter()
-            .any(|actor| actor.id == BLOBBY_COMPONENT_ID)
+            .any(|component| component.id == BLOBBY_COMPONENT_ID)
         {
-            anyhow::bail!("Actors shouldn't be running on the moon");
+            anyhow::bail!("Components shouldn't be running on the moon");
         }
 
         Ok(())
@@ -447,7 +447,7 @@ async fn test_stop_host_rebalance(client_info: &ClientInfo) {
     })
     .await;
 
-    // Now get the inventory and figure out which host is running the most actors of the spread and
+    // Now get the inventory and figure out which host is running the most components of the spread and
     // stop that one
     let host_to_stop = client_info
         .get_all_inventory(DEFAULT_LATTICE_ID)
@@ -463,7 +463,7 @@ async fn test_stop_host_rebalance(client_info: &ClientInfo) {
         .max_by_key(|(_, inv)| {
             inv.components
                 .iter()
-                .find(|actor| actor.id == HELLO_COMPONENT_ID)
+                .find(|component| component.id == HELLO_COMPONENT_ID)
                 .map(|desc| desc.max_instances)
                 .unwrap_or(0)
         })

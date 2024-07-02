@@ -1,5 +1,5 @@
 //! Contains helpers for reaping Hosts that haven't received a heartbeat within a configured amount
-//! of time and actors and providers on hosts that no longer exist
+//! of time and components and providers on hosts that no longer exist
 
 use std::collections::HashMap;
 
@@ -102,7 +102,7 @@ impl<S: Store + Clone + Send + Sync + 'static> Undertaker<S> {
         loop {
             ticker.tick().await;
             trace!("Tick fired, running reap tasks");
-            // We want to reap hosts first so that the state is up to date for reaping actors and providers
+            // We want to reap hosts first so that the state is up to date for reaping components and providers
             self.reap_hosts().await;
             // Now get the current list of hosts
             let hosts = match self.store.list::<Host>(&self.lattice_id).await {
@@ -112,8 +112,8 @@ impl<S: Store + Clone + Send + Sync + 'static> Undertaker<S> {
                     continue;
                 }
             };
-            // Reap actors and providers
-            self.reap_actors(&hosts).await;
+            // Reap components and providers
+            self.reap_components(&hosts).await;
             self.reap_providers(&hosts).await;
             trace!("Completed reap tasks");
         }
@@ -152,49 +152,49 @@ impl<S: Store + Clone + Send + Sync + 'static> Undertaker<S> {
     }
 
     #[instrument(level = "debug", skip(self, hosts), fields(lattice_id = %self.lattice_id))]
-    async fn reap_actors(&self, hosts: &HashMap<String, Host>) {
-        let actors = match self.store.list::<Component>(&self.lattice_id).await {
+    async fn reap_components(&self, hosts: &HashMap<String, Host>) {
+        let components = match self.store.list::<Component>(&self.lattice_id).await {
             Ok(n) => n,
             Err(e) => {
-                error!(error = %e, "Error when fetching actors from store. Will retry on next tick");
+                error!(error = %e, "Error when fetching components from store. Will retry on next tick");
                 return;
             }
         };
 
-        let (actors_to_remove, actors_to_update): (
+        let (components_to_remove, components_to_update): (
             HashMap<String, Component>,
             HashMap<String, Component>,
-        ) = actors
+        ) = components
             .into_iter()
-            .map(|(id, mut actor)| {
-                // Only keep the instances where the host exists and the actor is in its map
-                actor.instances.retain(|host_id, _| {
+            .map(|(id, mut component)| {
+                // Only keep the instances where the host exists and the component is in its map
+                component.instances.retain(|host_id, _| {
                     hosts
                         .get(host_id)
-                        .map(|host| host.components.contains_key(&actor.id))
+                        .map(|host| host.components.contains_key(&component.id))
                         .unwrap_or(false)
                 });
-                (id, actor)
+                (id, component)
             })
-            .partition(|(_, actor)| actor.instances.is_empty());
+            .partition(|(_, component)| component.instances.is_empty());
 
-        debug!(to_remove = %actors_to_remove.len(), to_update = %actors_to_update.len(), "Filtered out list of actors to update and reap");
+        debug!(to_remove = %components_to_remove.len(), to_update = %components_to_update.len(), "Filtered out list of components to update and reap");
 
         if let Err(e) = self
             .store
-            .store_many(&self.lattice_id, actors_to_update)
+            .store_many(&self.lattice_id, components_to_update)
             .await
         {
-            warn!(error = %e, "Error when storing updated actors. Will retry on next tick");
+            warn!(error = %e, "Error when storing updated components. Will retry on next tick");
             return;
         }
 
         if let Err(e) = self
             .store
-            .delete_many::<Component, _, _>(&self.lattice_id, actors_to_remove.keys())
+            .delete_many::<Component, _, _>(&self.lattice_id, components_to_remove.keys())
             .await
         {
-            warn!(error = %e, "Error when deleting actors from store. Will retry on next tick")
+            warn!(error = %e, "Error when deleting components from store. Will retry on next tick")
         }
     }
 
@@ -203,7 +203,7 @@ impl<S: Store + Clone + Send + Sync + 'static> Undertaker<S> {
         let providers = match self.store.list::<Provider>(&self.lattice_id).await {
             Ok(n) => n,
             Err(e) => {
-                error!(error = %e, "Error when fetching actors from store. Will retry on next tick");
+                error!(error = %e, "Error when fetching components from store. Will retry on next tick");
                 return;
             }
         };
@@ -263,7 +263,7 @@ mod test {
         let store = Arc::new(TestStore::default());
 
         let lattice_id = "reaper";
-        let component_id = "testactor";
+        let component_id = "testcomponent";
         let host1_id = "host1";
         let host2_id = "host2";
 
@@ -365,14 +365,18 @@ mod test {
         // Wait for first node to be reaped (two ticks)
         tokio::time::sleep(wait * 2).await;
 
-        // Now check that the providers, actors, and hosts were reaped
+        // Now check that the providers, components, and hosts were reaped
         let hosts = store.list::<Host>(lattice_id).await.unwrap();
         assert_eq!(hosts.len(), 1, "Only one host should be left");
-        let actors = store.list::<Component>(lattice_id).await.unwrap();
-        assert_eq!(actors.len(), 1, "Only one actor should remain in the store");
-        actors
+        let components = store.list::<Component>(lattice_id).await.unwrap();
+        assert_eq!(
+            components.len(),
+            1,
+            "Only one component should remain in the store"
+        );
+        components
             .get(component_id)
-            .expect("Should have the correct actor in the store");
+            .expect("Should have the correct component in the store");
 
         assert!(
             store.list::<Provider>(lattice_id).await.unwrap().is_empty(),
@@ -381,11 +385,11 @@ mod test {
     }
 
     #[tokio::test]
-    async fn test_stale_actor() {
+    async fn test_stale_component() {
         let store = Arc::new(TestStore::default());
 
         let lattice_id = "reaper";
-        let component_id = "testactor";
+        let component_id = "testcomponent";
         let host1_id = "host1";
         let host2_id = "host2";
 
@@ -455,11 +459,11 @@ mod test {
         // Wait for first tick
         tokio::time::sleep(wait).await;
 
-        // Make sure we only have one instance of the actor left
-        let actors = store.list::<Component>(lattice_id).await.unwrap();
-        let component = actors
+        // Make sure we only have one instance of the component left
+        let components = store.list::<Component>(lattice_id).await.unwrap();
+        let component = components
             .get(component_id)
-            .expect("Should have the correct actor in the store");
+            .expect("Should have the correct component in the store");
         assert_eq!(
             component.instances.len(),
             1,

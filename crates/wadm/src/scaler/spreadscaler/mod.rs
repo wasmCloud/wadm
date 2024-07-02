@@ -28,12 +28,12 @@ const SPREAD_KEY: &str = "wasmcloud.dev/spread_name";
 
 pub const COMPONENT_SPREAD_SCALER_TYPE: &str = "componentspreadscaler";
 
-/// Config for an ComponentSpreadScaler
+/// Config for a ComponentSpreadScaler
 #[derive(Clone)]
 struct ComponentSpreadConfig {
-    /// OCI, Bindle, or File reference for an component
+    /// OCI, Bindle, or File reference for a component
     component_reference: String,
-    /// Unique component identifier for an component
+    /// Unique component identifier for a component
     component_id: String,
     /// Lattice ID that this SpreadScaler monitors
     lattice_id: String,

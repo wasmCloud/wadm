@@ -26,7 +26,7 @@ use wadm_types::{
 use crate::{
     events::Event,
     publisher::Publisher,
-    scaler::{spreadscaler::ActorSpreadScaler, Command, Scaler},
+    scaler::{spreadscaler::ComponentSpreadScaler, Command, Scaler},
     storage::{snapshot::SnapshotStore, ReadStore},
     workers::{CommandPublisher, ConfigSource, LinkSource, StatusPublisher},
     DEFAULT_LINK_NAME,
@@ -34,7 +34,7 @@ use crate::{
 
 use super::{
     configscaler::ConfigScaler,
-    daemonscaler::{provider::ProviderDaemonScaler, ActorDaemonScaler},
+    daemonscaler::{provider::ProviderDaemonScaler, ComponentDaemonScaler},
     spreadscaler::{
         link::{LinkScaler, LinkScalerConfig},
         provider::{ProviderSpreadConfig, ProviderSpreadScaler},
@@ -338,8 +338,8 @@ where
     /// notification or handling commands fails, then this function will reinsert the scalers back into the internal map
     /// and return an error (so this function can be called again)
     // NOTE(thomastaylor312): This was designed the way it is to avoid race conditions. We only ever
-    // stop actors and providers that have the right annotation. So if for some reason this leaves
-    // something hanging, we should probably add something to the reaper
+    // stop components and providers that have the right annotation. So if for some reason this
+    // leaves something hanging, we should probably add something to the reaper
     #[instrument(level = "debug", skip(self), fields(lattice_id = %self.lattice_id))]
     pub async fn remove_scalers(&self, name: &str) -> Option<Result<()>> {
         let scalers = match self.remove_scalers_internal(name).await {
@@ -589,7 +589,7 @@ where
                     match (trt.trait_type.as_str(), &trt.properties) {
                         (SPREADSCALER_TRAIT, TraitProperty::SpreadScaler(p)) => {
                             Some(Box::new(BackoffAwareScaler::new(
-                                ActorSpreadScaler::new(
+                                ComponentSpreadScaler::new(
                                     snapshot_data.clone(),
                                     props.image.to_owned(),
                                     component_id,
@@ -608,7 +608,7 @@ where
                         }
                         (DAEMONSCALER_TRAIT, TraitProperty::SpreadScaler(p)) => {
                             Some(Box::new(BackoffAwareScaler::new(
-                                ActorDaemonScaler::new(
+                                ComponentDaemonScaler::new(
                                     snapshot_data.clone(),
                                     props.image.to_owned(),
                                     component_id,

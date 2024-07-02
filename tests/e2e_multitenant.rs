@@ -9,7 +9,7 @@
 // mod e2e;
 // mod helpers;
 
-// use e2e::{assert_status, check_actors, check_providers, ClientInfo, ExpectedCount};
+// use e2e::{assert_status, check_components, check_providers, ClientInfo, ExpectedCount};
 // use helpers::{ECHO_ACTOR_ID, HTTP_SERVER_PROVIDER_ID};
 
 // use crate::e2e::check_status;
@@ -147,9 +147,9 @@
 //         let east_inventory = client_info.get_all_inventory(LATTICE_EAST).await?;
 //         let west_inventory = client_info.get_all_inventory(LATTICE_WEST).await?;
 
-//         // Check for echo actor and httpserver in east, as well as the link between them
+//         // Check for echo component and httpserver in east, as well as the link between them
 //         eprintln!("Ensuring east has echo, httpserver and link");
-//         check_actors(
+//         check_components(
 //             &east_inventory,
 //             "wasmcloud.azurecr.io/echo:0.3.7",
 //             "echo-simple",
@@ -179,14 +179,14 @@
 //                 && ld.contract_id == "wasmcloud:httpserver"
 //         }) {
 //             anyhow::bail!(
-//                 "Link between echo actor and http provider should exist: {:#?}",
+//                 "Link between echo component and http provider should exist: {:#?}",
 //                 links
 //             )
 //         }
 
-//         // Check for messaging actor, httpserver and messaging in west, as well as the links between them
+//         // Check for messaging component, httpserver and messaging in west, as well as the links between them
 //         eprintln!("Ensuring west has message-pub, httpserver, messaging and link");
-//         check_actors(
+//         check_components(
 //             &west_inventory,
 //             "wasmcloud.azurecr.io/message-pub:0.1.3",
 //             "messaging-simple",
@@ -214,7 +214,7 @@
 //                 && ld.contract_id == "wasmcloud:httpserver"
 //         }) {
 //             anyhow::bail!(
-//                 "Link between messaging actor and http provider should exist: {:#?}",
+//                 "Link between messaging component and http provider should exist: {:#?}",
 //                 links
 //             )
 //         }
@@ -224,14 +224,14 @@
 //                 && ld.contract_id == "wasmcloud:messaging"
 //         }) {
 //             anyhow::bail!(
-//                 "Link between messaging actor and nats provider should exist: {:#?}",
+//                 "Link between messaging component and nats provider should exist: {:#?}",
 //                 links
 //             )
 //         }
 
 //         // Check to ensure that no resources from west are running in east and vice versa
 //         eprintln!("Ensuring east has no west resources and vice versa");
-//         check_actors(
+//         check_components(
 //             &west_inventory,
 //             "wasmcloud.azurecr.io/echo:0.3.7",
 //             "echo-simple",
@@ -254,11 +254,11 @@
 //                 && ld.contract_id == "wasmcloud:httpserver"
 //         }) {
 //             anyhow::bail!(
-//                 "Link between echo actor and http provider should not exist: {:#?}",
+//                 "Link between echo component and http provider should not exist: {:#?}",
 //                 links
 //             )
 //         }
-//         check_actors(
+//         check_components(
 //             &east_inventory,
 //             "wasmcloud.azurecr.io/message-pub:0.1.3",
 //             "messaging-simple",
@@ -286,7 +286,7 @@
 //                 && ld.contract_id == "wasmcloud:httpserver"
 //         }) {
 //             anyhow::bail!(
-//                 "Link between messagepub actor and http provider should not exist: {:#?}",
+//                 "Link between messagepub component and http provider should not exist: {:#?}",
 //                 links
 //             )
 //         }
@@ -296,7 +296,7 @@
 //                 && ld.contract_id == "wasmcloud:messaging"
 //         }) {
 //             anyhow::bail!(
-//                 "Link between messagepub actor and http provider should not exist: {:#?}",
+//                 "Link between messagepub component and http provider should not exist: {:#?}",
 //                 links
 //             )
 //         }
@@ -354,7 +354,7 @@
 //     .await
 //     .unwrap();
 
-//     // assert that no actors or providers with annotations exist
+//     // assert that no components or providers with annotations exist
 //     assert_status(None, None, || async {
 //         let east_inventory = client_info.get_all_inventory(LATTICE_EAST).await?;
 //         println!("east inventory: {:?}", east_inventory);
@@ -362,7 +362,7 @@
 //         println!("west inventory: {:?}", west_inventory);
 
 //         eprintln!("Ensuring resources stopped in east");
-//         check_actors(
+//         check_components(
 //             &east_inventory,
 //             "wasmcloud.azurecr.io/echo:0.3.7",
 //             "echo-simple",
@@ -375,7 +375,7 @@
 //         )?;
 
 //         eprintln!("Ensuring resources stopped in west");
-//         check_actors(
+//         check_components(
 //             &west_inventory,
 //             "wasmcloud.azurecr.io/message-pub:0.1.3",
 //             "messaging-simple",
