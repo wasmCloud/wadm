@@ -2,11 +2,9 @@
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 
-use async_nats::HeaderMap;
-
-pub use error::Result;
+use async_nats::{HeaderMap, Message};
 use error::{ClientError, SerializationError};
-pub use loader::ManifestLoader;
+use futures::Stream;
 use topics::TopicGenerator;
 use wadm_types::{
     api::{
@@ -21,7 +19,9 @@ use wadm_types::{
 mod nats;
 
 pub mod error;
+pub use error::Result;
 pub mod loader;
+pub use loader::ManifestLoader;
 pub mod topics;
 
 /// Headers for `Content-Type: application/json`
@@ -277,6 +277,15 @@ impl Client {
         }
     }
 
-    // TODO(thomastaylor312): It would probably be nice to add a helper that can subscribe to a
-    // status topic and return a stream of status updates. But that can be added later.
+    /// Subscribes to the status of a given manifest
+    pub async fn subscribe_to_status(&self, name: &str) -> Result<impl Stream<Item = Message>> {
+        let subject = self.topics.wadm_status_topic(name);
+        let subscriber = self
+            .client
+            .subscribe(subject)
+            .await
+            .map_err(|e| ClientError::ApiError(e.to_string()))?;
+
+        Ok(subscriber)
+    }
 }

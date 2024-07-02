@@ -1,4 +1,4 @@
-use wadm_types::api::DEFAULT_WADM_TOPIC_PREFIX;
+use wadm_types::api::{DEFAULT_WADM_TOPIC_PREFIX, WADM_STATUS_API_PREFIX};
 
 /// A generator that uses various config options to generate the proper topic names for the wadm API
 pub struct TopicGenerator {
@@ -70,5 +70,13 @@ impl TopicGenerator {
     /// Returns the full topic for getting a model status
     pub fn model_status_topic(&self, model_name: &str) -> String {
         format!("{}.status.{model_name}", self.model_prefix())
+    }
+
+    /// Returns the full topic for WADM status subscriptions
+    pub fn wadm_status_topic(&self, app_name: &str) -> String {
+        format!(
+            "{}.{}.{}",
+            WADM_STATUS_API_PREFIX, self.topic_prefix, app_name
+        )
     }
 }
