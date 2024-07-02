@@ -6,19 +6,19 @@ use crate::{
     CapabilityProperties, Component, ComponentProperties, ConfigProperty, LinkProperty, Manifest,
     Metadata, Properties, Specification, Spread, SpreadScalerProperty, Trait, TraitProperty,
 };
-use wasmcloud::oam;
 use wasmcloud::wadm;
 
 wit_bindgen_wrpc::generate!({
+    generate_unused_types: true,
     additional_derives: [
         serde::Serialize,
         serde::Deserialize,
     ],
 });
 
-impl From<Manifest> for oam::types::OamManifest {
+impl From<Manifest> for wadm::types::OamManifest {
     fn from(manifest: Manifest) -> Self {
-        oam::types::OamManifest {
+        wadm::types::OamManifest {
             api_version: manifest.api_version.to_string(),
             kind: manifest.kind.to_string(),
             metadata: manifest.metadata.into(),
@@ -27,9 +27,9 @@ impl From<Manifest> for oam::types::OamManifest {
     }
 }
 
-impl From<Metadata> for oam::types::Metadata {
+impl From<Metadata> for wadm::types::Metadata {
     fn from(metadata: Metadata) -> Self {
-        oam::types::Metadata {
+        wadm::types::Metadata {
             name: metadata.name,
             annotations: metadata.annotations.into_iter().collect(),
             labels: metadata.labels.into_iter().collect(),
@@ -37,17 +37,17 @@ impl From<Metadata> for oam::types::Metadata {
     }
 }
 
-impl From<Specification> for oam::types::Specification {
+impl From<Specification> for wadm::types::Specification {
     fn from(spec: Specification) -> Self {
-        oam::types::Specification {
+        wadm::types::Specification {
             components: spec.components.into_iter().map(|c| c.into()).collect(),
         }
     }
 }
 
-impl From<Component> for oam::types::Component {
+impl From<Component> for wadm::types::Component {
     fn from(component: Component) -> Self {
-        oam::types::Component {
+        wadm::types::Component {
             name: component.name,
             properties: component.properties.into(),
             traits: component
@@ -60,22 +60,22 @@ impl From<Component> for oam::types::Component {
     }
 }
 
-impl From<Properties> for oam::types::Properties {
+impl From<Properties> for wadm::types::Properties {
     fn from(properties: Properties) -> Self {
         match properties {
             Properties::Component { properties } => {
-                oam::types::Properties::Component(properties.into())
+                wadm::types::Properties::Component(properties.into())
             }
             Properties::Capability { properties } => {
-                oam::types::Properties::Capability(properties.into())
+                wadm::types::Properties::Capability(properties.into())
             }
         }
     }
 }
 
-impl From<ComponentProperties> for oam::types::ComponentProperties {
+impl From<ComponentProperties> for wadm::types::ComponentProperties {
     fn from(properties: ComponentProperties) -> Self {
-        oam::types::ComponentProperties {
+        wadm::types::ComponentProperties {
             image: properties.image,
             id: properties.id,
             config: properties.config.into_iter().map(|c| c.into()).collect(),
@@ -83,9 +83,9 @@ impl From<ComponentProperties> for oam::types::ComponentProperties {
     }
 }
 
-impl From<CapabilityProperties> for oam::types::CapabilityProperties {
+impl From<CapabilityProperties> for wadm::types::CapabilityProperties {
     fn from(properties: CapabilityProperties) -> Self {
-        oam::types::CapabilityProperties {
+        wadm::types::CapabilityProperties {
             image: properties.image,
             id: properties.id,
             config: properties.config.into_iter().map(|c| c.into()).collect(),
@@ -93,39 +93,39 @@ impl From<CapabilityProperties> for oam::types::CapabilityProperties {
     }
 }
 
-impl From<ConfigProperty> for oam::types::ConfigProperty {
+impl From<ConfigProperty> for wadm::types::ConfigProperty {
     fn from(property: ConfigProperty) -> Self {
-        oam::types::ConfigProperty {
+        wadm::types::ConfigProperty {
             name: property.name,
             properties: property.properties.map(|props| props.into_iter().collect()),
         }
     }
 }
 
-impl From<Trait> for oam::types::Trait {
+impl From<Trait> for wadm::types::Trait {
     fn from(trait_: Trait) -> Self {
-        oam::types::Trait {
+        wadm::types::Trait {
             trait_type: trait_.trait_type,
             properties: trait_.properties.into(),
         }
     }
 }
 
-impl From<TraitProperty> for oam::types::TraitProperty {
+impl From<TraitProperty> for wadm::types::TraitProperty {
     fn from(property: TraitProperty) -> Self {
         match property {
-            TraitProperty::Link(link) => oam::types::TraitProperty::Link(link.into()),
+            TraitProperty::Link(link) => wadm::types::TraitProperty::Link(link.into()),
             TraitProperty::SpreadScaler(spread) => {
-                oam::types::TraitProperty::Spreadscaler(spread.into())
+                wadm::types::TraitProperty::Spreadscaler(spread.into())
             }
-            TraitProperty::Custom(custom) => oam::types::TraitProperty::Custom(custom.to_string()),
+            TraitProperty::Custom(custom) => wadm::types::TraitProperty::Custom(custom.to_string()),
         }
     }
 }
 
-impl From<LinkProperty> for oam::types::LinkProperty {
+impl From<LinkProperty> for wadm::types::LinkProperty {
     fn from(property: LinkProperty) -> Self {
-        oam::types::LinkProperty {
+        wadm::types::LinkProperty {
             target: property.target,
             namespace: property.namespace,
             package: property.package,
@@ -145,18 +145,18 @@ impl From<LinkProperty> for oam::types::LinkProperty {
     }
 }
 
-impl From<SpreadScalerProperty> for oam::types::SpreadscalerProperty {
+impl From<SpreadScalerProperty> for wadm::types::SpreadscalerProperty {
     fn from(property: SpreadScalerProperty) -> Self {
-        oam::types::SpreadscalerProperty {
+        wadm::types::SpreadscalerProperty {
             instances: property.instances as u32,
             spread: property.spread.into_iter().map(|s| s.into()).collect(),
         }
     }
 }
 
-impl From<Spread> for oam::types::Spread {
+impl From<Spread> for wadm::types::Spread {
     fn from(spread: Spread) -> Self {
-        oam::types::Spread {
+        wadm::types::Spread {
             name: spread.name,
             requirements: spread.requirements.into_iter().collect(),
             weight: spread.weight.map(|w| w as u32),
@@ -275,8 +275,8 @@ impl From<wadm::types::StatusResult> for StatusResult {
     }
 }
 
-impl From<oam::types::OamManifest> for Manifest {
-    fn from(manifest: oam::types::OamManifest) -> Self {
+impl From<wadm::types::OamManifest> for Manifest {
+    fn from(manifest: wadm::types::OamManifest) -> Self {
         Manifest {
             api_version: manifest.api_version,
             kind: manifest.kind,
@@ -286,8 +286,8 @@ impl From<oam::types::OamManifest> for Manifest {
     }
 }
 
-impl From<oam::types::Metadata> for Metadata {
-    fn from(metadata: oam::types::Metadata) -> Self {
+impl From<wadm::types::Metadata> for Metadata {
+    fn from(metadata: wadm::types::Metadata) -> Self {
         Metadata {
             name: metadata.name,
             annotations: metadata.annotations.into_iter().collect(),
@@ -296,16 +296,16 @@ impl From<oam::types::Metadata> for Metadata {
     }
 }
 
-impl From<oam::types::Specification> for Specification {
-    fn from(spec: oam::types::Specification) -> Self {
+impl From<wadm::types::Specification> for Specification {
+    fn from(spec: wadm::types::Specification) -> Self {
         Specification {
             components: spec.components.into_iter().map(|c| c.into()).collect(),
         }
     }
 }
 
-impl From<oam::types::Component> for Component {
-    fn from(component: oam::types::Component) -> Self {
+impl From<wadm::types::Component> for Component {
+    fn from(component: wadm::types::Component) -> Self {
         Component {
             name: component.name,
             properties: component.properties.into(),
@@ -314,21 +314,21 @@ impl From<oam::types::Component> for Component {
     }
 }
 
-impl From<oam::types::Properties> for Properties {
-    fn from(properties: oam::types::Properties) -> Self {
+impl From<wadm::types::Properties> for Properties {
+    fn from(properties: wadm::types::Properties) -> Self {
         match properties {
-            oam::types::Properties::Component(properties) => Properties::Component {
+            wadm::types::Properties::Component(properties) => Properties::Component {
                 properties: properties.into(),
             },
-            oam::types::Properties::Capability(properties) => Properties::Capability {
+            wadm::types::Properties::Capability(properties) => Properties::Capability {
                 properties: properties.into(),
             },
         }
     }
 }
 
-impl From<oam::types::ComponentProperties> for ComponentProperties {
-    fn from(properties: oam::types::ComponentProperties) -> Self {
+impl From<wadm::types::ComponentProperties> for ComponentProperties {
+    fn from(properties: wadm::types::ComponentProperties) -> Self {
         ComponentProperties {
             image: properties.image,
             id: properties.id,
@@ -337,8 +337,8 @@ impl From<oam::types::ComponentProperties> for ComponentProperties {
     }
 }
 
-impl From<oam::types::CapabilityProperties> for CapabilityProperties {
-    fn from(properties: oam::types::CapabilityProperties) -> Self {
+impl From<wadm::types::CapabilityProperties> for CapabilityProperties {
+    fn from(properties: wadm::types::CapabilityProperties) -> Self {
         CapabilityProperties {
             image: properties.image,
             id: properties.id,
@@ -347,8 +347,8 @@ impl From<oam::types::CapabilityProperties> for CapabilityProperties {
     }
 }
 
-impl From<oam::types::ConfigProperty> for ConfigProperty {
-    fn from(property: oam::types::ConfigProperty) -> Self {
+impl From<wadm::types::ConfigProperty> for ConfigProperty {
+    fn from(property: wadm::types::ConfigProperty) -> Self {
         ConfigProperty {
             name: property.name,
             properties: property.properties.map(|props| props.into_iter().collect()),
@@ -356,8 +356,8 @@ impl From<oam::types::ConfigProperty> for ConfigProperty {
     }
 }
 
-impl From<oam::types::Trait> for Trait {
-    fn from(trait_: oam::types::Trait) -> Self {
+impl From<wadm::types::Trait> for Trait {
+    fn from(trait_: wadm::types::Trait) -> Self {
         Trait {
             trait_type: trait_.trait_type,
             properties: trait_.properties.into(),
@@ -365,22 +365,22 @@ impl From<oam::types::Trait> for Trait {
     }
 }
 
-impl From<oam::types::TraitProperty> for TraitProperty {
-    fn from(property: oam::types::TraitProperty) -> Self {
+impl From<wadm::types::TraitProperty> for TraitProperty {
+    fn from(property: wadm::types::TraitProperty) -> Self {
         match property {
-            oam::types::TraitProperty::Link(link) => TraitProperty::Link(link.into()),
-            oam::types::TraitProperty::Spreadscaler(spread) => {
+            wadm::types::TraitProperty::Link(link) => TraitProperty::Link(link.into()),
+            wadm::types::TraitProperty::Spreadscaler(spread) => {
                 TraitProperty::SpreadScaler(spread.into())
             }
-            oam::types::TraitProperty::Custom(custom) => {
+            wadm::types::TraitProperty::Custom(custom) => {
                 TraitProperty::Custom(serde_json::value::Value::String(custom))
             }
         }
     }
 }
 
-impl From<oam::types::LinkProperty> for LinkProperty {
-    fn from(property: oam::types::LinkProperty) -> Self {
+impl From<wadm::types::LinkProperty> for LinkProperty {
+    fn from(property: wadm::types::LinkProperty) -> Self {
         LinkProperty {
             target: property.target,
             namespace: property.namespace,
@@ -401,8 +401,8 @@ impl From<oam::types::LinkProperty> for LinkProperty {
     }
 }
 
-impl From<oam::types::SpreadscalerProperty> for SpreadScalerProperty {
-    fn from(property: oam::types::SpreadscalerProperty) -> Self {
+impl From<wadm::types::SpreadscalerProperty> for SpreadScalerProperty {
+    fn from(property: wadm::types::SpreadscalerProperty) -> Self {
         SpreadScalerProperty {
             instances: property.instances as usize,
             spread: property.spread.into_iter().map(|s| s.into()).collect(),
@@ -410,8 +410,8 @@ impl From<oam::types::SpreadscalerProperty> for SpreadScalerProperty {
     }
 }
 
-impl From<oam::types::Spread> for Spread {
-    fn from(spread: oam::types::Spread) -> Self {
+impl From<wadm::types::Spread> for Spread {
+    fn from(spread: wadm::types::Spread) -> Self {
         Spread {
             name: spread.name,
             requirements: spread.requirements.into_iter().collect(),

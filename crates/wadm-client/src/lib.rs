@@ -277,8 +277,9 @@ impl Client {
         }
     }
 
-    pub async fn subscribe_to_status(&self, app_name: &str) -> Result<impl Stream<Item = Message>> {
-        let subject = self.topics.wadm_status_topic(app_name);
+    /// Subscribes to the status of a given manifest
+    pub async fn subscribe_to_status(&self, name: &str) -> Result<impl Stream<Item = Message>> {
+        let subject = self.topics.wadm_status_topic(name);
         let subscriber = self
             .client
             .subscribe(subject)
