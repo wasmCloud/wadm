@@ -3,11 +3,10 @@ use std::collections::{BTreeMap, HashMap};
 use serde::{Deserialize, Serialize};
 
 pub mod api;
-#[cfg(target_family = "wasm")]
-mod bindings;
-#[cfg(target_family = "wasm")]
+pub mod bindings;
 pub use bindings::*;
 pub mod validation;
+
 /// The default weight for a spread
 pub const DEFAULT_SPREAD_WEIGHT: usize = 100;
 /// The expected OAM api version

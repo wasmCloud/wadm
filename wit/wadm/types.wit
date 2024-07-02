@@ -1,7 +1,6 @@
 package wasmcloud:wadm@0.1.0;
 
 interface types {
-    use types.{oam-manifest};
 
     record model-summary {
         name: string,
@@ -15,6 +14,11 @@ interface types {
     record version-info {
         version: string,
         deployed: bool
+    }
+
+    record status-update {
+        app: string,
+        status: status
     }
 
     record status {
