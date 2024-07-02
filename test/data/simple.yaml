@@ -3,13 +3,13 @@ kind: Application
 metadata:
   name: hello-simple
   annotations:
-    description: "A Hello World app for testing, most basic HTTP link"
+    description: 'A Hello World app for testing, most basic HTTP link'
 spec:
   components:
     - name: hello
       type: component
       properties:
-        image: wasmcloud.azurecr.io/http-hello-world:0.1.0
+        image: ghcr.io/wasmcloud/components/http-hello-world-rust:0.1.0
         id: http_hello_world
       traits:
         - type: spreadscaler
@@ -19,7 +19,7 @@ spec:
     - name: httpserver
       type: capability
       properties:
-        image: ghcr.io/wasmcloud/http-server:0.20.0
+        image: ghcr.io/wasmcloud/http-server:0.21.0
         id: http_server
       traits:
         - type: spreadscaler

@@ -50,7 +50,7 @@ spec:
       type: component
       properties:
         # Run components from OCI registries as below or from a local .wasm component binary.
-        image: wasmcloud.azurecr.io/http-hello-world:0.1.0
+        image: ghcr.io/wasmcloud/components/http-hello-world-rust:0.1.0
       traits:
         # One replica of this component will run
         - type: spreadscaler
@@ -60,7 +60,7 @@ spec:
     - name: httpserver
       type: capability
       properties:
-        image: ghcr.io/wasmcloud/http-server:0.20.0
+        image: ghcr.io/wasmcloud/http-server:0.21.0
       traits:
         # Link the HTTP server and set it to listen on the local machine's port 8080
         - type: link
@@ -104,7 +104,7 @@ spec:
     - name: http-component
       type: component
       properties:
-        image: wasmcloud.azurecr.io/http-hello-world:0.1.0
+        image: ghcr.io/wasmcloud/components/http-hello-world-rust:0.1.0
       traits:
         - type: spreadscaler
           properties:
