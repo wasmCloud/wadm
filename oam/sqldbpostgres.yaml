@@ -26,7 +26,7 @@ spec:
         # Govern the spread/scheduling of the component
         - type: spreadscaler
           properties:
-            replicas: 1
+            instances: 1
         # Establish a unidirectional link to the `sqldb-postgres` provider (the sqldb provider),
         # so the `querier` component can make use of sqldb functionality provided Postgres
         # (i.e. reading/writing to a database)

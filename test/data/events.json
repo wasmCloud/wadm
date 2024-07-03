@@ -270,7 +270,7 @@
               {
                 "type": "spreadscaler",
                 "properties": {
-                  "replicas": 4,
+                  "instances": 4,
                   "spread": [
                     {
                       "name": "eastcoast",
@@ -320,7 +320,7 @@
               {
                 "type": "spreadscaler",
                 "properties": {
-                  "replicas": 1,
+                  "instances": 1,
                   "spread": [
                     {
                       "name": "haslights",

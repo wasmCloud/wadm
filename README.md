@@ -55,7 +55,7 @@ spec:
         # One replica of this component will run
         - type: spreadscaler
           properties:
-            replicas: 1
+            instances: 1
     # The httpserver capability provider, started from the official wasmCloud OCI artifact
     - name: httpserver
       type: capability
@@ -91,7 +91,7 @@ wash app undeploy hello-world
 
 ### Modifying applications
 
-**wadm** supports upgrading applications by deploying new versions of manifests. Try changing the manifest you created above by updating the number of replicas.
+**wadm** supports upgrading applications by deploying new versions of manifests. Try changing the manifest you created above by updating the number of instances.
 
 ```yaml
 <<ELIDED>>
@@ -108,7 +108,7 @@ spec:
       traits:
         - type: spreadscaler
           properties:
-            replicas: 10 # Let's have 10!
+            instances: 10 # Let's have 10!
 <<ELIDED>>
 ```
 
@@ -118,7 +118,7 @@ Then simply deploy the new manifest:
 wash app deploy hello.yaml
 ```
 
-Now wasmCloud is configured to automatically scale your component to 10 replicas based on incoming load.
+Now wasmCloud is configured to automatically scale your component to 10 instances based on incoming load.
 
 ## Responsibilities
 
