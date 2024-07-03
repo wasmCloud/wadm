@@ -58,7 +58,7 @@ impl crate::storage::ReadStore for TestStore {
 impl crate::storage::Store for TestStore {
     async fn store_many<T, D>(&self, lattice_id: &str, data: D) -> Result<(), Self::Error>
     where
-        T: Serialize + DeserializeOwned + StateKind + Send,
+        T: Serialize + DeserializeOwned + StateKind + Send + Sync + Clone,
         D: IntoIterator<Item = (String, T)> + Send,
     {
         let key = generate_key::<T>(lattice_id);
@@ -79,7 +79,7 @@ impl crate::storage::Store for TestStore {
 
     async fn delete_many<T, D, K>(&self, lattice_id: &str, data: D) -> Result<(), Self::Error>
     where
-        T: Serialize + DeserializeOwned + StateKind + Send,
+        T: Serialize + DeserializeOwned + StateKind + Send + Sync,
         D: IntoIterator<Item = K> + Send,
         K: AsRef<str>,
     {

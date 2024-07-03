@@ -14,12 +14,14 @@
 //! structure in the future
 use std::collections::HashMap;
 use std::io::Error as IoError;
+use std::time::Duration;
 
 use async_nats::{
     jetstream::kv::{Operation, Store as KvStore},
     Error as NatsError,
 };
 use async_trait::async_trait;
+use futures::Future;
 use serde::{de::DeserializeOwned, Serialize};
 use tracing::{debug, error, field::Empty, instrument, trace};
 use tracing_futures::Instrument;
@@ -89,6 +91,73 @@ impl NatsKvStore {
             Err(e) => Err(NatsStoreError::Nats(e.into())),
         }
     }
+
+    /// Helper that retries update operations
+    // NOTE(thomastaylor312): We could probably make this even better with some exponential backoff,
+    // but this is easy enough for now since generally there isn't a ton of competition for updating
+    // a single lattice
+    async fn update_with_retries<T, F, Fut>(
+        &self,
+        lattice_id: &str,
+        key: &str,
+        timeout: Duration,
+        updater: F,
+    ) -> Result<(), NatsStoreError>
+    where
+        T: Serialize + DeserializeOwned + StateKind + Send,
+        F: Fn(HashMap<String, T>) -> Fut,
+        Fut: Future<Output = Result<Vec<u8>, NatsStoreError>>,
+    {
+        let res = tokio::time::timeout(timeout, async {
+            loop {
+                let (current_data, revision) = self
+                    .internal_list::<T>(lattice_id)
+                    .in_current_span()
+                    .await?;
+                debug!(revision, "Updating data in store");
+                let updated_data = updater(current_data).await?;
+                trace!("Writing bytes to store");
+                // If the function doesn't return any data (such as for deletes), just return early.
+                // Everything is an update (right now), even for deletes so the only case we'd have
+                // an empty vec is if we aren't updating anything
+                if updated_data.is_empty() {
+                    return Ok(())
+                }
+                match self.store.update(key, updated_data.into(), revision).await {
+                    Ok(_) => return Ok(()),
+                    Err(e) => {
+                        if e.to_string().contains("wrong last sequence") {
+                            debug!(%key, %lattice_id, "Got wrong last sequence when trying to update state. Retrying update operation");
+                            continue;
+                        }
+                        return Err(NatsStoreError::Nats(e.into()));
+                    }
+                    // TODO(#316): Uncomment this code once we can update to the latest
+                    // async-nats, which actually allows us to access the inner source of the error
+                    // Err(e) => {
+                    //     let source = match e.source() {
+                    //         Some(s) => s,
+                    //         None => return Err(NatsStoreError::Nats(e.into())),
+                    //     };
+                    //     match source.downcast_ref::<PublishError>() {
+                    //         Some(e) if matches!(e.kind(), PublishErrorKind::WrongLastSequence) => {
+                    //             debug!(%key, %lattice_id, "Got wrong last sequence when trying to update state. Retrying update operation");
+                    //             continue;
+                    //         },
+                    //         _ => return Err(NatsStoreError::Nats(e.into())),
+                    //     }
+                    // }
+                }
+            }
+        })
+        .await;
+        match res {
+            Err(_e) => Err(NatsStoreError::Other(
+                "Timed out while retrying updates to key".to_string(),
+            )),
+            Ok(res2) => res2,
+        }
+    }
 }
 
 // NOTE(thomastaylor312): This implementation should be good enough to start. If we need to optimize
@@ -151,79 +220,76 @@ impl Store for NatsKvStore {
     #[instrument(level = "debug", skip(self, data), fields(key = Empty))]
     async fn store_many<T, D>(&self, lattice_id: &str, data: D) -> Result<(), Self::Error>
     where
-        T: Serialize + DeserializeOwned + StateKind + Send,
+        T: Serialize + DeserializeOwned + StateKind + Send + Sync + Clone,
         D: IntoIterator<Item = (String, T)> + Send,
     {
         let key = generate_key::<T>(lattice_id);
         tracing::Span::current().record("key", &key);
-        let (mut current_data, revision) = self
-            .internal_list::<T>(lattice_id)
-            .in_current_span()
-            .await?;
-        debug!(revision, "Updating data in store");
-        for (id, item) in data.into_iter() {
-            if current_data.insert(id, item).is_some() {
-                // NOTE: We may want to return the old data in the future. For now, keeping it simple
-                trace!("Replaced existing data");
-            } else {
-                trace!("Inserted new entry");
-            };
-        }
-        let serialized = serde_json::to_vec(&current_data)?;
-        // NOTE(thomastaylor312): This could not matter, but because this is JSON and not consuming
-        // the data it is serializing, we are now holding a vec of the serialized data and the
-        // actual struct in memory. So this drops it immediately to hopefully keep memory usage down
-        // on busy servers
-        drop(current_data);
-        trace!(len = serialized.len(), "Writing bytes to store");
-        self.store
-            .update(key, serialized.into(), revision)
-            .await
-            .map(|_| ())
-            .map_err(|e| NatsStoreError::Nats(e.into()))
+        let data: Vec<(String, T)> = data.into_iter().collect();
+        self.update_with_retries(
+            lattice_id,
+            &key,
+            Duration::from_millis(1500),
+            |mut current_data| async {
+                let cloned = data.clone();
+                async move {
+                    for (id, item) in cloned.into_iter() {
+                        if current_data.insert(id, item).is_some() {
+                            // NOTE: We may want to return the old data in the future. For now, keeping it simple
+                            trace!("Replaced existing data");
+                        } else {
+                            trace!("Inserted new entry");
+                        };
+                    }
+                    serde_json::to_vec(&current_data).map_err(NatsStoreError::SerDe)
+                }
+                .await
+            },
+        )
+        .in_current_span()
+        .await
     }
 
     #[instrument(level = "debug", skip(self, data), fields(key = Empty))]
     async fn delete_many<T, D, K>(&self, lattice_id: &str, data: D) -> Result<(), Self::Error>
     where
-        T: Serialize + DeserializeOwned + StateKind + Send,
+        T: Serialize + DeserializeOwned + StateKind + Send + Sync,
         D: IntoIterator<Item = K> + Send,
         K: AsRef<str>,
     {
         let key = generate_key::<T>(lattice_id);
         tracing::Span::current().record("key", &key);
-        let (mut current_data, revision) = self
-            .internal_list::<T>(lattice_id)
-            .in_current_span()
-            .await?;
-        debug!("Updating data in store");
-        let mut updated = false;
-        for id in data.into_iter() {
-            if current_data.remove(id.as_ref()).is_some() {
-                // NOTE: We may want to return the old data in the future. For now, keeping it simple
-                trace!(id = %id.as_ref(), "Removing existing data");
-                updated = true;
-            } else {
-                trace!(id = %id.as_ref(), "ID doesn't exist in store, ignoring");
-            };
-        }
-        // If we updated nothing, return early
-        if !updated {
-            return Ok(());
-        }
 
-        let serialized = serde_json::to_vec(&current_data)?;
-        // NOTE(thomastaylor312): This could not matter, but because this is JSON and not consuming
-        // the data it is serializing, we are now holding a vec of the serialized data and the
-        // actual struct in memory. So this drops it immediately to hopefully keep memory usage down
-        // on busy servers
-        drop(current_data);
-        trace!(len = serialized.len(), "Writing bytes to store");
-        self.store
-            .update(key, serialized.into(), revision)
-            .await
-            .map(|_| ())
-            .map_err(|e| NatsStoreError::Nats(e.into()))
+        let data: Vec<String> = data.into_iter().map(|s| s.as_ref().to_string()).collect();
+        self.update_with_retries(
+            lattice_id,
+            &key,
+            Duration::from_millis(1500),
+            |mut current_data: HashMap<String, T>| async {
+                let cloned = data.clone();
+                async move {
+                    let mut updated = false;
+                    for id in cloned.into_iter() {
+                        if current_data.remove(&id).is_some() {
+                            // NOTE: We may want to return the old data in the future. For now, keeping it simple
+                            trace!(%id, "Removing existing data");
+                            updated = true;
+                        } else {
+                            trace!(%id, "ID doesn't exist in store, ignoring");
+                        };
+                    }
+                    // If we updated nothing, return early
+                    if !updated {
+                        return Ok(Vec::with_capacity(0));
+                    }
+
+                    serde_json::to_vec(&current_data).map_err(NatsStoreError::SerDe)
+                }
+                .await
+            },
+        )
+        .in_current_span()
+        .await
     }
 }
 

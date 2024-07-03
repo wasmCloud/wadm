@@ -52,7 +52,7 @@ pub trait Store: ReadStore {
     /// By default this will just call [`Store::store_many`] with a single item in the list of data
     async fn store<T>(&self, lattice_id: &str, id: String, data: T) -> Result<(), Self::Error>
     where
-        T: Serialize + DeserializeOwned + StateKind + Send,
+        T: Serialize + DeserializeOwned + StateKind + Send + Sync + Clone, // Needs to be clone in order to retry updates
     {
         self.store_many(lattice_id, [(id, data)]).await
     }
@@ -71,7 +71,7 @@ pub trait Store: ReadStore {
     /// sendable between threads
     async fn store_many<T, D>(&self, lattice_id: &str, data: D) -> Result<(), Self::Error>
     where
-        T: Serialize + DeserializeOwned + StateKind + Send,
+        T: Serialize + DeserializeOwned + StateKind + Send + Sync + Clone, // Needs to be clone in order to retry updates
         D: IntoIterator<Item = (String, T)> + Send;
 
     /// Delete a state entry
@@ -79,7 +79,7 @@ pub trait Store: ReadStore {
     /// By default this will just call [`Store::delete_many`] with a single item in the list of data
     async fn delete<T>(&self, lattice_id: &str, id: &str) -> Result<(), Self::Error>
     where
-        T: Serialize + DeserializeOwned + StateKind + Send,
+        T: Serialize + DeserializeOwned + StateKind + Send + Sync,
     {
         self.delete_many::<T, _, _>(lattice_id, [id]).await
     }
@@ -97,7 +97,7 @@ pub trait Store: ReadStore {
     /// sendable between threads
     async fn delete_many<T, D, K>(&self, lattice_id: &str, data: D) -> Result<(), Self::Error>
     where
-        T: Serialize + DeserializeOwned + StateKind + Send,
+        T: Serialize + DeserializeOwned + StateKind + Send + Sync,
         D: IntoIterator<Item = K> + Send,
         K: AsRef<str>;
 }
@@ -107,7 +107,7 @@ pub trait Store: ReadStore {
 impl<S: Store + Send + Sync> Store for std::sync::Arc<S> {
     async fn store_many<T, D>(&self, lattice_id: &str, data: D) -> Result<(), Self::Error>
     where
-        T: Serialize + DeserializeOwned + StateKind + Send,
+        T: Serialize + DeserializeOwned + StateKind + Send + Sync + Clone,
         D: IntoIterator<Item = (String, T)> + Send,
     {
         self.as_ref().store_many(lattice_id, data).await
@@ -115,7 +115,7 @@ impl<S: Store + Send + Sync> Store for std::sync::Arc<S> {
 
     async fn delete_many<T, D, K>(&self, lattice_id: &str, data: D) -> Result<(), Self::Error>
     where
-        T: Serialize + DeserializeOwned + StateKind + Send,
+        T: Serialize + DeserializeOwned + StateKind + Send + Sync,
         D: IntoIterator<Item = K> + Send,
         K: AsRef<str>,
     {
@@ -210,7 +210,7 @@ impl<S: Store + Sync> ScopedStore<S> {
     /// Store a piece of state. This should overwrite existing state entries
     pub async fn store<T>(&self, id: String, data: T) -> Result<(), S::Error>
     where
-        T: Serialize + DeserializeOwned + StateKind + Send,
+        T: Serialize + DeserializeOwned + StateKind + Send + Sync + Clone,
     {
         self.inner.store(&self.lattice_id, id, data).await
     }
@@ -219,7 +219,7 @@ impl<S: Store + Sync> ScopedStore<S> {
     /// allows for stores to perform multiple writes simultaneously or to leverage transactions
     pub async fn store_many<T, D>(&self, data: D) -> Result<(), S::Error>
     where
-        T: Serialize + DeserializeOwned + StateKind + Send,
+        T: Serialize + DeserializeOwned + StateKind + Send + Sync + Clone,
         D: IntoIterator<Item = (String, T)> + Send,
     {
         self.inner.store_many(&self.lattice_id, data).await
@@ -228,7 +228,7 @@ impl<S: Store + Sync> ScopedStore<S> {
     /// Delete a state entry
     pub async fn delete<T>(&self, id: &str) -> Result<(), S::Error>
     where
-        T: Serialize + DeserializeOwned + StateKind + Send,
+        T: Serialize + DeserializeOwned + StateKind + Send + Sync,
     {
         self.inner.delete::<T>(&self.lattice_id, id).await
     }
@@ -237,7 +237,7 @@ impl<S: Store + Sync> ScopedStore<S> {
     /// simultaneously or to leverage transactions
     pub async fn delete_many<T, D, K>(&self, data: D) -> Result<(), S::Error>
     where
-        T: Serialize + DeserializeOwned + StateKind + Send,
+        T: Serialize + DeserializeOwned + StateKind + Send + Sync,
         D: IntoIterator<Item = K> + Send,
         K: AsRef<str>,
     {

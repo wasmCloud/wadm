@@ -149,7 +149,7 @@ async fn test_upgrade(client_info: &ClientInfo) {
             })
             .context("Should have http link with hello")?;
         if let Err(e) = check_config(
-            &client_info.ctl_client("default"),
+            client_info.ctl_client("default"),
             &http_link.source_config[0],
             &HashMap::from_iter([("address".to_string(), "0.0.0.0:8080".to_string())]),
         )
@@ -171,7 +171,7 @@ async fn test_upgrade(client_info: &ClientInfo) {
             })
             .context("Should have http link with dog-fetcher")?;
         if let Err(e) = check_config(
-            &client_info.ctl_client("default"),
+            client_info.ctl_client("default"),
             &dog_link.source_config[0],
             &HashMap::from_iter([("address".to_string(), "0.0.0.0:8081".to_string())]),
         )
@@ -193,7 +193,7 @@ async fn test_upgrade(client_info: &ClientInfo) {
             })
             .context("Should have redis link with kvcounter")?;
         if let Err(e) = check_config(
-            &client_info.ctl_client("default"),
+            client_info.ctl_client("default"),
             &kv_link.target_config[0],
             &HashMap::from_iter([("URL".to_string(), "redis://127.0.0.1:6379".to_string())]),
         )

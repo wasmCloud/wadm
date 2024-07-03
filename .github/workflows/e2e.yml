@@ -23,7 +23,6 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
-          default: true
           components: clippy, rustfmt
 
       # Cache: rust
