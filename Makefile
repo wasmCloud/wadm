@@ -91,7 +91,7 @@ ifeq ($(shell nc $(NC_FLAGS) -w1 127.0.0.1 4222 || echo fail),fail)
 	@# Reenable this once we've enabled all tests
 	@# RUST_BACKTRACE=1 $(CARGO) test --test e2e_multitenant --features _e2e_tests --  --nocapture 
 	RUST_BACKTRACE=1 $(CARGO) test --test e2e_multiple_hosts --features _e2e_tests --  --nocapture 
-	@# RUST_BACKTRACE=1 $(CARGO) test --test e2e_upgrades --features _e2e_tests --  --nocapture 
+	RUST_BACKTRACE=1 $(CARGO) test --test e2e_upgrades --features _e2e_tests --  --nocapture 
 else
 	@echo "WARN: Not running e2e tests. NATS must not be currently running"
 	exit 1

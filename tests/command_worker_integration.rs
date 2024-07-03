@@ -31,7 +31,7 @@ async fn test_commands() {
         .get_hosts()
         .await
         .expect("should get hosts back")
-        .get(0)
+        .first()
         .as_ref()
         .expect("Should be able to find hosts")
         .response
@@ -347,7 +347,7 @@ async fn test_annotation_stop() {
         .get_hosts()
         .await
         .unwrap()
-        .get(0)
+        .first()
         .expect("Should be able to find hosts")
         .response
         .as_ref()
