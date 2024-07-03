@@ -360,7 +360,7 @@
           "type": "array",
           "items": {
             "type": "object",
-            "description": "A spread object for spreading replicas.",
+            "description": "A spread object for spreading instances.",
             "properties": {
               "name": {
                 "type": "string"
