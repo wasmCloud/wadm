@@ -137,7 +137,7 @@ jobs:
       - name: Package Binaries
         run: for dir in */; do tar -czvf "${dir%/}.tar.gz" "$dir"; done
       - name: Publish to GHCR
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           prerelease: false
