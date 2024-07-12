@@ -109,7 +109,7 @@ jobs:
         if: matrix.config.arch == 'aarch64' && matrix.config.os == 'ubuntu-20.04'
         run: 'cargo build --release --bin wadm --target aarch64-unknown-linux-gnu'
 
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: wadm-${{ env.RELEASE_VERSION }}-${{ env.RUNNER_OS }}-${{ matrix.config.arch }}
           if-no-files-found: error
@@ -125,7 +125,7 @@ jobs:
       RELEASE_VERSION: ${{ needs.build.outputs.version_output }}
     steps:
       - name: download release assets
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
       - name: Generate Checksums
         run: |
           for dir in */; do
@@ -199,13 +199,13 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - uses: actions/download-artifact@v3
+      - uses: actions/download-artifact@v4
         with:
           name: wadm-${{ env.RELEASE_VERSION }}-linux-aarch64
           path: ./artifacts
       - run: mv ./artifacts/wadm ./artifacts/wadm-${{ env.RELEASE_VERSION }}-linux-aarch64 && chmod +x ./artifacts/wadm-${{ env.RELEASE_VERSION }}-linux-aarch64
 
-      - uses: actions/download-artifact@v3
+      - uses: actions/download-artifact@v4
         with:
           name: wadm-${{ env.RELEASE_VERSION }}-linux-amd64
           path: ./artifacts
