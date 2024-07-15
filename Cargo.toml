@@ -88,7 +88,7 @@ chrono = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
-serial_test = "1"
+serial_test = "3"
 wadm-client = { workspace = true }
 wadm-types = { workspace = true }
 
