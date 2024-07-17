@@ -1,0 +1,23 @@
+---
+apiVersion: core.oam.dev/v1beta1
+kind: Application
+metadata:
+  name: sample_application_with_source_config_on_component
+  annotations:
+    version: v0.0.1
+    description: Sample manifest that does not pass since it has a source_config on a component
+spec:
+  components:
+    - name: http-component
+      type: component
+      properties:
+        image: ghcr.io/wasmcloud/component-http-hello-world:0.1.0
+      traits:
+        - type: spreadscaler
+          properties:
+            instances: 1
+            # This is not allowed since 1.0.0 should error during validation
+            source_config:
+              - name: any_value
+                properties:
+                  SOME_OTHER_KEY: any_other_value
