@@ -43,7 +43,7 @@ kind: Application
 metadata:
   name: hello-world
   annotations:
-    description: 'HTTP hello world demo'
+    description: "HTTP hello world demo"
 spec:
   components:
     - name: http-component
@@ -150,7 +150,7 @@ a single lattice. Proceed with caution while we do further testing.
 
 Interacting with **wadm** is done over NATS on the root topic `wadm.api.{prefix}` where `prefix` is
 the lattice namespace prefix. For more information on this API, please consult the [wadm
-Reference](https://wasmcloud.dev/reference/wadm).
+Reference](https://wasmcloud.com/docs/ecosystem/wadm/).
 
 ## Known Issues/Missing functionality
 
