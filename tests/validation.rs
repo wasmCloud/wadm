@@ -139,7 +139,7 @@ async fn validate_source_config_on_component_errors() -> Result<()> {
     );
     assert_eq!(
         msg,
-        "source_config found on one of the component: http-component's traits properties",
+        "component [http-component] has source_config in one of its traits properties",
         "expected error message, but was incorrect",
     );
     Ok(())

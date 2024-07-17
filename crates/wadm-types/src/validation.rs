@@ -408,28 +408,23 @@ fn check_dangling_links(manifest: &Manifest) -> Vec<ValidationFailure> {
 fn check_source_config_on_components(manifest: &Manifest) -> Vec<ValidationFailure> {
     let forbidden_config_key = "source_config";
     let mut failures = Vec::new();
-    let components = manifest.components();
-    for component in components {
-        for component_traits in component.traits.iter() {
-            for component_trait in component_traits {
-                match &component_trait.properties {
-                    TraitProperty::Custom(custom) => {
-                        match custom {
-                            Value::Object(custom_trait_config) => {
-                                if custom_trait_config.contains_key(forbidden_config_key) {
-                                    failures.push(ValidationFailure::new(
-                                        ValidationFailureLevel::Error,
-                                        format!(
-                                            "source_config found on one of the component: {}'s traits properties",
-                                            component.name
-                                        ),
-                                    ))
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                    _ => {}
+    let components = manifest.component_lookup();
+    let component_traits = components
+        .into_iter()
+        .filter_map(|(name, component)| match &component.traits {
+            Some(traits) => Some((name, traits)),
+            None => None,
+        });
+    for (name, traits) in component_traits {
+        for trait_ in traits {
+            if let TraitProperty::Custom(custom) = trait_.properties.clone() {
+                if let Some(_) = custom.get(forbidden_config_key) {
+                    failures.push(ValidationFailure::new(
+                        ValidationFailureLevel::Error,
+                        format!(
+                            "component [{name}] has source_config in one of its traits properties",
+                        ),
+                    ))
                 }
             }
         }
