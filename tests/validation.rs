@@ -1,6 +1,6 @@
 use anyhow::{Context as _, Result};
 
-use wadm_types::validation::{validate_manifest_file, ValidationFailureLevel, ValidationOutput};
+use wadm_types::validation::{validate_manifest_file, ValidationFailure, ValidationFailureLevel, ValidationOutput};
 
 /// Ensure that valid YAML manifests are valid
 #[tokio::test]
@@ -118,5 +118,29 @@ async fn validate_policy() -> Result<()> {
             .context("failed to validate manifest")?;
     assert!(failures.is_empty(), "no failures");
     assert!(failures.valid(), "manifest is valid");
+    Ok(())
+}
+
+#[tokio::test]
+async fn validate_source_config_on_component_errors() -> Result<()> {
+    let (_manifest, failures) = validate_manifest_file(
+        "./tests/fixtures/manifests/with-source-config-on-component.wadm.yaml",
+    )
+        .await
+        .context("failed to validate manifest")?;
+    assert!(!failures.is_empty(), "failures present, all errors");
+    let failures = failures.iter().collect::<Vec<_>>();
+    assert_eq!(failures.len(), 1, "expected one failure");
+    let ValidationFailure { level, msg, .. } = failures.get(0).expect("expected one failure");
+    assert_eq!(
+        *level,
+        ValidationFailureLevel::Error,
+        "expected error level"
+    );
+    assert_eq!(
+        msg,
+        "component [http-component] has source_config in one of its traits properties",
+        "expected error message, but was incorrect",
+    );
     Ok(())
 }

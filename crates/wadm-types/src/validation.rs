@@ -8,6 +8,7 @@ use std::sync::OnceLock;
 use anyhow::{Context as _, Result};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::{LinkProperty, Manifest, TraitProperty, LATEST_VERSION};
 
@@ -327,6 +328,7 @@ pub async fn validate_manifest(manifest: &Manifest) -> Result<Vec<ValidationFail
     );
     failures.extend(check_misnamed_interfaces(manifest));
     failures.extend(check_dangling_links(manifest));
+    failures.extend(check_source_config_on_components(manifest));
     Ok(failures)
 }
 
@@ -400,6 +402,33 @@ fn check_dangling_links(manifest: &Manifest) -> Vec<ValidationFailure> {
         }
     }
 
+    failures
+}
+
+fn check_source_config_on_components(manifest: &Manifest) -> Vec<ValidationFailure> {
+    let forbidden_config_key = "source_config";
+    let mut failures = Vec::new();
+    let components = manifest.component_lookup();
+    let component_traits = components
+        .into_iter()
+        .filter_map(|(name, component)| match &component.traits {
+            Some(traits) => Some((name, traits)),
+            None => None,
+        });
+    for (name, traits) in component_traits {
+        for trait_ in traits {
+            if let TraitProperty::Custom(custom) = trait_.properties.clone() {
+                if let Some(_) = custom.get(forbidden_config_key) {
+                    failures.push(ValidationFailure::new(
+                        ValidationFailureLevel::Error,
+                        format!(
+                            "component [{name}] has source_config in one of its traits properties",
+                        ),
+                    ))
+                }
+            }
+        }
+    }
     failures
 }
 
