@@ -1,7 +1,8 @@
 use anyhow::Result;
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     hash::{DefaultHasher, Hash, Hasher},
 };
 use tokio::sync::RwLock;
@@ -27,6 +28,13 @@ pub struct SecretScaler<SecretSource> {
     source: SecretSourceProperty,
     status: RwLock<StatusInfo>,
     policy: Policy,
+}
+
+#[derive(Deserialize, Serialize)]
+struct PolicyProperties {
+    #[serde(rename = "type")]
+    policy_type: String,
+    properties: BTreeMap<String, String>,
 }
 
 impl<S: SecretSource> SecretScaler<S> {
@@ -107,7 +115,7 @@ impl<S: SecretSource + Send + Sync + Clone> Scaler for SecretScaler<S> {
             (Ok(_config), scaler_config) => {
                 debug!(self.secret_name, "Putting secret");
 
-                let cfg = merge_policy_config(&self.policy, &scaler_config)?;
+                let cfg = merge_policy_properties(&self.policy, &scaler_config)?;
 
                 *self.status.write().await = StatusInfo::reconciling("Secret out of sync");
                 Ok(vec![Command::PutConfig(PutConfig {
@@ -131,21 +139,24 @@ impl<S: SecretSource + Send + Sync + Clone> Scaler for SecretScaler<S> {
     }
 }
 
-fn merge_policy_config(
+fn merge_policy_properties(
     policy: &Policy,
     reference: &SecretSourceProperty,
 ) -> anyhow::Result<HashMap<String, String>> {
     let mut cfg: HashMap<String, String> = reference.clone().try_into()?;
-    let mut p = policy.properties.clone();
-    p.insert("type".to_string(), policy.policy_type.clone());
-    let policy_json = serde_json::to_string(&p)?;
-    cfg.insert("policy".to_string(), policy_json);
+
+    let properties = PolicyProperties {
+        policy_type: policy.policy_type.clone(),
+        properties: policy.properties.clone(),
+    };
+    let policy_json = serde_json::to_string(&properties)?;
+    cfg.insert("policy_properties".to_string(), policy_json);
     Ok(cfg)
 }
 
 #[cfg(test)]
 mod test {
-    use super::merge_policy_config;
+    use super::merge_policy_properties;
 
     use crate::{
         commands::{Command, PutConfig},
@@ -192,7 +203,7 @@ mod test {
             StatusType::Reconciling
         );
 
-        let cfg = merge_policy_config(&policy, &secret.source).expect("failed to merge policy");
+        let cfg = merge_policy_properties(&policy, &secret.source).expect("failed to merge policy");
 
         assert_eq!(
             secret_scaler
