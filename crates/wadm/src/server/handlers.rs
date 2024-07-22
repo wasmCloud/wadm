@@ -164,7 +164,7 @@ impl<P: Publisher> Handler<P> {
                 Err(e) => {
                     self.send_error(
                         msg.reply,
-                        format!("Unable to parse get model request: {e:?}"),
+                        format!("Unable to parse get application request: {e:?}"),
                     )
                     .await;
                     return;
@@ -181,7 +181,7 @@ impl<P: Publisher> Handler<P> {
                     // case we unwrap to nothing
                     serde_json::to_vec(&GetModelResponse {
                         result: GetResult::NotFound,
-                        message: format!("Model with the name {name} not found"),
+                        message: format!("Application with the name {name} not found"),
                         manifest: None,
                     })
                     .unwrap_or_default(),
@@ -202,7 +202,7 @@ impl<P: Publisher> Handler<P> {
                     GetModelResponse {
                         manifest: Some(current.to_owned()),
                         result: GetResult::Success,
-                        message: format!("Successfully fetched model {name} {version}"),
+                        message: format!("Successfully fetched application {name} {version}"),
                     }
                 } else {
                     self.send_reply(
@@ -211,7 +211,9 @@ impl<P: Publisher> Handler<P> {
                         // in case we unwrap to nothing
                         serde_json::to_vec(&GetModelResponse {
                             result: GetResult::NotFound,
-                            message: format!("Model {name} with version {} doesn't exist", version),
+                            message: format!(
+                                "Application {name} with version {version} doesn't exist"
+                            ),
                             manifest: None,
                         })
                         .unwrap_or_default(),
@@ -223,7 +225,7 @@ impl<P: Publisher> Handler<P> {
             None => GetModelResponse {
                 manifest: Some(manifests.get_current().to_owned()),
                 result: GetResult::Success,
-                message: format!("Successfully fetched model {name}"),
+                message: format!("Successfully fetched application {name}"),
             },
         };
         // NOTE: We _just_ deserialized this from the store above, so we should be just fine. but
@@ -249,7 +251,7 @@ impl<P: Publisher> Handler<P> {
                 model.status = status.status_type;
                 model.status_message = Some(status.message);
             } else {
-                warn!("Could not fetch status for model, assuming undeployed");
+                warn!("Could not fetch status for application, assuming undeployed");
                 model.status = StatusType::Undeployed;
                 model.status_message = None;
             }
@@ -275,7 +277,7 @@ impl<P: Publisher> Handler<P> {
         let data: VersionResponse = match self.store.get(account_id, lattice_id, name).await {
             Ok(Some((manifest, _))) => VersionResponse {
                 result: GetResult::Success,
-                message: format!("Successfully fetched versions for model {name}"),
+                message: format!("Successfully fetched versions for application {name}"),
                 versions: manifest
                     .all_versions()
                     .into_iter()
@@ -291,7 +293,7 @@ impl<P: Publisher> Handler<P> {
             },
             Ok(None) => VersionResponse {
                 result: GetResult::NotFound,
-                message: format!("Model with the name {name} not found"),
+                message: format!("Application with the name {name} not found"),
                 versions: Vec::with_capacity(0),
             },
             Err(e) => {
@@ -323,7 +325,7 @@ impl<P: Publisher> Handler<P> {
                 Err(e) => {
                     self.send_error(
                         msg.reply,
-                        format!("Unable to parse delete model request: {e:?}"),
+                        format!("Unable to parse delete application request: {e:?}"),
                     )
                     .await;
                     return;
@@ -351,8 +353,7 @@ impl<P: Publisher> Handler<P> {
                             .map(|_| DeleteModelResponse {
                                 result: DeleteResult::Deleted,
                                 message: format!(
-                                    "Successfully deleted version {} of model {}",
-                                    version, name
+                                    "Successfully deleted version {version} of application {name}"
                                 ),
                                 undeploy,
                             })
@@ -372,8 +373,7 @@ impl<P: Publisher> Handler<P> {
                             .map(|_| DeleteModelResponse {
                                 result: DeleteResult::Deleted,
                                 message: format!(
-                                    "Successfully deleted last version of model {}",
-                                    name
+                                    "Successfully deleted last version of application {name}"
                                 ),
                                 // By default if it is all gone, we definitely undeployed things
                                 undeploy: true,
@@ -389,14 +389,14 @@ impl<P: Publisher> Handler<P> {
                     } else {
                         DeleteModelResponse {
                             result: DeleteResult::Noop,
-                            message: format!("Model version {} doesn't exist", version),
+                            message: format!("Application version {version} doesn't exist"),
                             undeploy: false,
                         }
                     }
                 }
                 Ok(None) => DeleteModelResponse {
                     result: DeleteResult::Noop,
-                    message: format!("Model {name} doesn't exist"),
+                    message: format!("Application {name} doesn't exist"),
                     undeploy: false,
                 },
                 Err(e) => {
@@ -413,7 +413,7 @@ impl<P: Publisher> Handler<P> {
                 Ok(_) => {
                     DeleteModelResponse {
                         result: DeleteResult::Deleted,
-                        message: format!("Successfully deleted model {}", name),
+                        message: format!("Successfully deleted application {}", name),
                         // By default if it is all gone, we definitely undeployed things
                         undeploy: true,
                     }
@@ -478,7 +478,7 @@ impl<P: Publisher> Handler<P> {
                 Err(e) => {
                     self.send_error(
                         msg.reply,
-                        format!("Unable to parse deploy model request: {e:?}"),
+                        format!("Unable to parse deploy application request: {e:?}"),
                     )
                     .await;
                     return;
@@ -498,7 +498,7 @@ impl<P: Publisher> Handler<P> {
                         // case we unwrap to nothing
                         serde_json::to_vec(&DeployModelResponse {
                             result: DeployResult::NotFound,
-                            message: format!("Model with the name {name} not found"),
+                            message: format!("Application with the name {name} not found"),
                         })
                         .unwrap_or_default(),
                     )
@@ -578,7 +578,7 @@ impl<P: Publisher> Handler<P> {
                 serde_json::to_vec(&DeployModelResponse {
                     result: DeployResult::Error,
                     message: format!(
-                        "Model with the name {name} does not have the specified version to deploy"
+                        "Application with the name {name} does not have the specified version to deploy"
                     ),
                 })
                 .unwrap_or_default(),
@@ -599,8 +599,7 @@ impl<P: Publisher> Handler<P> {
             .map(|_| DeployModelResponse {
                 result: DeployResult::Acknowledged,
                 message: format!(
-                    "Successfully deployed model {} {}",
-                    name,
+                    "Successfully deployed application {name} {}",
                     manifest.version()
                 ),
             })
@@ -653,7 +652,7 @@ impl<P: Publisher> Handler<P> {
                 Err(e) => {
                     self.send_error(
                         msg.reply,
-                        format!("Unable to parse deploy model request: {e:?}"),
+                        format!("Unable to parse undeploy application request: {e:?}"),
                     )
                     .await;
                     return;
@@ -673,7 +672,7 @@ impl<P: Publisher> Handler<P> {
                         // case we unwrap to nothing
                         serde_json::to_vec(&DeployModelResponse {
                             result: DeployResult::NotFound,
-                            message: format!("Model with the name {name} not found"),
+                            message: format!("Application with the name {name} not found"),
                         })
                         .unwrap_or_default(),
                     )
@@ -696,7 +695,7 @@ impl<P: Publisher> Handler<P> {
                 .await
                 .map(|_| DeployModelResponse {
                     result: DeployResult::Acknowledged,
-                    message: format!("Successfully undeployed model {}", name),
+                    message: format!("Successfully undeployed application {name}"),
                 })
                 .unwrap_or_else(|e| {
                     error!(error = %e, "Unable to store updated data");
@@ -709,7 +708,7 @@ impl<P: Publisher> Handler<P> {
             trace!("Manifest was already undeployed");
             DeployModelResponse {
                 result: DeployResult::Acknowledged,
-                message: format!("Model {} was already undeployed", name),
+                message: format!("Application {name} was already undeployed"),
             }
         };
         // We always want to resend in an undeploy in case things failed last time
@@ -759,7 +758,7 @@ impl<P: Publisher> Handler<P> {
                     // case we unwrap to nothing
                     serde_json::to_vec(&StatusResponse {
                         result: StatusResult::NotFound,
-                        message: format!("Model with the name {name} not found"),
+                        message: format!("Application with the name {name} not found"),
                         status: None,
                     })
                     .unwrap_or_default(),
@@ -792,7 +791,7 @@ impl<P: Publisher> Handler<P> {
             // case we unwrap to nothing
             serde_json::to_vec(&StatusResponse {
                 result: StatusResult::Ok,
-                message: format!("Successfully fetched status for model {}", name),
+                message: format!("Successfully fetched status for application {name}"),
                 status: Some(status),
             })
             .unwrap_or_default(),
