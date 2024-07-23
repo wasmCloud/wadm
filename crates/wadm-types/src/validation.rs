@@ -534,6 +534,18 @@ fn check_secrets_mapped_to_policies(manifest: &Manifest) -> Vec<ValidationFailur
                     ),
                 ))
             }
+            if policies[&secret.source.policy]
+                .properties
+                .contains_key("backend")
+            {
+                failures.push(ValidationFailure::new(
+                    ValidationFailureLevel::Error,
+                    format!(
+                        "secret '{}' is mapped to policy '{}' which does not include a 'backend' property",
+                        secret.name, secret.source.policy
+                    ),
+                ))
+            }
         }
     }
     failures

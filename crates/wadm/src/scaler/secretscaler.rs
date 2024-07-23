@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -145,10 +145,16 @@ fn merge_policy_properties(
 ) -> anyhow::Result<HashMap<String, String>> {
     let mut cfg: HashMap<String, String> = reference.clone().try_into()?;
 
-    let properties = PolicyProperties {
+    let mut properties = PolicyProperties {
         policy_type: policy.policy_type.clone(),
         properties: policy.properties.clone(),
     };
+    let backend = properties
+        .properties
+        .remove("backend")
+        .context("policy did not have a backend property")?;
+    cfg.insert("backend".to_string(), backend);
+
     let policy_json = serde_json::to_string(&properties)?;
     cfg.insert("policy_properties".to_string(), policy_json);
     Ok(cfg)
@@ -179,7 +185,7 @@ mod test {
         let policy = Policy {
             name: "nats-kv".to_string(),
             policy_type: "secrets-backend".to_string(),
-            properties: BTreeMap::new(),
+            properties: BTreeMap::from([("backend".to_string(), "nats-kv".to_string())]),
         };
 
         let secret = SecretProperty {
@@ -203,7 +209,9 @@ mod test {
             StatusType::Reconciling
         );
 
-        let cfg = merge_policy_properties(&policy, &secret.source).expect("failed to merge policy");
+        let mut cfg =
+            merge_policy_properties(&policy, &secret.source).expect("failed to merge policy");
+        cfg.insert("backend".to_string(), "nats-kv".to_string());
 
         assert_eq!(
             secret_scaler
