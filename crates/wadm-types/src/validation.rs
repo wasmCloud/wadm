@@ -534,7 +534,7 @@ fn check_secrets_mapped_to_policies(manifest: &Manifest) -> Vec<ValidationFailur
                     ),
                 ))
             }
-            if policies[&secret.source.policy]
+            if !policies[&secret.source.policy]
                 .properties
                 .contains_key("backend")
             {
