@@ -525,16 +525,16 @@ fn check_secrets_mapped_to_policies(manifest: &Manifest) -> Vec<ValidationFailur
     let mut failures = Vec::new();
     for c in manifest.components() {
         for secret in c.secrets() {
-            if !policies.contains_key(&secret.source.policy) {
+            if !policies.contains_key(&secret.properties.policy) {
                 failures.push(ValidationFailure::new(
                     ValidationFailureLevel::Error,
                     format!(
                         "secret '{}' is mapped to unknown policy '{}'",
-                        secret.name, secret.source.policy
+                        secret.name, secret.properties.policy
                     ),
                 ))
             }
-            if !policies[&secret.source.policy]
+            if !policies[&secret.properties.policy]
                 .properties
                 .contains_key("backend")
             {
@@ -542,7 +542,7 @@ fn check_secrets_mapped_to_policies(manifest: &Manifest) -> Vec<ValidationFailur
                     ValidationFailureLevel::Error,
                     format!(
                         "secret '{}' is mapped to policy '{}' which does not include a 'backend' property",
-                        secret.name, secret.source.policy
+                        secret.name, secret.properties.policy
                     ),
                 ))
             }
