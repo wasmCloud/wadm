@@ -247,9 +247,9 @@ pub struct SecretProperty {
     /// The name of the secret. This is used by a reference by the component or capability to
     /// get the secret value as a resource.
     pub name: String,
-    /// The source of the secret. This indicates how to retrieve the secret value from a secrets
+    /// The properties of the secret that indicate how to retrieve the secret value from a secrets
     /// backend and which backend to actually query.
-    pub source: SecretSourceProperty,
+    pub properties: SecretSourceProperty,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash, JsonSchema)]
@@ -935,7 +935,9 @@ mod test {
         assert_eq!(traits.len(), 1, "Should have 1 trait");
         if let TraitProperty::Link(ld) = &traits[0].properties {
             assert_eq!(ld.source.as_ref().unwrap().config, vec![]);
-            assert_eq!(ld.source_config, None);
+            #[allow(deprecated)]
+            let source_config = &ld.source_config;
+            assert_eq!(source_config, &None);
         } else {
             panic!("trait property was not a link definition");
         };

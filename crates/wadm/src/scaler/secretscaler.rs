@@ -190,7 +190,7 @@ mod test {
 
         let secret = SecretProperty {
             name: "test".to_string(),
-            source: SecretSourceProperty {
+            properties: SecretSourceProperty {
                 policy: "nats-kv".to_string(),
                 key: "test".to_string(),
                 version: None,
@@ -199,7 +199,7 @@ mod test {
 
         let secret_scaler = super::SecretScaler::new(
             secret.name.clone(),
-            secret.source.clone(),
+            secret.properties.clone(),
             lattice.clone(),
             policy.clone(),
         );
@@ -210,7 +210,7 @@ mod test {
         );
 
         let mut cfg =
-            merge_policy_properties(&policy, &secret.source).expect("failed to merge policy");
+            merge_policy_properties(&policy, &secret.properties).expect("failed to merge policy");
         cfg.insert("backend".to_string(), "nats-kv".to_string());
 
         assert_eq!(

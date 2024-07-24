@@ -944,11 +944,11 @@ fn secrets_to_scalers<S: SecretSource + Send + Sync + Clone>(
         .iter()
         .map(|s| {
             let name = compute_secret_id(model_name, None, &s.name);
-            let policy = *policies.get(&s.source.policy).unwrap();
+            let policy = *policies.get(&s.properties.policy).unwrap();
             (
                 SecretScaler::new(
                     name.clone(),
-                    s.source.clone(),
+                    s.properties.clone(),
                     secret_source.clone(),
                     policy.clone(),
                 ),
