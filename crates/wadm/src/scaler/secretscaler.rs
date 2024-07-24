@@ -1,8 +1,7 @@
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::HashMap,
     hash::{DefaultHasher, Hash, Hasher},
 };
 use tokio::sync::RwLock;
@@ -21,6 +20,9 @@ use crate::{
 
 pub const SECRET_CONFIG_PREFIX: &str = "SECRET";
 
+// NOTE: Copied from secrets-types crate.
+pub const SECRET_POLICY_PROPERTIES_TYPE: &str = "properties.secret.wasmcloud.dev/v1alpha1";
+
 pub struct SecretScaler<SecretSource> {
     secret_source: SecretSource,
     id: String,
@@ -28,13 +30,6 @@ pub struct SecretScaler<SecretSource> {
     source: SecretSourceProperty,
     status: RwLock<StatusInfo>,
     policy: Policy,
-}
-
-#[derive(Deserialize, Serialize)]
-struct PolicyProperties {
-    #[serde(rename = "type")]
-    policy_type: String,
-    properties: BTreeMap<String, String>,
 }
 
 impl<S: SecretSource> SecretScaler<S> {
@@ -139,24 +134,40 @@ impl<S: SecretSource + Send + Sync + Clone> Scaler for SecretScaler<S> {
     }
 }
 
+/// Merge policy and properties into a secret reference of the following format:
+///
+/// ```json
+/// {
+///   "type": "secret.wasmcloud.dev/v1alpha1",
+///   "backend": "baobun",
+///   "key": "/path/to/secret",
+///   "version": "vX.Y.Z",
+///   "policy": "{\"type\":\"properties.secret.wasmcloud.dev/v1alpha1\",\"properties\":{\"key\":\"value\"}}
+/// }
+/// ```
+///
+/// Note that the policy are completely free-form and can be any valid JSON, but should include the type field
 fn merge_policy_properties(
     policy: &Policy,
     reference: &SecretSourceProperty,
 ) -> anyhow::Result<HashMap<String, String>> {
     let mut cfg: HashMap<String, String> = reference.clone().try_into()?;
+    // This is just a reference to the policy in the manifest.
+    cfg.remove("policy");
 
-    let mut properties = PolicyProperties {
-        policy_type: policy.policy_type.clone(),
-        properties: policy.properties.clone(),
-    };
-    let backend = properties
-        .properties
+    let mut policy_properties = policy.properties.clone();
+    policy_properties.insert(
+        "type".to_string(),
+        SECRET_POLICY_PROPERTIES_TYPE.to_string(),
+    );
+    let backend = policy_properties
         .remove("backend")
         .context("policy did not have a backend property")?;
     cfg.insert("backend".to_string(), backend);
+    // Move the `backend` property to the top level of the configuration
+    let policy_json = serde_json::to_string(&policy.properties)?;
 
-    let policy_json = serde_json::to_string(&properties)?;
-    cfg.insert("policy_properties".to_string(), policy_json);
+    cfg.insert("policy".to_string(), policy_json);
     Ok(cfg)
 }
 

@@ -33,10 +33,11 @@ pub const LINK_TRAIT: &str = "link";
 /// for a manifest
 pub const LATEST_VERSION: &str = "latest";
 
+// TODO: These are copied from the wasmcloud secret-types crate and should just be moved here from there.
 /// The type and version of the secret reference stored as configuration. This is meant as an
 /// internal marker of the format of the serialized secret and should not be referenced by
 /// anything else but wadm. It is intended to help with schema upgrades in the future.
-pub const SECRET_TYPE: &str = "secret-reference.wasmcloud.dev/v1alpha1";
+pub const SECRET_TYPE: &str = "v1.secret.wasmcloud.dev";
 
 /// An OAM manifest
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, utoipa::ToSchema, JsonSchema)]

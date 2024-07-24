@@ -9,7 +9,7 @@ spec:
     - name: test-policy
       type: test
       properties:
-        test: "data"
+        test: 'data'
   components:
     - name: hello
       type: component
