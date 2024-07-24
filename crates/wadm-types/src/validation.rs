@@ -24,6 +24,8 @@ type KnownInterfaceLookup = HashMap<String, HashMap<String, HashMap<String, ()>>
 /// a known namespace and package, interfaces should generally be well known.
 static KNOWN_INTERFACE_LOOKUP: OnceLock<KnownInterfaceLookup> = OnceLock::new();
 
+const SECRET_POLICY_TYPE: &str = "policy.secret.wasmcloud.dev/v1alpha1";
+
 /// Get the static list of known interfaces
 fn get_known_interface_lookup() -> &'static KnownInterfaceLookup {
     KNOWN_INTERFACE_LOOKUP.get_or_init(|| {
@@ -332,7 +334,7 @@ pub async fn validate_manifest(manifest: &Manifest) -> Result<Vec<ValidationFail
     failures.extend(core_validation(manifest));
     failures.extend(check_misnamed_interfaces(manifest));
     failures.extend(check_dangling_links(manifest));
-    failures.extend(check_secrets_mapped_to_policies(manifest));
+    failures.extend(validate_secrets_policies(manifest));
     Ok(failures)
 }
 
@@ -520,31 +522,41 @@ fn check_dangling_links(manifest: &Manifest) -> Vec<ValidationFailure> {
     failures
 }
 
-fn check_secrets_mapped_to_policies(manifest: &Manifest) -> Vec<ValidationFailure> {
+/// Ensure that a manifest has secrets that are mapped to known policies
+/// and that those policies have the expected type and properties.
+fn validate_secrets_policies(manifest: &Manifest) -> Vec<ValidationFailure> {
     let policies = manifest.policy_lookup();
     let mut failures = Vec::new();
     for c in manifest.components() {
         for secret in c.secrets() {
-            if !policies.contains_key(&secret.properties.policy) {
-                failures.push(ValidationFailure::new(
+            match policies.get(&secret.properties.policy) {
+                Some(policy) => {
+                    if !policy.properties.contains_key("backend") {
+                        failures.push(ValidationFailure::new(
+                            ValidationFailureLevel::Error,
+                            format!(
+                                "secret '{}' is mapped to policy '{}' which does not include a 'backend' property",
+                                secret.name, secret.properties.policy
+                            ),
+                        ))
+                    }
+                    if policy.policy_type != SECRET_POLICY_TYPE {
+                        failures.push(ValidationFailure::new(
+                            ValidationFailureLevel::Error,
+                            format!(
+                                "policy '{}' type did not match required type '{}'",
+                                policy.name, SECRET_POLICY_TYPE
+                            ),
+                        ));
+                    }
+                }
+                None => failures.push(ValidationFailure::new(
                     ValidationFailureLevel::Error,
                     format!(
                         "secret '{}' is mapped to unknown policy '{}'",
                         secret.name, secret.properties.policy
                     ),
-                ))
-            }
-            if !policies[&secret.properties.policy]
-                .properties
-                .contains_key("backend")
-            {
-                failures.push(ValidationFailure::new(
-                    ValidationFailureLevel::Error,
-                    format!(
-                        "secret '{}' is mapped to policy '{}' which does not include a 'backend' property",
-                        secret.name, secret.properties.policy
-                    ),
-                ))
+                )),
             }
         }
     }

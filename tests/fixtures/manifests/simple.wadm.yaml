@@ -9,7 +9,7 @@ metadata:
 spec:
   policies:
     - name: vault-for-component
-      type: secrets.wasmcloud.dev/v1/vault
+      type: policy.secret.wasmcloud.dev/v1alpha1
       properties:
         role-name: 'test'
         backend: 'vault-prod'

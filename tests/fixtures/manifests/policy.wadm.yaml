@@ -9,7 +9,7 @@ metadata:
 spec:
   policies:
     - name: secrets-policy
-      type: secrets-backend
+      type: policy.secret.wasmcloud.dev/v1alpha1
       properties:
         metadata: a-value
   components:
