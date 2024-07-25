@@ -11,8 +11,9 @@ spec:
     - name: vault-for-component
       type: policy.secret.wasmcloud.dev/v1alpha1
       properties:
-        role-name: 'test'
         backend: 'vault-prod'
+        role_name: 'test'
+        mount_path: 'jwt'
 
   components:
     - name: http-component
