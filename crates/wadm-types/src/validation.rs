@@ -334,7 +334,7 @@ pub async fn validate_manifest(manifest: &Manifest) -> Result<Vec<ValidationFail
     failures.extend(core_validation(manifest));
     failures.extend(check_misnamed_interfaces(manifest));
     failures.extend(check_dangling_links(manifest));
-    failures.extend(validate_secrets_policies(manifest));
+    failures.extend(validate_policies(manifest));
     Ok(failures)
 }
 
@@ -524,12 +524,22 @@ fn check_dangling_links(manifest: &Manifest) -> Vec<ValidationFailure> {
 
 /// Ensure that a manifest has secrets that are mapped to known policies
 /// and that those policies have the expected type and properties.
-fn validate_secrets_policies(manifest: &Manifest) -> Vec<ValidationFailure> {
+fn validate_policies(manifest: &Manifest) -> Vec<ValidationFailure> {
     let policies = manifest.policy_lookup();
     let mut failures = Vec::new();
     for c in manifest.components() {
+        // Ensure policies meant for secrets are valid
         for secret in c.secrets() {
             match policies.get(&secret.properties.policy) {
+                Some(policy) if policy.policy_type != SECRET_POLICY_TYPE => {
+                    failures.push(ValidationFailure::new(
+                        ValidationFailureLevel::Error,
+                        format!(
+                            "secret '{}' is mapped to policy '{}' which is not a secret policy. Expected type '{SECRET_POLICY_TYPE}'",
+                            secret.name, secret.properties.policy
+                        ),
+                    ))
+                }
                 Some(policy) => {
                     if !policy.properties.contains_key("backend") {
                         failures.push(ValidationFailure::new(
@@ -539,15 +549,6 @@ fn validate_secrets_policies(manifest: &Manifest) -> Vec<ValidationFailure> {
                                 secret.name, secret.properties.policy
                             ),
                         ))
-                    }
-                    if policy.policy_type != SECRET_POLICY_TYPE {
-                        failures.push(ValidationFailure::new(
-                            ValidationFailureLevel::Error,
-                            format!(
-                                "policy '{}' type did not match required type '{}'",
-                                policy.name, SECRET_POLICY_TYPE
-                            ),
-                        ));
                     }
                 }
                 None => failures.push(ValidationFailure::new(
