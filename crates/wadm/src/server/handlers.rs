@@ -896,11 +896,11 @@ mod test {
     #[tokio::test]
     async fn test_manifest_validation() {
         let correct_manifest =
-            deserialize_yaml("./oam/simple1.yaml").expect("Should be able to parse");
+            deserialize_yaml("oam/simple1.yaml").expect("Should be able to parse");
 
         assert!(validate_manifest(correct_manifest).await.is_ok());
 
-        let manifest = deserialize_yaml("./test/data/incorrect_component.yaml")
+        let manifest = deserialize_yaml("test/data/incorrect_component.yaml")
             .expect("Should be able to parse");
 
         match validate_manifest(manifest).await {
@@ -912,7 +912,7 @@ mod test {
             }
         }
 
-        let manifest = deserialize_yaml("./test/data/duplicate_component.yaml")
+        let manifest = deserialize_yaml("test/data/duplicate_component.yaml")
             .expect("Should be able to parse");
 
         match validate_manifest(manifest).await {
@@ -923,7 +923,7 @@ mod test {
         }
 
         let manifest =
-            deserialize_yaml("./test/data/duplicate_id1.yaml").expect("Should be able to parse");
+            deserialize_yaml("test/data/duplicate_id1.yaml").expect("Should be able to parse");
 
         match validate_manifest(manifest).await {
             Ok(()) => {
@@ -935,7 +935,7 @@ mod test {
         }
 
         let manifest =
-            deserialize_yaml("./test/data/duplicate_id2.yaml").expect("Should be able to parse");
+            deserialize_yaml("test/data/duplicate_id2.yaml").expect("Should be able to parse");
 
         match validate_manifest(manifest).await {
             Ok(()) => panic!("Should have detected duplicate component ID in component properties"),
@@ -944,7 +944,9 @@ mod test {
                 .contains("Duplicate component identifier in manifest")),
         }
 
-        let manifest = deserialize_yaml("./test/data/missing_capability_component.yaml")
+        let manifest = deserialize_yaml("test/data/duplicate_linkdef.yaml")
+            .expect("Should be able to parse");
+        let manifest = deserialize_yaml("test/data/missing_capability_component.yaml")
             .expect("Should be able to parse");
 
         match validate_manifest(manifest).await {
@@ -960,7 +962,7 @@ mod test {
     #[tokio::test]
     async fn manifest_name_long_image_ref() -> Result<()> {
         validate_manifest(
-            deserialize_yaml("./test/data/long_image_refs.yaml")
+            deserialize_yaml("test/data/long_image_refs.yaml")
                 .context("failed to deserialize YAML")?,
         )
         .await
