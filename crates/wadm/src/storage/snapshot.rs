@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use tokio::sync::RwLock;
-use wadm_types::SecretSourceProperty;
 use wasmcloud_control_interface::InterfaceLinkDefinition;
+use wasmcloud_secrets_types::SecretConfig;
 
 use crate::storage::{Component, Host, Provider, ReadStore, StateKind};
 use crate::workers::{ConfigSource, LinkSource, SecretSource};
@@ -181,7 +181,7 @@ where
     S: Send + Sync,
     L: SecretSource + Send + Sync,
 {
-    async fn get_secret(&self, name: &str) -> anyhow::Result<Option<SecretSourceProperty>> {
+    async fn get_secret(&self, name: &str) -> anyhow::Result<Option<SecretConfig>> {
         self.lattice_source.get_secret(name).await
     }
 }

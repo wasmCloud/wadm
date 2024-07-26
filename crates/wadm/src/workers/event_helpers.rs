@@ -1,11 +1,12 @@
+use anyhow::{bail, Context};
 use async_nats::jetstream::stream::Stream;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
+use wasmcloud_secrets_types::SecretConfig;
 
 use tracing::{debug, instrument, trace, warn};
-use wadm_types::{api::StatusInfo, SecretSourceProperty};
+use wadm_types::api::StatusInfo;
 use wasmcloud_control_interface::{CtlResponse, HostInventory, InterfaceLinkDefinition};
-use wasmcloud_secrets_types::SECRET_PREFIX;
 
 use crate::{commands::Command, publisher::Publisher, APP_SPEC_ANNOTATION};
 
@@ -58,7 +59,35 @@ pub trait ConfigSource {
 /// A trait for anything that can fetch a secret.
 #[async_trait::async_trait]
 pub trait SecretSource {
-    async fn get_secret(&self, name: &str) -> anyhow::Result<Option<SecretSourceProperty>>;
+    async fn get_secret(&self, name: &str) -> anyhow::Result<Option<SecretConfig>>;
+}
+
+/// Converts the configuration map of strings to a secret config
+pub fn secret_config_from_map(map: HashMap<String, String>) -> anyhow::Result<SecretConfig> {
+    match (
+        map.get("name"),
+        map.get("backend"),
+        map.get("key"),
+        map.get("policy"),
+        map.get("type"),
+    ) {
+        (None, _, _, _, _) => bail!("missing name field in secret config"),
+        (_, None, _, _, _) => bail!("missing backend field in secret config"),
+        (_, _, None, _, _) => bail!("missing key field in secret config"),
+        (_, _, _, None, _) => bail!("missing policy field in secret config"),
+        (_, _, _, _, None) => bail!("missing type field in secret config"),
+        (Some(name), Some(backend), Some(key), Some(policy), Some(secret_type)) => {
+            Ok(SecretConfig {
+                name: name.to_string(),
+                backend: backend.to_string(),
+                key: key.to_string(),
+                version: map.get("version").map(|v| v.to_string()),
+                policy: serde_json::from_str(policy)
+                    .context("failed to deserialize policy from string")?,
+                secret_type: secret_type.to_string(),
+            })
+        }
+    }
 }
 
 #[async_trait::async_trait]
@@ -163,9 +192,9 @@ impl ConfigSource for wasmcloud_control_interface::Client {
 
 #[async_trait::async_trait]
 impl SecretSource for wasmcloud_control_interface::Client {
-    async fn get_secret(&self, name: &str) -> anyhow::Result<Option<SecretSourceProperty>> {
+    async fn get_secret(&self, name: &str) -> anyhow::Result<Option<SecretConfig>> {
         match self
-            .get_config(format!("{SECRET_PREFIX}_{name}").as_str())
+            .get_config(name)
             .await
             .map_err(|e| anyhow::anyhow!("{e:?}"))?
         {
@@ -173,7 +202,7 @@ impl SecretSource for wasmcloud_control_interface::Client {
                 success: true,
                 response: Some(secret),
                 ..
-            } => Ok(Some(secret.try_into()?)),
+            } => secret_config_from_map(secret).map(Some),
             CtlResponse {
                 message,
                 response: None,

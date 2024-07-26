@@ -1,6 +1,7 @@
+use std::collections::{BTreeMap, HashMap};
+
 use schemars::JsonSchema;
 use serde::{de, Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap};
 
 pub mod api;
 #[cfg(feature = "wit")]
@@ -32,12 +33,6 @@ pub const LINK_TRAIT: &str = "link";
 /// The string used for indicating a latest version. It is explicitly forbidden to use as a version
 /// for a manifest
 pub const LATEST_VERSION: &str = "latest";
-
-// TODO: These are copied from the wasmcloud secret-types crate and should just be moved here from there.
-/// The type and version of the secret reference stored as configuration. This is meant as an
-/// internal marker of the format of the serialized secret and should not be referenced by
-/// anything else but wadm. It is intended to help with schema upgrades in the future.
-pub const SECRET_TYPE: &str = "v1.secret.wasmcloud.dev";
 
 /// An OAM manifest
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, utoipa::ToSchema, JsonSchema)]
@@ -262,57 +257,6 @@ pub struct SecretSourceProperty {
     /// The version of the secret to retrieve. If not supplied, the latest version will be used.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
-}
-
-impl TryFrom<HashMap<String, String>> for SecretSourceProperty {
-    type Error = anyhow::Error;
-
-    // TODO should this actually just wrap serde_json?
-    fn try_from(value: HashMap<String, String>) -> Result<Self, Self::Error> {
-        let secret_type = value
-            .get("type")
-            .ok_or_else(|| anyhow::anyhow!("Secret source must have a type"))?;
-
-        // Do we actually care? Feels like we should use a proto or something if we do since
-        // versioning would be a lot easier
-        if secret_type != SECRET_TYPE {
-            return Err(anyhow::anyhow!(
-                "Secret source type must be {}",
-                SECRET_TYPE
-            ));
-        }
-
-        let policy = value
-            .get("policy")
-            .ok_or_else(|| anyhow::anyhow!("Secret source must have a policy"))?;
-
-        let key = value
-            .get("key")
-            .ok_or_else(|| anyhow::anyhow!("Secret source must have a key"))?;
-
-        let version = value.get("version").cloned();
-
-        Ok(Self {
-            policy: policy.clone(),
-            key: key.clone(),
-            version,
-        })
-    }
-}
-
-impl TryInto<HashMap<String, String>> for SecretSourceProperty {
-    type Error = anyhow::Error;
-
-    fn try_into(self) -> Result<HashMap<String, String>, Self::Error> {
-        let mut map = HashMap::new();
-        map.insert("type".to_string(), SECRET_TYPE.to_string());
-        map.insert("policy".to_string(), self.policy);
-        map.insert("key".to_string(), self.key);
-        if let Some(version) = self.version {
-            map.insert("version".to_string(), version);
-        }
-        Ok(map)
-    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, JsonSchema)]
