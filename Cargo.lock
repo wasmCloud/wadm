@@ -18,6 +18,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f26201604c87b1e01bd3d98f8d5d9a8fcbb815e8cedb41ffccbeb4bf593a35fe"
 
 [[package]]
+name = "aead"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d122413f284cf2d62fb1b7db97e02edb8cda96d769b16e443a4f6195e35662b0"
+dependencies = [
+ "crypto-common",
+ "generic-array",
+]
+
+[[package]]
 name = "ahash"
 version = "0.8.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -121,7 +131,7 @@ dependencies = [
  "futures",
  "http",
  "memchr",
- "nkeys",
+ "nkeys 0.3.2",
  "nuid 0.5.0",
  "once_cell",
  "rand",
@@ -319,6 +329,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "cipher"
+version = "0.4.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "773f3b9af64447d2ce9850330c473515014aa235e6a783b02db81ff39e4a3dad"
+dependencies = [
+ "crypto-common",
+ "inout",
+ "zeroize",
+]
+
+[[package]]
 name = "clap"
 version = "4.5.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -436,7 +457,37 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1bfb12502f3fc46cca1bb51ac28df9d618d813cdc3d2f25b9fe775a34af26bb3"
 dependencies = [
  "generic-array",
+ "rand_core",
  "typenum",
+]
+
+[[package]]
+name = "crypto_box"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "16182b4f39a82ec8a6851155cc4c0cda3065bb1db33651726a29e1951de0f009"
+dependencies = [
+ "aead",
+ "crypto_secretbox",
+ "curve25519-dalek",
+ "salsa20",
+ "subtle",
+ "zeroize",
+]
+
+[[package]]
+name = "crypto_secretbox"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b9d6cf87adf719ddf43a805e92c6870a531aedda35ff640442cbaf8674e141e1"
+dependencies = [
+ "aead",
+ "cipher",
+ "generic-array",
+ "poly1305",
+ "salsa20",
+ "subtle",
+ "zeroize",
 ]
 
 [[package]]
@@ -452,6 +503,7 @@ dependencies = [
  "fiat-crypto",
  "rustc_version",
  "subtle",
+ "zeroize",
 ]
 
 [[package]]
@@ -729,6 +781,7 @@ checksum = "85649ca51fd72272d7821adaf274ad91c288277713d9c18820d8499a7ff69e9a"
 dependencies = [
  "typenum",
  "version_check",
+ "zeroize",
 ]
 
 [[package]]
@@ -997,6 +1050,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "inout"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a0c10553d664a4d0bcff9f4215d0aac67a639cc68ef660840afe309b807bc9f5"
+dependencies = [
+ "generic-array",
+]
+
+[[package]]
 name = "ipnet"
 version = "2.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1202,6 +1264,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "nkeys"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2de02c883c178998da8d0c9816a88ef7ef5c58314dd1585c97a4a5679f3ab337"
+dependencies = [
+ "crypto_box",
+ "data-encoding",
+ "ed25519",
+ "ed25519-dalek",
+ "getrandom",
+ "log",
+ "rand",
+ "signatory",
+]
+
+[[package]]
 name = "nom"
 version = "7.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1385,6 +1463,12 @@ name = "once_cell"
 version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3fdb12b2476b595f9358c5161aa467c2438859caa136dec86c26fdd2efe17b92"
+
+[[package]]
+name = "opaque-debug"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c08d65885ee38876c4f86fa503fb49d7b507c2b62552df7c70b2fce627e06381"
 
 [[package]]
 name = "openssl-probe"
@@ -1588,6 +1672,17 @@ checksum = "f950b2377845cebe5cf8b5165cb3cc1a5e0fa5cfa3e1f7f55707d8fd82e0a7b7"
 dependencies = [
  "der",
  "spki",
+]
+
+[[package]]
+name = "poly1305"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8159bd90725d2df49889a078b54f4f79e87f1f8a8444194cdca81d38f5393abf"
+dependencies = [
+ "cpufeatures",
+ "opaque-debug",
+ "universal-hash",
 ]
 
 [[package]]
@@ -1944,6 +2039,15 @@ name = "ryu"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f3cb5ba0dc43242ce17de99c180e96db90b235b8a9fdc9543c96d2209116bd9f"
+
+[[package]]
+name = "salsa20"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "97a22f5af31f73a954c10289c93e8a50cc23d971e80ee446f1f6f7137a088213"
+dependencies = [
+ "cipher",
+]
 
 [[package]]
 name = "scc"
@@ -2792,6 +2896,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f962df74c8c05a667b5ee8bcf162993134c104e96440b663c8daa176dc772d8c"
 
 [[package]]
+name = "universal-hash"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fc1de2c688dc15305988b563c3854064043356019f97a4b46276fe734c4f07ea"
+dependencies = [
+ "crypto-common",
+ "subtle",
+]
+
+[[package]]
 name = "unsafe-libyaml"
 version = "0.2.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2888,7 +3002,7 @@ dependencies = [
  "indexmap 2.2.6",
  "jsonschema",
  "lazy_static",
- "nkeys",
+ "nkeys 0.3.2",
  "rand",
  "regex",
  "semver",
@@ -2905,6 +3019,7 @@ dependencies = [
  "uuid",
  "wadm-types",
  "wasmcloud-control-interface",
+ "wasmcloud-secrets-types",
 ]
 
 [[package]]
@@ -2918,7 +3033,7 @@ dependencies = [
  "chrono",
  "clap",
  "futures",
- "nkeys",
+ "nkeys 0.3.2",
  "opentelemetry 0.17.0",
  "opentelemetry-otlp",
  "schemars",
@@ -2945,7 +3060,7 @@ dependencies = [
  "async-nats",
  "bytes",
  "futures",
- "nkeys",
+ "nkeys 0.3.2",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -2970,7 +3085,7 @@ dependencies = [
  "indexmap 2.2.6",
  "jsonschema",
  "lazy_static",
- "nkeys",
+ "nkeys 0.3.2",
  "rand",
  "regex",
  "schemars",
@@ -3008,14 +3123,30 @@ dependencies = [
  "data-encoding",
  "humantime",
  "log",
- "nkeys",
+ "nkeys 0.3.2",
  "nuid 0.4.1",
  "ring",
  "serde",
  "serde_json",
- "wasm-encoder",
+ "wasm-encoder 0.41.2",
  "wasm-gen",
  "wasmparser 0.121.2",
+]
+
+[[package]]
+name = "wascap"
+version = "0.15.0"
+dependencies = [
+ "data-encoding",
+ "humantime",
+ "nkeys 0.4.3",
+ "nuid 0.4.1",
+ "ring",
+ "serde",
+ "serde_json",
+ "wasm-encoder 0.214.0",
+ "wasm-gen",
+ "wasmparser 0.212.0",
 ]
 
 [[package]]
@@ -3100,6 +3231,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "wasm-encoder"
+version = "0.214.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ff694f02a8d7a50b6922b197ae03883fbf18cdb2ae9fbee7b6148456f5f44041"
+dependencies = [
+ "leb128",
+]
+
+[[package]]
 name = "wasm-gen"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3157,7 +3297,7 @@ dependencies = [
  "bytes",
  "futures",
  "hex",
- "nkeys",
+ "nkeys 0.3.2",
  "once_cell",
  "rustls 0.23.10",
  "serde",
@@ -3168,9 +3308,23 @@ dependencies = [
  "tracing",
  "ulid",
  "uuid",
- "wascap",
+ "wascap 0.13.0",
  "wrpc-transport",
  "wrpc-transport-nats",
+]
+
+[[package]]
+name = "wasmcloud-secrets-types"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "bytes",
+ "nkeys 0.4.3",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "wascap 0.15.0",
 ]
 
 [[package]]
@@ -3193,6 +3347,15 @@ dependencies = [
  "bitflags 2.6.0",
  "indexmap 2.2.6",
  "semver",
+]
+
+[[package]]
+name = "wasmparser"
+version = "0.212.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8d28bc49ba1e5c5b61ffa7a2eace10820443c4b7d1c0b144109261d14570fdf8"
+dependencies = [
+ "bitflags 2.6.0",
 ]
 
 [[package]]
