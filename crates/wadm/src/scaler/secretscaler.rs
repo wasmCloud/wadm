@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     hash::{DefaultHasher, Hash, Hasher},
 };
 use tokio::sync::RwLock;
@@ -156,16 +156,23 @@ fn merge_policy_properties(
     cfg.remove("policy");
 
     let mut policy_properties = policy.properties.clone();
-    policy_properties.insert(
-        "type".to_string(),
-        SECRET_POLICY_PROPERTIES_TYPE.to_string(),
-    );
+    // Move the `backend` property to the top level of the configuration
     let backend = policy_properties
         .remove("backend")
         .context("policy did not have a backend property")?;
     cfg.insert("backend".to_string(), backend);
-    // Move the `backend` property to the top level of the configuration
-    let policy_json = serde_json::to_string(&policy.properties)?;
+    // Create the policy field in the form of
+    // "{\"type\":\"properties.secret.wasmcloud.dev/v1alpha1\",\"properties\":{\"key\":\"value\"}}"
+    let mut policy = BTreeMap::<String, serde_json::Value>::from([(
+        "type".to_string(),
+        serde_json::Value::String(SECRET_POLICY_PROPERTIES_TYPE.to_string()),
+    )]);
+    policy.insert(
+        "properties".to_string(),
+        serde_json::to_value(&policy_properties)
+            .context("failed to serialize policy properties as value")?,
+    );
+    let policy_json = serde_json::to_string(&policy)?;
 
     cfg.insert("policy".to_string(), policy_json);
     Ok(cfg)
@@ -220,15 +227,14 @@ mod test {
             StatusType::Reconciling
         );
 
-        let mut cfg =
+        let cfg =
             merge_policy_properties(&policy, &secret.properties).expect("failed to merge policy");
-        cfg.insert("backend".to_string(), "nats-kv".to_string());
 
         assert_eq!(
             secret_scaler
                 .reconcile()
                 .await
-                .expect("recocile did not succeed"),
+                .expect("reconcile did not succeed"),
             vec![Command::PutConfig(PutConfig {
                 config_name: secret.name.clone(),
                 config: cfg.clone(),
