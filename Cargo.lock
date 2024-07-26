@@ -3093,6 +3093,7 @@ dependencies = [
  "utoipa",
  "uuid",
  "wasmcloud-control-interface",
+ "wasmcloud-secrets-types",
  "wit-bindgen-wrpc",
 ]
 
@@ -3127,6 +3128,8 @@ dependencies = [
 [[package]]
 name = "wascap"
 version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6d394c2c59661bff13bea8bd7c8bf30618bafa671ef9f408ae9c3aa71ede5bb0"
 dependencies = [
  "data-encoding",
  "humantime",
@@ -3135,9 +3138,9 @@ dependencies = [
  "ring",
  "serde",
  "serde_json",
- "wasm-encoder 0.214.0",
+ "wasm-encoder 0.208.1",
  "wasm-gen",
- "wasmparser 0.212.0",
+ "wasmparser 0.202.0",
 ]
 
 [[package]]
@@ -3223,9 +3226,9 @@ dependencies = [
 
 [[package]]
 name = "wasm-encoder"
-version = "0.214.0"
+version = "0.208.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff694f02a8d7a50b6922b197ae03883fbf18cdb2ae9fbee7b6148456f5f44041"
+checksum = "6425e84e42f7f558478e40ecc2287912cb319f2ca68e5c0bb93c61d4fc63fa17"
 dependencies = [
  "leb128",
 ]
@@ -3307,6 +3310,8 @@ dependencies = [
 [[package]]
 name = "wasmcloud-secrets-types"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3d787a70ec514bb557b4d3ae09838bebd1078b951c667276a8a8d9addc697519"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3338,15 +3343,6 @@ dependencies = [
  "bitflags 2.6.0",
  "indexmap 2.2.6",
  "semver",
-]
-
-[[package]]
-name = "wasmparser"
-version = "0.212.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8d28bc49ba1e5c5b61ffa7a2eace10820443c4b7d1c0b144109261d14570fdf8"
-dependencies = [
- "bitflags 2.6.0",
 ]
 
 [[package]]

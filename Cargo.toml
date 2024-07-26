@@ -84,7 +84,7 @@ wadm = { version = "0.13.0-beta.1", path = "./crates/wadm" }
 wadm-client = { version = "0.2.0-beta.1", path = "./crates/wadm-client" }
 wadm-types = { version = "0.2.0-beta.1", path = "./crates/wadm-types" }
 wasmcloud-control-interface = "1.0.0"
-wasmcloud-secrets-types = { version = "0.1.0", path = "../../wasmcloud/wasmcloud/crates/secrets-types" }
+wasmcloud-secrets-types = "0.1.0"
 wit-bindgen-wrpc = { version = "0.3.7", default-features = false }
 
 [dev-dependencies]
