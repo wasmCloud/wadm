@@ -3,13 +3,14 @@ use std::{collections::HashMap, sync::Arc};
 
 use serde::{de::DeserializeOwned, Serialize};
 use tokio::sync::RwLock;
-use wadm_types::SecretSourceProperty;
 use wasmcloud_control_interface::{HostInventory, InterfaceLinkDefinition};
+use wasmcloud_secrets_types::SecretConfig;
 
 use crate::publisher::Publisher;
 use crate::storage::StateKind;
 use crate::workers::{
-    Claims, ClaimsSource, ConfigSource, InventorySource, LinkSource, SecretSource,
+    secret_config_from_map, Claims, ClaimsSource, ConfigSource, InventorySource, LinkSource,
+    SecretSource,
 };
 
 fn generate_key<T: StateKind>(lattice_id: &str) -> String {
@@ -144,19 +145,13 @@ impl ConfigSource for TestLatticeSource {
 
 #[async_trait::async_trait]
 impl SecretSource for TestLatticeSource {
-    async fn get_secret(&self, name: &str) -> anyhow::Result<Option<SecretSourceProperty>> {
-        let cfg = self
+    async fn get_secret(&self, name: &str) -> anyhow::Result<Option<SecretConfig>> {
+        let secret_config = self
             .get_config(format!("secret_{name}").as_str())
             .await
             .map_err(|e| anyhow::anyhow!("{e:?}"))?;
 
-        match cfg {
-            Some(cfg) => {
-                let cfg: SecretSourceProperty = cfg.try_into()?;
-                Ok(Some(cfg))
-            }
-            None => Ok(None),
-        }
+        secret_config.map(secret_config_from_map).transpose()
     }
 }
 

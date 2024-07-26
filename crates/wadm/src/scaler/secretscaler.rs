@@ -1,14 +1,10 @@
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use std::{
-    collections::HashMap,
-    hash::{DefaultHasher, Hash, Hasher},
-};
 use tokio::sync::RwLock;
 use tracing::{debug, error, instrument, trace};
 use wadm_types::{
     api::{StatusInfo, StatusType},
-    Policy, SecretSourceProperty, TraitProperty,
+    Policy, SecretProperty, TraitProperty,
 };
 use wasmcloud_secrets_types::SecretConfig;
 
@@ -19,34 +15,54 @@ use crate::{
     workers::SecretSource,
 };
 
+use super::compute_id_sha256;
+
 pub struct SecretScaler<SecretSource> {
     secret_source: SecretSource,
-    id: String,
+    /// The key to use in the configdata bucket for this secret
     secret_name: String,
-    source: SecretSourceProperty,
+    secret_config: SecretConfig,
+    id: String,
     status: RwLock<StatusInfo>,
-    policy: Policy,
 }
 
 impl<S: SecretSource> SecretScaler<S> {
     pub fn new(
         secret_name: String,
-        source: SecretSourceProperty,
-        secret_source: S,
         policy: Policy,
+        secret_property: SecretProperty,
+        secret_source: S,
     ) -> Self {
-        let mut id = secret_name.clone();
-        let mut hasher = DefaultHasher::new();
-        source.hash(&mut hasher);
-        id.extend(format!("-{}", hasher.finish()).chars());
+        // Compute the id of this scaler based on all of the values that make it unique.
+        // This is used during upgrades to determine if a scaler is the same as a previous one.
+        let mut id_parts = vec![
+            secret_name.as_str(),
+            policy.name.as_str(),
+            policy.policy_type.as_str(),
+            secret_property.name.as_str(),
+            secret_property.properties.policy.as_str(),
+            secret_property.properties.key.as_str(),
+        ];
+        if let Some(version) = secret_property.properties.version.as_ref() {
+            id_parts.push(version.as_str());
+        }
+        id_parts.extend(
+            policy
+                .properties
+                .iter()
+                .flat_map(|(k, v)| vec![k.as_str(), v.as_str()]),
+        );
+        let id = compute_id_sha256(&id_parts);
+
+        let secret_config = config_from_manifest_structures(policy, secret_property)
+            .expect("failed to create secret config from policy and secret properties");
 
         Self {
             id,
             secret_name,
-            source,
+            secret_config,
             secret_source,
             status: RwLock::new(StatusInfo::reconciling("")),
-            policy,
         }
     }
 }
@@ -93,28 +109,35 @@ impl<S: SecretSource + Send + Sync + Clone> Scaler for SecretScaler<S> {
     #[instrument(level = "trace", skip_all, scaler_id = %self.id)]
     async fn reconcile(&self) -> Result<Vec<Command>> {
         debug!(self.secret_name, "Fetching configuration");
-        match (
-            self.secret_source.get_secret(&self.secret_name).await,
-            self.source.clone(),
-        ) {
+        match self.secret_source.get_secret(&self.secret_name).await {
             // If configuration matches what's supplied, this scaler is deployed
-            (Ok(Some(config)), scaler_config) if config == scaler_config => {
+            Ok(Some(config)) if config == self.secret_config => {
                 *self.status.write().await = StatusInfo::deployed("");
                 Ok(Vec::new())
             }
             // If configuration is out of sync, we put the configuration
-            (Ok(_config), scaler_config) => {
+            Ok(_config) => {
                 debug!(self.secret_name, "Putting secret");
 
-                let cfg = config_from_manifest_structures(&self.policy, scaler_config)?;
+                match self.secret_config.clone().try_into() {
+                    Ok(config) => {
+                        *self.status.write().await = StatusInfo::reconciling("Secret out of sync");
 
-                *self.status.write().await = StatusInfo::reconciling("Secret out of sync");
-                Ok(vec![Command::PutConfig(PutConfig {
-                    config_name: self.secret_name.clone(),
-                    config: cfg,
-                })])
+                        Ok(vec![Command::PutConfig(PutConfig {
+                            config_name: self.secret_name.clone(),
+                            config,
+                        })])
+                    }
+                    Err(e) => {
+                        *self.status.write().await = StatusInfo::failed(&format!(
+                            "Failed to convert secret config to map: {}.",
+                            e
+                        ));
+                        Ok(vec![])
+                    }
+                }
             }
-            (Err(e), _) => {
+            Err(e) => {
                 error!(error = %e, "SecretScaler failed to fetch configuration");
                 *self.status.write().await = StatusInfo::failed(&e.to_string());
                 Ok(Vec::new())
@@ -130,38 +153,25 @@ impl<S: SecretSource + Send + Sync + Clone> Scaler for SecretScaler<S> {
     }
 }
 
-/// Merge policy and properties into a secret reference of the following format:
-///
-/// ```json
-/// {
-///   "type": "secret.wasmcloud.dev/v1alpha1",
-///   "backend": "baobun",
-///   "key": "/path/to/secret",
-///   "version": "vX.Y.Z",
-///   "policy": "{\"type\":\"properties.secret.wasmcloud.dev/v1alpha1\",\"properties\":{\"key\":\"value\"}}
-/// }
-/// ```
-///
-/// Note that the policy are completely free-form and can be any valid JSON, but should include the type field
+/// Merge policy and properties into a [`SecretConfig`] for later use.
 fn config_from_manifest_structures(
-    policy: &Policy,
-    reference: SecretSourceProperty,
-) -> anyhow::Result<HashMap<String, String>> {
+    policy: Policy,
+    reference: SecretProperty,
+) -> anyhow::Result<SecretConfig> {
     let mut policy_properties = policy.properties.clone();
     let backend = policy_properties
         .remove("backend")
         .context("policy did not have a backend property")?;
-    let secret_config = SecretConfig::new(
+    Ok(SecretConfig::new(
+        reference.name.clone(),
         backend,
-        reference.key,
-        reference.version,
+        reference.properties.key.clone(),
+        reference.properties.version.clone(),
         policy_properties
             .into_iter()
             .map(|(k, v)| (k, v.into()))
             .collect(),
-    );
-
-    secret_config.try_into()
+    ))
 }
 
 #[cfg(test)]
@@ -203,9 +213,9 @@ mod test {
 
         let secret_scaler = super::SecretScaler::new(
             secret.name.clone(),
-            secret.properties.clone(),
-            lattice.clone(),
             policy.clone(),
+            secret.clone(),
+            lattice.clone(),
         );
 
         assert_eq!(
@@ -213,7 +223,7 @@ mod test {
             StatusType::Reconciling
         );
 
-        let cfg = config_from_manifest_structures(&policy, secret.properties)
+        let cfg = config_from_manifest_structures(policy, secret.clone())
             .expect("failed to merge policy");
 
         assert_eq!(
@@ -223,7 +233,7 @@ mod test {
                 .expect("reconcile did not succeed"),
             vec![Command::PutConfig(PutConfig {
                 config_name: secret.name.clone(),
-                config: cfg.clone(),
+                config: cfg.clone().try_into().expect("should convert to map"),
             })],
         );
 
@@ -242,7 +252,7 @@ mod test {
                 .expect("handle_event should succeed"),
             vec![Command::PutConfig(PutConfig {
                 config_name: secret.name.clone(),
-                config: cfg.clone(),
+                config: cfg.clone().try_into().expect("should convert to map"),
             })]
         );
         assert_eq!(
@@ -283,7 +293,7 @@ mod test {
                 .expect("handle_event should succeed"),
             vec![Command::PutConfig(PutConfig {
                 config_name: secret.name.clone(),
-                config: cfg.clone(),
+                config: cfg.clone().try_into().expect("should convert to map"),
             })]
         );
         assert_eq!(

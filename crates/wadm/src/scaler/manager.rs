@@ -947,9 +947,9 @@ fn secrets_to_scalers<S: SecretSource + Send + Sync + Clone>(
             (
                 SecretScaler::new(
                     name.clone(),
-                    s.properties.clone(),
-                    secret_source.clone(),
                     policy.clone(),
+                    s.clone(),
+                    secret_source.clone(),
                 ),
                 name,
             )
@@ -986,7 +986,7 @@ pub(crate) fn compute_secret_id(
     component_name: &str,
 ) -> String {
     let name = compute_component_id(model_name, component_id, component_name);
-    format!("{}_{}", SECRET_PREFIX, name)
+    format!("{SECRET_PREFIX}_{name}")
 }
 
 #[cfg(test)]

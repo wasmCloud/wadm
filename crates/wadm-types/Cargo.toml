@@ -40,4 +40,5 @@ ulid = { workspace = true, features = ["serde"] }
 utoipa = { workspace = true }
 uuid = { workspace = true }
 wasmcloud-control-interface = { workspace = true }
+wasmcloud-secrets-types = { workspace = true }
 wit-bindgen-wrpc = { workspace = true, optional = true }
