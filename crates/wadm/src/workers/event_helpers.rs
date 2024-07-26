@@ -5,11 +5,9 @@ use std::fmt::Debug;
 use tracing::{debug, instrument, trace, warn};
 use wadm_types::{api::StatusInfo, SecretSourceProperty};
 use wasmcloud_control_interface::{CtlResponse, HostInventory, InterfaceLinkDefinition};
+use wasmcloud_secrets_types::SECRET_PREFIX;
 
-use crate::{
-    commands::Command, publisher::Publisher, scaler::secretscaler::SECRET_CONFIG_PREFIX,
-    APP_SPEC_ANNOTATION,
-};
+use crate::{commands::Command, publisher::Publisher, APP_SPEC_ANNOTATION};
 
 /// A subset of needed claims to help populate state
 #[derive(Debug, Clone)]
@@ -167,7 +165,7 @@ impl ConfigSource for wasmcloud_control_interface::Client {
 impl SecretSource for wasmcloud_control_interface::Client {
     async fn get_secret(&self, name: &str) -> anyhow::Result<Option<SecretSourceProperty>> {
         match self
-            .get_config(format!("{SECRET_CONFIG_PREFIX}_{name}").as_str())
+            .get_config(format!("{SECRET_PREFIX}_{name}").as_str())
             .await
             .map_err(|e| anyhow::anyhow!("{e:?}"))?
         {

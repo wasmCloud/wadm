@@ -22,13 +22,12 @@ use wadm_types::{
     Manifest, Policy, Properties, SecretProperty, SpreadScalerProperty, Trait, TraitProperty,
     DAEMONSCALER_TRAIT, LINK_TRAIT, SPREADSCALER_TRAIT,
 };
+use wasmcloud_secrets_types::SECRET_PREFIX;
 
 use crate::{
     events::Event,
     publisher::Publisher,
-    scaler::{
-        secretscaler::SECRET_CONFIG_PREFIX, spreadscaler::ComponentSpreadScaler, Command, Scaler,
-    },
+    scaler::{spreadscaler::ComponentSpreadScaler, Command, Scaler},
     storage::{snapshot::SnapshotStore, ReadStore},
     workers::{CommandPublisher, ConfigSource, LinkSource, SecretSource, StatusPublisher},
     DEFAULT_LINK_NAME,
@@ -987,7 +986,7 @@ pub(crate) fn compute_secret_id(
     component_name: &str,
 ) -> String {
     let name = compute_component_id(model_name, component_id, component_name);
-    format!("{}_{}", SECRET_CONFIG_PREFIX, name)
+    format!("{}_{}", SECRET_PREFIX, name)
 }
 
 #[cfg(test)]

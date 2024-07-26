@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::HashMap,
     hash::{DefaultHasher, Hash, Hasher},
 };
 use tokio::sync::RwLock;
@@ -10,6 +10,7 @@ use wadm_types::{
     api::{StatusInfo, StatusType},
     Policy, SecretSourceProperty, TraitProperty,
 };
+use wasmcloud_secrets_types::SecretConfig;
 
 use crate::{
     commands::{Command, DeleteConfig, PutConfig},
@@ -17,11 +18,6 @@ use crate::{
     scaler::Scaler,
     workers::SecretSource,
 };
-
-pub const SECRET_CONFIG_PREFIX: &str = "SECRET";
-
-// NOTE: Copied from secrets-types crate.
-pub const SECRET_POLICY_PROPERTIES_TYPE: &str = "properties.secret.wasmcloud.dev/v1alpha1";
 
 pub struct SecretScaler<SecretSource> {
     secret_source: SecretSource,
@@ -110,7 +106,7 @@ impl<S: SecretSource + Send + Sync + Clone> Scaler for SecretScaler<S> {
             (Ok(_config), scaler_config) => {
                 debug!(self.secret_name, "Putting secret");
 
-                let cfg = merge_policy_properties(&self.policy, &scaler_config)?;
+                let cfg = config_from_manifest_structures(&self.policy, scaler_config)?;
 
                 *self.status.write().await = StatusInfo::reconciling("Secret out of sync");
                 Ok(vec![Command::PutConfig(PutConfig {
@@ -147,40 +143,30 @@ impl<S: SecretSource + Send + Sync + Clone> Scaler for SecretScaler<S> {
 /// ```
 ///
 /// Note that the policy are completely free-form and can be any valid JSON, but should include the type field
-fn merge_policy_properties(
+fn config_from_manifest_structures(
     policy: &Policy,
-    reference: &SecretSourceProperty,
+    reference: SecretSourceProperty,
 ) -> anyhow::Result<HashMap<String, String>> {
-    let mut cfg: HashMap<String, String> = reference.clone().try_into()?;
-    // This is just a reference to the policy in the manifest.
-    cfg.remove("policy");
-
     let mut policy_properties = policy.properties.clone();
-    // Move the `backend` property to the top level of the configuration
     let backend = policy_properties
         .remove("backend")
         .context("policy did not have a backend property")?;
-    cfg.insert("backend".to_string(), backend);
-    // Create the policy field in the form of
-    // "{\"type\":\"properties.secret.wasmcloud.dev/v1alpha1\",\"properties\":{\"key\":\"value\"}}"
-    let mut policy = BTreeMap::<String, serde_json::Value>::from([(
-        "type".to_string(),
-        serde_json::Value::String(SECRET_POLICY_PROPERTIES_TYPE.to_string()),
-    )]);
-    policy.insert(
-        "properties".to_string(),
-        serde_json::to_value(&policy_properties)
-            .context("failed to serialize policy properties as value")?,
+    let secret_config = SecretConfig::new(
+        backend,
+        reference.key,
+        reference.version,
+        policy_properties
+            .into_iter()
+            .map(|(k, v)| (k, v.into()))
+            .collect(),
     );
-    let policy_json = serde_json::to_string(&policy)?;
 
-    cfg.insert("policy".to_string(), policy_json);
-    Ok(cfg)
+    secret_config.try_into()
 }
 
 #[cfg(test)]
 mod test {
-    use super::merge_policy_properties;
+    use super::config_from_manifest_structures;
 
     use crate::{
         commands::{Command, PutConfig},
@@ -227,8 +213,8 @@ mod test {
             StatusType::Reconciling
         );
 
-        let cfg =
-            merge_policy_properties(&policy, &secret.properties).expect("failed to merge policy");
+        let cfg = config_from_manifest_structures(&policy, secret.properties)
+            .expect("failed to merge policy");
 
         assert_eq!(
             secret_scaler

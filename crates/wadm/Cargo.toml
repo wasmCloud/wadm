@@ -37,6 +37,7 @@ ulid = { workspace = true, features = ["serde"] }
 uuid = { workspace = true }
 wadm-types = { workspace = true }
 wasmcloud-control-interface = { workspace = true }
+wasmcloud-secrets-types = { workspace = true }
 
 [dev-dependencies]
 serial_test = "3"
