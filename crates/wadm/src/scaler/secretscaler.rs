@@ -166,6 +166,7 @@ fn config_from_manifest_structures(
         reference.name.clone(),
         backend,
         reference.properties.key.clone(),
+        reference.properties.field.clone(),
         reference.properties.version.clone(),
         policy_properties
             .into_iter()
@@ -207,6 +208,7 @@ mod test {
             properties: SecretSourceProperty {
                 policy: "nats-kv".to_string(),
                 key: "test".to_string(),
+                field: None,
                 version: None,
             },
         };

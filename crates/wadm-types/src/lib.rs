@@ -254,6 +254,10 @@ pub struct SecretSourceProperty {
     pub policy: String,
     /// The key to use for retrieving the secret from the backend.
     pub key: String,
+    /// The field to use for retrieving the secret from the backend. This is optional and can be
+    /// used to retrieve a specific field from a secret.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub field: Option<String>,
     /// The version of the secret to retrieve. If not supplied, the latest version will be used.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,

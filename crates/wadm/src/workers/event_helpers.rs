@@ -81,6 +81,7 @@ pub fn secret_config_from_map(map: HashMap<String, String>) -> anyhow::Result<Se
                 name: name.to_string(),
                 backend: backend.to_string(),
                 key: key.to_string(),
+                field: map.get("field").map(|f| f.to_string()),
                 version: map.get("version").map(|v| v.to_string()),
                 policy: serde_json::from_str(policy)
                     .context("failed to deserialize policy from string")?,
