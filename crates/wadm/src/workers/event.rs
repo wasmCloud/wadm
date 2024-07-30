@@ -1238,7 +1238,7 @@ mod test {
             "Component in host should be removed"
         );
         assert!(
-            components.get("TARKIN").is_none(),
+            !components.contains_key("TARKIN"),
             "Component should be removed from state"
         );
 

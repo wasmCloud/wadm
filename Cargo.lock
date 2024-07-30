@@ -2980,7 +2980,7 @@ checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 
 [[package]]
 name = "wadm"
-version = "0.13.0-beta.1"
+version = "0.13.0-beta.2"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -3015,7 +3015,7 @@ dependencies = [
 
 [[package]]
 name = "wadm-cli"
-version = "0.13.0-beta.1"
+version = "0.13.0-beta.2"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -3045,7 +3045,7 @@ dependencies = [
 
 [[package]]
 name = "wadm-client"
-version = "0.2.0-beta.1"
+version = "0.2.0-beta.2"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -3064,7 +3064,7 @@ dependencies = [
 
 [[package]]
 name = "wadm-types"
-version = "0.2.0-beta.1"
+version = "0.2.0-beta.2"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -3309,9 +3309,9 @@ dependencies = [
 
 [[package]]
 name = "wasmcloud-secrets-types"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3d787a70ec514bb557b4d3ae09838bebd1078b951c667276a8a8d9addc697519"
+checksum = "6e141cc3ac1fd9b71ec0813796e0a40767afea090d6395fa2b82abca9c882426"
 dependencies = [
  "anyhow",
  "async-trait",
