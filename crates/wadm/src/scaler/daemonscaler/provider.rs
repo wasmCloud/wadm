@@ -211,9 +211,14 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderDaemonScaler<S> {
         trace!(?commands, "Calculated commands for provider daemonscaler");
 
         let status = match (spread_status.is_empty(), commands.is_empty()) {
+            // No failures, no commands, scaler satisfied
             (true, true) => StatusInfo::deployed(""),
-            (_, false) => StatusInfo::reconciling(""),
-            (false, true) => StatusInfo::failed(
+            // No failures, commands generated, scaler is reconciling
+            (true, false) => {
+                StatusInfo::reconciling(&format!("Scaling provider on {} host(s)", commands.len()))
+            }
+            // Failures occurred, scaler is in a failed state
+            (false, _) => StatusInfo::failed(
                 &spread_status
                     .into_iter()
                     .map(|s| s.message)
