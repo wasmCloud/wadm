@@ -2,10 +2,18 @@
 
 # wasmCloud Application Deployment Manager (wadm)
 
-The wasmCloud Application Deployment Manager (**wadm**) enables declarative wasmCloud applications.
-It's responsible for managing a set of application deployment specifications, monitoring the current
-state of an entire [lattice](https://wasmcloud.com/docs/deployment/lattice/), and issuing the
-appropriate lattice control commands required to close the gap between observed and desired state.
+Wadm is a Wasm-native orchestrator for managing and scaling declarative wasmCloud applications.
+
+## Responsibilities
+
+**wadm** is powerful because it focuses on a small set of core responsibilities, making it efficient and easy to manage.
+
+- **Manage application specifications** - Manage applications which represent _desired state_. This includes
+  the creation, deletion, upgrades and rollback of applications to previous versions. Application
+  specifications are defined using the [Open Application Model](https://oam.dev/). For more
+  information on wadm's specific OAM features, see our [OAM README](./oam/README.md).
+- **Observe state** - Monitor wasmCloud [CloudEvents](https://wasmcloud.com/docs/reference/cloud-event-list) from all hosts in a [lattice](https://wasmcloud.com/docs/deployment/lattice/) to build the current state.
+- **Reconcile with compensating commands** - When the current state doesn't match the desired state, issue commands to wasmCloud hosts in the lattice with the [control interface](https://wasmcloud.com/docs/hosts/lattice-protocols/control-interface) to reach desired state. Wadm is constantly reconciling and will react immediately to ensure applications stay deployed. For example, if a host stops, wadm will reconcile the `host_stopped` event and issue any necessary commands to start components on other available hosts.
 
 ## Using wadm
 
@@ -43,7 +51,7 @@ kind: Application
 metadata:
   name: hello-world
   annotations:
-    description: "HTTP hello world demo"
+    description: 'HTTP hello world demo'
 spec:
   components:
     - name: http-component
@@ -120,19 +128,6 @@ wash app deploy hello.yaml
 
 Now wasmCloud is configured to automatically scale your component to 10 instances based on incoming load.
 
-## Responsibilities
-
-**wadm** has a very small set of responsibilities, which actually contributes to its power.
-
-- **Manage Application Specifications** - Manage models consisting of _desired state_. This includes
-  the creation and deletion and _rollback_ of models to previous versions. Application
-  specifications are defined using the [Open Application Model](https://oam.dev/). For more
-  information on wadm's specific OAM features, see our [OAM README](./oam/README.md).
-- **Observe State** - Monitor wasmCloud [CloudEvents](https://wasmcloud.com/docs/reference/cloud-event-list) from all hosts in a lattice to build the current state.
-- **Take Compensating Actions** - When indicated, issue commands to the [lattice control
-  interface](https://github.com/wasmCloud/interfaces/tree/main/lattice-control) to bring about the
-  changes necessary to make the desired and observed state match.
-
 ## 🚧 Advanced
 
 You can find a Docker Compose file for deploying an end-to-end multi-tenant example in the [test](https://github.com/wasmCloud/wadm/blob/main/test/docker-compose-e2e-multitenant.yaml) directory.
@@ -151,20 +146,6 @@ a single lattice. Proceed with caution while we do further testing.
 Interacting with **wadm** is done over NATS on the root topic `wadm.api.{prefix}` where `prefix` is
 the lattice namespace prefix. For more information on this API, please consult the [wadm
 Reference](https://wasmcloud.com/docs/ecosystem/wadm/).
-
-## Known Issues/Missing functionality
-
-As this is a new project there are some things we know are missing or buggy. A non-exhaustive list
-of these can be found below:
-
-- It is _technically_ possible as things stand right now for a race condition with manifests when a
-  manifest is updated/created and deleted simultaneously. In this case, one of the operations will
-  win and you will end up with a manifest that still exists after you delete it or a manifest that
-  does not exist after you create it. This is a very unlikely scenario as only one person or process
-  is interacting with a specific, but it is possible. If this becomes a problem for you, please let
-  us know and we will consider additional ways of how we can address it.
-- Manifest validation is implemented, but slightly clunky. Any PRs that make this better would be
-  more than welcome!
 
 ## References
 
