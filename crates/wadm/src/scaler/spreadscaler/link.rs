@@ -62,6 +62,16 @@ where
         &self.id
     }
 
+    fn human_friendly_name(&self) -> String {
+        format!(
+            "Link: {} -({}:{})-> {}",
+            self.config.source_id,
+            self.config.wit_namespace,
+            self.config.wit_package,
+            self.config.target
+        )
+    }
+
     async fn status(&self) -> StatusInfo {
         let _ = self.reconcile().await;
         self.status.read().await.to_owned()
