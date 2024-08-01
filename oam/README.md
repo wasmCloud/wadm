@@ -16,9 +16,13 @@ The following is a list of the `traits` wasmCloud has added via customization to
 - `spreadscaler` - Defines the spread of instances of a particular entity across multiple hosts with affinity requirements
 - `link` - A link definition that describes a link between a component and a capability provider or a component and another component
 
+## JSON Schema
+
+A JSON schema is automatically generated from our Rust structures and is at the root of the repository: [oam.schema.json](../oam.schema.json).
+
 ## Example Application YAML
 
-The following is an example YAML file describing an ALC application
+The following is an example YAML file describing an application
 
 ```yaml
 apiVersion: core.oam.dev/v1beta1
@@ -26,8 +30,7 @@ kind: Application
 metadata:
   name: my-example-app
   annotations:
-    version: v0.0.1
-    description: 'This is my app'
+    description: 'This is my app revision 2'
 spec:
   components:
     - name: userinfo
@@ -47,25 +50,28 @@ spec:
                 requirements:
                   zone: us-west-1
                 weight: 20
-        - type: linkdef
-          properties:
-            target: webcap
-            values:
-              port: '8080'
 
     - name: webcap
       type: capability
       properties:
-        contract: wasmcloud:httpserver
         image: wasmcloud.azurecr.io/httpserver:0.13.1
-        link_name: default
+      traits:
+        - type: link
+          properties:
+            target:
+              name: userinfo
+              config: []
+            namespace: wasi
+            package: http
+            interfaces:
+              - incoming-handler
+            source:
+              config: []
 
     - name: ledblinky
       type: capability
       properties:
         image: wasmcloud.azurecr.io/ledblinky:0.0.1
-        contract: wasmcloud:blinkenlights
-        # default link name is "default"
       traits:
         - type: spreadscaler
           properties:
@@ -74,5 +80,5 @@ spec:
               - name: haslights
                 requirements:
                   ledenabled: 'true'
-                # default weight is 100
+                  # default weight is 100
 ```

@@ -23,7 +23,7 @@ Wadm is a Wasm-native orchestrator for managing and scaling declarative wasmClou
 
 You can easily run **wadm** by downloading the [`wash`](https://wasmcloud.com/docs/installation) CLI, which automatically launches wadm alongside NATS and a wasmCloud host when you run `wash up`. You can use `wash` to query, create, and deploy applications.
 
-```
+```bash
 wash up -d    # Start NATS, wasmCloud, and wadm in the background
 ```
 
@@ -31,7 +31,7 @@ Follow the [wasmCloud quickstart](https://wasmcloud.com/docs/tour/hello-world) t
 
 If you prefer to run **wadm** separately and/or connect to running wasmCloud hosts, you can instead opt for using the latest GitHub release artifact and executing the binary. Simply replace the latest version, your operating system, and architecture below. Please note that wadm requires a wasmCloud host version >=0.63.0
 
-```
+```bash
 # Install wadm
 curl -fLO https://github.com/wasmCloud/wadm/releases/download/<version>/wadm-<version>-<os>-<arch>.tar.gz
 tar -xvf wadm-<version>-<os>-<arch>.tar.gz
@@ -68,7 +68,7 @@ spec:
     - name: httpserver
       type: capability
       properties:
-        image: ghcr.io/wasmcloud/http-server:0.21.0
+        image: ghcr.io/wasmcloud/http-server:0.22.0
       traits:
         # Link the HTTP server and set it to listen on the local machine's port 8080
         - type: link
@@ -77,15 +77,16 @@ spec:
             namespace: wasi
             package: http
             interfaces: [incoming-handler]
-            source_config:
-              - name: default-http
-                properties:
-                  ADDRESS: 127.0.0.1:8080
+            source:
+              config:
+                - name: default-http
+                  properties:
+                    ADDRESS: 127.0.0.1:8080
 ```
 
 Then use `wash` to deploy the manifest:
 
-```
+```bash
 wash app deploy hello.yaml
 ```
 
@@ -93,7 +94,7 @@ wash app deploy hello.yaml
 
 When you're done, you can use `wash` to undeploy the application:
 
-```
+```bash
 wash app undeploy hello-world
 ```
 
@@ -122,7 +123,7 @@ spec:
 
 Then simply deploy the new manifest:
 
-```
+```bash
 wash app deploy hello.yaml
 ```
 
