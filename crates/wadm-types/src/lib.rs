@@ -326,6 +326,7 @@ impl Trait {
 /// Properties for defining traits
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, JsonSchema)]
 #[serde(untagged)]
+#[allow(clippy::large_enum_variant)]
 pub enum TraitProperty {
     Link(LinkProperty),
     SpreadScaler(SpreadScalerProperty),
