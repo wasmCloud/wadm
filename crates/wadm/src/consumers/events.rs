@@ -1,5 +1,6 @@
 //! A module for creating and consuming a stream of events from a wasmcloud lattice
 
+use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -14,7 +15,7 @@ use async_nats::{
 use futures::{Stream, TryStreamExt};
 use tracing::{debug, error, warn};
 
-use super::{CreateConsumer, ScopedMessage};
+use super::{CreateConsumer, ScopedMessage, LATTICE_METADATA_KEY, MULTITENANT_METADATA_KEY};
 use crate::events::*;
 
 /// The name of the durable NATS stream and consumer that contains incoming lattice events
@@ -42,10 +43,19 @@ impl EventConsumer {
         if !topic.contains(lattice_id) {
             return Err(format!("Topic {topic} does not match for lattice ID {lattice_id}").into());
         }
-        let consumer_name = if let Some(prefix) = multitenant_prefix {
-            format!("{EVENTS_CONSUMER_PREFIX}-{lattice_id}_{prefix}")
+        let (consumer_name, metadata) = if let Some(prefix) = multitenant_prefix {
+            (
+                format!("{EVENTS_CONSUMER_PREFIX}-{lattice_id}_{prefix}"),
+                HashMap::from([
+                    (LATTICE_METADATA_KEY.to_string(), lattice_id.to_string()),
+                    (MULTITENANT_METADATA_KEY.to_string(), prefix.to_string()),
+                ]),
+            )
         } else {
-            format!("{EVENTS_CONSUMER_PREFIX}-{lattice_id}")
+            (
+                format!("{EVENTS_CONSUMER_PREFIX}-{lattice_id}"),
+                HashMap::from([(LATTICE_METADATA_KEY.to_string(), lattice_id.to_string())]),
+            )
         };
         let consumer = stream
             .get_or_create_consumer(
@@ -61,6 +71,7 @@ impl EventConsumer {
                     max_deliver: 3,
                     deliver_policy: async_nats::jetstream::consumer::DeliverPolicy::All,
                     filter_subject: topic.to_owned(),
+                    metadata,
                     ..Default::default()
                 },
             )

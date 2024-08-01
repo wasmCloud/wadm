@@ -9,6 +9,8 @@ use tokio::{
 };
 use tracing::{error, instrument, trace, warn, Instrument};
 
+use crate::consumers::{LATTICE_METADATA_KEY, MULTITENANT_METADATA_KEY};
+
 use super::{CreateConsumer, ScopedMessage};
 
 /// A convenience type for returning work results
@@ -141,15 +143,24 @@ impl<C> ConsumerManager<C> {
                     }
                 };
 
-                // TODO: This is somewhat brittle as we could change naming schemes, but it is
-                // good enough for now. We are just taking the name (which should be of the
-                // format `<consumer_prefix>-<lattice_prefix>_<multitenant_prefix>`), but this makes sure
-                // we are always getting the last thing in case of other underscores
-                // 
-                // When NATS 2.10 is out, store this as metadata on the stream.
-                let (lattice_id, multitenant_prefix) = match extract_lattice_and_multitenant(&info.name) {
-                    (Some(id), prefix) => (id, prefix),
-                    (None, _) => return None,
+                // Now that wadm is using NATS 2.10, the lattice and multitenant prefix are stored in the consumer metadata
+                // as a fallback for older versions, we can still extract it from the consumer name in the
+                // form `<consumer_prefix>-<lattice_prefix>_<multitenant_prefix>`
+                let (lattice_id, multitenant_prefix) = match (info.config.metadata.get(LATTICE_METADATA_KEY), info.config.metadata.get(MULTITENANT_METADATA_KEY)) {
+                    (Some(lattice), Some(multitenant_prefix)) => {
+                        trace!(%lattice, %multitenant_prefix, "Found lattice and multitenant prefix in consumer metadata");
+                        (lattice.to_owned(), Some(multitenant_prefix.to_owned()))
+                    }
+                    (Some(lattice), None) => {
+                        trace!(%lattice, "Found lattice in consumer metadata");
+                        (lattice.to_owned(), None)
+                    }
+                    _ => {
+                        match extract_lattice_and_multitenant(&info.name) {
+                            (Some(id), prefix) => (id, prefix),
+                            (None, _) => return None,
+                        }
+                    }
                 };
 
                 // Don't create multitenant consumers if running in single tenant mode, and vice versa
