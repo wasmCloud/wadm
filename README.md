@@ -43,7 +43,7 @@ kind: Application
 metadata:
   name: hello-world
   annotations:
-    description: "HTTP hello world demo"
+    description: 'HTTP hello world demo'
 spec:
   components:
     - name: http-component
@@ -135,7 +135,7 @@ Now wasmCloud is configured to automatically scale your component to 10 instance
 
 ## 🚧 Advanced
 
-You can find a Docker Compose file for deploying an end-to-end multi-tenant example in the [test](https://github.com/wasmCloud/wadm/blob/main/test/docker-compose-e2e-multitenant.yaml) directory.
+You can find a Docker Compose file for deploying an end-to-end multi-tenant example in the [test](https://github.com/wasmCloud/wadm/blob/main/tests/docker-compose-e2e-multitenant.yaml) directory.
 
 In advanced use cases, **wadm** is also capable of:
 

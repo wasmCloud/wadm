@@ -19,8 +19,8 @@ use crate::{
     helpers::{HELLO_IMAGE_REF, HTTP_SERVER_IMAGE_REF},
 };
 
-const MANIFESTS_PATH: &str = "test/data";
-const DOCKER_COMPOSE_FILE: &str = "test/docker-compose-e2e.yaml";
+const MANIFESTS_PATH: &str = "tests/fixtures/manifests";
+const DOCKER_COMPOSE_FILE: &str = "tests/docker-compose-e2e.yaml";
 const BLOBSTORE_FS_IMAGE_REF: &str = "ghcr.io/wasmcloud/blobstore-fs:0.6.0";
 const BLOBSTORE_FS_PROVIDER_ID: &str = "fileserver";
 const BLOBBY_IMAGE_REF: &str = "ghcr.io/wasmcloud/components/blobby-rust:0.4.0";
