@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use tokio::sync::RwLock;
+use tracing::debug;
 use wasmcloud_control_interface::InterfaceLinkDefinition;
 use wasmcloud_secrets_types::SecretConfig;
 
@@ -86,7 +87,14 @@ where
             .into_iter()
             .map(|(key, val)| (key, serde_json::to_value(val).unwrap()))
             .collect::<HashMap<_, _>>();
-        let links = self.lattice_source.get_links().await?;
+
+        // If we fail to get the links, that likely just means the lattice source is down, so we
+        // just fall back on what we have cached
+        if let Ok(links) = self.lattice_source.get_links().await {
+            *self.links.write().await = links;
+        } else {
+            debug!("Failed to get links from lattice source, using cached links");
+        };
 
         {
             let mut stored_state = self.stored_state.write().await;
@@ -94,8 +102,6 @@ where
             stored_state.insert(Component::KIND.to_owned(), components);
             stored_state.insert(Host::KIND.to_owned(), hosts);
         }
-
-        *self.links.write().await = links;
 
         Ok(())
     }
