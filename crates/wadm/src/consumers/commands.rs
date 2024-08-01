@@ -1,5 +1,6 @@
 //! A module for creating and consuming a stream of commands from NATS
 
+use std::collections::HashMap;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -13,7 +14,7 @@ use async_nats::{
 use futures::{Stream, TryStreamExt};
 use tracing::{error, warn};
 
-use super::{CreateConsumer, ScopedMessage};
+use super::{CreateConsumer, ScopedMessage, LATTICE_METADATA_KEY, MULTITENANT_METADATA_KEY};
 use crate::commands::*;
 
 /// The name of the durable NATS stream and consumer that contains incoming lattice events
@@ -42,10 +43,19 @@ impl CommandConsumer {
             return Err(format!("Topic {topic} does not match for lattice ID {lattice_id}").into());
         }
 
-        let consumer_name = if let Some(prefix) = multitenant_prefix {
-            format!("{COMMANDS_CONSUMER_PREFIX}-{lattice_id}_{prefix}")
+        let (consumer_name, metadata) = if let Some(prefix) = multitenant_prefix {
+            (
+                format!("{COMMANDS_CONSUMER_PREFIX}-{lattice_id}_{prefix}"),
+                HashMap::from([
+                    (LATTICE_METADATA_KEY.to_string(), lattice_id.to_string()),
+                    (MULTITENANT_METADATA_KEY.to_string(), prefix.to_string()),
+                ]),
+            )
         } else {
-            format!("{COMMANDS_CONSUMER_PREFIX}-{lattice_id}")
+            (
+                format!("{COMMANDS_CONSUMER_PREFIX}-{lattice_id}"),
+                HashMap::from([(LATTICE_METADATA_KEY.to_string(), lattice_id.to_string())]),
+            )
         };
         let consumer = stream
             .get_or_create_consumer(
@@ -61,6 +71,7 @@ impl CommandConsumer {
                     max_deliver: 3,
                     deliver_policy: async_nats::jetstream::consumer::DeliverPolicy::All,
                     filter_subject: topic.to_owned(),
+                    metadata,
                     ..Default::default()
                 },
             )

@@ -16,6 +16,9 @@ pub mod manager;
 /// The default time given for a command to ack. This is longer than events due to the possible need for more processing time
 pub const DEFAULT_ACK_TIME: Duration = Duration::from_secs(2);
 
+pub const LATTICE_METADATA_KEY: &str = "lattice";
+pub const MULTITENANT_METADATA_KEY: &str = "multitenant_prefix";
+
 pub use commands::*;
 pub use events::*;
 
