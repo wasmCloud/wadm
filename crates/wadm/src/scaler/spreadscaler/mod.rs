@@ -122,8 +122,6 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ComponentSpreadScaler<S> {
             .get::<Component>(&self.spread_config.lattice_id, component_id)
             .await?;
 
-        let mut spread_status = vec![];
-
         let hosts = self
             .store
             .list::<Host>(&self.spread_config.lattice_id)
@@ -167,6 +165,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ComponentSpreadScaler<S> {
             return Ok(remove_ineligible);
         }
 
+        let mut spread_status = vec![];
         trace!(spread_requirements = ?self.spread_requirements, ?component_id, "Computing commands");
         let commands = self
             .spread_requirements
@@ -263,17 +262,23 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ComponentSpreadScaler<S> {
             .collect::<Vec<Command>>();
         trace!(?commands, "Calculated commands for component scaler");
 
-        let status = if spread_status.is_empty() {
-            StatusInfo::deployed("")
-        } else {
-            StatusInfo::failed(
+        let status = match (spread_status.is_empty(), commands.is_empty()) {
+            // No failures, no commands, scaler satisfied
+            (true, true) => StatusInfo::deployed(""),
+            // No failures, commands generated, scaler is reconciling
+            (true, false) => {
+                StatusInfo::reconciling(&format!("Scaling component on {} host(s)", commands.len()))
+            }
+            // Failures occurred, scaler is in a failed state
+            (false, _) => StatusInfo::failed(
                 &spread_status
                     .into_iter()
                     .map(|s| s.message)
                     .collect::<Vec<String>>()
                     .join(" "),
-            )
+            ),
         };
+
         trace!(?status, "Updating scaler status");
         *self.status.write().await = status;
 
