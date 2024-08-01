@@ -62,7 +62,11 @@ pub struct ModelSummary {
     pub version: String,
     pub description: Option<String>,
     pub deployed_version: Option<String>,
+    #[serde(default)]
+    pub detailed_status: Status,
+    #[deprecated(since = "0.14.0", note = "Use detailed_status instead")]
     pub status: StatusType,
+    #[deprecated(since = "0.14.0", note = "Use detailed_status instead")]
     pub status_message: Option<String>,
 }
 
@@ -164,30 +168,58 @@ pub enum StatusResult {
 }
 
 /// The current status of a model
-#[derive(Debug, Serialize, Deserialize, Default, Clone)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq)]
 pub struct Status {
-    pub version: String,
     #[serde(rename = "status")]
     pub info: StatusInfo,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub scalers: Vec<ScalerStatus>,
+    #[serde(default)]
+    #[deprecated(since = "0.14.0")]
+    pub version: String,
+    #[serde(default)]
+    #[deprecated(since = "0.14.0")]
     pub components: Vec<ComponentStatus>,
 }
 
+impl Status {
+    pub fn new(info: StatusInfo, scalers: Vec<ScalerStatus>) -> Self {
+        #[allow(deprecated)]
+        Status {
+            info,
+            scalers,
+            version: String::with_capacity(0),
+            components: Vec::with_capacity(0),
+        }
+    }
+}
+
 /// The current status of a component
-#[derive(Debug, Serialize, Deserialize, Default, Clone)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone, Eq, PartialEq)]
 pub struct ComponentStatus {
     pub name: String,
     #[serde(rename = "type")]
     pub component_type: String,
     #[serde(rename = "status")]
     pub info: StatusInfo,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub traits: Vec<TraitStatus>,
 }
 
 /// The current status of a trait
-#[derive(Debug, Serialize, Deserialize, Default, Clone)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone, Eq, PartialEq)]
 pub struct TraitStatus {
     #[serde(rename = "type")]
     pub trait_type: String,
+    #[serde(rename = "status")]
+    pub info: StatusInfo,
+}
+
+/// The current status of a scaler
+#[derive(Debug, Serialize, Deserialize, Default, Clone, Eq, PartialEq)]
+pub struct ScalerStatus {
+    /// The human-readable name of the scaler
+    pub name: String,
     #[serde(rename = "status")]
     pub info: StatusInfo,
 }
@@ -229,12 +261,20 @@ impl StatusInfo {
             message: message.to_owned(),
         }
     }
+
+    pub fn waiting(message: &str) -> Self {
+        StatusInfo {
+            status_type: StatusType::Waiting,
+            message: message.to_owned(),
+        }
+    }
 }
 
 /// All possible status types
 #[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone, Copy, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum StatusType {
+    Waiting,
     #[default]
     Undeployed,
     #[serde(alias = "compensating")]
@@ -264,9 +304,13 @@ impl std::ops::Add for StatusType {
             // If anything is undeployed, the whole thing is
             (Self::Undeployed, _) => Self::Undeployed,
             (_, Self::Undeployed) => Self::Undeployed,
+            // If anything is waiting, the whole thing is
+            (Self::Waiting, _) => Self::Waiting,
+            (_, Self::Waiting) => Self::Waiting,
             (Self::Reconciling, _) => Self::Reconciling,
             (_, Self::Reconciling) => Self::Reconciling,
-            _ => unreachable!("aggregating StatusType failure. This is programmer error"),
+            // This is technically covered in the first comparison, but we'll be explicit
+            (Self::Deployed, Self::Deployed) => Self::Deployed,
         }
     }
 }

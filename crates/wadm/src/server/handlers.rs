@@ -10,7 +10,7 @@ use wadm_types::{
     api::{
         DeleteModelRequest, DeleteModelResponse, DeleteResult, DeployModelRequest,
         DeployModelResponse, DeployResult, GetModelRequest, GetModelResponse, GetResult,
-        PutModelResponse, PutResult, Status, StatusInfo, StatusResponse, StatusResult, StatusType,
+        PutModelResponse, PutResult, Status, StatusResponse, StatusResult, StatusType,
         UndeployModelRequest, VersionInfo, VersionResponse,
     },
     CapabilityProperties, Manifest, Properties,
@@ -248,13 +248,20 @@ impl<P: Publisher> Handler<P> {
         };
 
         for model in &mut data {
+            // TODO: we want to disregard the status if the lattice isn't being observed yet... how?
+            // Need some form of query to check if the lattice is being observed
+            #[allow(deprecated)]
             if let Some(status) = self.get_manifest_status(lattice_id, &model.name).await {
-                model.status = status.status_type;
-                model.status_message = Some(status.message);
+                status.info.status_type.clone_into(&mut model.status);
+                model.status_message = Some(status.info.message.to_owned());
+                model.detailed_status = status;
             } else {
-                warn!("Could not fetch status for application, assuming undeployed");
-                model.status = StatusType::Undeployed;
-                model.status_message = None;
+                warn!("Could not fetch status for application, setting to waiting");
+                model.status = StatusType::Waiting;
+                model.status_message = Some(
+                    "Waiting for status: Lattice contains no hosts, deployment not started."
+                        .to_string(),
+                );
             }
         }
 
@@ -823,42 +830,11 @@ impl<P: Publisher> Handler<P> {
         lattice_id: &str,
         name: &str,
     ) {
-        trace!("Fetching current manifest from store");
-        let manifests: StoredManifest = match self.store.get(account_id, lattice_id, name).await {
-            Ok(Some((m, _))) => m,
-            Ok(None) => {
-                self.send_reply(
-                    msg.reply,
-                    // NOTE: We are constructing all data here, so this shouldn't fail, but just in
-                    // case we unwrap to nothing
-                    serde_json::to_vec(&StatusResponse {
-                        result: StatusResult::NotFound,
-                        message: format!("Application with the name {name} not found"),
-                        status: None,
-                    })
-                    .unwrap_or_default(),
-                )
-                .await;
-                return;
-            }
-            Err(e) => {
-                error!(error = %e, "Unable to fetch data");
-                self.send_error(msg.reply, "Internal storage error".to_string())
-                    .await;
-                return;
-            }
-        };
-
-        let current = manifests.get_current();
-
-        let status = Status {
-            version: current.version().to_owned(),
-            info: self
-                .get_manifest_status(lattice_id, name)
-                .await
-                .unwrap_or_default(),
-            components: vec![],
-        };
+        trace!("Fetching current manifest status");
+        let status = self
+            .get_manifest_status(lattice_id, name)
+            .await
+            .unwrap_or_default();
 
         self.send_reply(
             msg.reply,
@@ -908,7 +884,7 @@ impl<P: Publisher> Handler<P> {
         self.send_reply(reply, response).await;
     }
 
-    async fn get_manifest_status(&self, lattice_id: &str, name: &str) -> Option<StatusInfo> {
+    async fn get_manifest_status(&self, lattice_id: &str, name: &str) -> Option<Status> {
         // NOTE(brooksmtownsend): We're getting the last raw message instead of direct get here
         // to ensure we fetch the latest message from the cluster leader.
         match self
@@ -918,10 +894,10 @@ impl<P: Publisher> Handler<P> {
             .map(|raw| {
                 B64decoder
                     .decode(raw.payload)
-                    .map(|b| serde_json::from_slice::<StatusInfo>(&b))
+                    .map(|b| serde_json::from_slice::<Status>(&b))
             }) {
             Ok(Ok(Ok(status))) => Some(status),
-            // Model status doesn't exist or is invalid, assuming undeployed
+            // Application status doesn't exist or is invalid, assuming undeployed
             _ => None,
         }
     }

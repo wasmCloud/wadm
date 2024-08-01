@@ -3,7 +3,7 @@ use std::collections::{hash_map::Entry, HashMap, HashSet};
 
 use anyhow::Result;
 use tracing::{debug, instrument, trace, warn};
-use wadm_types::api::StatusInfo;
+use wadm_types::api::{ScalerStatus, Status, StatusInfo};
 use wasmcloud_control_interface::{ComponentDescription, ProviderDescription};
 
 use crate::commands::Command;
@@ -728,11 +728,7 @@ where
         )
         .await;
 
-        let status = if commands.is_empty() {
-            scaler_status(&scalers).await
-        } else {
-            StatusInfo::reconciling("Model deployed, running initial compensating commands")
-        };
+        let status = detailed_scaler_status(&scalers).await;
 
         trace!(?status, "Setting status");
         if let Err(e) = self
@@ -779,13 +775,7 @@ where
         )
         .await;
 
-        let status = if commands.is_empty() {
-            scaler_status(&scalers).await
-        } else {
-            StatusInfo::reconciling(&format!(
-                "Event {event} modified app '{name}' state, running compensating commands"
-            ))
-        };
+        let status = detailed_scaler_status(&scalers).await;
         trace!(?status, "Setting status");
         if let Err(e) = self.status_publisher.publish_status(name, status).await {
             warn!(error = ?e, "Failed to set status for scaler");
@@ -802,21 +792,14 @@ where
         let scalers = self.scalers.get_all_scalers().await;
         // Refresh the snapshot data before running
         self.scalers.refresh_data().await?;
-        let futs = scalers.iter().map(|(name, scalers)| async {
+        let futs = scalers.iter().map(|(name, scalers)| async move {
             let (commands, res) = get_commands_and_result(
                 scalers.iter().map(|scaler| scaler.handle_event(event)),
                 "Errors occurred while handling event with all scalers",
             )
             .await;
 
-            let status = if commands.is_empty() {
-                scaler_status(scalers).await
-            } else {
-                StatusInfo::reconciling(&format!(
-                    "Event {event} modified app '{}' state, running compensating commands",
-                    name.to_owned(),
-                ))
-            };
+            let status = detailed_scaler_status(scalers).await;
 
             trace!(?status, "Setting status");
             if let Err(e) = self.status_publisher.publish_status(name, status).await {
@@ -991,25 +974,36 @@ where
     )
 }
 
-/// Helper function to get the status of all scalers
-async fn scaler_status(scalers: &ScalerList) -> StatusInfo {
-    let futs = scalers.iter().map(|s| s.status());
+/// Helper function to find the [`Status`] of all scalers in a particular manifest.
+pub async fn detailed_scaler_status(scalers: &ScalerList) -> Status {
+    let futs = scalers
+        .iter()
+        .map(|s| async { (s.human_friendly_name(), s.status().await) });
     let status = futures::future::join_all(futs).await;
-    StatusInfo {
-        status_type: status.iter().map(|s| s.status_type).sum(),
-        message: status
+    Status::new(
+        StatusInfo {
+            status_type: status.iter().map(|(_id, s)| s.status_type).sum(),
+            message: status
+                .iter()
+                .filter_map(|(_id, s)| {
+                    let message = s.message.trim();
+                    if message.is_empty() {
+                        None
+                    } else {
+                        Some(message.to_owned())
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(", "),
+        },
+        status
             .into_iter()
-            .filter_map(|s| {
-                let message = s.message.trim();
-                if message.is_empty() {
-                    None
-                } else {
-                    Some(message.to_owned())
-                }
+            .map(|(id, info)| ScalerStatus {
+                name: id.to_string(),
+                info,
             })
-            .collect::<Vec<_>>()
-            .join(", "),
-    }
+            .collect(),
+    )
 }
 
 fn map_to_result(errors: Vec<anyhow::Error>, error_message: &str) -> Result<()> {

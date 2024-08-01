@@ -19,7 +19,7 @@ use tokio::{
 use wadm::{APP_SPEC_ANNOTATION, MANAGED_BY_ANNOTATION, MANAGED_BY_IDENTIFIER};
 use wadm_client::ClientConnectOptions;
 use wadm_types::{
-    api::{StatusInfo, StatusType},
+    api::{Status, StatusInfo, StatusType},
     Manifest,
 };
 use wasmcloud_control_interface::HostInventory;
@@ -395,7 +395,7 @@ pub async fn check_status(
     expected_status: StatusType,
 ) -> anyhow::Result<()> {
     for i in 0..30 {
-        let status = get_manifest_status(stream, lattice_id, manifest_name).await;
+        let status = get_manifest_status_info(stream, lattice_id, manifest_name).await;
         match status.as_ref() {
             Some(status) if status.status_type == expected_status => break,
             _ if i < 29 => tokio::time::sleep(std::time::Duration::from_secs(1)).await,
@@ -459,7 +459,7 @@ pub fn check_providers(
     Ok(())
 }
 
-pub async fn get_manifest_status(
+pub async fn get_manifest_status_info(
     stream: &Stream,
     lattice_id: &str,
     name: &str,
@@ -472,9 +472,9 @@ pub async fn get_manifest_status(
         .map(|raw| {
             B64decoder
                 .decode(raw.payload)
-                .map(|b| serde_json::from_slice::<StatusInfo>(&b))
+                .map(|b| serde_json::from_slice::<Status>(&b))
         }) {
-        Ok(Ok(Ok(status))) => Some(status),
+        Ok(Ok(Ok(status))) => Some(status.info),
         // Model status doesn't exist or is invalid, assuming undeployed
         _ => None,
     }

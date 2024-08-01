@@ -5,7 +5,7 @@ use std::{collections::HashMap, path::PathBuf};
 use anyhow::Context;
 use async_nats::jetstream::consumer::pull::Config;
 use futures::{FutureExt, StreamExt, TryStreamExt};
-use wadm_types::api::{StatusInfo, StatusType};
+use wadm_types::api::{Status, StatusType};
 
 mod e2e;
 mod helpers;
@@ -247,9 +247,9 @@ async fn test_upgrade(client_info: &ClientInfo) {
                 .await
                 .expect("Got error when consuming status stream")
                 .expect("Status stream ended early");
-            let stat: StatusInfo = serde_json::from_slice(&val.payload)
+            let stat: Status = serde_json::from_slice(&val.payload)
                 .expect("Should be able to decode status body from JSON");
-            if matches!(stat.status_type, StatusType::Reconciling) {
+            if matches!(stat.info.status_type, StatusType::Reconciling) {
                 break;
             }
         }
@@ -370,9 +370,9 @@ async fn test_upgrade(client_info: &ClientInfo) {
                 .await
                 .expect("Got error when consuming status stream")
                 .expect("Status stream ended early");
-            let stat: StatusInfo = serde_json::from_slice(&val.payload)
+            let stat: Status = serde_json::from_slice(&val.payload)
                 .expect("Should be able to decode status body from JSON");
-            if matches!(stat.status_type, StatusType::Reconciling) {
+            if matches!(stat.info.status_type, StatusType::Reconciling) {
                 break;
             }
         }

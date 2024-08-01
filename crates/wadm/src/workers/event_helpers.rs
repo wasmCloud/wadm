@@ -5,7 +5,7 @@ use std::fmt::Debug;
 use wasmcloud_secrets_types::SecretConfig;
 
 use tracing::{debug, instrument, trace, warn};
-use wadm_types::api::StatusInfo;
+use wadm_types::api::Status;
 use wasmcloud_control_interface::{CtlResponse, HostInventory, InterfaceLinkDefinition};
 
 use crate::{commands::Command, publisher::Publisher, APP_SPEC_ANNOTATION};
@@ -248,7 +248,7 @@ impl<Pub> StatusPublisher<Pub> {
 
 impl<Pub: Publisher> StatusPublisher<Pub> {
     #[instrument(level = "trace", skip(self))]
-    pub async fn publish_status(&self, name: &str, status: StatusInfo) -> anyhow::Result<()> {
+    pub async fn publish_status(&self, name: &str, status: Status) -> anyhow::Result<()> {
         let topic = format!("{}.{name}", self.topic_prefix);
 
         // NOTE(brooksmtownsend): This direct get may not always query the jetstream leader. In the
@@ -258,7 +258,7 @@ impl<Pub: Publisher> StatusPublisher<Pub> {
             status_stream
                 .direct_get_last_for_subject(&topic)
                 .await
-                .map(|m| serde_json::from_slice::<StatusInfo>(&m.payload).ok())
+                .map(|m| serde_json::from_slice::<Status>(&m.payload).ok())
                 .ok()
                 .flatten()
         } else {
