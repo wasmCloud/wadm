@@ -14,8 +14,8 @@
 
 // use crate::e2e::check_status;
 
-// const MANIFESTS_PATH: &str = "test/data";
-// const DOCKER_COMPOSE_FILE: &str = "test/docker-compose-e2e-multitenant.yaml";
+// const MANIFESTS_PATH: &str = "tests/fixtures/manifests";
+// const DOCKER_COMPOSE_FILE: &str = "tests/docker-compose-e2e-multitenant.yaml";
 
 // const MESSAGE_PUB_ACTOR_ID: &str = "MC3QONHYH3FY4KYFCOSVJWIDJG4WA2PVD6FHKR7FFT457GVUTZJYR2TJ";
 // const NATS_PROVIDER_ID: &str = "VADNMSIML2XGO2X4TPIONTIC55R2UUQGPPDZPAVSC2QD7E76CR77SPW7";

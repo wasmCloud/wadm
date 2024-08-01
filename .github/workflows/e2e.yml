@@ -43,6 +43,6 @@ jobs:
         if: ${{ failure() && steps.test.outcome == 'failure' }}
         with:
           name: e2e-logs-${{ matrix.e2e_test }}
-          path: ./test/e2e_log/*
+          path: ./tests/e2e_log/*
           # Be nice and only retain the logs for 7 days
           retention-days: 7

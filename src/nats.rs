@@ -330,7 +330,7 @@ mod test {
     #[tokio::test]
     async fn can_resolve_jwt_value_and_file() -> Result<()> {
         let my_jwt = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ2aWRlb0lkIjoiUWpVaUxYSnVjMjl0IiwiaWF0IjoxNjIwNjAzNDY5fQ.2PKx6y2ym6IWbeM6zFgHOkDnZEtGTR3YgYlQ2_Jki5g";
-        let jwt_path = "./test/data/nats.jwt";
+        let jwt_path = "./tests/fixtures/nats.jwt";
         let jwt_inside_file = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdHJpbmciOiAiQWNjb3JkIHRvIGFsbCBrbm93biBsb3dzIG9mIGF2aWF0aW9uLCB0aGVyZSBpcyBubyB3YXkgdGhhdCBhIGJlZSBhYmxlIHRvIGZseSJ9.GyU6pTRhflcOg6KBCU6wZedP8BQzLXbdgYIoU6KzzD8";
 
         assert_eq!(
