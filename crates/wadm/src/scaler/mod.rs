@@ -218,7 +218,7 @@ where
             Vec::with_capacity(0)
         } else {
             trace!("Scaler is not backing off, checking configuration");
-            let (mut commands, res) = get_commands_and_result(
+            let (mut config_commands, res) = get_commands_and_result(
                 self.required_config
                     .iter()
                     .map(|config| async { config.handle_event(event).await }),
@@ -248,9 +248,10 @@ where
                 );
             }
 
-            if !commands.is_empty() && !secret_commands.is_empty() {
-                commands.append(&mut secret_commands);
-                return Ok(commands);
+            // If the config scalers or secret scalers have commands to send, return them
+            if !config_commands.is_empty() || !secret_commands.is_empty() {
+                config_commands.append(&mut secret_commands);
+                return Ok(config_commands);
             }
 
             trace!("Scaler required configuration is present, handling event");
