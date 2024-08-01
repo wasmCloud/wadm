@@ -43,10 +43,17 @@ const DEFAULT_WAIT_TIMEOUT: Duration = Duration::from_secs(30);
 #[async_trait]
 pub trait Scaler {
     /// A unique identifier for this scaler type. This is used for logging and for selecting
-    /// specific scalers as needed. Generally this should be something like
-    /// `$NAME_OF_SCALER_TYPE-$MODEL_NAME-$OCI_REF`. However, the only requirement is that it can
-    /// uniquely identify a scaler
+    /// specific scalers as needed. wadm scalers implement this by computing a sha256 hash of
+    /// all of the parameters that are used to construct the scaler, therefore ensuring that
+    /// the ID is unique for each scaler
     fn id(&self) -> &str;
+
+    /// An optional human-friendly name for this scaler. This is used for logging and for selecting
+    /// specific scalers as needed. This is optional and by default returns the same value as `id`,
+    /// and does not have to be unique
+    fn human_friendly_name(&self) -> String {
+        self.id().to_string()
+    }
 
     /// Determine the status of this scaler according to reconciliation logic. This is the opportunity
     /// for scalers to indicate that they are unhealthy with a message as to what's missing.
@@ -415,6 +422,10 @@ where
     fn id(&self) -> &str {
         // Pass through the ID of the wrapped scaler
         self.scaler.id()
+    }
+
+    fn human_friendly_name(&self) -> String {
+        self.scaler.human_friendly_name()
     }
 
     async fn status(&self) -> StatusInfo {

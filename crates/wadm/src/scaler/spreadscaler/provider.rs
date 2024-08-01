@@ -67,6 +67,10 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
         &self.id
     }
 
+    fn human_friendly_name(&self) -> String {
+        format!("Spread: {}", self.config.provider_id)
+    }
+
     async fn status(&self) -> StatusInfo {
         let _ = self.reconcile().await;
         self.status.read().await.to_owned()

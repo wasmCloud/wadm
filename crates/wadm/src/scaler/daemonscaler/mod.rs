@@ -58,6 +58,10 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ComponentDaemonScaler<S> {
         &self.id
     }
 
+    fn human_friendly_name(&self) -> String {
+        format!("Daemon: {}", self.spread_config.component_id)
+    }
+
     async fn status(&self) -> StatusInfo {
         let _ = self.reconcile().await;
         self.status.read().await.to_owned()
