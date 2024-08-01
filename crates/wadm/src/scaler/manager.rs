@@ -18,9 +18,10 @@ use tokio::{
 };
 use tracing::{debug, error, instrument, trace, warn};
 use wadm_types::{
-    api::StatusInfo, CapabilityProperties, Component, ComponentProperties, ConfigProperty,
-    Manifest, Policy, Properties, SecretProperty, SpreadScalerProperty, Trait, TraitProperty,
-    DAEMONSCALER_TRAIT, LINK_TRAIT, SPREADSCALER_TRAIT,
+    api::{Status, StatusInfo},
+    CapabilityProperties, Component, ComponentProperties, ConfigProperty, Manifest, Policy,
+    Properties, SecretProperty, SpreadScalerProperty, Trait, TraitProperty, DAEMONSCALER_TRAIT,
+    LINK_TRAIT, SPREADSCALER_TRAIT,
 };
 use wasmcloud_secrets_types::SECRET_PREFIX;
 
@@ -467,7 +468,10 @@ where
                                             // hasn't deleted the scaler yet
                                             if let Err(e) = self
                                                 .status_publisher
-                                                .publish_status(&name, StatusInfo::undeployed(""))
+                                                .publish_status(&name, Status::new(
+                                                    StatusInfo::undeployed("Manifest has been undeployed"),
+                                                    Vec::with_capacity(0),
+                                                ))
                                                 .await
                                             {
                                                 warn!(error = ?e, "Failed to set status to undeployed");

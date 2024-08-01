@@ -3,7 +3,7 @@ use std::collections::BTreeSet;
 use anyhow::Result;
 use async_nats::jetstream::kv::{Operation, Store};
 use tracing::{debug, instrument, trace};
-use wadm_types::api::{ModelSummary, StatusType};
+use wadm_types::api::{ModelSummary, Status, StatusInfo, StatusType};
 
 use crate::model::StoredManifest;
 
@@ -102,6 +102,8 @@ impl ModelStorage {
         lattice_id: &str,
     ) -> Result<Vec<ModelSummary>> {
         debug!("Fetching list of models from storage");
+        const WAITING_STATUS: &str =
+            "Waiting for status: Application retrieved from storage, waiting for status";
         let futs = self
             .get_model_set(account_id, lattice_id)
             .await?
@@ -116,15 +118,21 @@ impl ModelStorage {
                         Ok(None) => return None,
                         Err(e) => return Some(Err(e)),
                     };
+                    #[allow(deprecated)]
                     Some(Ok(ModelSummary {
                         name: model_name,
                         version: manifest.current_version().to_owned(),
                         description: manifest.get_current().description().map(|s| s.to_owned()),
                         deployed_version: manifest.get_deployed().map(|m| m.version().to_owned()),
-                        // TODO(thomastaylor312): Actually fetch the status info from the stored
-                        // manifest once we figure it out
-                        status: StatusType::default(),
-                        status_message: None,
+                        // Since we are just fetching the manifest from the store, we need to wait
+                        // for the lattice to be observed & a reconcile pass to occur, so we
+                        // officially start in a waiting state
+                        detailed_status: Status::new(
+                            StatusInfo::waiting(WAITING_STATUS),
+                            Vec::with_capacity(0),
+                        ),
+                        status: StatusType::Waiting,
+                        status_message: Some(WAITING_STATUS.to_string()),
                     }))
                 }
             });
