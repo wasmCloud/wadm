@@ -3,8 +3,9 @@ use crate::{
         ComponentStatus, DeleteResult, GetResult, ModelSummary, PutResult, Status, StatusInfo,
         StatusResult, StatusType, TraitStatus, VersionInfo,
     },
-    CapabilityProperties, Component, ComponentProperties, ConfigProperty, LinkProperty, Manifest,
-    Metadata, Properties, Specification, Spread, SpreadScalerProperty, Trait, TraitProperty,
+    CapabilityProperties, Component, ComponentProperties, ConfigDefinition, ConfigProperty,
+    LinkProperty, Manifest, Metadata, Policy, Properties, SecretProperty, SecretSourceProperty,
+    Specification, Spread, SpreadScalerProperty, TargetConfig, Trait, TraitProperty,
 };
 use wasmcloud::wadm;
 
@@ -15,6 +16,8 @@ wit_bindgen_wrpc::generate!({
         serde::Deserialize,
     ],
 });
+
+// Trait implementations for converting types in the API module to the generated types
 
 impl From<Manifest> for wadm::types::OamManifest {
     fn from(manifest: Manifest) -> Self {
@@ -41,6 +44,7 @@ impl From<Specification> for wadm::types::Specification {
     fn from(spec: Specification) -> Self {
         wadm::types::Specification {
             components: spec.components.into_iter().map(|c| c.into()).collect(),
+            policies: spec.policies.into_iter().map(|c| c.into()).collect(),
         }
     }
 }
@@ -52,10 +56,17 @@ impl From<Component> for wadm::types::Component {
             properties: component.properties.into(),
             traits: component
                 .traits
-                .unwrap_or_default()
-                .into_iter()
-                .map(|t| t.into())
-                .collect(),
+                .map(|traits| traits.into_iter().map(|t| t.into()).collect()),
+        }
+    }
+}
+
+impl From<Policy> for wadm::types::Policy {
+    fn from(policy: Policy) -> Self {
+        wadm::types::Policy {
+            name: policy.name,
+            properties: policy.properties.into_iter().map(|p| p.into()).collect(),
+            type_: policy.policy_type,
         }
     }
 }
@@ -79,6 +90,7 @@ impl From<ComponentProperties> for wadm::types::ComponentProperties {
             image: properties.image,
             id: properties.id,
             config: properties.config.into_iter().map(|c| c.into()).collect(),
+            secrets: properties.secrets.into_iter().map(|c| c.into()).collect(),
         }
     }
 }
@@ -89,6 +101,7 @@ impl From<CapabilityProperties> for wadm::types::CapabilityProperties {
             image: properties.image,
             id: properties.id,
             config: properties.config.into_iter().map(|c| c.into()).collect(),
+            secrets: properties.secrets.into_iter().map(|c| c.into()).collect(),
         }
     }
 }
@@ -98,6 +111,26 @@ impl From<ConfigProperty> for wadm::types::ConfigProperty {
         wadm::types::ConfigProperty {
             name: property.name,
             properties: property.properties.map(|props| props.into_iter().collect()),
+        }
+    }
+}
+
+impl From<SecretProperty> for wadm::types::SecretProperty {
+    fn from(property: SecretProperty) -> Self {
+        wadm::types::SecretProperty {
+            name: property.name,
+            properties: property.properties.into(),
+        }
+    }
+}
+
+impl From<SecretSourceProperty> for wadm::types::SecretSourceProperty {
+    fn from(property: SecretSourceProperty) -> Self {
+        wadm::types::SecretSourceProperty {
+            policy: property.policy,
+            key: property.key,
+            field: property.field,
+            version: property.version,
         }
     }
 }
@@ -126,21 +159,31 @@ impl From<TraitProperty> for wadm::types::TraitProperty {
 impl From<LinkProperty> for wadm::types::LinkProperty {
     fn from(property: LinkProperty) -> Self {
         wadm::types::LinkProperty {
-            target: property.target,
+            source: property.source.map(|c| c.into()),
+            target: property.target.into(),
             namespace: property.namespace,
             package: property.package,
             interfaces: property.interfaces,
-            source_config: property
-                .source_config
-                .into_iter()
-                .map(|c| c.into())
-                .collect(),
-            target_config: property
-                .target_config
-                .into_iter()
-                .map(|c| c.into())
-                .collect(),
             name: property.name,
+        }
+    }
+}
+
+impl From<ConfigDefinition> for wadm::types::ConfigDefinition {
+    fn from(definition: ConfigDefinition) -> Self {
+        wadm::types::ConfigDefinition {
+            config: definition.config.into_iter().map(|c| c.into()).collect(),
+            secrets: definition.secrets.into_iter().map(|s| s.into()).collect(),
+        }
+    }
+}
+
+impl From<TargetConfig> for wadm::types::TargetConfig {
+    fn from(config: TargetConfig) -> Self {
+        wadm::types::TargetConfig {
+            name: config.name,
+            config: config.config.into_iter().map(|c| c.into()).collect(),
+            secrets: config.secrets.into_iter().map(|s| s.into()).collect(),
         }
     }
 }
@@ -217,6 +260,8 @@ impl From<StatusType> for wadm::types::StatusType {
         }
     }
 }
+
+// Trait implementations for converting generated types to the types in the API module
 
 impl From<wadm::types::StatusType> for StatusType {
     fn from(status: wadm::types::StatusType) -> Self {
@@ -300,6 +345,7 @@ impl From<wadm::types::Specification> for Specification {
     fn from(spec: wadm::types::Specification) -> Self {
         Specification {
             components: spec.components.into_iter().map(|c| c.into()).collect(),
+            policies: spec.policies.into_iter().map(|c| c.into()).collect(),
         }
     }
 }
@@ -309,7 +355,19 @@ impl From<wadm::types::Component> for Component {
         Component {
             name: component.name,
             properties: component.properties.into(),
-            traits: Some(component.traits.into_iter().map(|t| t.into()).collect()), // Always wrap in Some
+            traits: component
+                .traits
+                .map(|traits| traits.into_iter().map(|t| t.into()).collect()),
+        }
+    }
+}
+
+impl From<wadm::types::Policy> for Policy {
+    fn from(policy: wadm::types::Policy) -> Self {
+        Policy {
+            name: policy.name,
+            properties: policy.properties.into_iter().map(|p| p.into()).collect(),
+            policy_type: policy.type_,
         }
     }
 }
@@ -333,6 +391,7 @@ impl From<wadm::types::ComponentProperties> for ComponentProperties {
             image: properties.image,
             id: properties.id,
             config: properties.config.into_iter().map(|c| c.into()).collect(),
+            secrets: properties.secrets.into_iter().map(|c| c.into()).collect(),
         }
     }
 }
@@ -343,6 +402,7 @@ impl From<wadm::types::CapabilityProperties> for CapabilityProperties {
             image: properties.image,
             id: properties.id,
             config: properties.config.into_iter().map(|c| c.into()).collect(),
+            secrets: properties.secrets.into_iter().map(|c| c.into()).collect(),
         }
     }
 }
@@ -352,6 +412,26 @@ impl From<wadm::types::ConfigProperty> for ConfigProperty {
         ConfigProperty {
             name: property.name,
             properties: property.properties.map(|props| props.into_iter().collect()),
+        }
+    }
+}
+
+impl From<wadm::types::SecretProperty> for SecretProperty {
+    fn from(property: wadm::types::SecretProperty) -> Self {
+        SecretProperty {
+            name: property.name,
+            properties: property.properties.into(),
+        }
+    }
+}
+
+impl From<wadm::types::SecretSourceProperty> for SecretSourceProperty {
+    fn from(property: wadm::types::SecretSourceProperty) -> Self {
+        SecretSourceProperty {
+            policy: property.policy,
+            key: property.key,
+            field: property.field,
+            version: property.version,
         }
     }
 }
@@ -381,22 +461,35 @@ impl From<wadm::types::TraitProperty> for TraitProperty {
 
 impl From<wadm::types::LinkProperty> for LinkProperty {
     fn from(property: wadm::types::LinkProperty) -> Self {
+        #[allow(deprecated)]
         LinkProperty {
-            target: property.target,
+            source: property.source.map(|c| c.into()),
+            target: property.target.into(),
             namespace: property.namespace,
             package: property.package,
             interfaces: property.interfaces,
-            source_config: property
-                .source_config
-                .into_iter()
-                .map(|c| c.into())
-                .collect(),
-            target_config: property
-                .target_config
-                .into_iter()
-                .map(|c| c.into())
-                .collect(),
             name: property.name,
+            source_config: None,
+            target_config: None,
+        }
+    }
+}
+
+impl From<wadm::types::ConfigDefinition> for ConfigDefinition {
+    fn from(definition: wadm::types::ConfigDefinition) -> Self {
+        ConfigDefinition {
+            config: definition.config.into_iter().map(|c| c.into()).collect(),
+            secrets: definition.secrets.into_iter().map(|s| s.into()).collect(),
+        }
+    }
+}
+
+impl From<wadm::types::TargetConfig> for TargetConfig {
+    fn from(config: wadm::types::TargetConfig) -> Self {
+        TargetConfig {
+            name: config.name,
+            config: config.config.into_iter().map(|c| c.into()).collect(),
+            secrets: config.secrets.into_iter().map(|s| s.into()).collect(),
         }
     }
 }
