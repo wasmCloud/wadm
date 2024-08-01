@@ -3,7 +3,7 @@ kind: Application
 metadata:
   name: petclinic
   annotations:
-    description: "wasmCloud Pet Clinic Sample"
+    description: 'wasmCloud Pet Clinic Sample'
 spec:
   components:
     - name: ui
@@ -94,13 +94,12 @@ spec:
             target:
               name: httpserver
             values:
-              address: "0.0.0.0:8080"
+              address: '0.0.0.0:8080'
 
     - name: httpserver
       type: capability
       properties:
         image: wasmcloud.azurecr.io/httpserver:0.16.2
-        contract: wasmcloud:httpserver
       traits:
         - type: spreadscaler
           properties:
@@ -114,7 +113,6 @@ spec:
       type: capability
       properties:
         image: wasmcloud.azurecr.io/sqldb-postgres:0.3.1
-        contract: wasmcloud:sqldb
       traits:
         - type: spreadscaler
           properties:

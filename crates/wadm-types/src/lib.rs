@@ -564,13 +564,13 @@ mod test {
 
     #[test]
     fn test_oam_deserializer() {
-        let res = deserialize_json("./oam/simple1.json");
+        let res = deserialize_json("../../oam/simple1.json");
         match res {
             Ok(parse_results) => parse_results,
             Err(error) => panic!("Error {:?}", error),
         };
 
-        let res = deserialize_yaml("./oam/simple1.yaml");
+        let res = deserialize_yaml("../../oam/simple1.yaml");
         match res {
             Ok(parse_results) => parse_results,
             Err(error) => panic!("Error {:?}", error),
@@ -580,7 +580,7 @@ mod test {
     #[test]
     #[ignore] // see TODO in TraitProperty enum
     fn test_custom_traits() {
-        let manifest = deserialize_yaml("./oam/custom.yaml").expect("Should be able to parse");
+        let manifest = deserialize_yaml("../../oam/custom.yaml").expect("Should be able to parse");
         let component = manifest
             .spec
             .components
@@ -598,7 +598,7 @@ mod test {
 
     #[test]
     fn test_config() {
-        let manifest = deserialize_yaml("./oam/config.yaml").expect("Should be able to parse");
+        let manifest = deserialize_yaml("../../oam/config.yaml").expect("Should be able to parse");
         let props = match &manifest.spec.components[0].properties {
             Properties::Component { properties } => properties,
             _ => panic!("Should have found capability component"),
@@ -631,7 +631,7 @@ mod test {
 
     #[test]
     fn test_component_matching() {
-        let manifest = deserialize_yaml("./oam/simple2.yaml").expect("Should be able to parse");
+        let manifest = deserialize_yaml("../../oam/simple2.yaml").expect("Should be able to parse");
         assert_eq!(
             manifest
                 .spec
@@ -656,7 +656,7 @@ mod test {
 
     #[test]
     fn test_trait_matching() {
-        let manifest = deserialize_yaml("./oam/simple2.yaml").expect("Should be able to parse");
+        let manifest = deserialize_yaml("../../oam/simple2.yaml").expect("Should be able to parse");
         // Validate component traits
         let traits = manifest
             .spec
@@ -869,7 +869,7 @@ mod test {
 
     #[test]
     fn test_deprecated_fields_not_set() {
-        let manifest = deserialize_yaml("./oam/simple2.yaml").expect("Should be able to parse");
+        let manifest = deserialize_yaml("../../oam/simple2.yaml").expect("Should be able to parse");
         // Validate component traits
         let traits = manifest
             .spec

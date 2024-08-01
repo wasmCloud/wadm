@@ -159,8 +159,8 @@ mod test {
 
     #[test]
     fn test_versioning() {
-        let mut manifest =
-            deserialize_yaml("../../oam/simple2.yaml").expect("Should be able to parse");
+        let mut manifest = deserialize_yaml("../../tests/fixtures/manifests/simple2.yaml")
+            .expect("Should be able to parse");
         let mut stored = StoredManifest::default();
 
         assert!(

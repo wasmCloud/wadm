@@ -571,7 +571,8 @@ mod test {
 
     #[test]
     fn test_all_supported_events() {
-        let raw = std::fs::read("../../test/data/events.json").expect("Unable to load test data");
+        let raw = std::fs::read("../../tests/fixtures/manifests/events.json")
+            .expect("Unable to load test data");
 
         let all_events: Vec<cloudevents::Event> = serde_json::from_slice(&raw).unwrap();
 
