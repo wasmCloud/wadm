@@ -9,7 +9,7 @@ use wadm::{
         manager::{ConsumerManager, WorkerCreator},
         CommandConsumer, EventConsumer,
     },
-    events::{EventType, HostHeartbeat, HostStarted},
+    events::{EventType, HostHeartbeat, HostStarted, ManifestPublished},
     nats_utils::LatticeIdParser,
     storage::{nats_kv::NatsKvStore, reaper::Reaper, Store},
     DEFAULT_COMMANDS_TOPIC, DEFAULT_WADM_EVENT_CONSUMER_TOPIC,
@@ -111,15 +111,17 @@ where
     }
 }
 
-// This is a stupid hacky function to check that this is a host started or host heartbeat event
-// without actually parsing
+// This is a stupid hacky function to check that this is a host started, host heartbeat, or
+// manifest_published event without actually parsing
 fn is_event_we_care_about(data: &[u8]) -> bool {
     let string_data = match std::str::from_utf8(data) {
         Ok(s) => s,
         Err(_) => return false,
     };
 
-    string_data.contains(HostStarted::TYPE) || string_data.contains(HostHeartbeat::TYPE)
+    string_data.contains(HostStarted::TYPE)
+        || string_data.contains(HostHeartbeat::TYPE)
+        || string_data.contains(ManifestPublished::TYPE)
 }
 
 async fn get_subscriber(
