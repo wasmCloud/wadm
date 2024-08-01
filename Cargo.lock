@@ -2980,7 +2980,7 @@ checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 
 [[package]]
 name = "wadm"
-version = "0.13.0-beta.2"
+version = "0.13.0"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -3015,7 +3015,7 @@ dependencies = [
 
 [[package]]
 name = "wadm-cli"
-version = "0.13.0-beta.2"
+version = "0.13.0"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -3045,7 +3045,7 @@ dependencies = [
 
 [[package]]
 name = "wadm-client"
-version = "0.2.0-beta.2"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -3064,7 +3064,7 @@ dependencies = [
 
 [[package]]
 name = "wadm-types"
-version = "0.2.0-beta.2"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-nats",
