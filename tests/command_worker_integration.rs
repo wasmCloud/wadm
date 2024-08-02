@@ -18,8 +18,13 @@ use helpers::{
 // note this test should probably be changed to an e2e test as the order of events is somewhat flaky
 #[serial]
 async fn test_commands() {
-    let env = setup_env().await;
-    let nats_client = env.nats_client().await;
+    let env = setup_env()
+        .await
+        .expect("should have set up the test environment");
+    let nats_client = env
+        .nats_client()
+        .await
+        .expect("should have created a nats client for the test setup");
 
     let mut wrapper = StreamWrapper::new("commands_integration".into(), nats_client.clone()).await;
 
@@ -326,8 +331,13 @@ async fn test_commands() {
 #[serial]
 async fn test_annotation_stop() {
     // This test is a sanity check that we only stop annotated components
-    let env = setup_env().await;
-    let nats_client = env.nats_client().await;
+    let env = setup_env()
+        .await
+        .expect("should have set up the test environment");
+    let nats_client = env
+        .nats_client()
+        .await
+        .expect("should have created a nats client for the test setup");
 
     let mut wrapper = StreamWrapper::new("annotation_stop".into(), nats_client.clone()).await;
 

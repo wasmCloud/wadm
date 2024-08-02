@@ -15,7 +15,7 @@ use testcontainers::{
 };
 use tokio::process::Command;
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context as _, Result};
 use wadm::consumers::{CommandConsumer, ScopedMessage};
 
 pub const DEFAULT_NATS_PORT: u16 = 4222;
@@ -39,48 +39,53 @@ pub struct TestEnv {
 }
 
 impl TestEnv {
-    pub async fn nats_port(&self) -> u16 {
+    pub async fn nats_port(&self) -> Result<u16> {
         self.nats_server
             .get_host_port_ipv4(DEFAULT_NATS_PORT)
             .await
-            .unwrap()
+            .context("should have been able to get the host:guest port mapping")
     }
 
-    pub async fn nats_url(&self) -> String {
-        let nats_host = self.nats_server.get_host().await.unwrap();
-        let nats_port = self.nats_port().await;
-        format!("{nats_host}:{nats_port}")
+    pub async fn nats_url(&self) -> Result<String> {
+        let nats_host = self
+            .nats_server
+            .get_host()
+            .await
+            .context("should have been able to query container host url")?;
+        let nats_port = self.nats_port().await?;
+        Ok(format!("{nats_host}:{nats_port}"))
     }
 
-    pub async fn nats_client(&self) -> async_nats::Client {
-        async_nats::connect(self.nats_url().await).await.unwrap()
+    pub async fn nats_client(&self) -> Result<async_nats::Client> {
+        async_nats::connect(self.nats_url().await?)
+            .await
+            .context("should have created a nats client")
     }
 }
 
-pub async fn setup_env() -> TestEnv {
-    let nats_server = start_nats_server().await.unwrap();
-    let bridge_nats_server_ip = nats_server.get_bridge_ip_address().await.unwrap();
+pub async fn setup_env() -> Result<TestEnv> {
+    let nats_server = start_nats_server().await?;
+    let bridge_nats_server_ip = nats_server.get_bridge_ip_address().await?;
     let wasmcloud_host = start_wasmcloud_host(TestWasmCloudHostConfig {
         nats_ip: bridge_nats_server_ip.to_string(),
         nats_port: DEFAULT_NATS_PORT.to_string(),
         wasmcloud_version: "1.1.0".to_string(),
     })
-    .await
-    .unwrap();
-    TestEnv {
+    .await?;
+    Ok(TestEnv {
         nats_server,
         wasmcloud_hosts: vec![wasmcloud_host],
-    }
+    })
 }
 
 async fn start_nats_server() -> Result<ContainerAsync<GenericImage>> {
-    Ok(GenericImage::new("nats", "2.10.18")
+    GenericImage::new("nats", "2.10.18")
         .with_exposed_port(DEFAULT_NATS_PORT.into())
         .with_wait_for(WaitFor::message_on_stderr("Server is ready"))
         .with_cmd(["-js"])
         .start()
         .await
-        .expect("should have started nats-server"))
+        .context("should have started nats-server")
 }
 
 struct TestWasmCloudHostConfig {
@@ -92,15 +97,13 @@ struct TestWasmCloudHostConfig {
 async fn start_wasmcloud_host(
     config: TestWasmCloudHostConfig,
 ) -> Result<ContainerAsync<GenericImage>> {
-    Ok(
-        GenericImage::new("ghcr.io/wasmcloud/wasmcloud", &config.wasmcloud_version)
-            .with_wait_for(WaitFor::message_on_stderr("wasmCloud host started"))
-            .with_env_var("WASMCLOUD_NATS_HOST", config.nats_ip)
-            .with_env_var("WASMCLOUD_NATS_PORT", config.nats_port)
-            .start()
-            .await
-            .expect("should have started wasmcloud-host"),
-    )
+    GenericImage::new("ghcr.io/wasmcloud/wasmcloud", &config.wasmcloud_version)
+        .with_wait_for(WaitFor::message_on_stderr("wasmCloud host started"))
+        .with_env_var("WASMCLOUD_NATS_HOST", config.nats_ip)
+        .with_env_var("WASMCLOUD_NATS_PORT", config.nats_port)
+        .start()
+        .await
+        .context("should have started wasmcloud-host")
 }
 
 pub async fn wait_for_server(url: &str) {

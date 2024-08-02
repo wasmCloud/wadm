@@ -80,13 +80,22 @@ struct HostResponse {
 // note this test should probably be changed to an e2e test as the order of events is somewhat flaky
 #[serial]
 async fn test_event_stream() -> Result<()> {
-    let env = setup_env().await;
-    let nats_client = env.nats_client().await;
+    let env = setup_env()
+        .await
+        .expect("should have set up the test environment");
+    let nats_client = env
+        .nats_client()
+        .await
+        .expect("should have created a nats client for the test setup");
 
     let mut stream = get_event_consumer(nats_client).await;
 
     // NOTE: the first heartbeat doesn't come for 30s so we are ignoring it for now
-    let ctl_port = env.nats_port().await.to_string();
+    let ctl_port = env
+        .nats_port()
+        .await
+        .expect("should have received the port the nats-server is listening on")
+        .to_string();
 
     // Start a component
     helpers::run_wash_command([
@@ -288,12 +297,21 @@ async fn test_event_stream() -> Result<()> {
 // as published events when the host starts
 #[serial]
 async fn test_nack_and_rereceive() -> Result<()> {
-    let env = setup_env().await;
-    let nats_client = env.nats_client().await;
+    let env = setup_env()
+        .await
+        .expect("should have set up the test environment");
+    let nats_client = env
+        .nats_client()
+        .await
+        .expect("should have created a nats client for the test setup");
 
     let mut stream = get_event_consumer(nats_client).await;
 
-    let ctl_port = env.nats_port().await.to_string();
+    let ctl_port = env
+        .nats_port()
+        .await
+        .expect("should have received the port the nats-server is listening on")
+        .to_string();
     // Start a component
     helpers::run_wash_command([
         "start",
@@ -304,7 +322,7 @@ async fn test_nack_and_rereceive() -> Result<()> {
         &ctl_port,
     ])
     .await
-    .unwrap();
+    .expect("should have started the component");
 
     // Get the event and then nack it
     let mut evt = wait_for_event(&mut stream, DEFAULT_TIMEOUT_DURATION).await;

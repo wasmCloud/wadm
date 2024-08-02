@@ -11,8 +11,13 @@ use helpers::{setup_env, StreamWrapper};
 
 #[tokio::test]
 async fn test_consumer_stream() {
-    let env = setup_env().await;
-    let nats_client = env.nats_client().await;
+    let env = setup_env()
+        .await
+        .expect("should have set up the test environment");
+    let nats_client = env
+        .nats_client()
+        .await
+        .expect("should have created a nats client for the test setup");
     let mut wrapper = StreamWrapper::new("consumer_stream".into(), nats_client.clone()).await;
 
     // Publish a whole bunch of commands to the stream
@@ -145,9 +150,14 @@ async fn test_consumer_stream() {
 #[tokio::test]
 #[serial]
 async fn test_nack_and_rereceive() {
-    let env = setup_env().await;
-    let nats_client = env.nats_client().await;
-    let mut wrapper = StreamWrapper::new("nack_and_rereceive".into(), nats_client.clone()).await;
+    let env = setup_env()
+        .await
+        .expect("should have set up the test environment");
+    let nats_client = env
+        .nats_client()
+        .await
+        .expect("should have created a nats client for the test setup");
+    let mut wrapper = StreamWrapper::new("nack_and_rereceive".into(), nats_client).await;
     // Send an event
     wrapper
         .publish_command(ScaleComponent {
