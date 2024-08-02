@@ -96,6 +96,7 @@ serde_yaml = { workspace = true }
 serial_test = "3"
 wadm-client = { workspace = true }
 wadm-types = { workspace = true }
+testcontainers = "0.21"
 
 [build-dependencies]
 schemars = { workspace = true }

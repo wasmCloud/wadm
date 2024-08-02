@@ -10,10 +10,12 @@ use async_nats::{
     Client,
 };
 use futures::TryStreamExt;
-use tokio::process::Child;
+use testcontainers::{
+    core::WaitFor, runners::AsyncRunner as _, ContainerAsync, GenericImage, ImageExt,
+};
 use tokio::process::Command;
 
-use anyhow::Result;
+use anyhow::{bail, Context as _, Result};
 use wadm::consumers::{CommandConsumer, ScopedMessage};
 
 pub const DEFAULT_NATS_PORT: u16 = 4222;
@@ -31,132 +33,77 @@ fn get_random_tcp_port() -> u16 {
         .port()
 }
 
-#[derive(Debug)]
-pub struct CleanupGuard {
-    child: Option<Child>,
-
-    already_running: bool,
+pub struct TestEnv {
+    nats_server: ContainerAsync<GenericImage>,
+    wasmcloud_hosts: Vec<ContainerAsync<GenericImage>>,
 }
 
-impl Drop for CleanupGuard {
-    fn drop(&mut self) {
-        if !self.already_running {
-            match std::process::Command::new("wash").args(["down"]).output() {
-                Ok(o) if !o.status.success() => {
-                    eprintln!(
-                        "Error stopping wasmcloud host: {}",
-                        String::from_utf8_lossy(&o.stderr)
-                    )
-                }
-                Err(e) => eprintln!("Error stopping wasmcloud host: {e}"),
-                _ => (),
-            }
-        }
-    }
-}
-
-/// Configuration struct for wash instances that are used for testing
-#[derive(Debug, Default)]
-pub struct TestWashConfig {
-    /// Port on which to run wasmCloud
-    pub nats_port: Option<u16>,
-
-    /// Only connect to pre-existing NATS instance
-    pub nats_connect_only: bool,
-}
-
-impl TestWashConfig {
-    /// Build a test wash configuration with randomized ports
-    pub async fn random() -> Result<TestWashConfig> {
-        let nats_port = Some(get_random_tcp_port());
-
-        Ok(TestWashConfig {
-            nats_port,
-            ..TestWashConfig::default()
-        })
-    }
-
-    /// Get the NATS URL for this config
-    pub fn nats_url(&self) -> String {
-        format!("127.0.0.1:{}", self.nats_port.unwrap_or(DEFAULT_NATS_PORT))
-    }
-}
-
-/// Start a local wash instance
-async fn start_wash_instance(cfg: &TestWashConfig) -> Result<CleanupGuard> {
-    let nats_port = cfg.nats_port.unwrap_or(DEFAULT_NATS_PORT).to_string();
-    let wash_host_key = nkeys::KeyPair::new_server();
-
-    let seed = wash_host_key.seed().expect("seed to exist").to_string();
-
-    // Build args
-    let mut args: Vec<&str> = Vec::from([
-        "up",
-        "-d",
-        "--disable-wadm",
-        "--nats-port",
-        &nats_port,
-        "--host-seed",
-        &seed,
-        "--wasmcloud-version",
-        "v1.0.4",
-    ]);
-    if cfg.nats_connect_only {
-        args.push("--nats-connect-only");
-    }
-
-    // Build the command
-    let mut cmd = Command::new("wash");
-    cmd.args(&args)
-        .stderr(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null());
-
-    // Build the cleanup guard that will be returned
-    let guard = CleanupGuard {
-        child: None,
-        already_running: false,
-    };
-
-    let output = cmd.status().await.expect("Unable to run detached wash up");
-    assert!(output.success(), "Error trying to start host",);
-
-    // Run wash get inventory keypair.public_key() --nats-port {nats_port}
-    // and retry 5 times, sleeping for a second between tries, to ensure
-    // the host launched
-    let mut retries = 5;
-    while retries > 0 {
-        let output = Command::new("wash")
-            .args([
-                "get",
-                "inventory",
-                &wash_host_key.public_key(),
-                "--ctl-port",
-                &nats_port,
-            ])
-            .output()
+impl TestEnv {
+    pub async fn nats_port(&self) -> Result<u16> {
+        self.nats_server
+            .get_host_port_ipv4(DEFAULT_NATS_PORT)
             .await
-            .expect("Unable to run wash command");
-        if output.status.success() {
-            break;
-        }
-        retries -= 1;
-        if retries == 0 {
-            panic!("Failed to launch host");
-        }
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            .context("should have been able to get the host:guest port mapping")
     }
 
-    Ok(guard)
+    pub async fn nats_url(&self) -> Result<String> {
+        let nats_host = self
+            .nats_server
+            .get_host()
+            .await
+            .context("should have been able to query container host url")?;
+        let nats_port = self.nats_port().await?;
+        Ok(format!("{nats_host}:{nats_port}"))
+    }
+
+    pub async fn nats_client(&self) -> Result<async_nats::Client> {
+        async_nats::connect(self.nats_url().await?)
+            .await
+            .context("should have created a nats client")
+    }
 }
 
-/// Set up and run a wash instance that can be used for a test
-pub async fn setup_test_wash(cfg: &TestWashConfig) -> CleanupGuard {
-    start_wash_instance(cfg)
+pub async fn setup_env() -> Result<TestEnv> {
+    let nats_server = start_nats_server().await?;
+    let bridge_nats_server_ip = nats_server.get_bridge_ip_address().await?;
+    let wasmcloud_host = start_wasmcloud_host(TestWasmCloudHostConfig {
+        nats_ip: bridge_nats_server_ip.to_string(),
+        nats_port: DEFAULT_NATS_PORT.to_string(),
+        wasmcloud_version: "1.1.0".to_string(),
+    })
+    .await?;
+    Ok(TestEnv {
+        nats_server,
+        wasmcloud_hosts: vec![wasmcloud_host],
+    })
+}
+
+async fn start_nats_server() -> Result<ContainerAsync<GenericImage>> {
+    GenericImage::new("nats", "2.10.18")
+        .with_exposed_port(DEFAULT_NATS_PORT.into())
+        .with_wait_for(WaitFor::message_on_stderr("Server is ready"))
+        .with_cmd(["-js"])
+        .start()
         .await
-        .unwrap_or_else(|_| CleanupGuard {
-            child: None,
-            already_running: false,
-        })
+        .context("should have started nats-server")
+}
+
+struct TestWasmCloudHostConfig {
+    nats_ip: String,
+    nats_port: String,
+    wasmcloud_version: String,
+}
+
+async fn start_wasmcloud_host(
+    config: TestWasmCloudHostConfig,
+) -> Result<ContainerAsync<GenericImage>> {
+    GenericImage::new("ghcr.io/wasmcloud/wasmcloud", &config.wasmcloud_version)
+        .with_wait_for(WaitFor::message_on_stderr("wasmCloud host started"))
+        .with_env_var("WASMCLOUD_NATS_HOST", config.nats_ip)
+        .with_env_var("WASMCLOUD_NATS_PORT", config.nats_port)
+        .start()
+        .await
+        .context("should have started wasmcloud-host")
 }
 
 pub async fn wait_for_server(url: &str) {
@@ -179,23 +126,26 @@ pub async fn wait_for_server(url: &str) {
 
 /// Runs wash with the given args and makes sure it runs successfully. Returns the contents of
 /// stdout
-pub async fn run_wash_command<I, S>(args: I) -> Vec<u8>
+pub async fn run_wash_command<I, S>(args: I) -> Result<Vec<u8>>
 where
-    I: IntoIterator<Item = S>,
+    I: IntoIterator<Item = S> + std::clone::Clone,
     S: AsRef<std::ffi::OsStr>,
 {
     let output = Command::new("wash")
-        .args(args)
+        .args(args.clone())
         .output()
         .await
         .expect("Unable to run wash command");
     if !output.status.success() {
-        panic!(
-            "wash command didn't exit successfully: {}",
-            String::from_utf8_lossy(&output.stderr)
-        )
+        bail!(
+            "wash command ({:?}) didn't exit successfully: {}",
+            args.into_iter()
+                .map(|i| i.as_ref().to_str().unwrap_or_default().to_owned())
+                .collect::<Vec<String>>(),
+            String::from_utf8_lossy(&output.stderr),
+        );
     }
-    output.stdout
+    Ok(output.stdout)
 }
 
 /// Helper function that sets up a store with the given ID as its name. This ID should be unique per
@@ -239,10 +189,7 @@ pub struct StreamWrapper {
 
 impl StreamWrapper {
     /// Sets up a new command consumer stream using the given id as the stream name
-    pub async fn new(id: String, port: Option<u16>) -> StreamWrapper {
-        let client = async_nats::connect(format!("127.0.0.1:{}", port.unwrap_or(4222)))
-            .await
-            .expect("Unable to setup nats command consumer client");
+    pub async fn new(id: String, client: async_nats::Client) -> StreamWrapper {
         let context = async_nats::jetstream::new(client.clone());
         let topic = format!("{id}.cmd.default");
         // If the stream exists, purge it

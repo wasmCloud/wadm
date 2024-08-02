@@ -10,8 +10,7 @@ use wadm::{
 
 mod helpers;
 use helpers::{
-    setup_test_wash, TestWashConfig, HELLO_COMPONENT_ID, HELLO_IMAGE_REF, HTTP_SERVER_COMPONENT_ID,
-    HTTP_SERVER_IMAGE_REF,
+    setup_env, HELLO_COMPONENT_ID, HELLO_IMAGE_REF, HTTP_SERVER_COMPONENT_ID, HTTP_SERVER_IMAGE_REF,
 };
 
 const WASI: &str = "wasi";
@@ -25,10 +24,7 @@ const DEFAULT_TIMEOUT_DURATION: Duration = Duration::from_secs(10);
 // Link operations take a slightly longer time to work through
 const LINK_OPERATION_TIMEOUT_DURATION: Duration = Duration::from_secs(30);
 
-async fn get_event_consumer(nats_url: String) -> EventConsumer {
-    let client = async_nats::connect(&nats_url)
-        .await
-        .expect("Unable to setup nats event consumer client");
+async fn get_event_consumer(client: async_nats::Client) -> EventConsumer {
     let context = async_nats::jetstream::new(client);
     // HACK: Other tests may create the mirror stream, which overlaps with the consumers here for
     // our test, so delete it
@@ -84,15 +80,21 @@ struct HostResponse {
 // note this test should probably be changed to an e2e test as the order of events is somewhat flaky
 #[serial]
 async fn test_event_stream() -> Result<()> {
-    let config = TestWashConfig::random().await?;
-    let _guard = setup_test_wash(&config).await;
+    let env = setup_env()
+        .await
+        .expect("should have set up the test environment");
+    let nats_client = env
+        .nats_client()
+        .await
+        .expect("should have created a nats client for the test setup");
 
-    let mut stream = get_event_consumer(config.nats_url()).await;
+    let mut stream = get_event_consumer(nats_client).await;
 
     // NOTE: the first heartbeat doesn't come for 30s so we are ignoring it for now
-    let ctl_port = config
-        .nats_port
-        .unwrap_or(crate::helpers::DEFAULT_NATS_PORT)
+    let ctl_port = env
+        .nats_port()
+        .await
+        .expect("should have received the port the nats-server is listening on")
         .to_string();
 
     // Start a component
@@ -104,7 +106,8 @@ async fn test_event_stream() -> Result<()> {
         "--ctl-port",
         &ctl_port,
     ])
-    .await;
+    .await
+    .expect("should have started the component");
 
     let mut evt = wait_for_event(&mut stream, DEFAULT_TIMEOUT_DURATION).await;
     if let Event::ComponentScaled(event) = evt.as_ref() {
@@ -127,7 +130,8 @@ async fn test_event_stream() -> Result<()> {
         "--ctl-port",
         &ctl_port,
     ])
-    .await;
+    .await
+    .expect("should have started the provider");
 
     let mut evt = wait_for_event(&mut stream, DEFAULT_TIMEOUT_DURATION).await;
     if let Event::ProviderStarted(provider) = evt.as_ref() {
@@ -155,7 +159,8 @@ async fn test_event_stream() -> Result<()> {
         "--ctl-port",
         &ctl_port,
     ])
-    .await;
+    .await
+    .expect("should have created the link");
 
     let mut evt = wait_for_event(&mut stream, LINK_OPERATION_TIMEOUT_DURATION).await;
     if let Event::LinkdefSet(event) = evt.as_ref() {
@@ -188,7 +193,8 @@ async fn test_event_stream() -> Result<()> {
         "--ctl-port",
         &ctl_port,
     ])
-    .await;
+    .await
+    .expect("should have deleted the link");
 
     let mut evt = wait_for_event(&mut stream, LINK_OPERATION_TIMEOUT_DURATION).await;
     if let Event::LinkdefDeleted(event) = evt.as_ref() {
@@ -204,7 +210,9 @@ async fn test_event_stream() -> Result<()> {
 
     // Stop provider
     let host_id = serde_json::from_slice::<HostResponse>(
-        &helpers::run_wash_command(["get", "hosts", "-o", "json", "--ctl-port", &ctl_port]).await,
+        &helpers::run_wash_command(["get", "hosts", "-o", "json", "--ctl-port", &ctl_port])
+            .await
+            .expect("should have received the host id"),
     )
     .unwrap()
     .hosts[0]
@@ -222,7 +230,8 @@ async fn test_event_stream() -> Result<()> {
         "--ctl-port",
         &ctl_port,
     ])
-    .await;
+    .await
+    .expect("should have stopped the provider");
 
     let mut evt = wait_for_event(&mut stream, DEFAULT_TIMEOUT_DURATION).await;
     if let Event::ProviderStopped(event) = evt.as_ref() {
@@ -246,7 +255,8 @@ async fn test_event_stream() -> Result<()> {
         "--ctl-port",
         &ctl_port,
     ])
-    .await;
+    .await
+    .expect("should have stopped component");
 
     let mut evt = wait_for_event(&mut stream, DEFAULT_TIMEOUT_DURATION).await;
     if let Event::ComponentScaled(event) = evt.as_ref() {
@@ -261,7 +271,9 @@ async fn test_event_stream() -> Result<()> {
     evt.ack().await.expect("Should be able to ack event");
 
     // Stop the host
-    helpers::run_wash_command(["stop", "host", &host_id, "--ctl-port", &ctl_port]).await;
+    helpers::run_wash_command(["stop", "host", &host_id, "--ctl-port", &ctl_port])
+        .await
+        .expect("should have stopped the host");
 
     let mut evt = wait_for_event(&mut stream, DEFAULT_TIMEOUT_DURATION).await;
     if let Event::HostStopped(host) = evt.as_ref() {
@@ -285,14 +297,20 @@ async fn test_event_stream() -> Result<()> {
 // as published events when the host starts
 #[serial]
 async fn test_nack_and_rereceive() -> Result<()> {
-    let config = TestWashConfig::random().await?;
-    let _guard = setup_test_wash(&config).await;
+    let env = setup_env()
+        .await
+        .expect("should have set up the test environment");
+    let nats_client = env
+        .nats_client()
+        .await
+        .expect("should have created a nats client for the test setup");
 
-    let mut stream = get_event_consumer(config.nats_url()).await;
+    let mut stream = get_event_consumer(nats_client).await;
 
-    let ctl_port = config
-        .nats_port
-        .unwrap_or(crate::helpers::DEFAULT_NATS_PORT)
+    let ctl_port = env
+        .nats_port()
+        .await
+        .expect("should have received the port the nats-server is listening on")
         .to_string();
     // Start a component
     helpers::run_wash_command([
@@ -303,7 +321,8 @@ async fn test_nack_and_rereceive() -> Result<()> {
         "--ctl-port",
         &ctl_port,
     ])
-    .await;
+    .await
+    .expect("should have started the component");
 
     // Get the event and then nack it
     let mut evt = wait_for_event(&mut stream, DEFAULT_TIMEOUT_DURATION).await;
