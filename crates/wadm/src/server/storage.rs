@@ -94,7 +94,7 @@ impl ModelStorage {
         .await
     }
 
-    /// Fetches a summary of all models in the given lattice.
+    /// Fetches a summary of all manifests for the given lattice.
     #[instrument(level = "debug", skip(self))]
     pub async fn list(
         &self,
@@ -131,7 +131,7 @@ impl ModelStorage {
                             StatusInfo::waiting(WAITING_STATUS),
                             Vec::with_capacity(0),
                         ),
-                        status: StatusType::Waiting,
+                        status: StatusType::Undeployed,
                         status_message: Some(WAITING_STATUS.to_string()),
                     }))
                 }

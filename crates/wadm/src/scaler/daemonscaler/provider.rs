@@ -21,8 +21,7 @@ use crate::{
     storage::{Host, ReadStore},
 };
 
-// Annotation constants
-pub const PROVIDER_DAEMON_SCALER_TYPE: &str = "providerdaemonscaler";
+use super::DAEMON_SCALER_KIND;
 
 /// The ProviderDaemonScaler ensures that a provider is running on every host, according to a
 /// [SpreadScalerProperty](crate::model::SpreadScalerProperty)
@@ -42,8 +41,12 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderDaemonScaler<S> {
         &self.id
     }
 
-    fn human_friendly_name(&self) -> String {
-        format!("Daemon: {}", self.config.provider_id)
+    fn kind(&self) -> &str {
+        DAEMON_SCALER_KIND
+    }
+
+    fn name(&self) -> String {
+        self.config.provider_id.to_string()
     }
 
     async fn status(&self) -> StatusInfo {
@@ -255,7 +258,7 @@ impl<S: ReadStore + Send + Sync> ProviderDaemonScaler<S> {
         // that make it unique. This is used during upgrades to determine if a
         // scaler is the same as a previous one.
         let mut id_parts = vec![
-            PROVIDER_DAEMON_SCALER_TYPE,
+            DAEMON_SCALER_KIND,
             &config.model_name,
             component_name,
             &config.provider_id,

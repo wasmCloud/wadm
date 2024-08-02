@@ -19,6 +19,8 @@ use crate::events::{ConfigDeleted, ConfigSet};
 use crate::workers::ConfigSource;
 use crate::{commands::Command, events::Event, scaler::Scaler};
 
+const CONFIG_SCALER_KIND: &str = "ConfigScaler";
+
 pub struct ConfigScaler<ConfigSource> {
     config_bucket: ConfigSource,
     id: String,
@@ -34,6 +36,14 @@ pub struct ConfigScaler<ConfigSource> {
 impl<C: ConfigSource + Send + Sync + Clone> Scaler for ConfigScaler<C> {
     fn id(&self) -> &str {
         &self.id
+    }
+
+    fn kind(&self) -> &str {
+        CONFIG_SCALER_KIND
+    }
+
+    fn name(&self) -> String {
+        self.config_name.to_string()
     }
 
     async fn status(&self) -> StatusInfo {

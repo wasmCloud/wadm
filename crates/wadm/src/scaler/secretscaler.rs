@@ -17,6 +17,8 @@ use crate::{
 
 use super::compute_id_sha256;
 
+const SECRET_SCALER_KIND: &str = "SecretScaler";
+
 pub struct SecretScaler<SecretSource> {
     secret_source: SecretSource,
     /// The key to use in the configdata bucket for this secret
@@ -71,6 +73,14 @@ impl<S: SecretSource> SecretScaler<S> {
 impl<S: SecretSource + Send + Sync + Clone> Scaler for SecretScaler<S> {
     fn id(&self) -> &str {
         &self.id
+    }
+
+    fn kind(&self) -> &str {
+        SECRET_SCALER_KIND
+    }
+
+    fn name(&self) -> String {
+        self.secret_config.name.to_string()
     }
 
     async fn status(&self) -> StatusInfo {

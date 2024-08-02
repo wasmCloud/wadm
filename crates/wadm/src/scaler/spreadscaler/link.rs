@@ -15,7 +15,7 @@ use crate::{
     workers::LinkSource,
 };
 
-pub const LINK_SCALER_TYPE: &str = "linkdefscaler";
+pub const LINK_SCALER_KIND: &str = "LinkScaler";
 
 /// Config for a LinkSpreadConfig
 pub struct LinkScalerConfig {
@@ -62,9 +62,13 @@ where
         &self.id
     }
 
-    fn human_friendly_name(&self) -> String {
+    fn kind(&self) -> &str {
+        LINK_SCALER_KIND
+    }
+
+    fn name(&self) -> String {
         format!(
-            "Link: {} -({}:{})-> {}",
+            "{} -({}:{})-> {}",
             self.config.source_id,
             self.config.wit_namespace,
             self.config.wit_package,
@@ -225,7 +229,7 @@ impl<S: ReadStore + Send + Sync, L: LinkSource> LinkScaler<S, L> {
         // that make it unique. This is used during upgrades to determine if a
         // scaler is the same as a previous one.
         let mut id_parts = vec![
-            LINK_SCALER_TYPE,
+            LINK_SCALER_KIND,
             &link_config.model_name,
             &link_config.name,
             &link_config.source_id,
