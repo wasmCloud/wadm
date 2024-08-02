@@ -1,7 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 
 use futures::StreamExt;
-use serial_test::serial;
 
 use wadm::{
     commands::*, consumers::manager::Worker, workers::CommandWorker, MANAGED_BY_ANNOTATION,
@@ -14,9 +13,6 @@ use helpers::{
 };
 
 #[tokio::test]
-// TODO: Run in parallel once https://github.com/wasmCloud/wash/issues/402 is fixed. Please
-// note this test should probably be changed to an e2e test as the order of events is somewhat flaky
-#[serial]
 async fn test_commands() {
     let env = setup_env()
         .await
@@ -328,7 +324,6 @@ async fn test_commands() {
 #[tokio::test]
 // TODO: Run in parallel once https://github.com/wasmCloud/wash/issues/402 is fixed. Please
 // note this test should probably be changed to an e2e test as the order of events is somewhat flaky
-#[serial]
 async fn test_annotation_stop() {
     // This test is a sanity check that we only stop annotated components
     let env = setup_env()
