@@ -21,13 +21,12 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
-          default: true
           components: clippy, rustfmt
 
       # Cache: rust
       - uses: Swatinem/rust-cache@v2
         with:
-          key: "${{ matrix.os }}-rust-cache"
+          key: '${{ matrix.os }}-rust-cache'
 
       - name: Check that Wadm JSON Schema is up-to-date
         shell: bash
@@ -44,6 +43,10 @@ jobs:
       # to use an environment variable to turn on jetstream for nats, so we manually start it here
       - name: Start NATS
         run: docker run --rm -d --name wadm-test -p 127.0.0.1:4222:4222 nats:${{ matrix.nats_version }} -js
+
+      - name: Build
+        run: |
+          cargo build --all-features --all-targets --workspace
 
       # Run all tests
       - name: Run tests
