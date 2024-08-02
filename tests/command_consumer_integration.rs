@@ -7,11 +7,13 @@ use tokio::time::{timeout, Duration};
 use wadm::commands::*;
 
 mod helpers;
-use helpers::StreamWrapper;
+use helpers::{setup_env, StreamWrapper};
 
 #[tokio::test]
 async fn test_consumer_stream() {
-    let mut wrapper = StreamWrapper::new("consumer_stream".into(), None).await;
+    let env = setup_env().await;
+    let nats_client = env.nats_client().await;
+    let mut wrapper = StreamWrapper::new("consumer_stream".into(), nats_client.clone()).await;
 
     // Publish a whole bunch of commands to the stream
     wrapper
@@ -106,8 +108,7 @@ async fn test_consumer_stream() {
         .expect_err("No more commands should have been received");
 
     // Send some garbage data, then some normal data and make sure it just skips
-    wrapper
-        .client
+    nats_client
         .publish(wrapper.topic.clone(), "{\"fake\": \"json\"}".into())
         .await
         .expect("Should be able to publish data");
@@ -144,7 +145,9 @@ async fn test_consumer_stream() {
 #[tokio::test]
 #[serial]
 async fn test_nack_and_rereceive() {
-    let mut wrapper = StreamWrapper::new("nack_and_rereceive".into(), None).await;
+    let env = setup_env().await;
+    let nats_client = env.nats_client().await;
+    let mut wrapper = StreamWrapper::new("nack_and_rereceive".into(), nats_client.clone()).await;
     // Send an event
     wrapper
         .publish_command(ScaleComponent {

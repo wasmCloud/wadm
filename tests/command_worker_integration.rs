@@ -9,8 +9,8 @@ use wadm::{
 
 mod helpers;
 use helpers::{
-    setup_test_wash, StreamWrapper, TestWashConfig, HELLO_COMPONENT_ID, HELLO_IMAGE_REF,
-    HTTP_SERVER_COMPONENT_ID, HTTP_SERVER_IMAGE_REF,
+    setup_env, StreamWrapper, HELLO_COMPONENT_ID, HELLO_IMAGE_REF, HTTP_SERVER_COMPONENT_ID,
+    HTTP_SERVER_IMAGE_REF,
 };
 
 #[tokio::test]
@@ -18,13 +18,12 @@ use helpers::{
 // note this test should probably be changed to an e2e test as the order of events is somewhat flaky
 #[serial]
 async fn test_commands() {
-    let config = TestWashConfig::random().await.unwrap();
-    let _guard = setup_test_wash(&config).await;
+    let env = setup_env().await;
+    let nats_client = env.nats_client().await;
 
-    let mut wrapper = StreamWrapper::new("commands_integration".into(), config.nats_port).await;
+    let mut wrapper = StreamWrapper::new("commands_integration".into(), nats_client.clone()).await;
 
-    let ctl_client =
-        wasmcloud_control_interface::ClientBuilder::new(wrapper.client.clone()).build();
+    let ctl_client = wasmcloud_control_interface::ClientBuilder::new(nats_client.clone()).build();
     let worker = CommandWorker::new(ctl_client.clone());
 
     let host_id = ctl_client
@@ -40,8 +39,7 @@ async fn test_commands() {
         .id
         .to_owned();
 
-    let mut sub = wrapper
-        .client
+    let mut sub = nats_client
         .subscribe("wasmbus.evt.default.>".to_string())
         .await
         .unwrap();
@@ -328,17 +326,15 @@ async fn test_commands() {
 #[serial]
 async fn test_annotation_stop() {
     // This test is a sanity check that we only stop annotated components
-    let config = TestWashConfig::random().await.unwrap();
-    let _guard = setup_test_wash(&config).await;
+    let env = setup_env().await;
+    let nats_client = env.nats_client().await;
 
-    let mut wrapper = StreamWrapper::new("annotation_stop".into(), config.nats_port).await;
+    let mut wrapper = StreamWrapper::new("annotation_stop".into(), nats_client.clone()).await;
 
-    let ctl_client =
-        wasmcloud_control_interface::ClientBuilder::new(wrapper.client.clone()).build();
+    let ctl_client = wasmcloud_control_interface::ClientBuilder::new(nats_client.clone()).build();
     let worker = CommandWorker::new(ctl_client.clone());
 
-    let mut sub = wrapper
-        .client
+    let mut sub = nats_client
         .subscribe("wasmbus.evt.default.>".to_string())
         .await
         .unwrap();
@@ -479,7 +475,7 @@ async fn test_annotation_stop() {
 
 async fn wait_for_event(sub: &mut async_nats::Subscriber, match_text: &str) {
     // Providers can take a bit to start if they are downloading
-    let mut interval = tokio::time::interval(std::time::Duration::from_secs(15));
+    let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
     // Consume the initial tick
     interval.tick().await;
     loop {
