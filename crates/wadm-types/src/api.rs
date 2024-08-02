@@ -123,6 +123,10 @@ pub struct DeployModelResponse {
     pub result: DeployResult,
     #[serde(default)]
     pub message: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub version: Option<String>,
 }
 
 /// All possible outcomes of a deploy operation
