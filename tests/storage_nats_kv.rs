@@ -12,11 +12,19 @@ use wadm::{
 
 mod helpers;
 
-use helpers::create_test_store;
+use helpers::{create_test_store_with_client, setup_env};
 
 #[tokio::test]
 async fn test_round_trip() {
-    let store = NatsKvStore::new(create_test_store("round_trip_test".to_string()).await);
+    let env = setup_env()
+        .await
+        .expect("should have set up the test environment");
+    let nats_client = env
+        .nats_client()
+        .await
+        .expect("should have created a nats client");
+    let store =
+        NatsKvStore::new(create_test_store_with_client("round_trip_test", nats_client).await);
 
     let lattice_id = "roundtrip";
 
@@ -169,7 +177,14 @@ async fn test_round_trip() {
 
 #[tokio::test]
 async fn test_no_data() {
-    let store = NatsKvStore::new(create_test_store("nodata_test".to_string()).await);
+    let env = setup_env()
+        .await
+        .expect("should have set up the test environment");
+    let nats_client = env
+        .nats_client()
+        .await
+        .expect("should have created a nats client");
+    let store = NatsKvStore::new(create_test_store_with_client("nodata_test", nats_client).await);
 
     let lattice_id = "nodata";
 
@@ -199,7 +214,15 @@ async fn test_no_data() {
 
 #[tokio::test]
 async fn test_multiple_lattice() {
-    let store = NatsKvStore::new(create_test_store("multiple_lattice_test".to_string()).await);
+    let env = setup_env()
+        .await
+        .expect("should have set up the test environment");
+    let nats_client = env
+        .nats_client()
+        .await
+        .expect("should have created a nats client");
+    let store =
+        NatsKvStore::new(create_test_store_with_client("multiple_lattice_test", nats_client).await);
 
     let lattice_id1 = "multiple_lattice";
     let lattice_id2 = "other_lattice";
@@ -278,7 +301,15 @@ async fn test_multiple_lattice() {
 
 #[tokio::test]
 async fn test_store_and_delete_many() {
-    let store = NatsKvStore::new(create_test_store("store_many_test".to_string()).await);
+    let env = setup_env()
+        .await
+        .expect("should have set up the test environment");
+    let nats_client = env
+        .nats_client()
+        .await
+        .expect("should have created a nats client");
+    let store =
+        NatsKvStore::new(create_test_store_with_client("store_many_test", nats_client).await);
 
     let lattice_id = "storemany";
 

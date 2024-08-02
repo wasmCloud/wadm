@@ -148,29 +148,20 @@ where
     Ok(output.stdout)
 }
 
-/// Helper function that sets up a store with the given ID as its name. This ID should be unique per
-/// test
-pub async fn create_test_store(id: String) -> Store {
-    let client = async_nats::connect("127.0.0.1:4222")
-        .await
-        .expect("Should be able to connect to NATS");
-
-    create_test_store_with_client(client, id).await
-}
-
-/// Same as [`create_test_store`], but allows you to pass an existing client instead
-pub async fn create_test_store_with_client(client: Client, id: String) -> Store {
+/// Helper function that sets up a store with the given ID as its name using an existing nats client.
+/// This ID should be unique per test
+pub async fn create_test_store_with_client(id: &str, client: Client) -> Store {
     let context = jetstream::new(client);
 
     // First make sure we clean up the store. We can't just do a cleanup on `Drop` because
     // `tokio::test` uses a single threaded runtime and blocks forever and it isn't really worth
     // spinning up more cores to handle this. We don't care about the result because it could not
     // exist
-    let _ = context.delete_key_value(&id).await;
+    let _ = context.delete_key_value(id).await;
 
     context
         .create_key_value(KvConfig {
-            bucket: id,
+            bucket: id.to_string(),
             history: 1,
             num_replicas: 1,
             storage: jetstream::stream::StorageType::Memory,
