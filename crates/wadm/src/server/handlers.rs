@@ -500,6 +500,8 @@ impl<P: Publisher> Handler<P> {
                         serde_json::to_vec(&DeployModelResponse {
                             result: DeployResult::NotFound,
                             message: format!("Application with the name {name} not found"),
+                            name: name.to_string(),
+                            version: req.version.clone(),
                         })
                         .unwrap_or_default(),
                     )
@@ -539,9 +541,9 @@ impl<P: Publisher> Handler<P> {
                         // case we unwrap to nothing
                         serde_json::to_vec(&DeployModelResponse {
                             result: DeployResult::Error,
-                            message: format!(
-                        "Application with the name {name} does not have the specified version to deploy"
-                    ),
+                            message: format!("Application with the name '{name}' does not have a version '{v}' to deploy"),
+                            name: name.to_string(),
+                            version: Some(v.to_string()),
                         })
                         .unwrap_or_default(),
                     )
@@ -623,7 +625,7 @@ impl<P: Publisher> Handler<P> {
             }
         }
 
-        if !manifests.deploy(req.version) {
+        if !manifests.deploy(req.version.clone()) {
             trace!("Requested version does not exist");
             self.send_reply(
                 msg.reply,
@@ -634,6 +636,8 @@ impl<P: Publisher> Handler<P> {
                     message: format!(
                         "Application with the name {name} does not have the specified version to deploy"
                     ),
+                    name: name.to_string(),
+                    version: req.version,
                 })
                 .unwrap_or_default(),
             )
@@ -646,6 +650,7 @@ impl<P: Publisher> Handler<P> {
             .unwrap()
             .to_owned();
 
+        let manifest_version = manifest.version().to_string();
         let reply = self
             .store
             .set(account_id, lattice_id, manifests, Some(current_revision))
@@ -656,12 +661,16 @@ impl<P: Publisher> Handler<P> {
                     "Successfully deployed application {name} {}",
                     manifest.version()
                 ),
+                name: name.to_string(),
+                version: Some(manifest_version.clone()),
             })
             .unwrap_or_else(|e| {
                 error!(error = %e, "Unable to store updated data");
                 DeployModelResponse {
                     result: DeployResult::Error,
                     message: "Internal storage error".to_string(),
+                    name: name.to_string(),
+                    version: Some(manifest_version.clone()),
                 }
             });
         trace!("Manifest saved in store, sending notification");
@@ -674,6 +683,8 @@ impl<P: Publisher> Handler<P> {
                 serde_json::to_vec(&DeployModelResponse {
                     result: DeployResult::Error,
                     message: "Error notifying processors of newly deployed manifest. This is likely a transient error, so please retry the request".to_string(),
+                    name: name.to_string(),
+                    version: Some(manifest_version),
                 })
                 .unwrap_or_default(),
             )
@@ -727,6 +738,8 @@ impl<P: Publisher> Handler<P> {
                         serde_json::to_vec(&DeployModelResponse {
                             result: DeployResult::NotFound,
                             message: format!("Application with the name {name} not found"),
+                            name: name.to_string(),
+                            version: None,
                         })
                         .unwrap_or_default(),
                     )
@@ -750,12 +763,16 @@ impl<P: Publisher> Handler<P> {
                 .map(|_| DeployModelResponse {
                     result: DeployResult::Acknowledged,
                     message: format!("Successfully undeployed application {name}"),
+                    name: name.to_string(),
+                    version: None,
                 })
                 .unwrap_or_else(|e| {
                     error!(error = %e, "Unable to store updated data");
                     DeployModelResponse {
                         result: DeployResult::Error,
                         message: "Internal storage error".to_string(),
+                        name: name.to_string(),
+                        version: None,
                     }
                 })
         } else {
@@ -763,6 +780,8 @@ impl<P: Publisher> Handler<P> {
             DeployModelResponse {
                 result: DeployResult::Acknowledged,
                 message: format!("Application {name} was already undeployed"),
+                name: name.to_string(),
+                version: None,
             }
         };
         // We always want to resend in an undeploy in case things failed last time
@@ -777,6 +796,8 @@ impl<P: Publisher> Handler<P> {
                     serde_json::to_vec(&DeployModelResponse {
                         result: DeployResult::Error,
                         message: "Error notifying processors of undeployed manifest. This is likely a transient error, so please retry the request".to_string(),
+                        name: name.to_string(),
+                        version: None,
                     })
                     .unwrap_or_default(),
                 )

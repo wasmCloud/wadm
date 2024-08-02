@@ -205,7 +205,13 @@ impl Client {
     ///
     /// Please note that an OK response does not necessarily mean that the manifest was deployed
     /// successfully, just that the server accepted the deployment request.
-    pub async fn deploy_manifest(&self, name: &str, version: Option<&str>) -> Result<()> {
+    ///
+    /// Returns a tuple of the name and version of the manifest that was deployed
+    pub async fn deploy_manifest(
+        &self,
+        name: &str,
+        version: Option<&str>,
+    ) -> Result<(String, Option<String>)> {
         let topic = self.topics.model_deploy_topic(name);
         let body = if let Some(version) = version {
             serde_json::to_vec(&DeployModelRequest {
@@ -221,7 +227,7 @@ impl Client {
         match body.result {
             DeployResult::Error => Err(ClientError::ApiError(body.message)),
             DeployResult::NotFound => Err(ClientError::NotFound(name.to_string())),
-            DeployResult::Acknowledged => Ok(()),
+            DeployResult::Acknowledged => Ok((body.name, body.version)),
         }
     }
 
@@ -243,8 +249,8 @@ impl Client {
 
     /// Undeploys the given manifest from the lattice
     ///
-    /// Returns Ok if the manifest undeploy request was acknowledged
-    pub async fn undeploy_manifest(&self, name: &str) -> Result<()> {
+    /// Returns Ok(manifest_name) if the manifest undeploy request was acknowledged
+    pub async fn undeploy_manifest(&self, name: &str) -> Result<String> {
         let topic = self.topics.model_undeploy_topic(name);
         let resp = self
             .client
@@ -255,7 +261,7 @@ impl Client {
         match body.result {
             DeployResult::Error => Err(ClientError::ApiError(body.message)),
             DeployResult::NotFound => Err(ClientError::NotFound(name.to_string())),
-            DeployResult::Acknowledged => Ok(()),
+            DeployResult::Acknowledged => Ok(body.name),
         }
     }
 
