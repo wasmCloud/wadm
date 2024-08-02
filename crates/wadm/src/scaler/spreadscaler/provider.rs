@@ -26,7 +26,7 @@ use crate::{
     SCALER_KEY,
 };
 
-pub const PROVIDER_SPREAD_SCALER_TYPE: &str = "providerspreadscaler";
+use super::SPREAD_SCALER_KIND;
 
 /// Config for a ProviderSpreadConfig
 #[derive(Clone)]
@@ -67,8 +67,12 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
         &self.id
     }
 
-    fn human_friendly_name(&self) -> String {
-        format!("Spread: {}", self.config.provider_id)
+    fn kind(&self) -> &str {
+        SPREAD_SCALER_KIND
+    }
+
+    fn name(&self) -> String {
+        self.config.provider_id.to_string()
     }
 
     async fn status(&self) -> StatusInfo {
@@ -328,7 +332,7 @@ impl<S: ReadStore + Send + Sync> ProviderSpreadScaler<S> {
         // that make it unique. This is used during upgrades to determine if a
         // scaler is the same as a previous one.
         let mut id_parts = vec![
-            PROVIDER_SPREAD_SCALER_TYPE,
+            SPREAD_SCALER_KIND,
             &config.model_name,
             component_name,
             &config.provider_id,

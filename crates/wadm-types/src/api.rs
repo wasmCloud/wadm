@@ -218,7 +218,14 @@ pub struct TraitStatus {
 /// The current status of a scaler
 #[derive(Debug, Serialize, Deserialize, Default, Clone, Eq, PartialEq)]
 pub struct ScalerStatus {
+    /// The id of the scaler
+    #[serde(default)]
+    pub id: String,
+    /// The kind of scaler
+    #[serde(default)]
+    pub kind: String,
     /// The human-readable name of the scaler
+    #[serde(default)]
     pub name: String,
     #[serde(rename = "status")]
     pub info: StatusInfo,

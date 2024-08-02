@@ -29,6 +29,7 @@ use self::configscaler::ConfigScaler;
 use self::secretscaler::SecretScaler;
 
 const DEFAULT_WAIT_TIMEOUT: Duration = Duration::from_secs(30);
+const DEFAULT_SCALER_KIND: &str = "Scaler";
 
 /// A trait describing a struct that can be configured to compute the difference between
 /// desired state and configured state, returning a set of commands to approach desired state.
@@ -51,8 +52,13 @@ pub trait Scaler {
     /// An optional human-friendly name for this scaler. This is used for logging and for selecting
     /// specific scalers as needed. This is optional and by default returns the same value as `id`,
     /// and does not have to be unique
-    fn human_friendly_name(&self) -> String {
+    fn name(&self) -> String {
         self.id().to_string()
+    }
+
+    /// An optional kind of scaler. This is used for logging and for selecting specific scalers as needed
+    fn kind(&self) -> &str {
+        DEFAULT_SCALER_KIND
     }
 
     /// Determine the status of this scaler according to reconciliation logic. This is the opportunity
@@ -424,8 +430,13 @@ where
         self.scaler.id()
     }
 
-    fn human_friendly_name(&self) -> String {
-        self.scaler.human_friendly_name()
+    fn kind(&self) -> &str {
+        // Pass through the kind of the wrapped scaler
+        self.scaler.kind()
+    }
+
+    fn name(&self) -> String {
+        self.scaler.name()
     }
 
     async fn status(&self) -> StatusInfo {

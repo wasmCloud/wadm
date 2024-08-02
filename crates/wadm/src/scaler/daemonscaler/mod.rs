@@ -22,7 +22,7 @@ use super::compute_id_sha256;
 pub mod provider;
 
 // Annotation constants
-pub const COMPONENT_DAEMON_SCALER_TYPE: &str = "componentdaemonscaler";
+pub const DAEMON_SCALER_KIND: &str = "DaemonScaler";
 
 /// Config for a ComponentDaemonScaler
 #[derive(Clone, Debug)]
@@ -58,8 +58,12 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ComponentDaemonScaler<S> {
         &self.id
     }
 
-    fn human_friendly_name(&self) -> String {
-        format!("Daemon: {}", self.spread_config.component_id)
+    fn kind(&self) -> &str {
+        DAEMON_SCALER_KIND
+    }
+
+    fn name(&self) -> String {
+        self.spread_config.component_id.to_string()
     }
 
     async fn status(&self) -> StatusInfo {
@@ -310,7 +314,7 @@ impl<S: ReadStore + Send + Sync> ComponentDaemonScaler<S> {
         // that make it unique. This is used during upgrades to determine if a
         // scaler is the same as a previous one.
         let mut id_parts = vec![
-            COMPONENT_DAEMON_SCALER_TYPE,
+            DAEMON_SCALER_KIND,
             &model_name,
             component_name,
             &component_id,

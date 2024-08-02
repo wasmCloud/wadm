@@ -976,16 +976,24 @@ where
 
 /// Helper function to find the [`Status`] of all scalers in a particular manifest.
 pub async fn detailed_scaler_status(scalers: &ScalerList) -> Status {
-    let futs = scalers
-        .iter()
-        .map(|s| async { (s.human_friendly_name(), s.status().await) });
+    let futs = scalers.iter().map(|s| async {
+        (
+            s.id().to_string(),
+            s.kind().to_string(),
+            s.name(),
+            s.status().await,
+        )
+    });
     let status = futures::future::join_all(futs).await;
     Status::new(
         StatusInfo {
-            status_type: status.iter().map(|(_id, s)| s.status_type).sum(),
+            status_type: status
+                .iter()
+                .map(|(_id, _name, _kind, s)| s.status_type)
+                .sum(),
             message: status
                 .iter()
-                .filter_map(|(_id, s)| {
+                .filter_map(|(_id, _name, _kind, s)| {
                     let message = s.message.trim();
                     if message.is_empty() {
                         None
@@ -998,8 +1006,10 @@ pub async fn detailed_scaler_status(scalers: &ScalerList) -> Status {
         },
         status
             .into_iter()
-            .map(|(id, info)| ScalerStatus {
-                name: id.to_string(),
+            .map(|(id, kind, name, info)| ScalerStatus {
+                id,
+                name,
+                kind,
                 info,
             })
             .collect(),

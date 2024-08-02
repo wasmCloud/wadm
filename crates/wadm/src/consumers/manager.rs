@@ -85,11 +85,6 @@ pub trait WorkerCreator {
     ) -> anyhow::Result<Self::Output>;
 }
 
-#[async_trait::async_trait]
-pub trait ConcernedThing {
-    async fn is_aware_of(&self, lattice: &str) -> bool;
-}
-
 /// A manager of a specific type of Consumer that handles giving out permits to work and managing
 /// per lattice consumers.
 ///
@@ -275,21 +270,6 @@ impl<C> ConsumerManager<C> {
     // NOTE(thomastaylor312): We could add a supervisory element to this by starting a notifier
     // thread that can restart work if a fatal error is received (or a join handle finishes), but
     // that is not necessary now
-}
-
-#[async_trait::async_trait]
-impl<C> ConcernedThing for ConsumerManager<C>
-where
-    C: Send + Sync,
-{
-    async fn is_aware_of(&self, lattice: &str) -> bool {
-        self.handles
-            .read()
-            .await
-            .get(lattice)
-            .map(|handle| !handle.is_finished())
-            .unwrap_or(false)
-    }
 }
 
 async fn work_fn<C, W>(mut consumer: C, permits: Arc<Semaphore>, worker: W) -> WorkResult<()>

@@ -26,7 +26,7 @@ pub mod provider;
 // Annotation constants
 const SPREAD_KEY: &str = "wasmcloud.dev/spread_name";
 
-pub const COMPONENT_SPREAD_SCALER_TYPE: &str = "componentspreadscaler";
+pub const SPREAD_SCALER_KIND: &str = "SpreadScaler";
 
 /// Config for a ComponentSpreadScaler
 #[derive(Clone)]
@@ -64,8 +64,12 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ComponentSpreadScaler<S> {
         &self.id
     }
 
-    fn human_friendly_name(&self) -> String {
-        format!("Spread: {}", self.spread_config.component_id)
+    fn kind(&self) -> &str {
+        SPREAD_SCALER_KIND
+    }
+
+    fn name(&self) -> String {
+        self.spread_config.component_id.to_string()
     }
 
     async fn status(&self) -> StatusInfo {
@@ -321,7 +325,7 @@ impl<S: ReadStore + Send + Sync> ComponentSpreadScaler<S> {
         // that make it unique. This is used during upgrades to determine if a
         // scaler is the same as a previous one.
         let mut id_parts = vec![
-            COMPONENT_SPREAD_SCALER_TYPE,
+            SPREAD_SCALER_KIND,
             &model_name,
             component_name,
             &component_id,
