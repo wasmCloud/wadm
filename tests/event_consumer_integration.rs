@@ -97,7 +97,8 @@ async fn test_event_stream() -> Result<()> {
         "--ctl-port",
         &ctl_port,
     ])
-    .await;
+    .await
+    .expect("should have started the component");
 
     let mut evt = wait_for_event(&mut stream, DEFAULT_TIMEOUT_DURATION).await;
     if let Event::ComponentScaled(event) = evt.as_ref() {
@@ -120,7 +121,8 @@ async fn test_event_stream() -> Result<()> {
         "--ctl-port",
         &ctl_port,
     ])
-    .await;
+    .await
+    .expect("should have started the provider");
 
     let mut evt = wait_for_event(&mut stream, DEFAULT_TIMEOUT_DURATION).await;
     if let Event::ProviderStarted(provider) = evt.as_ref() {
@@ -148,7 +150,8 @@ async fn test_event_stream() -> Result<()> {
         "--ctl-port",
         &ctl_port,
     ])
-    .await;
+    .await
+    .expect("should have created the link");
 
     let mut evt = wait_for_event(&mut stream, LINK_OPERATION_TIMEOUT_DURATION).await;
     if let Event::LinkdefSet(event) = evt.as_ref() {
@@ -181,7 +184,8 @@ async fn test_event_stream() -> Result<()> {
         "--ctl-port",
         &ctl_port,
     ])
-    .await;
+    .await
+    .expect("should have deleted the link");
 
     let mut evt = wait_for_event(&mut stream, LINK_OPERATION_TIMEOUT_DURATION).await;
     if let Event::LinkdefDeleted(event) = evt.as_ref() {
@@ -197,7 +201,9 @@ async fn test_event_stream() -> Result<()> {
 
     // Stop provider
     let host_id = serde_json::from_slice::<HostResponse>(
-        &helpers::run_wash_command(["get", "hosts", "-o", "json", "--ctl-port", &ctl_port]).await,
+        &helpers::run_wash_command(["get", "hosts", "-o", "json", "--ctl-port", &ctl_port])
+            .await
+            .expect("should have received the host id"),
     )
     .unwrap()
     .hosts[0]
@@ -215,7 +221,8 @@ async fn test_event_stream() -> Result<()> {
         "--ctl-port",
         &ctl_port,
     ])
-    .await;
+    .await
+    .expect("should have stopped the provider");
 
     let mut evt = wait_for_event(&mut stream, DEFAULT_TIMEOUT_DURATION).await;
     if let Event::ProviderStopped(event) = evt.as_ref() {
@@ -239,7 +246,8 @@ async fn test_event_stream() -> Result<()> {
         "--ctl-port",
         &ctl_port,
     ])
-    .await;
+    .await
+    .expect("should have stopped component");
 
     let mut evt = wait_for_event(&mut stream, DEFAULT_TIMEOUT_DURATION).await;
     if let Event::ComponentScaled(event) = evt.as_ref() {
@@ -254,7 +262,9 @@ async fn test_event_stream() -> Result<()> {
     evt.ack().await.expect("Should be able to ack event");
 
     // Stop the host
-    helpers::run_wash_command(["stop", "host", &host_id, "--ctl-port", &ctl_port]).await;
+    helpers::run_wash_command(["stop", "host", &host_id, "--ctl-port", &ctl_port])
+        .await
+        .expect("should have stopped the host");
 
     let mut evt = wait_for_event(&mut stream, DEFAULT_TIMEOUT_DURATION).await;
     if let Event::HostStopped(host) = evt.as_ref() {
@@ -293,7 +303,8 @@ async fn test_nack_and_rereceive() -> Result<()> {
         "--ctl-port",
         &ctl_port,
     ])
-    .await;
+    .await
+    .unwrap();
 
     // Get the event and then nack it
     let mut evt = wait_for_event(&mut stream, DEFAULT_TIMEOUT_DURATION).await;

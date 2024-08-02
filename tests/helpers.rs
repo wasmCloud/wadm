@@ -15,7 +15,7 @@ use testcontainers::{
 };
 use tokio::process::Command;
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use wadm::consumers::{CommandConsumer, ScopedMessage};
 
 pub const DEFAULT_NATS_PORT: u16 = 4222;
@@ -123,7 +123,7 @@ pub async fn wait_for_server(url: &str) {
 
 /// Runs wash with the given args and makes sure it runs successfully. Returns the contents of
 /// stdout
-pub async fn run_wash_command<I, S>(args: I) -> Vec<u8>
+pub async fn run_wash_command<I, S>(args: I) -> Result<Vec<u8>>
 where
     I: IntoIterator<Item = S> + std::clone::Clone,
     S: AsRef<std::ffi::OsStr>,
@@ -134,7 +134,7 @@ where
         .await
         .expect("Unable to run wash command");
     if !output.status.success() {
-        panic!(
+        bail!(
             "wash command ({:?}) didn't exit successfully: {}",
             args.into_iter()
                 .map(|i| i.as_ref().to_str().unwrap_or_default().to_owned())
@@ -142,7 +142,7 @@ where
             String::from_utf8_lossy(&output.stderr),
         );
     }
-    output.stdout
+    Ok(output.stdout)
 }
 
 /// Helper function that sets up a store with the given ID as its name. This ID should be unique per
