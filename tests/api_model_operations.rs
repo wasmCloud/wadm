@@ -77,7 +77,7 @@ impl TestServer {
     }
 }
 
-async fn setup_server(id: String, client: async_nats::Client) -> TestServer {
+async fn setup_server(id: &str, client: async_nats::Client) -> TestServer {
     let store = helpers::create_test_store_with_client(&id, client.clone()).await;
 
     let context = jetstream::new(client.clone());
@@ -109,7 +109,7 @@ async fn setup_server(id: String, client: async_nats::Client) -> TestServer {
     let server = Server::new(
         store,
         client.clone(),
-        Some(&id),
+        Some(id),
         false,
         status_stream,
         ManifestNotifier::new(&prefix, client.clone()),
@@ -123,7 +123,7 @@ async fn setup_server(id: String, client: async_nats::Client) -> TestServer {
         .expect("Unable to set up subscription");
 
     TestServer {
-        prefix: id,
+        prefix: id.to_owned(),
         handle: tokio::spawn(server.serve()),
         client,
         notify,
@@ -139,7 +139,7 @@ async fn test_crud_operations() {
         .nats_client()
         .await
         .expect("should have created a nats client");
-    let test_server = setup_server("crud_operations".to_owned(), nats_client).await;
+    let test_server = setup_server("crud_operations", nats_client).await;
 
     // First test with a raw file (a common operation)
     let raw = tokio::fs::read("./oam/sqldbpostgres.yaml")
@@ -381,7 +381,7 @@ async fn test_bad_requests() {
         .nats_client()
         .await
         .expect("should have created a nats client");
-    let test_server = setup_server("bad_requests".to_owned(), nats_client).await;
+    let test_server = setup_server("bad_requests", nats_client).await;
 
     // Duplicate version
     let raw = tokio::fs::read("./oam/sqldbpostgres.yaml")
@@ -450,7 +450,7 @@ async fn test_delete_noop() {
         .nats_client()
         .await
         .expect("should have created a nats client");
-    let test_server = setup_server("delete_noop".to_owned(), nats_client).await;
+    let test_server = setup_server("delete_noop", nats_client).await;
 
     // Delete something that doesn't exist
     let resp: DeleteModelResponse = test_server
@@ -505,7 +505,7 @@ async fn test_invalid_topics() {
         .nats_client()
         .await
         .expect("should have created a nats client");
-    let test_server = setup_server("invalid_topics".to_owned(), nats_client).await;
+    let test_server = setup_server("invalid_topics", nats_client).await;
 
     // Put in a manifest to make sure we have something that could be fetched if we aren't handing
     // invalid topics correctly
@@ -584,7 +584,7 @@ async fn test_manifest_parsing() {
         .nats_client()
         .await
         .expect("should have created a nats client");
-    let test_server = setup_server("manifest_parsing".to_owned(), nats_client).await;
+    let test_server = setup_server("manifest_parsing", nats_client).await;
 
     // Test json manifest with no hint
     let raw = tokio::fs::read("./oam/simple1.json")
@@ -652,7 +652,7 @@ async fn test_deploy() {
         .nats_client()
         .await
         .expect("should have created a nats client");
-    let mut test_server = setup_server("deploy_ops".to_owned(), nats_client).await;
+    let mut test_server = setup_server("deploy_ops", nats_client).await;
 
     // Create a manifest with 2 versions
     let raw = tokio::fs::read("./oam/sqldbpostgres.yaml")
@@ -827,7 +827,7 @@ async fn test_delete_deploy() {
         .nats_client()
         .await
         .expect("should have created a nats client");
-    let mut test_server = setup_server("deploy_delete".to_owned(), nats_client).await;
+    let mut test_server = setup_server("deploy_delete", nats_client).await;
 
     // Create a manifest with 2 versions
     let raw = tokio::fs::read("./oam/sqldbpostgres.yaml")
@@ -922,7 +922,7 @@ async fn test_status() {
         .nats_client()
         .await
         .expect("should have created a nats client");
-    let test_server = setup_server("status".to_owned(), nats_client).await;
+    let test_server = setup_server("status", nats_client).await;
 
     let raw = tokio::fs::read("./oam/sqldbpostgres.yaml")
         .await
