@@ -1,6 +1,5 @@
 use anyhow::Result;
 use futures::{Stream, TryStreamExt};
-use serial_test::serial;
 use tokio::time::{timeout, Duration};
 
 use wadm::{
@@ -76,9 +75,6 @@ struct HostResponse {
 }
 
 #[tokio::test]
-// TODO: Run in parallel once https://github.com/wasmCloud/wash/issues/402 is fixed. Please
-// note this test should probably be changed to an e2e test as the order of events is somewhat flaky
-#[serial]
 async fn test_event_stream() -> Result<()> {
     let env = setup_env()
         .await
@@ -291,11 +287,9 @@ async fn test_event_stream() -> Result<()> {
 }
 
 #[tokio::test]
-// TODO: Run in parallel once https://github.com/wasmCloud/wash/issues/402 is fixed. This
-// does work when you run it individually. Please note that there is problems when running this
-// against 0.60+ hosts as the KV bucket for linkdefs makes it so that all those linkdefs are emitted
+// Please note that there is problems when running this against 0.60+ hosts as
+// the KV bucket for linkdefs makes it so that all those linkdefs are emitted
 // as published events when the host starts
-#[serial]
 async fn test_nack_and_rereceive() -> Result<()> {
     let env = setup_env()
         .await

@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 
 use futures::TryStreamExt;
-use serial_test::serial;
 use tokio::time::{timeout, Duration};
 
 use wadm::commands::*;
@@ -148,7 +147,6 @@ async fn test_consumer_stream() {
 }
 
 #[tokio::test]
-#[serial]
 async fn test_nack_and_rereceive() {
     let env = setup_env()
         .await
