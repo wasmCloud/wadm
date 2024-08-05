@@ -46,7 +46,7 @@ wadm-types = { workspace = true }
 anyhow = "1"
 async-nats = "0.33"
 async-trait = "0.1"
-base64 = "0.21.2"
+base64 = "0.22.1"
 bytes = "1"
 chrono = "0.4"
 clap = { version = "4", features = ["derive", "cargo", "env"] }
