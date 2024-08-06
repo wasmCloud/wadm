@@ -302,7 +302,6 @@ pub struct ComponentScaled {
     pub claims: Option<ComponentClaims>,
     pub image_ref: String,
     pub max_instances: usize,
-    // TODO: Once we update to the 1.0 release candidate, this will be component_id
     pub component_id: String,
     #[serde(default)]
     pub host_id: String,
@@ -321,7 +320,6 @@ pub struct ComponentScaleFailed {
     pub claims: Option<ComponentClaims>,
     pub image_ref: String,
     pub max_instances: usize,
-    // TODO: Once we update to the 1.0 release candidate, this will be component_id
     pub component_id: String,
     #[serde(default)]
     pub host_id: String,
@@ -463,7 +461,6 @@ event_impl!(ConfigDeleted, "com.wasmcloud.lattice.config_deleted");
 pub struct HostStarted {
     pub labels: HashMap<String, String>,
     pub friendly_name: String,
-    // TODO: Parse as nkey?
     #[serde(default)]
     pub id: String,
 }
@@ -478,7 +475,6 @@ event_impl!(
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct HostStopped {
     pub labels: HashMap<String, String>,
-    // TODO: Parse as nkey?
     #[serde(default)]
     pub id: String,
 }
