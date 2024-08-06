@@ -42,7 +42,7 @@ use super::{
         link::{LinkScaler, LinkScalerConfig},
         provider::{ProviderSpreadConfig, ProviderSpreadScaler},
     },
-    BackoffScaler,
+    BackoffWrapper,
 };
 
 pub type BoxedScaler = Box<dyn Scaler + Send + Sync + 'static>;
@@ -504,7 +504,7 @@ where
                                 // wrapped ones (which is good from a Rust API point of view). If
                                 // this starts to become a problem, we can revisit how we handle
                                 // this (probably by requiring that this struct always wraps any
-                                // scaler in the backoff scaler and using custom methods from that
+                                // scaler in the backoff wrapper and using custom methods from that
                                 // type)
                                 Notifications::RegisterExpectedEvents{ name, scaler_id, triggering_event } => {
                                     trace!(%name, "Computing and registering expected events for manifest");
@@ -606,7 +606,7 @@ where
                     config_names.append(&mut secret_names.clone());
                     match (trt.trait_type.as_str(), &trt.properties) {
                         (SPREADSCALER_TRAIT, TraitProperty::SpreadScaler(p)) => {
-                            Some(Box::new(BackoffScaler::new(
+                            Some(Box::new(BackoffWrapper::new(
                                 ComponentSpreadScaler::new(
                                     snapshot_data.clone(),
                                     props.image.to_owned(),
@@ -626,7 +626,7 @@ where
                             )) as BoxedScaler)
                         }
                         (DAEMONSCALER_TRAIT, TraitProperty::SpreadScaler(p)) => {
-                            Some(Box::new(BackoffScaler::new(
+                            Some(Box::new(BackoffWrapper::new(
                                 ComponentDaemonScaler::new(
                                     snapshot_data.clone(),
                                     props.image.to_owned(),
@@ -682,7 +682,7 @@ where
                                     | Properties::Component {
                                         properties: ComponentProperties { id, .. },
                                     } if component.name == p.target.name => {
-                                        Some(Box::new(BackoffScaler::new(
+                                        Some(Box::new(BackoffWrapper::new(
                                             LinkScaler::new(
                                                 snapshot_data.clone(),
                                                 LinkScalerConfig {
@@ -740,7 +740,7 @@ where
                                 );
                                 config_names.append(&mut secret_names.clone());
 
-                                Some(Box::new(BackoffScaler::new(
+                                Some(Box::new(BackoffWrapper::new(
                                     ProviderSpreadScaler::new(
                                         snapshot_data.clone(),
                                         ProviderSpreadConfig {
@@ -773,7 +773,7 @@ where
                                     policies,
                                 );
                                 config_names.append(&mut secret_names.clone());
-                                Some(Box::new(BackoffScaler::new(
+                                Some(Box::new(BackoffWrapper::new(
                                     ProviderDaemonScaler::new(
                                         snapshot_data.clone(),
                                         ProviderSpreadConfig {
@@ -834,7 +834,7 @@ where
                                         Properties::Component { properties: cappy }
                                             if component.name == p.target.name =>
                                         {
-                                            Some(Box::new(BackoffScaler::new(
+                                            Some(Box::new(BackoffWrapper::new(
                                                 LinkScaler::new(
                                                     snapshot_data.clone(),
                                                     LinkScalerConfig {
@@ -883,7 +883,7 @@ where
                         secrets_to_scalers(snapshot_data.clone(), name, &props.secrets, policies);
                     config_names.append(&mut secret_names.clone());
 
-                    scalers.push(Box::new(BackoffScaler::new(
+                    scalers.push(Box::new(BackoffWrapper::new(
                         ProviderSpreadScaler::new(
                             snapshot_data.clone(),
                             ProviderSpreadConfig {

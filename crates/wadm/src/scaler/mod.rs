@@ -86,7 +86,7 @@ pub trait Scaler {
     async fn cleanup(&self) -> Result<Vec<Command>>;
 }
 
-/// The BackoffScaler is a wrapper around a scaler that is responsible for
+/// The BackoffWrapper is a wrapper around a scaler that is responsible for
 /// ensuring that a particular scaler doesn't get overwhelmed with events and has the
 /// necessary prerequisites to reconcile.
 ///
@@ -95,7 +95,7 @@ pub trait Scaler {
 /// and links to start is that their configuration is available. Scalers will not be
 /// able to issue commands until the configuration exists.
 /// 2. `expected_events`: For scalers that issue commands that should result in events,
-/// the BackoffScaler is responsible for ensuring that the scaler doesn't continually
+/// the BackoffWrapper is responsible for ensuring that the scaler doesn't continually
 /// issue commands that it's already expecting events for. Commonly this will allow a host
 /// to download larger images from an OCI repository without being bombarded with repeat requests.
 /// 3. `backoff_status`: If a scaler receives an event that it was expecting, but it was a failure
@@ -109,7 +109,7 @@ pub trait Scaler {
 /// The `notifier` is used to publish notifications to add, remove, or recompute
 /// expected events with scalers on other wadm instances, as only one wadm instance
 /// at a time will handle a specific event.
-pub(crate) struct BackoffScaler<T, P, C> {
+pub(crate) struct BackoffWrapper<T, P, C> {
     scaler: T,
     notifier: P,
     notify_subject: String,
@@ -123,7 +123,7 @@ pub(crate) struct BackoffScaler<T, P, C> {
     event_cleaner: Mutex<Option<JoinHandle<()>>>,
     /// The amount of time to wait before cleaning up the expected events list
     cleanup_timeout: std::time::Duration,
-    /// The status of the backoff scaler, set when the scaler is backing off due to a
+    /// The status of the scaler, set when the scaler is backing off due to a
     /// failure event.
     backoff_status: Arc<RwLock<Option<StatusInfo>>>,
     // TODO(#253): Figure out where/when/how to store the backoff and exponentially repeat it
@@ -131,13 +131,13 @@ pub(crate) struct BackoffScaler<T, P, C> {
     status_cleaner: Mutex<Option<JoinHandle<()>>>,
 }
 
-impl<T, P, C> BackoffScaler<T, P, C>
+impl<T, P, C> BackoffWrapper<T, P, C>
 where
     T: Scaler + Send + Sync,
     P: Publisher + Send + Sync + 'static,
     C: ConfigSource + SecretSource + Send + Sync + Clone + 'static,
 {
-    /// Wraps the given scaler in a new backoff scaler. `cleanup_timeout` can be set to a
+    /// Wraps the given scaler in a new BackoffWrapper. `cleanup_timeout` can be set to a
     /// desired waiting time, otherwise it will default to 30s
     pub fn new(
         scaler: T,
@@ -466,7 +466,7 @@ where
 }
 
 #[async_trait]
-/// The [`Scaler`] trait implementation for the [`BackoffScaler`] is mostly a simple wrapper,
+/// The [`Scaler`] trait implementation for the [`BackoffWrapper`] is mostly a simple wrapper,
 /// with three exceptions, which allow scalers to sync state between different wadm instances.
 ///
 /// * `handle_event` calls an internal method that uses a notifier to publish notifications to
@@ -477,7 +477,7 @@ where
 ///   reconciliation commands in order to "back off".
 /// * `status` will first check to see if the scaler is in a backing off state, and if so, return
 ///   the backoff status. Otherwise, it will return the status of the scaler.
-impl<T, P, C> Scaler for BackoffScaler<T, P, C>
+impl<T, P, C> Scaler for BackoffWrapper<T, P, C>
 where
     T: Scaler + Send + Sync,
     P: Publisher + Send + Sync + 'static,
