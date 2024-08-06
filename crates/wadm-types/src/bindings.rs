@@ -257,6 +257,7 @@ impl From<StatusType> for wadm::types::StatusType {
             StatusType::Reconciling => wadm::types::StatusType::Reconciling,
             StatusType::Deployed => wadm::types::StatusType::Deployed,
             StatusType::Failed => wadm::types::StatusType::Failed,
+            StatusType::Waiting => wadm::types::StatusType::Waiting,
         }
     }
 }
@@ -270,6 +271,7 @@ impl From<wadm::types::StatusType> for StatusType {
             wadm::types::StatusType::Reconciling => StatusType::Reconciling,
             wadm::types::StatusType::Deployed => StatusType::Deployed,
             wadm::types::StatusType::Failed => StatusType::Failed,
+            wadm::types::StatusType::Waiting => StatusType::Waiting,
         }
     }
 }
