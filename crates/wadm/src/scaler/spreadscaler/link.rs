@@ -91,7 +91,7 @@ where
     async fn handle_event(&self, event: &Event) -> Result<Vec<Command>> {
         match event {
             // Trigger linkdef creation if this component starts and belongs to this model
-            Event::ComponentScaled(evt) if evt.component_id == self.config.source_id => {
+            Event::ComponentScaled(evt) if evt.component_id == self.config.source_id || evt.component_id == self.config.target => {
                 self.reconcile().await
             }
             Event::ProviderHealthCheckPassed(ProviderHealthCheckPassed {
