@@ -3,7 +3,6 @@ use std::collections::BTreeSet;
 use anyhow::Result;
 use async_nats::jetstream::kv::{Operation, Store};
 use tracing::{debug, instrument, trace};
-use wadm_types::api::{ModelSummary, Status, StatusInfo, StatusType};
 
 use crate::model::StoredManifest;
 
@@ -100,10 +99,8 @@ impl ModelStorage {
         &self,
         account_id: Option<&str>,
         lattice_id: &str,
-    ) -> Result<Vec<ModelSummary>> {
+    ) -> Result<Vec<StoredManifest>> {
         debug!("Fetching list of models from storage");
-        const WAITING_STATUS: &str =
-            "Waiting for status: Application retrieved from storage, waiting for status";
         let futs = self
             .get_model_set(account_id, lattice_id)
             .await?
@@ -111,29 +108,11 @@ impl ModelStorage {
             .0
             .into_iter()
             // We can't use filter map with futures, but we can use map and then flatten it below
-            .map(|model_name| {
-                async {
-                    let manifest = match self.get(account_id, lattice_id, &model_name).await {
-                        Ok(Some((manifest, _))) => manifest,
-                        Ok(None) => return None,
-                        Err(e) => return Some(Err(e)),
-                    };
-                    #[allow(deprecated)]
-                    Some(Ok(ModelSummary {
-                        name: model_name,
-                        version: manifest.current_version().to_owned(),
-                        description: manifest.get_current().description().map(|s| s.to_owned()),
-                        deployed_version: manifest.get_deployed().map(|m| m.version().to_owned()),
-                        // Since we are just fetching the manifest from the store, we need to wait
-                        // for the lattice to be observed & a reconcile pass to occur, so we
-                        // officially start in a waiting state
-                        detailed_status: Status::new(
-                            StatusInfo::waiting(WAITING_STATUS),
-                            Vec::with_capacity(0),
-                        ),
-                        status: StatusType::Undeployed,
-                        status_message: Some(WAITING_STATUS.to_string()),
-                    }))
+            .map(|model_name| async move {
+                match self.get(account_id, lattice_id, &model_name).await {
+                    Ok(Some((manifest, _))) => Some(Ok(manifest)),
+                    Ok(None) => None,
+                    Err(e) => Some(Err(e)),
                 }
             });
 
@@ -142,7 +121,7 @@ impl ModelStorage {
             .await
             .into_iter()
             .flatten()
-            .collect::<Result<Vec<ModelSummary>>>()
+            .collect::<Result<Vec<StoredManifest>>>()
     }
 
     /// Deletes the given model from storage. This also removes the model from the list of all

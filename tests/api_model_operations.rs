@@ -78,7 +78,7 @@ impl TestServer {
 }
 
 async fn setup_server(id: &str, client: async_nats::Client) -> TestServer {
-    let store = helpers::create_test_store_with_client(&id, client.clone()).await;
+    let store = helpers::create_test_store_with_client(id, client.clone()).await;
 
     let context = jetstream::new(client.clone());
     let status_stream = context
