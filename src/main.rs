@@ -124,11 +124,11 @@ struct Args {
     state_bucket: String,
 
     /// The amount of time in seconds to give for hosts to fail to heartbeat and be removed from the
-    /// store. By default, this is 60s because it is 2x the host heartbeat interval
+    /// store. By default, this is 70s because it is 2x the host heartbeat interval plus a little padding
     #[arg(
         long = "cleanup-interval",
         env = "WADM_CLEANUP_INTERVAL",
-        default_value = "60"
+        default_value = "70"
     )]
     cleanup_interval: u64,
 
