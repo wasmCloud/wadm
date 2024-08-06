@@ -389,11 +389,13 @@ where
     /// Does everything except sending the notification
     #[instrument(level = "debug", skip(self), fields(lattice_id = %self.lattice_id))]
     async fn remove_scalers_internal(&self, name: &str) -> Option<Result<ScalerList>> {
-        // Always refresh data before removing
+        // Remove the scalers first to avoid them handling events while we're cleaning up
+        let scalers = self.remove_raw_scalers(name).await?;
+
+        // Always refresh data before cleaning up
         if let Err(e) = self.refresh_data().await {
             return Some(Err(e));
         }
-        let scalers = self.remove_raw_scalers(name).await?;
         let commands = match futures::future::join_all(
             scalers.iter().map(|scaler| scaler.cleanup()),
         )
