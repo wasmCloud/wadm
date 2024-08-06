@@ -71,7 +71,8 @@ interface types {
         undeployed,
         reconciling,
         deployed,
-        failed
+        failed,
+        waiting,
     }
 
     enum deploy-result {
