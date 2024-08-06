@@ -12,7 +12,7 @@ use wadm_types::{api::StatusInfo, TraitProperty};
 
 use crate::{
     commands::Command,
-    events::{Event, ProviderStartFailed, ProviderStarted},
+    events::{ComponentScaleFailed, ComponentScaled, Event, ProviderStartFailed, ProviderStarted},
     publisher::Publisher,
     workers::{get_commands_and_result, ConfigSource, SecretSource},
 };
@@ -86,19 +86,21 @@ pub trait Scaler {
     async fn cleanup(&self) -> Result<Vec<Command>>;
 }
 
-/// The BackoffAwareScaler is a wrapper around a scaler that is responsible for
-/// ensuring that a particular [Scaler] has the proper prerequisites in place
-/// and should be able to reconcile and issue commands.
+/// The BackoffScaler is a wrapper around a scaler that is responsible for
+/// ensuring that a particular scaler doesn't get overwhelmed with events and has the
+/// necessary prerequisites to reconcile.
 ///
-/// 1. With the introduction of configuration for wadm applications, the most necessary
-/// prerequisite for components, providers and links to start is that their
-/// configuration is available. Scalers will not be able to issue commands until
-/// the configuration exists.
-/// 2. For scalers that issue commands that take a long time to complete, like downloading
-/// an image for a provider, the BackoffAwareScaler will ensure that the scaler is not
-/// overwhelmed with events and will back off until the expected events have been received.
-/// 3. In the future (#253) this wrapper should also be responsible for exponential backoff
-/// when a scaler is repeatedly issuing the same commands to prevent thrashing.
+/// 1. `required_config` & `required_secrets`: With the introduction of configuration
+/// for wadm applications, the most necessary prerequisite for components, providers
+/// and links to start is that their configuration is available. Scalers will not be
+/// able to issue commands until the configuration exists.
+/// 2. `expected_events`: For scalers that issue commands that should result in events,
+/// the BackoffScaler is responsible for ensuring that the scaler doesn't continually
+/// issue commands that it's already expecting events for. Commonly this will allow a host
+/// to download larger images from an OCI repository without being bombarded with repeat requests.
+/// 3. `backoff_status`: If a scaler receives an event that it was expecting, but it was a failure
+/// event, the scaler should back off exponentially while reporting that failure status. This both
+/// allows for diagnosing issues with reconciliation and prevents thrashing.
 ///
 /// All of the above effectively allows the inner Scaler to only worry about the logic around
 /// reconciling and handling events, rather than be concerned about whether or not
@@ -107,7 +109,7 @@ pub trait Scaler {
 /// The `notifier` is used to publish notifications to add, remove, or recompute
 /// expected events with scalers on other wadm instances, as only one wadm instance
 /// at a time will handle a specific event.
-pub(crate) struct BackoffAwareScaler<T, P, C> {
+pub(crate) struct BackoffScaler<T, P, C> {
     scaler: T,
     notifier: P,
     notify_subject: String,
@@ -121,15 +123,21 @@ pub(crate) struct BackoffAwareScaler<T, P, C> {
     event_cleaner: Mutex<Option<JoinHandle<()>>>,
     /// The amount of time to wait before cleaning up the expected events list
     cleanup_timeout: std::time::Duration,
+    /// The status of the backoff scaler, set when the scaler is backing off due to a
+    /// failure event.
+    backoff_status: Arc<RwLock<Option<StatusInfo>>>,
+    // TODO(#253): Figure out where/when/how to store the backoff and exponentially repeat it
+    /// Responsible for cleaning up the backoff status after a specified duration
+    status_cleaner: Mutex<Option<JoinHandle<()>>>,
 }
 
-impl<T, P, C> BackoffAwareScaler<T, P, C>
+impl<T, P, C> BackoffScaler<T, P, C>
 where
     T: Scaler + Send + Sync,
     P: Publisher + Send + Sync + 'static,
     C: ConfigSource + SecretSource + Send + Sync + Clone + 'static,
 {
-    /// Wraps the given scaler in a new backoff aware scaler. `cleanup_timeout` can be set to a
+    /// Wraps the given scaler in a new backoff scaler. `cleanup_timeout` can be set to a
     /// desired waiting time, otherwise it will default to 30s
     pub fn new(
         scaler: T,
@@ -150,6 +158,8 @@ where
             expected_events: Arc::new(RwLock::new(Vec::new())),
             event_cleaner: Mutex::new(None),
             cleanup_timeout: cleanup_timeout.unwrap_or(DEFAULT_WAIT_TIMEOUT),
+            backoff_status: Arc::new(RwLock::new(None)),
+            status_cleaner: Mutex::new(None),
         }
     }
 
@@ -171,25 +181,32 @@ where
             expected_events.clear();
         }
         expected_events.extend(events);
-        self.set_timed_cleanup().await;
+        self.set_timed_event_cleanup().await;
     }
 
     /// Removes an event pair from the expected events list if one matches the given event
-    /// Returns true if the event was removed, false otherwise
-    async fn remove_event(&self, event: &Event) -> Result<bool> {
+    /// Returns a tuple of bools, the first indicating if the event was removed, and the second
+    /// indicating if the event was the failure event
+    async fn remove_event(&self, event: &Event) -> Result<(bool, bool)> {
         let mut expected_events = self.expected_events.write().await;
         let before_count = expected_events.len();
+
+        let mut failed_event = false;
+
         expected_events.retain(|(success, fail)| {
-            // Retain the event if it doesn't match either the success or optional failure event.
-            // Most events have a possibility of seeing a failure and either one means we saw the
-            // event we were expecting
-            !evt_matches_expected(success, event)
-                && !fail
-                    .as_ref()
-                    .map(|f| evt_matches_expected(f, event))
-                    .unwrap_or(false)
+            let matches_success = evt_matches_expected(success, event);
+            let matches_failure = fail
+                .as_ref()
+                .map_or(false, |f| evt_matches_expected(f, event));
+
+            // Update failed_event if the event matches the failure event
+            failed_event |= matches_failure;
+
+            // Retain the event if it doesn't match either the success or failure event
+            !(matches_success || matches_failure)
         });
-        Ok(expected_events.len() != before_count)
+
+        Ok((expected_events.len() < before_count, failed_event))
     }
 
     /// Handles an incoming event for the given scaler.
@@ -211,8 +228,24 @@ where
     #[instrument(level = "trace", skip_all, fields(scaler_id = %self.id()))]
     async fn handle_event_internal(&self, event: &Event) -> anyhow::Result<Vec<Command>> {
         let model_name = &self.model_name;
-        let commands: Vec<Command> = if self.remove_event(event).await? {
-            trace!("Scaler received event that it was expecting");
+        let (expected_event, failed_event) = self.remove_event(event).await?;
+        let commands: Vec<Command> = if expected_event {
+            // So here, if we receive a failed event that it was "expecting"
+            // Then we know that the scaler status is essentially failed and should retry
+            // So we should tell the other scalers to remove the event, AND other scalers
+            // in the process of removing that event will know that it failed.
+            trace!(failed_event, "Scaler received event that it was expecting");
+            if failed_event {
+                let failed_message = match event {
+                    Event::ProviderStartFailed(evt) => &evt.error,
+                    Event::ComponentScaleFailed(evt) => &evt.error,
+                    _ => &format!("Received a failed event of type '{}'", event.raw_type()),
+                };
+                *self.backoff_status.write().await = Some(StatusInfo::failed(failed_message));
+                // TODO(#253): Here we could refer to a stored previous duration and increase it
+                self.set_timed_status_cleanup(std::time::Duration::from_secs(5))
+                    .await;
+            }
             let data = serde_json::to_vec(&Notifications::RemoveExpectedEvent {
                 name: model_name.to_owned(),
                 scaler_id: self.scaler.id().to_owned(),
@@ -228,6 +261,9 @@ where
             trace!("Scaler received event but is still expecting events, ignoring");
             // If a scaler is expecting events still, don't have it handle events. This is effectively
             // the backoff mechanism within wadm
+            Vec::with_capacity(0)
+        } else if self.backoff_status.read().await.is_some() {
+            trace!("Scaler received event but is in backoff, ignoring");
             Vec::with_capacity(0)
         } else {
             trace!("Scaler is not backing off, checking configuration");
@@ -272,9 +308,7 @@ where
 
             // Based on the commands, compute the events that we expect to see for this scaler. The scaler
             // will then ignore incoming events until all of the expected events have been received.
-            let expected_events = commands
-                .iter()
-                .filter_map(|cmd| cmd.corresponding_event(model_name));
+            let expected_events = commands.iter().filter_map(|cmd| cmd.corresponding_event());
 
             self.add_events(expected_events, false).await;
 
@@ -302,7 +336,11 @@ where
         // If we're already in backoff, return an empty list
         let current_event_count = self.event_count().await;
         if current_event_count > 0 {
-            trace!(%current_event_count, "Scaler is backing off, not reconciling");
+            trace!(%current_event_count, "Scaler is awaiting an event, not reconciling");
+            return Ok(Vec::with_capacity(0));
+        }
+        if self.backoff_status.read().await.is_some() {
+            tracing::info!(%current_event_count, "Scaler is backing off, not reconciling");
             return Ok(Vec::with_capacity(0));
         }
 
@@ -332,7 +370,7 @@ where
                 self.add_events(
                     commands
                         .iter()
-                        .filter_map(|command| command.corresponding_event(&self.model_name)),
+                        .filter_map(|command| command.corresponding_event()),
                     true,
                 )
                 .await;
@@ -388,7 +426,7 @@ where
     }
 
     /// Sets a timed cleanup task to clear the expected events list after a timeout
-    async fn set_timed_cleanup(&self) {
+    async fn set_timed_event_cleanup(&self) {
         let mut event_cleaner = self.event_cleaner.lock().await;
         // Clear any existing handle
         if let Some(handle) = event_cleaner.take() {
@@ -406,12 +444,30 @@ where
             .instrument(tracing::trace_span!("event_cleaner", scaler_id = %self.id())),
         ));
     }
+
+    /// Sets a timed cleanup task to clear the expected events list after a timeout
+    async fn set_timed_status_cleanup(&self, timeout: Duration) {
+        let mut status_cleaner = self.status_cleaner.lock().await;
+        // Clear any existing handle
+        if let Some(handle) = status_cleaner.take() {
+            handle.abort();
+        }
+        let backoff_status = self.backoff_status.clone();
+
+        *status_cleaner = Some(tokio::spawn(
+            async move {
+                tokio::time::sleep(timeout).await;
+                trace!("Reached status cleanup timeout, clearing backoff status");
+                backoff_status.write().await.take();
+            }
+            .instrument(tracing::trace_span!("status_cleaner", scaler_id = %self.id())),
+        ));
+    }
 }
 
 #[async_trait]
-/// The [Scaler](Scaler) trait implementation for the [BackoffAwareScaler](BackoffAwareScaler)
-/// is mostly a simple wrapper, with two exceptions, which allow scalers to sync expected
-/// events between different wadm instances.
+/// The [`Scaler`] trait implementation for the [`BackoffScaler`] is mostly a simple wrapper,
+/// with three exceptions, which allow scalers to sync state between different wadm instances.
 ///
 /// * `handle_event` calls an internal method that uses a notifier to publish notifications to
 ///   all Scalers, even running on different wadm instances, to handle that event. The resulting
@@ -419,7 +475,9 @@ where
 /// * `reconcile` calls an internal method that uses a notifier to ensure all Scalers, even
 ///   running on different wadm instances, compute their expected events in response to the
 ///   reconciliation commands in order to "back off".
-impl<T, P, C> Scaler for BackoffAwareScaler<T, P, C>
+/// * `status` will first check to see if the scaler is in a backing off state, and if so, return
+///   the backoff status. Otherwise, it will return the status of the scaler.
+impl<T, P, C> Scaler for BackoffScaler<T, P, C>
 where
     T: Scaler + Send + Sync,
     P: Publisher + Send + Sync + 'static,
@@ -440,7 +498,12 @@ where
     }
 
     async fn status(&self) -> StatusInfo {
-        self.scaler.status().await
+        // If the scaler has a backoff status, return that, otherwise return the status of the scaler
+        if let Some(status) = self.backoff_status.read().await.clone() {
+            status
+        } else {
+            self.scaler.status().await
+        }
     }
 
     async fn update_config(&mut self, config: TraitProperty) -> Result<Vec<Command>> {
