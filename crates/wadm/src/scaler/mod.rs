@@ -488,15 +488,49 @@ fn evt_matches_expected(incoming: &Event, expected: &Event) -> bool {
         (
             Event::ProviderStartFailed(ProviderStartFailed {
                 provider_id: p1,
+                provider_ref: i1,
                 host_id: h1,
                 ..
             }),
             Event::ProviderStartFailed(ProviderStartFailed {
                 provider_id: p2,
+                provider_ref: i2,
                 host_id: h2,
                 ..
             }),
-        ) => p1 == p2 && h1 == h2,
+        ) => p1 == p2 && h1 == h2 && i1 == i2,
+        (
+            Event::ComponentScaled(ComponentScaled {
+                annotations: a1,
+                image_ref: i1,
+                component_id: c1,
+                host_id: h1,
+                ..
+            }),
+            Event::ComponentScaled(ComponentScaled {
+                annotations: a2,
+                image_ref: i2,
+                component_id: c2,
+                host_id: h2,
+                ..
+            }),
+        ) => a1 == a2 && i1 == i2 && c1 == c2 && h1 == h2,
+        (
+            Event::ComponentScaleFailed(ComponentScaleFailed {
+                annotations: a1,
+                image_ref: i1,
+                component_id: c1,
+                host_id: h1,
+                ..
+            }),
+            Event::ComponentScaleFailed(ComponentScaleFailed {
+                annotations: a2,
+                image_ref: i2,
+                component_id: c2,
+                host_id: h2,
+                ..
+            }),
+        ) => a1 == a2 && i1 == i2 && c1 == c2 && h1 == h2,
         _ => false,
     }
 }

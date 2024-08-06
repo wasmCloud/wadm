@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use wasmcloud_control_interface::InterfaceLinkDefinition;
 
 use crate::{
-    events::{Event, ProviderStartFailed, ProviderStarted},
+    events::{ComponentScaleFailed, ComponentScaled, Event, ProviderStartFailed, ProviderStarted},
     workers::insert_managed_annotations,
 };
 
@@ -44,13 +44,14 @@ impl Command {
     /// # Return
     /// - The first element in the tuple corresponds to the "success" event a host would output after completing this command
     /// - The second element in the tuple corresponds to an optional "failure" event that a host could output if processing fails
-    pub fn corresponding_event(&self, model_name: &str) -> Option<(Event, Option<Event>)> {
+    pub fn corresponding_event(&self) -> Option<(Event, Option<Event>)> {
         match self {
             Command::StartProvider(StartProvider {
                 annotations,
                 reference,
                 host_id,
                 provider_id,
+                model_name,
                 ..
             }) => {
                 let mut annotations = annotations.to_owned();
@@ -69,6 +70,39 @@ impl Command {
                         host_id: host_id.to_owned(),
                         // We don't know this field from the command
                         error: String::with_capacity(0),
+                    })),
+                ))
+            }
+            Command::ScaleComponent(ScaleComponent {
+                component_id,
+                host_id,
+                count,
+                reference,
+                annotations,
+                model_name,
+                ..
+            }) => {
+                let mut annotations = annotations.to_owned();
+                insert_managed_annotations(&mut annotations, model_name);
+                Some((
+                    Event::ComponentScaled(ComponentScaled {
+                        component_id: component_id.to_owned(),
+                        host_id: host_id.to_owned(),
+                        max_instances: *count as usize,
+                        image_ref: reference.to_owned(),
+                        annotations: annotations.to_owned(),
+                        // We don't know this field from the command
+                        claims: None,
+                    }),
+                    Some(Event::ComponentScaleFailed(ComponentScaleFailed {
+                        component_id: component_id.to_owned(),
+                        host_id: host_id.to_owned(),
+                        max_instances: *count as usize,
+                        image_ref: reference.to_owned(),
+                        annotations: annotations.to_owned(),
+                        // We don't know these fields from the command
+                        error: String::with_capacity(0),
+                        claims: None,
                     })),
                 ))
             }
