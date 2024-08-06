@@ -183,7 +183,9 @@ where
             .list(multitenant_prefix, lattice_id)
             .await?
             .into_iter()
-            .map(|summary| manifest_store.get(multitenant_prefix, lattice_id, summary.name));
+            .map(|summary| {
+                manifest_store.get(multitenant_prefix, lattice_id, summary.name().to_owned())
+            });
         let all_manifests = futures::future::join_all(futs)
             .await
             .into_iter()

@@ -4,14 +4,15 @@ use anyhow::anyhow;
 use async_nats::{jetstream::stream::Stream, Client, Message, Subject};
 use base64::{engine::general_purpose::STANDARD as B64decoder, Engine};
 use serde_json::json;
-use tracing::{debug, error, instrument, log::warn, trace};
+use tracing::{debug, error, instrument, trace};
+use wadm_types::api::{ModelSummary, StatusInfo};
 use wadm_types::validation::{is_valid_manifest_name, validate_manifest_version, ValidationOutput};
 use wadm_types::{
     api::{
         DeleteModelRequest, DeleteModelResponse, DeleteResult, DeployModelRequest,
         DeployModelResponse, DeployResult, GetModelRequest, GetModelResponse, GetResult,
-        PutModelResponse, PutResult, Status, StatusResponse, StatusResult, StatusType,
-        UndeployModelRequest, VersionInfo, VersionResponse,
+        PutModelResponse, PutResult, Status, StatusResponse, StatusResult, UndeployModelRequest,
+        VersionInfo, VersionResponse,
     },
     CapabilityProperties, Manifest, Properties,
 };
@@ -237,7 +238,7 @@ impl<P: Publisher> Handler<P> {
 
     #[instrument(level = "debug", skip(self, msg))]
     pub async fn list_models(&self, msg: Message, account_id: Option<&str>, lattice_id: &str) {
-        let mut data = match self.store.list(account_id, lattice_id).await {
+        let stored_manifests = match self.store.list(account_id, lattice_id).await {
             Ok(d) => d,
             Err(e) => {
                 error!(error = %e, "Unable to fetch data");
@@ -247,23 +248,19 @@ impl<P: Publisher> Handler<P> {
             }
         };
 
-        for model in &mut data {
-            // TODO: we want to disregard the status if the lattice isn't being observed yet... how?
-            // Need some form of query to check if the lattice is being observed
-            #[allow(deprecated)]
-            if let Some(status) = self.get_manifest_status(lattice_id, &model.name).await {
-                status.info.status_type.clone_into(&mut model.status);
-                model.status_message = Some(status.info.message.to_owned());
-                model.detailed_status = status;
-            } else {
-                warn!("Could not fetch status for application, setting to waiting");
-                model.status = StatusType::Waiting;
-                model.status_message = Some(
-                    "Waiting for status: Lattice contains no hosts, deployment not started."
-                        .to_string(),
-                );
-            }
-        }
+        let application_summaries = stored_manifests.into_iter().map(|manifest| async {
+            let status = self
+                .get_manifest_status(lattice_id, manifest.name())
+                .await
+                .unwrap_or_else(|| {
+                    Status::new(StatusInfo::waiting(
+                "Waiting for status: Lattice contains no hosts, deployment not started.",
+            ), vec![])
+                });
+            summary_from_manifest_status(manifest, status)
+        });
+
+        let data: Vec<ModelSummary> = futures::future::join_all(application_summaries).await;
 
         // NOTE: We _just_ deserialized this from the store above and then manually constructed it,
         // so we should be just fine. Just in case though, we unwrap to default
@@ -566,10 +563,10 @@ impl<P: Publisher> Handler<P> {
         let mut existing_ids: HashMap<String, String> = HashMap::new();
         for model_summary in stored_models.iter() {
             // Excluding models that do not have a deployed version at present
-            if model_summary.deployed_version.is_some() {
+            if model_summary.deployed_version().is_some() {
                 let (stored_manifest, _) = match self
                     .store
-                    .get(account_id, lattice_id, &model_summary.name)
+                    .get(account_id, lattice_id, &model_summary.name())
                     .await
                 {
                     Ok(Some(m)) => m,
@@ -900,6 +897,20 @@ impl<P: Publisher> Handler<P> {
             // Application status doesn't exist or is invalid, assuming undeployed
             _ => None,
         }
+    }
+}
+
+/// Helper function to create a [`ModelSummary`] from a [`StoredManifest`] and [`Status`]
+fn summary_from_manifest_status(manifest: StoredManifest, status: Status) -> ModelSummary {
+    #[allow(deprecated)]
+    ModelSummary {
+        name: manifest.name().to_owned(),
+        version: manifest.current_version().to_owned(),
+        description: manifest.get_current().description().map(|s| s.to_owned()),
+        deployed_version: manifest.get_deployed().map(|m| m.version().to_owned()),
+        status: status.info.status_type,
+        status_message: Some(status.info.message.to_owned()),
+        detailed_status: status,
     }
 }
 
