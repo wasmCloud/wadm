@@ -5,7 +5,7 @@ use async_nats::{jetstream::stream::Stream, Client, Message, Subject};
 use base64::{engine::general_purpose::STANDARD as B64decoder, Engine};
 use serde_json::json;
 use tracing::{debug, error, instrument, trace};
-use wadm_types::api::{ModelSummary, StatusInfo};
+use wadm_types::api::{ModelSummary, StatusInfo, StatusType};
 use wadm_types::validation::{is_valid_manifest_name, validate_manifest_version, ValidationOutput};
 use wadm_types::{
     api::{
@@ -902,13 +902,20 @@ impl<P: Publisher> Handler<P> {
 
 /// Helper function to create a [`ModelSummary`] from a [`StoredManifest`] and [`Status`]
 fn summary_from_manifest_status(manifest: StoredManifest, status: Status) -> ModelSummary {
+    // TODO: Remove in 0.14.0. This is to ensure that older clients that don't
+    // understand the `Waiting` status type can still deserialize the ModelSummary
+    let status_type = if status.info.status_type == StatusType::Waiting {
+        StatusType::Undeployed
+    } else {
+        status.info.status_type
+    };
     #[allow(deprecated)]
     ModelSummary {
         name: manifest.name().to_owned(),
         version: manifest.current_version().to_owned(),
         description: manifest.get_current().description().map(|s| s.to_owned()),
         deployed_version: manifest.get_deployed().map(|m| m.version().to_owned()),
-        status: status.info.status_type,
+        status: status_type,
         status_message: Some(status.info.message.to_owned()),
         detailed_status: status,
     }
