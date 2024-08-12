@@ -5,7 +5,7 @@ metadata:
   labels:
     {{- include "wadm.labels" . | nindent 4 }}
 spec:
-  replicas: {{ .Values.replicaCount }}
+  replicas: {{ .Values.replicas }}
   selector:
     matchLabels:
       {{- include "wadm.selectorLabels" . | nindent 6 }}
