@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "Manifest",
-  "description": "An OAM manifest",
+  "title": "wasmCloud Application Deployment Manager (wadm) Manifest",
+  "description": "Manifest file based on the Open Application Model (OAM) specification for declaratively managing wasmCloud applications",
   "type": "object",
   "required": ["apiVersion", "kind", "metadata", "spec"],
   "properties": {
