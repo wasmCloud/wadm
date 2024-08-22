@@ -307,6 +307,11 @@ impl Trait {
         self.trait_type == LINK_TRAIT
     }
 
+    /// Check if a trait is a scaler
+    pub fn is_scaler(&self) -> bool {
+        self.trait_type == SPREADSCALER_TRAIT || self.trait_type == DAEMONSCALER_TRAIT
+    }
+
     /// Helper that creates a new spreadscaler type trait with the given properties
     pub fn new_spreadscaler(props: SpreadScalerProperty) -> Trait {
         Trait {
@@ -348,11 +353,11 @@ impl From<SpreadScalerProperty> for TraitProperty {
     }
 }
 
-impl From<serde_json::Value> for TraitProperty {
-    fn from(value: serde_json::Value) -> Self {
-        Self::Custom(value)
-    }
-}
+// impl From<serde_json::Value> for TraitProperty {
+//     fn from(value: serde_json::Value) -> Self {
+//         Self::Custom(value)
+//     }
+// }
 
 /// Properties for the config list associated with components, providers, and links
 ///

@@ -335,6 +335,7 @@ pub async fn validate_manifest(manifest: &Manifest) -> Result<Vec<ValidationFail
     failures.extend(check_misnamed_interfaces(manifest));
     failures.extend(check_dangling_links(manifest));
     failures.extend(validate_policies(manifest));
+    failures.extend(ensure_no_custom_traits(manifest));
     Ok(failures)
 }
 
@@ -458,6 +459,32 @@ fn check_misnamed_interfaces(manifest: &Manifest) -> Vec<ValidationFailure> {
         }
     }
 
+    failures
+}
+
+/// This validation rule should eventually be removed, but at this time (as of wadm 0.14.0)
+/// custom traits are not supported. We technically deserialize the custom trait, but 99%
+/// of the time this is just a poorly formatted spread or link scaler which is incredibly
+/// frustrating to debug.
+fn ensure_no_custom_traits(manifest: &Manifest) -> Vec<ValidationFailure> {
+    let mut failures = Vec::new();
+    for component in manifest.components() {
+        if let Some(traits) = &component.traits {
+            for trait_item in traits {
+                match &trait_item.properties {
+                    TraitProperty::Custom(trt) if trait_item.is_link() => failures.push(ValidationFailure::new(
+                        ValidationFailureLevel::Error,
+                        format!("Link trait deserialized as custom trait, ensure fields are correct: {}", trt),
+                    )),
+                    TraitProperty::Custom(trt) if trait_item.is_scaler() => failures.push(ValidationFailure::new(
+                        ValidationFailureLevel::Error,
+                        format!("Scaler trait deserialized as custom trait, ensure fields are correct: {}", trt),
+                    )),
+                    _ => (),
+                }
+            }
+        }
+    }
     failures
 }
 
