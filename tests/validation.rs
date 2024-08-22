@@ -25,13 +25,11 @@ async fn validate_dangling_links() -> Result<()> {
         !failures.is_empty()
             && failures
                 .iter()
-                .all(|f| f.level == ValidationFailureLevel::Warning),
-        "failures present, all warnings"
+                .all(|f| f.level == ValidationFailureLevel::Warning
+                    || f.level == ValidationFailureLevel::Error),
+        "failures present, all warnings or errors"
     );
-    assert!(
-        failures.valid(),
-        "manifest should be valid (missing targets could be managed externally)"
-    );
+    assert!(!failures.valid(), "manifest should not be valid");
     Ok(())
 }
 

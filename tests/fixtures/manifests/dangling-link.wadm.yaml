@@ -18,7 +18,8 @@ spec:
             instances: 1
         - type: link
           properties:
+            namespace: wasi
+            package: http
+            interfaces: [outgoing-handler]
             target:
-              name: httpserver
-            values:
-              address: 0.0.0.0:8080
+              name: httpclient
