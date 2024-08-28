@@ -23,6 +23,14 @@ pub struct GetModelResponse {
     pub manifest: Option<Manifest>,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ListModelsResponse {
+    pub result: GetResult,
+    #[serde(default)]
+    pub message: String,
+    pub models: Vec<ModelSummary>,
+}
+
 /// Possible outcomes of a get request
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]

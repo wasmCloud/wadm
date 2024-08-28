@@ -183,8 +183,8 @@ async fn test_crud_operations() {
     );
 
     // Now check that the data returned is correct
-    let resp: Vec<ModelSummary> = test_server
-        .get_response("default.model.list", Vec::new(), None)
+    let ListModelsResponse { models: resp, .. } = test_server
+        .get_response("default.model.get", Vec::new(), None)
         .await;
 
     assert_eq!(resp.len(), 2, "Should have two models in storage");
@@ -230,8 +230,8 @@ async fn test_crud_operations() {
     assert_put_response(resp, PutResult::NewVersion, "v0.0.3", 3);
 
     // Make sure we still only have 2 manifests
-    let resp: Vec<ModelSummary> = test_server
-        .get_response("default.model.list", Vec::new(), None)
+    let ListModelsResponse { models: resp, .. } = test_server
+        .get_response("default.model.get", Vec::new(), None)
         .await;
 
     assert_eq!(resp.len(), 2, "Should still have two models in storage");
