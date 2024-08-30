@@ -237,11 +237,11 @@ where
             trace!(failed_event, "Scaler received event that it was expecting");
             if failed_event {
                 let failed_message = match event {
-                    Event::ProviderStartFailed(evt) => &evt.error,
-                    Event::ComponentScaleFailed(evt) => &evt.error,
-                    _ => &format!("Received a failed event of type '{}'", event.raw_type()),
+                    Event::ProviderStartFailed(evt) => evt.error.clone(),
+                    Event::ComponentScaleFailed(evt) => evt.error.clone(),
+                    _ => format!("Received a failed event of type '{}'", event.raw_type()),
                 };
-                *self.backoff_status.write().await = Some(StatusInfo::failed(failed_message));
+                *self.backoff_status.write().await = Some(StatusInfo::failed(&failed_message));
                 // TODO(#253): Here we could refer to a stored previous duration and increase it
                 self.set_timed_status_cleanup(std::time::Duration::from_secs(5))
                     .await;

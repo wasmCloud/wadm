@@ -11,8 +11,8 @@ use wadm_types::{
     api::{
         DeleteModelRequest, DeleteModelResponse, DeleteResult, DeployModelRequest,
         DeployModelResponse, DeployResult, GetModelRequest, GetModelResponse, GetResult,
-        PutModelResponse, PutResult, Status, StatusResponse, StatusResult, UndeployModelRequest,
-        VersionInfo, VersionResponse,
+        ListModelsResponse, PutModelResponse, PutResult, Status, StatusResponse, StatusResult,
+        UndeployModelRequest, VersionInfo, VersionResponse,
     },
     CapabilityProperties, Manifest, Properties,
 };
@@ -260,11 +260,17 @@ impl<P: Publisher> Handler<P> {
             summary_from_manifest_status(manifest, status)
         });
 
-        let data: Vec<ModelSummary> = futures::future::join_all(application_summaries).await;
+        let models: Vec<ModelSummary> = futures::future::join_all(application_summaries).await;
+
+        let reply = ListModelsResponse {
+            result: GetResult::Success,
+            message: "Successfully fetched list of applications".to_string(),
+            models,
+        };
 
         // NOTE: We _just_ deserialized this from the store above and then manually constructed it,
         // so we should be just fine. Just in case though, we unwrap to default
-        self.send_reply(msg.reply, serde_json::to_vec(&data).unwrap_or_default())
+        self.send_reply(msg.reply, serde_json::to_vec(&reply).unwrap_or_default())
             .await
     }
 
