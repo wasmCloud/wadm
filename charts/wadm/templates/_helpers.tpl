@@ -51,25 +51,25 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{- define "wadm.nats.auth" -}}
-{{- if  .Values.wadm.config.nats.creds.secretName -}}
+{{- if  .Values.config.wadm.nats.creds.secretName -}}
 - name: WADM_NATS_CREDS_FILE
   value: {{ include "wadm.nats.creds_file_path" . | quote }}
-{{- else if and .Values.wadm.config.nats.creds.jwt .Values.wadm.config.nats.creds.seed -}}
+{{- else if and .Values.config.wadm.nats.creds.jwt .Values.config.wadm.nats.creds.seed -}}
 - name: WADM_NATS_NKEY
-  value: {{ .Values.wadm.config.nats.creds.seed | quote }}
+  value: {{ .Values.config.wadm.nats.creds.seed | quote }}
 - name: WADM_NATS_JWT
-  value: {{ .Values.wadm.config.nats.creds.jwt | quote }}
+  value: {{ .Values.config.wadm.nats.creds.jwt | quote }}
 {{- end }}
 {{- end }}
 
 {{- define "wadm.nats.creds_file_path" }}
-{{- if .Values.wadm.config.nats.creds.secretName -}}
+{{- if .Values.config.wadm.nats.creds.secretName -}}
 /etc/nats-creds/nats.creds
 {{- end }}
 {{- end }}
 
 {{- define "wadm.nats.creds_volume_mount" -}}
-{{- if .Values.wadm.config.nats.creds.secretName -}}
+{{- if .Values.config.wadm.nats.creds.secretName -}}
 volumeMounts:
 - name: nats-creds-secret-volume
   mountPath: "/etc/nats-creds"
@@ -78,7 +78,7 @@ volumeMounts:
 {{- end }}
 
 {{- define "wadm.nats.creds_volume" -}}
-{{- with .Values.wadm.config.nats.creds -}}
+{{- with .Values.config.wadm.nats.creds -}}
 {{- if .secretName -}}
 volumes:
 - name: nats-creds-secret-volume
