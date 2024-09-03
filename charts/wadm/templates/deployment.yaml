@@ -31,63 +31,63 @@ spec:
         - name: {{ .Chart.Name }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
-          image: "{{ .Values.wadm.image.repository }}:{{ .Values.wadm.image.tag | default .Chart.AppVersion }}"
-          imagePullPolicy: {{ .Values.wadm.image.pullPolicy }}
+          image: "{{ .Values.config.image.repository }}:{{ .Values.config.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.config.image.pullPolicy }}
           env:
             - name: WADM_NATS_SERVER
-              value: {{ .Values.wadm.config.nats.server | quote }}
+              value: {{ tpl .Values.config.wadm.nats.server . | quote }}
           {{- include "wadm.nats.auth" . | nindent 12 }}
-          {{- if .Values.wadm.config.nats.tlsCaFile }}
+          {{- if .Values.config.wadm.nats.tlsCaFile }}
             - name: WADM_NATS_TLS_CA_FILE
-              value: {{ .Values.wadm.config.nats.tlsCaFile | quote }}
+              value: {{ .Values.config.wadm.nats.tlsCaFile | quote }}
           {{- end }}
-          {{- if .Values.wadm.config.hostId }}
+          {{- if .Values.config.wadm.hostId }}
             - name: WADM_HOST_ID
-              value: {{ .Values.wadm.config.hostId | quote }}
+              value: {{ .Values.config.wadm.hostId | quote }}
           {{- end }}
-          {{- if .Values.wadm.config.structuredLogging }}
+          {{- if .Values.config.wadm.structuredLogging }}
             - name: WADM_STRUCTURED_LOGGING
-              value: {{ .Values.wadm.config.structuredLogging | quote }}
+              value: {{ .Values.config.wadm.structuredLogging | quote }}
           {{- end }}
-          {{- if .Values.wadm.config.tracing }}
+          {{- if .Values.config.wadm.tracing }}
             - name: WADM_TRACING_ENABLED
-              value: {{ .Values.wadm.config.tracing | quote }}
+              value: {{ .Values.config.wadm.tracing | quote }}
           {{- end }}
-          {{- if .Values.wadm.config.tracingEndpoint }}
+          {{- if .Values.config.wadm.tracingEndpoint }}
             - name: WADM_TRACING_ENDPOINT
-              value: {{ .Values.wadm.config.tracingEndpoint | quote }}
+              value: {{ .Values.config.wadm.tracingEndpoint | quote }}
           {{- end }}
-          {{- if .Values.wadm.config.jetstreamDomain }}
+          {{- if .Values.config.wadm.jetstreamDomain }}
             - name: WADM_JETSTREAM_DOMAIN
-              value: {{ .Values.wadm.config.jetstreamDomain | quote }}
+              value: {{ .Values.config.wadm.jetstreamDomain | quote }}
           {{- end }}
-          {{- if .Values.wadm.config.maxJobs }}
+          {{- if .Values.config.wadm.maxJobs }}
             - name: WADM_MAX_JOBS
-              value: {{ .Values.wadm.config.maxJobs }}
+              value: {{ .Values.config.wadm.maxJobs }}
           {{- end }}
-          {{- if .Values.wadm.config.stateBucket }}
+          {{- if .Values.config.wadm.stateBucket }}
             - name: WADM_STATE_BUCKET_NAME
-              value: {{ .Values.wadm.config.stateBucket | quote }}
+              value: {{ .Values.config.wadm.stateBucket | quote }}
           {{- end }}
-          {{- if .Values.wadm.config.manifestBucket }}
+          {{- if .Values.config.wadm.manifestBucket }}
             - name: WADM_MANIFEST_BUCKET_NAME
-              value: {{ .Values.wadm.config.manifestBucket | quote }}
+              value: {{ .Values.config.wadm.manifestBucket | quote }}
           {{- end }}
-          {{- if .Values.wadm.config.cleanupInterval }}
+          {{- if .Values.config.wadm.cleanupInterval }}
             - name: WADM_CLEANUP_INTERVAL
-              value: {{ .Values.wadm.config.cleanupInterval }}
+              value: {{ .Values.config.wadm.cleanupInterval }}
           {{- end }}
-          {{- if .Values.wadm.config.apiPrefix }}
+          {{- if .Values.config.wadm.apiPrefix }}
             - name: WADM_API_PREFIX
-              value: {{ .Values.wadm.config.apiPrefix }}
+              value: {{ .Values.config.wadm.apiPrefix }}
           {{- end }}
-          {{- if .Values.wadm.config.streamPrefix }}
+          {{- if .Values.config.wadm.streamPrefix }}
             - name: WADM_STREAM_PREFIX
-              value: {{ .Values.wadm.config.streamPrefix }}
+              value: {{ .Values.config.wadm.streamPrefix }}
           {{- end }}
-          {{- if .Values.wadm.config.multitenant }}
+          {{- if .Values.config.wadm.multitenant }}
             - name: WADM_MULTITENANT
-              value: {{ .Values.wadm.config.multitenant | quote }}
+              value: {{ .Values.config.wadm.multitenant | quote }}
           {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
