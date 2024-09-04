@@ -44,7 +44,7 @@ wadm-types = { workspace = true }
 
 [workspace.dependencies]
 anyhow = "1"
-async-nats = "0.33"
+async-nats = "0.36"
 async-trait = "0.1"
 base64 = "0.22.1"
 bytes = "1"
@@ -83,7 +83,8 @@ uuid = "1"
 wadm = { version = "0.14.0", path = "./crates/wadm" }
 wadm-client = { version = "0.3.0", path = "./crates/wadm-client" }
 wadm-types = { version = "0.3.0", path = "./crates/wadm-types" }
-wasmcloud-control-interface = "1.0.0"
+# wasmcloud-control-interface = "1.0.0"
+wasmcloud-control-interface = { version = "1.0.0", git = "https://github.com/wasmcloud/wasmcloud", branch = "feat/upgrade-async-nats" }
 wasmcloud-secrets-types = "0.2.0"
 wit-bindgen-wrpc = { version = "0.3.7", default-features = false }
 
