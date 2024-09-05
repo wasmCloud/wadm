@@ -10,7 +10,6 @@ use async_nats::{
     jetstream::{self, stream::Stream},
     Client,
 };
-use base64::{engine::general_purpose::STANDARD as B64decoder, Engine};
 use futures::Future;
 use tokio::{
     process::{Child, Command},
@@ -469,12 +468,9 @@ pub async fn get_manifest_status_info(
     match stream
         .get_last_raw_message_by_subject(&format!("wadm.status.{lattice_id}.{name}",))
         .await
-        .map(|raw| {
-            B64decoder
-                .decode(raw.payload)
-                .map(|b| serde_json::from_slice::<Status>(&b))
-        }) {
-        Ok(Ok(Ok(status))) => Some(status.info),
+        .map(|raw| serde_json::from_slice::<Status>(&raw.payload))
+    {
+        Ok(Ok(status)) => Some(status.info),
         // Model status doesn't exist or is invalid, assuming undeployed
         _ => None,
     }

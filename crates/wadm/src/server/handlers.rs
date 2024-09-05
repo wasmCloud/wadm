@@ -2,7 +2,6 @@ use std::collections::HashMap;
 
 use anyhow::anyhow;
 use async_nats::{jetstream::stream::Stream, Client, Message, Subject};
-use base64::{engine::general_purpose::STANDARD as B64decoder, Engine};
 use serde_json::json;
 use tracing::{debug, error, instrument, trace};
 use wadm_types::api::{ModelSummary, StatusInfo, StatusType};
@@ -894,12 +893,9 @@ impl<P: Publisher> Handler<P> {
             .status_stream
             .get_last_raw_message_by_subject(&format!("wadm.status.{lattice_id}.{name}",))
             .await
-            .map(|raw| {
-                B64decoder
-                    .decode(raw.payload)
-                    .map(|b| serde_json::from_slice::<Status>(&b))
-            }) {
-            Ok(Ok(Ok(status))) => Some(status),
+            .map(|raw| serde_json::from_slice::<Status>(&raw.payload))
+        {
+            Ok(Ok(status)) => Some(status),
             // Application status doesn't exist or is invalid, assuming undeployed
             _ => None,
         }
