@@ -46,7 +46,6 @@ wadm-types = { workspace = true }
 anyhow = "1"
 async-nats = "0.36"
 async-trait = "0.1"
-base64 = "0.22.1"
 bytes = "1"
 chrono = "0.4"
 clap = { version = "4", features = ["derive", "cargo", "env"] }
@@ -89,7 +88,6 @@ wasmcloud-secrets-types = "0.2.0"
 wit-bindgen-wrpc = { version = "0.3.7", default-features = false }
 
 [dev-dependencies]
-base64 = { workspace = true }
 chrono = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
