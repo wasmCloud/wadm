@@ -60,7 +60,12 @@ fn get_known_interface_lookup() -> &'static KnownInterfaceLookup {
                     ("config".into(), HashMap::from([("runtime".into(), ())])),
                     (
                         "keyvalue".into(),
-                        HashMap::from([("atomics".into(), ()), ("store".into(), ())]),
+                        HashMap::from([
+                            ("atomics".into(), ()),
+                            ("store".into(), ()),
+                            ("batch".into(), ()),
+                            ("watch".into(), ()),
+                        ]),
                     ),
                     (
                         "http".into(),

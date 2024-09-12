@@ -65,7 +65,7 @@ impl From<Policy> for wadm::types::Policy {
     fn from(policy: Policy) -> Self {
         wadm::types::Policy {
             name: policy.name,
-            properties: policy.properties.into_iter().map(|p| p.into()).collect(),
+            properties: policy.properties.into_iter().collect(),
             type_: policy.policy_type,
         }
     }
@@ -368,7 +368,7 @@ impl From<wadm::types::Policy> for Policy {
     fn from(policy: wadm::types::Policy) -> Self {
         Policy {
             name: policy.name,
-            properties: policy.properties.into_iter().map(|p| p.into()).collect(),
+            properties: policy.properties.into_iter().collect(),
             policy_type: policy.type_,
         }
     }
