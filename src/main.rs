@@ -161,6 +161,75 @@ struct Args {
     /// account. See the deployment guide for more information
     #[arg(long = "multitenant", env = "WADM_MULTITENANT", hide = true)]
     multitenant: bool,
+
+    //
+    // Max bytes configuration for streams. Primarily configurable to enable deployment on NATS infra
+    // with limited resources.
+    //
+    /// Maximum bytes to keep for the state bucket
+    #[arg(
+        long = "state-bucket-max-bytes",
+        env = "WADM_STATE_BUCKET_MAX_BYTES",
+        default_value_t = -1,
+        hide = true
+    )]
+    max_state_bucket_bytes: i64,
+    /// Maximum bytes to keep for the manifest bucket
+    #[arg(
+        long = "manifest-bucket-max-bytes",
+        env = "WADM_MANIFEST_BUCKET_MAX_BYTES",
+        default_value_t = -1,
+        hide = true
+    )]
+    max_manifest_bucket_bytes: i64,
+    /// Maximum bytes to keep for the command stream
+    #[arg(
+        long = "command-stream-max-bytes",
+        env = "WADM_COMMAND_STREAM_MAX_BYTES",
+        default_value_t = -1,
+        hide = true
+    )]
+    max_command_stream_bytes: i64,
+    /// Maximum bytes to keep for the event stream
+    #[arg(
+        long = "event-stream-max-bytes",
+        env = "WADM_EVENT_STREAM_MAX_BYTES",
+        default_value_t = -1,
+        hide = true
+    )]
+    max_event_stream_bytes: i64,
+    /// Maximum bytes to keep for the event consumer stream
+    #[arg(
+        long = "event-consumer-stream-max-bytes",
+        env = "WADM_EVENT_CONSUMER_STREAM_MAX_BYTES",
+        default_value_t = -1,
+        hide = true
+    )]
+    max_event_consumer_stream_bytes: i64,
+    /// Maximum bytes to keep for the status stream
+    #[arg(
+        long = "status-stream-max-bytes",
+        env = "WADM_STATUS_STREAM_MAX_BYTES",
+        default_value_t = -1,
+        hide = true
+    )]
+    max_status_stream_bytes: i64,
+    /// Maximum bytes to keep for the notify stream
+    #[arg(
+        long = "notify-stream-max-bytes",
+        env = "WADM_NOTIFY_STREAM_MAX_BYTES",
+        default_value_t = -1,
+        hide = true
+    )]
+    max_notify_stream_bytes: i64,
+    /// Maximum bytes to keep for the wasmbus event stream
+    #[arg(
+        long = "wasmbus-event-stream-max-bytes",
+        env = "WADM_WASMBUS_EVENT_STREAM_MAX_BYTES",
+        default_value_t = -1,
+        hide = true
+    )]
+    max_wasmbus_event_stream_bytes: i64,
 }
 
 #[tokio::main]
@@ -189,11 +258,18 @@ async fn main() -> anyhow::Result<()> {
 
     let trimmer: &[_] = &['.', '>', '*'];
 
-    let store = nats::ensure_kv_bucket(&context, args.state_bucket, 1).await?;
+    let store =
+        nats::ensure_kv_bucket(&context, args.state_bucket, 1, args.max_state_bucket_bytes).await?;
 
     let state_storage = NatsKvStore::new(store);
 
-    let manifest_storage = nats::ensure_kv_bucket(&context, args.manifest_bucket, 1).await?;
+    let manifest_storage = nats::ensure_kv_bucket(
+        &context,
+        args.manifest_bucket,
+        1,
+        args.max_manifest_bucket_bytes,
+    )
+    .await?;
 
     let internal_stream_name = |stream_name: &str| -> String {
         match args.stream_prefix.clone() {
@@ -218,6 +294,7 @@ async fn main() -> anyhow::Result<()> {
             "A stream that stores all events coming in on the wadm.evt subject in a cluster"
                 .to_string(),
         ),
+        args.max_event_stream_bytes,
     )
     .await?;
 
@@ -228,6 +305,7 @@ async fn main() -> anyhow::Result<()> {
         internal_stream_name(COMMAND_STREAM_NAME),
         vec![DEFAULT_COMMANDS_TOPIC.to_owned()],
         Some("A stream that stores all commands for wadm".to_string()),
+        args.max_command_stream_bytes,
     )
     .await?;
 
@@ -235,6 +313,7 @@ async fn main() -> anyhow::Result<()> {
         &context,
         internal_stream_name(STATUS_STREAM_NAME),
         vec![DEFAULT_STATUS_TOPIC.to_owned()],
+        args.max_status_stream_bytes,
     )
     .await?;
 
@@ -263,6 +342,7 @@ async fn main() -> anyhow::Result<()> {
             "A stream that stores all events coming in on the wasmbus.evt subject in a cluster"
                 .to_string(),
         ),
+        args.max_wasmbus_event_stream_bytes,
     )
     .await?;
 
@@ -272,6 +352,7 @@ async fn main() -> anyhow::Result<()> {
         &context,
         NOTIFY_STREAM_NAME.to_owned(),
         vec![format!("{WADM_NOTIFY_PREFIX}.*")],
+        args.max_notify_stream_bytes,
     )
     .await?;
 
@@ -286,6 +367,7 @@ async fn main() -> anyhow::Result<()> {
             "A stream that sources from wadm_events and wasmbus_events for wadm event consumer's use"
                 .to_string(),
         ),
+        args.max_event_consumer_stream_bytes,
     )
     .await?;
 

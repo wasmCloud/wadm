@@ -11,7 +11,7 @@ use async_nats::{
     Client, ConnectOptions,
 };
 
-use tracing::warn;
+use tracing::{debug, warn};
 use wadm::DEFAULT_EXPIRY_TIME;
 
 /// Creates a NATS client from the given options
@@ -120,7 +120,9 @@ pub async fn ensure_stream(
     name: String,
     subjects: Vec<String>,
     description: Option<String>,
+    max_bytes: i64,
 ) -> Result<Stream> {
+    debug!("Ensuring stream {name} exists");
     let stream_config = StreamConfig {
         name: name.clone(),
         description,
@@ -130,6 +132,7 @@ pub async fn ensure_stream(
         max_age: DEFAULT_EXPIRY_TIME,
         storage: async_nats::jetstream::stream::StorageType::File,
         allow_rollup: false,
+        max_bytes,
         ..Default::default()
     };
 
@@ -157,7 +160,9 @@ pub async fn ensure_limits_stream(
     name: String,
     subjects: Vec<String>,
     description: Option<String>,
+    max_bytes: i64,
 ) -> Result<Stream> {
+    debug!("Ensuring stream {name} exists");
     let stream_config = StreamConfig {
         name: name.clone(),
         description,
@@ -167,6 +172,7 @@ pub async fn ensure_limits_stream(
         max_age: DEFAULT_EXPIRY_TIME,
         storage: async_nats::jetstream::stream::StorageType::File,
         allow_rollup: false,
+        max_bytes,
         ..Default::default()
     };
 
@@ -195,7 +201,9 @@ pub async fn ensure_event_consumer_stream(
     subject: String,
     streams: Vec<&Stream>,
     description: Option<String>,
+    max_bytes: i64,
 ) -> Result<Stream> {
+    debug!("Ensuring stream {name} exists");
     // This maps the upstream (wasmbus.evt.*.> & wadm.evt.*.>) Streams into
     // a set of configuration for the downstream wadm event consumer Stream
     // that consolidates them into a single set of subjects (wadm_event_consumer.evt.*.>)
@@ -236,6 +244,7 @@ pub async fn ensure_event_consumer_stream(
         sources: Some(sources),
         storage: async_nats::jetstream::stream::StorageType::File,
         allow_rollup: false,
+        max_bytes,
         ..Default::default()
     };
 
@@ -258,7 +267,9 @@ pub async fn ensure_status_stream(
     context: &Context,
     name: String,
     subjects: Vec<String>,
+    max_bytes: i64,
 ) -> Result<Stream> {
+    debug!("Ensuring stream {name} exists");
     context
         .get_or_create_stream(StreamConfig {
             name,
@@ -272,6 +283,7 @@ pub async fn ensure_status_stream(
             subjects,
             max_age: std::time::Duration::from_nanos(0),
             storage: async_nats::jetstream::stream::StorageType::File,
+            max_bytes,
             ..Default::default()
         })
         .await
@@ -283,7 +295,9 @@ pub async fn ensure_notify_stream(
     context: &Context,
     name: String,
     subjects: Vec<String>,
+    max_bytes: i64,
 ) -> Result<Stream> {
+    debug!("Ensuring stream {name} exists");
     context
         .get_or_create_stream(StreamConfig {
             name,
@@ -293,6 +307,7 @@ pub async fn ensure_notify_stream(
             subjects,
             max_age: DEFAULT_EXPIRY_TIME,
             storage: async_nats::jetstream::stream::StorageType::File,
+            max_bytes,
             ..Default::default()
         })
         .await
@@ -305,7 +320,9 @@ pub async fn ensure_kv_bucket(
     context: &Context,
     name: String,
     history_to_keep: i64,
+    max_bytes: i64,
 ) -> Result<Store> {
+    debug!("Ensuring kv bucket {name} exists");
     if let Ok(kv) = context.get_key_value(&name).await {
         Ok(kv)
     } else {
@@ -315,6 +332,7 @@ pub async fn ensure_kv_bucket(
                 history: history_to_keep,
                 num_replicas: 1,
                 storage: jetstream::stream::StorageType::File,
+                max_bytes,
                 ..Default::default()
             })
             .await
