@@ -14,7 +14,7 @@ wadm:
     hostId: ""
     logLevel: ""
     nats:
-      server: "127.0.0.1:4222"
+      server: ""
       jetstreamDomain: ""
       tlsCaFile: ""
       creds:
