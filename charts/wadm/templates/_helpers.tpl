@@ -50,6 +50,15 @@ app.kubernetes.io/name: {{ include "wadm.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
+{{- define "wadm.nats.server" -}}
+- name: WADM_NATS_SERVER
+{{- if .Values.wadm.config.nats.server }}
+  value: {{ .Values.wadm.config.nats.server | quote }}
+{{- else }}
+  value: nats-headless.{{ .Release.Namespace }}.svc.cluster.local
+{{- end }}
+{{- end }}
+
 {{- define "wadm.nats.auth" -}}
 {{- if  .Values.wadm.config.nats.creds.secretName -}}
 - name: WADM_NATS_CREDS_FILE

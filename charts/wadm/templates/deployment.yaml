@@ -34,8 +34,7 @@ spec:
           image: "{{ .Values.wadm.image.repository }}:{{ .Values.wadm.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.wadm.image.pullPolicy }}
           env:
-            - name: WADM_NATS_SERVER
-              value: {{ .Values.wadm.config.nats.server | quote }}
+          {{- include "wadm.nats.server" . | nindent 12 }}
           {{- include "wadm.nats.auth" . | nindent 12 }}
           {{- if .Values.wadm.config.nats.tlsCaFile }}
             - name: WADM_NATS_TLS_CA_FILE
