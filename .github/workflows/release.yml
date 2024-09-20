@@ -24,30 +24,35 @@ jobs:
         config:
           - {
               runnerOs: 'ubuntu-latest',
+              buildCommand: 'cargo zigbuild',
               target: 'x86_64-unknown-linux-musl',
               uploadArtifactSuffix: 'linux-amd64',
               buildOutputPath: 'target/x86_64-unknown-linux-musl/release/wadm',
             }
           - {
               runnerOs: 'ubuntu-latest',
+              buildCommand: 'cargo zigbuild',
               target: 'aarch64-unknown-linux-musl',
               uploadArtifactSuffix: 'linux-aarch64',
               buildOutputPath: 'target/aarch64-unknown-linux-musl/release/wadm',
             }
           - {
               runnerOs: 'macos-14',
+              buildCommand: 'cargo zigbuild',
               target: 'x86_64-apple-darwin',
               uploadArtifactSuffix: 'macos-amd64',
               buildOutputPath: 'target/x86_64-apple-darwin/release/wadm',
             }
           - {
               runnerOs: 'macos-14',
+              buildCommand: 'cargo zigbuild',
               target: 'aarch64-apple-darwin',
               uploadArtifactSuffix: 'macos-aarch64',
               buildOutputPath: 'target/aarch64-apple-darwin/release/wadm',
             }
           - {
               runnerOs: 'windows-latest',
+              buildCommand: 'cargo build',
               target: 'x86_64-pc-windows-msvc',
               uploadArtifactSuffix: 'windows-amd64',
               buildOutputPath: 'target/x86_64-pc-windows-msvc/release/wadm.exe',
@@ -86,7 +91,7 @@ jobs:
 
       - name: Build wadm
         run: |
-          cargo zigbuild --release --bin wadm --target ${{ matrix.config.target }}
+          ${{ matrix.config.buildCommand }} --release --bin wadm --target ${{ matrix.config.target }}
 
       - uses: actions/upload-artifact@v4
         with:
