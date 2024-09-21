@@ -108,18 +108,18 @@ jobs:
     env:
       RELEASE_VERSION: ${{ needs.build.outputs.version_output }}
     steps:
-      - name: download release assets
+      - name: Download release assets
         uses: actions/download-artifact@v4
-      - name: Generate Checksums
+
+      - name: Prepare release
         run: |
           for dir in */; do
-            cd "$dir" || continue 
-            sum=$(sha256sum * | awk '{ print $1 }')
-            echo "$dir:$sum" >> checksums-${{ env.RELEASE_VERSION }}.txt
-            cd ..
+            test -d "$dir" || continue
+            tarball="${dir%/}.tar.gz"
+            tar -czvf "${tarball}" "$dir"
+            sha256sum "${tarball}" >> SHA256SUMS
           done
-      - name: Package Binaries
-        run: for dir in */; do tar -czvf "${dir%/}.tar.gz" "$dir"; done
+
       - name: Create github release
         uses: softprops/action-gh-release@v2
         with:
@@ -127,7 +127,7 @@ jobs:
           prerelease: false
           draft: false
           files: |
-            checksums-${{ env.RELEASE_VERSION }}.txt
+            SHA256SUMS
             wadm-${{ env.RELEASE_VERSION }}-linux-aarch64.tar.gz
             wadm-${{ env.RELEASE_VERSION }}-linux-amd64.tar.gz
             wadm-${{ env.RELEASE_VERSION }}-macos-aarch64.tar.gz
@@ -189,10 +189,18 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: ./artifacts
-          merge-multiple: true
-      - run: |
-          chmod +x ./artifacts/wadm-${{ env.RELEASE_VERSION }}-linux-aarch64
-          chmod +x ./artifacts/wadm-${{ env.RELEASE_VERSION }}-linux-amd64
+          pattern: '*linux*'
+
+      - name: Prepare container artifacts
+        working-directory: ./artifacts
+        run: |
+          for dir in */; do
+            name="${dir%/}"
+            mv "${name}/wadm" wadm
+            chmod +x wadm
+            rmdir "${name}"
+            mv wadm "${name}"
+          done
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
