@@ -1543,7 +1543,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4979f22fdb869068da03c9f7528f8297c6fd2606bc3a4affe42e6a823fdb8da4"
 dependencies = [
  "cfg-if",
- "windows-targets 0.48.5",
+ "windows-targets 0.52.5",
 ]
 
 [[package]]
@@ -1662,9 +1662,9 @@ dependencies = [
 
 [[package]]
 name = "nkeys"
-version = "0.4.3"
+version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2de02c883c178998da8d0c9816a88ef7ef5c58314dd1585c97a4a5679f3ab337"
+checksum = "9f49e787f4c61cbd0f9320b31cc26e58719f6aa5068e34697dd3aea361412fe3"
 dependencies = [
  "crypto_box",
  "data-encoding",
@@ -3578,7 +3578,7 @@ dependencies = [
  "indexmap 2.5.0",
  "jsonschema",
  "lazy_static",
- "nkeys 0.4.3",
+ "nkeys 0.4.4",
  "rand",
  "regex",
  "semver",
@@ -3609,7 +3609,7 @@ dependencies = [
  "chrono",
  "clap",
  "futures",
- "nkeys 0.4.3",
+ "nkeys 0.4.4",
  "opentelemetry 0.17.0",
  "opentelemetry-otlp",
  "schemars",
@@ -3637,7 +3637,7 @@ dependencies = [
  "async-nats",
  "bytes",
  "futures",
- "nkeys 0.4.3",
+ "nkeys 0.4.4",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -3662,7 +3662,7 @@ dependencies = [
  "indexmap 2.5.0",
  "jsonschema",
  "lazy_static",
- "nkeys 0.4.3",
+ "nkeys 0.4.4",
  "rand",
  "regex",
  "schemars",
@@ -3719,7 +3719,7 @@ checksum = "6d394c2c59661bff13bea8bd7c8bf30618bafa671ef9f408ae9c3aa71ede5bb0"
 dependencies = [
  "data-encoding",
  "humantime",
- "nkeys 0.4.3",
+ "nkeys 0.4.4",
  "nuid 0.4.1",
  "ring",
  "serde",
@@ -3902,7 +3902,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "bytes",
- "nkeys 0.4.3",
+ "nkeys 0.4.4",
  "serde",
  "serde_json",
  "thiserror",
