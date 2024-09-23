@@ -120,7 +120,9 @@ impl<P: Publisher> Server<P> {
                     object_name: None,
                 } => {
                     warn!("Received deprecated subject: model.list. Please use model.get instead");
-                    self.handler.list_models(msg, account_id, lattice_id).await
+                    self.handler
+                        .list_models_deprecated(msg, account_id, lattice_id)
+                        .await
                 }
                 ParsedSubject {
                     account_id,
