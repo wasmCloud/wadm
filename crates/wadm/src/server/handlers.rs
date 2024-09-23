@@ -94,6 +94,62 @@ impl<P: Publisher> Handler<P> {
             return;
         }
 
+        let all_manifests: Vec<Manifest> = self
+            .store
+            .list(account_id, lattice_id)
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|manifest| manifest.get_current().shared())
+            // TODO: Do we need to just get deployed here? I assume that would be a warning if not deployed
+            .map(|manifest| manifest.get_current().clone())
+            .collect();
+
+        // TODO: We are also going to have to ensure that links don't clobber other links. Specifically
+        // this relates to the uniqueness properties of a source/target/interface/etc for a link.
+
+        // Ensure that all shared components are present in other (deployed?) manifests that are
+        // marked as shared applications
+        let mut shared_components = manifest
+            .components()
+            // Find all shared components
+            .filter_map(|c| match &c.properties {
+                Properties::Capability {
+                    properties:
+                        CapabilityProperties {
+                            image: None,
+                            application: Some(manifest_properties),
+                            ..
+                        },
+                } => Some(manifest_properties),
+                Properties::Component {
+                    properties:
+                        ComponentProperties {
+                            image: None,
+                            application: Some(manifest_properties),
+                            ..
+                        },
+                } => Some(manifest_properties),
+                _ => None,
+            });
+
+        // Ensure all shared components point to a component that is deployed in another manifest
+        // TODO: would be better to find matching bad shared components
+        if !shared_components.all(|properties| {
+            // TODO: ensure that the type of the property is preserved, e.g. component -> component
+            // TODO: ensure that the manifest is deployed
+            all_manifests.iter().any(|m| {
+                m.metadata.name == properties.name
+                    && m.components().any(|c| c.name == properties.component)
+            })
+        }) {
+            self.send_error(msg.reply, "shared component not found".to_string())
+                .await;
+            return;
+        }
+        // Explicitly drop to let the compiler know we're done with the manifest borrow
+        drop(shared_components);
+
         let incoming_version = manifest.version().to_owned();
         if !current_manifests.add_version(manifest) {
             self.send_error(

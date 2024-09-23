@@ -18,10 +18,12 @@ use crate::{
 };
 
 pub mod configscaler;
+mod convert;
 pub mod daemonscaler;
 pub mod manager;
 pub mod secretscaler;
 pub mod spreadscaler;
+pub mod statusscaler;
 
 use manager::Notifications;
 
