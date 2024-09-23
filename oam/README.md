@@ -18,7 +18,7 @@ The following is a list of the `traits` wasmCloud has added via customization to
 
 ## JSON Schema
 
-A JSON schema is automatically generated from our Rust structures and is at the root of the repository: [oam.schema.json](../oam.schema.json).
+A JSON schema is automatically generated from our Rust structures and is at the root of the repository: [oam.schema.json](../oam.schema.json). You can regenerate the `oam.schema.json` file by running `cargo run --bin wadm-schema`.
 
 ## Example Application YAML
 

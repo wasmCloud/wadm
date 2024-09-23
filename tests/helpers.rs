@@ -21,8 +21,9 @@ use wadm::consumers::{CommandConsumer, ScopedMessage};
 pub const DEFAULT_NATS_PORT: u16 = 4222;
 pub const HELLO_IMAGE_REF: &str = "ghcr.io/wasmcloud/components/http-hello-world-rust:0.1.0";
 pub const HELLO_COMPONENT_ID: &str = "http_hello_world";
-pub const HTTP_SERVER_IMAGE_REF: &str = "ghcr.io/wasmcloud/http-server:0.21.0";
+pub const HTTP_SERVER_IMAGE_REF: &str = "ghcr.io/wasmcloud/http-server:0.23.0";
 pub const HTTP_SERVER_COMPONENT_ID: &str = "http_server";
+pub const HTTP_CLIENT_IMAGE_REF: &str = "ghcr.io/wasmcloud/http-client:0.12.0";
 
 /// Get a TCP random port
 fn get_random_tcp_port() -> u16 {
