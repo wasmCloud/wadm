@@ -236,6 +236,45 @@ impl<P: Publisher> Handler<P> {
             .await
     }
 
+    // NOTE: This is the same as list_models but responds with just the list of models instead of using
+    // the new wrapper type. This can be removed in 0.15.0 once clients all query the new subject
+    #[instrument(level = "debug", skip(self, msg))]
+    pub(crate) async fn list_models_deprecated(
+        &self,
+        msg: Message,
+        account_id: Option<&str>,
+        lattice_id: &str,
+    ) {
+        let stored_manifests = match self.store.list(account_id, lattice_id).await {
+            Ok(d) => d,
+            Err(e) => {
+                error!(error = %e, "Unable to fetch data");
+                self.send_error(msg.reply, "Internal storage error".to_string())
+                    .await;
+                return;
+            }
+        };
+
+        let application_summaries = stored_manifests.into_iter().map(|manifest| async {
+            let status = self
+                .get_manifest_status(lattice_id, manifest.name())
+                .await
+                .unwrap_or_else(|| {
+                    Status::new(StatusInfo::waiting(
+                "Waiting for status: Lattice contains no hosts, deployment not started.",
+            ), vec![])
+                });
+            summary_from_manifest_status(manifest, status)
+        });
+
+        let models: Vec<ModelSummary> = futures::future::join_all(application_summaries).await;
+
+        // NOTE: We _just_ deserialized this from the store above and then manually constructed it,
+        // so we should be just fine. Just in case though, we unwrap to default
+        self.send_reply(msg.reply, serde_json::to_vec(&models).unwrap_or_default())
+            .await
+    }
+
     #[instrument(level = "debug", skip(self, msg))]
     pub async fn list_models(&self, msg: Message, account_id: Option<&str>, lattice_id: &str) {
         let stored_manifests = match self.store.list(account_id, lattice_id).await {
