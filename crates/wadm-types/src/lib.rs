@@ -24,6 +24,8 @@ pub const VERSION_ANNOTATION_KEY: &str = "version";
 /// The description key, as predefined by the [OAM
 /// spec](https://github.com/oam-dev/spec/blob/master/metadata.md#annotations-format)
 pub const DESCRIPTION_ANNOTATION_KEY: &str = "description";
+/// The annotation key for shared applications
+pub const SHARED_ANNOTATION_KEY: &str = "wasmcloud.dev/shared";
 /// The identifier for the builtin spreadscaler trait type
 pub const SPREADSCALER_TRAIT: &str = "spreadscaler";
 /// The identifier for the builtin daemonscaler trait type
@@ -34,7 +36,7 @@ pub const LINK_TRAIT: &str = "link";
 /// for a manifest
 pub const LATEST_VERSION: &str = "latest";
 
-/// An OAM manifest
+/// Manifest file based on the Open Application Model (OAM) specification for declaratively managing wasmCloud applications
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, utoipa::ToSchema, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Manifest {
@@ -65,6 +67,14 @@ impl Manifest {
             .annotations
             .get(DESCRIPTION_ANNOTATION_KEY)
             .map(|v| v.as_str())
+    }
+
+    /// Indicates if the manifest is shared, meaning it can be used by multiple applications
+    pub fn shared(&self) -> bool {
+        self.metadata
+            .annotations
+            .get(SHARED_ANNOTATION_KEY)
+            .is_some_and(|v| v.parse::<bool>().unwrap_or(false))
     }
 
     /// Returns the components in the manifest
@@ -154,8 +164,8 @@ pub struct Policy {
 
 /// A component definition
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, JsonSchema)]
-// TODO: for some reason this works fine for capapilities but not components
-//#[serde(deny_unknown_fields)]
+// TODO: figure out why this can't be uncommented
+// #[serde(deny_unknown_fields)]
 pub struct Component {
     /// The name of this component
     pub name: String,
@@ -214,8 +224,14 @@ pub enum Properties {
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ComponentProperties {
-    /// The image reference to use
-    pub image: String,
+    /// The image reference to use. Required unless the component is a shared component
+    /// that is defined in another shared application.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image: Option<String>,
+    /// Information to locate a component within a shared application. Cannot be specified
+    /// if the image is specified.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub application: Option<SharedApplicationComponentProperties>,
     /// The component ID to use for this component. If not supplied, it will be generated
     /// as a combination of the [Metadata::name] and the image reference.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -266,8 +282,14 @@ pub struct SecretSourceProperty {
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CapabilityProperties {
-    /// The image reference to use
-    pub image: String,
+    /// The image reference to use. Required unless the component is a shared component
+    /// that is defined in another shared application.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image: Option<String>,
+    /// Information to locate a component within a shared application. Cannot be specified
+    /// if the image is specified.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub application: Option<SharedApplicationComponentProperties>,
     /// The component ID to use for this provider. If not supplied, it will be generated
     /// as a combination of the [Metadata::name] and the image reference.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -280,6 +302,14 @@ pub struct CapabilityProperties {
     /// these values at runtime using `wasmcloud:secrets/store`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub secrets: Vec<SecretProperty>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, JsonSchema)]
+pub struct SharedApplicationComponentProperties {
+    /// The name of the shared application
+    pub name: String,
+    /// The name of the component in the shared application
+    pub component: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, JsonSchema)]
@@ -688,7 +718,7 @@ mod test {
                     &component.properties,
                     Properties::Capability {
                         properties: CapabilityProperties { image, .. }
-                    } if image == "wasmcloud.azurecr.io/httpserver:0.13.1"
+                    } if image.clone().expect("image to be present") == "wasmcloud.azurecr.io/httpserver:0.13.1"
                 )
             })
             .expect("Should find capability component")
@@ -756,7 +786,8 @@ mod test {
             name: "userinfo".to_string(),
             properties: Properties::Component {
                 properties: ComponentProperties {
-                    image: "wasmcloud.azurecr.io/fake:1".to_string(),
+                    image: Some("wasmcloud.azurecr.io/fake:1".to_string()),
+                    application: None,
                     id: None,
                     config: vec![],
                     secrets: vec![],
@@ -769,7 +800,8 @@ mod test {
             name: "webcap".to_string(),
             properties: Properties::Capability {
                 properties: CapabilityProperties {
-                    image: "wasmcloud.azurecr.io/httpserver:0.13.1".to_string(),
+                    image: Some("wasmcloud.azurecr.io/httpserver:0.13.1".to_string()),
+                    application: None,
                     id: None,
                     config: vec![],
                     secrets: vec![],
@@ -797,7 +829,8 @@ mod test {
             name: "ledblinky".to_string(),
             properties: Properties::Capability {
                 properties: CapabilityProperties {
-                    image: "wasmcloud.azurecr.io/ledblinky:0.0.1".to_string(),
+                    image: Some("wasmcloud.azurecr.io/ledblinky:0.0.1".to_string()),
+                    application: None,
                     id: None,
                     config: vec![],
                     secrets: vec![],
