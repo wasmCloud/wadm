@@ -291,7 +291,7 @@ async fn test_upgrade(client_info: &ClientInfo) {
         )?;
         check_providers(
             &inventory,
-            "ghcr.io/wasmcloud/http-server:0.21.0",
+            "ghcr.io/wasmcloud/http-server:0.23.0",
             ExpectedCount::Exactly(1),
         )?;
         check_providers(
@@ -409,7 +409,7 @@ async fn test_upgrade(client_info: &ClientInfo) {
         )?;
         check_providers(
             &inventory,
-            "ghcr.io/wasmcloud/http-server:0.21.0",
+            "ghcr.io/wasmcloud/http-server:0.23.0",
             ExpectedCount::Exactly(1),
         )?;
         check_providers(
@@ -510,12 +510,12 @@ async fn test_upgrade(client_info: &ClientInfo) {
     //     let inventory = client_info.get_all_inventory("default").await?;
     //     check_providers(
     //         &inventory,
-    //         "ghcr.io/wasmcloud/http-server:0.21.0",
+    //         "ghcr.io/wasmcloud/http-server:0.23.0",
     //         ExpectedCount::Exactly(1),
     //     )?;
     //     check_providers(
     //         &inventory,
-    //         "ghcr.io/wasmcloud/http-server:0.21.0",
+    //         "ghcr.io/wasmcloud/http-server:0.23.0",
     //         ExpectedCount::Exactly(0),
     //     )?;
     //     Ok(())

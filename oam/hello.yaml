@@ -21,7 +21,7 @@ spec:
     - name: httpserver
       type: capability
       properties:
-        image: ghcr.io/wasmcloud/http-server:0.21.0
+        image: ghcr.io/wasmcloud/http-server:0.23.0
       traits:
         # Link the HTTP server and set it to listen on the local machine's port 8080
         - type: link
