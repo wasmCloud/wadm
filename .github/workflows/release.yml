@@ -217,6 +217,19 @@ jobs:
             BIN_AMD64=./artifacts/wadm-${{ env.RELEASE_VERSION }}-linux-amd64
           tags: ghcr.io/${{ env.OWNER }}/wadm:latest,ghcr.io/${{ env.OWNER }}/wadm:${{ env.RELEASE_VERSION }}
 
+      - name: Build and push wolfi (tag)
+        uses: docker/build-push-action@v6
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        with:
+          push: true
+          platforms: linux/amd64,linux/arm64
+          context: ./
+          file: ./Dockerfile.wolfi
+          build-args: |
+            BIN_ARM64=./artifacts/wadm-${{ env.RELEASE_VERSION }}-linux-aarch64
+            BIN_AMD64=./artifacts/wadm-${{ env.RELEASE_VERSION }}-linux-amd64
+          tags: ghcr.io/${{ env.OWNER }}/wadm:latest-wolfi,ghcr.io/${{ env.OWNER }}/wadm:${{ env.RELEASE_VERSION }}-wolfi
+
       - name: Build and push (main)
         uses: docker/build-push-action@v6
         if: ${{ github.ref == 'refs/heads/main' }}
@@ -228,3 +241,16 @@ jobs:
             BIN_ARM64=./artifacts/wadm-${{ env.RELEASE_VERSION }}-linux-aarch64
             BIN_AMD64=./artifacts/wadm-${{ env.RELEASE_VERSION }}-linux-amd64
           tags: ghcr.io/${{ env.OWNER }}/wadm:canary
+
+      - name: Build and push (main)
+        uses: docker/build-push-action@v6
+        if: ${{ github.ref == 'refs/heads/main' }}
+        with:
+          push: true
+          platforms: linux/amd64,linux/arm64
+          context: ./
+          file: ./Dockerfile.wolfi
+          build-args: |
+            BIN_ARM64=./artifacts/wadm-${{ env.RELEASE_VERSION }}-linux-aarch64
+            BIN_AMD64=./artifacts/wadm-${{ env.RELEASE_VERSION }}-linux-amd64
+          tags: ghcr.io/${{ env.OWNER }}/wadm:canary-wolfi
