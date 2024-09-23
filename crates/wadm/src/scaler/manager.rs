@@ -1,6 +1,6 @@
 //! A struct that manages creating and removing scalers for all manifests
 
-use std::{collections::HashMap, ops::Deref, sync::Arc, time::Duration};
+use std::{collections::HashMap, ops::Deref, sync::Arc};
 
 use anyhow::Result;
 use async_nats::jetstream::{
@@ -19,31 +19,18 @@ use tokio::{
 use tracing::{debug, error, instrument, trace, warn};
 use wadm_types::{
     api::{Status, StatusInfo},
-    CapabilityProperties, Component, ComponentProperties, ConfigProperty, Manifest, Policy,
-    Properties, SecretProperty, SpreadScalerProperty, Trait, TraitProperty, DAEMONSCALER_TRAIT,
-    LINK_TRAIT, SPREADSCALER_TRAIT,
+    Manifest,
 };
-use wasmcloud_secrets_types::SECRET_PREFIX;
 
 use crate::{
     events::Event,
     publisher::Publisher,
-    scaler::{spreadscaler::ComponentSpreadScaler, Command, Scaler},
+    scaler::{Command, Scaler},
     storage::{snapshot::SnapshotStore, ReadStore},
     workers::{CommandPublisher, ConfigSource, LinkSource, SecretSource, StatusPublisher},
-    DEFAULT_LINK_NAME,
 };
 
-use super::{
-    configscaler::ConfigScaler,
-    daemonscaler::{provider::ProviderDaemonScaler, ComponentDaemonScaler},
-    secretscaler::SecretScaler,
-    spreadscaler::{
-        link::{LinkScaler, LinkScalerConfig},
-        provider::{ProviderSpreadConfig, ProviderSpreadScaler},
-    },
-    BackoffWrapper,
-};
+use super::convert::manifest_components_to_scalers;
 
 pub type BoxedScaler = Box<dyn Scaler + Send + Sync + 'static>;
 pub type ScalerList = Vec<BoxedScaler>;
@@ -202,13 +189,13 @@ where
             .filter_map(|manifest| {
                 let data = manifest.get_deployed()?;
                 let name = manifest.name().to_owned();
-                let scalers = components_to_scalers(
+                let scalers = manifest_components_to_scalers(
                     &data.spec.components,
                     &data.policy_lookup(),
                     lattice_id,
-                    &client,
                     &name,
                     &subject,
+                    &client,
                     &snapshot_data,
                 );
                 Some((name, scalers))
@@ -293,13 +280,13 @@ where
     }
 
     pub fn scalers_for_manifest<'a>(&'a self, manifest: &'a Manifest) -> ScalerList {
-        components_to_scalers(
+        manifest_components_to_scalers(
             &manifest.spec.components,
             &manifest.policy_lookup(),
             &self.lattice_id,
-            &self.client,
             &manifest.metadata.name,
             &self.subject,
+            &self.client,
             &self.snapshot_data,
         )
     }
@@ -443,13 +430,13 @@ where
                             match notification {
                                 Notifications::CreateScalers(manifest) => {
                                     // We don't want to trigger the notification, so just create the scalers and then insert
-                                    let scalers = components_to_scalers(
+                                    let scalers = manifest_components_to_scalers(
                                         &manifest.spec.components,
                                         &manifest.policy_lookup(),
                                         &self.lattice_id,
-                                        &self.client,
                                         &manifest.metadata.name,
                                         &self.subject,
+                                        &self.client,
                                         &self.snapshot_data,
                                     );
                                     let num_scalers = scalers.len();
@@ -564,473 +551,5 @@ where
                 }
             }
         }
-    }
-}
-
-const EMPTY_TRAIT_VEC: Vec<Trait> = Vec::new();
-
-/// Converts a list of components into a list of scalers
-///
-/// # Arguments
-/// * `components` - The list of components to convert
-/// * `store` - The store to use when creating the scalers so they can access lattice state
-/// * `lattice_id` - The lattice id the scalers operate on
-/// * `name` - The name of the manifest that the scalers are being created for
-pub(crate) fn components_to_scalers<S, P, L>(
-    components: &[Component],
-    policies: &HashMap<&String, &Policy>,
-    lattice_id: &str,
-    notifier: &P,
-    name: &str,
-    notifier_subject: &str,
-    snapshot_data: &SnapshotStore<S, L>,
-) -> ScalerList
-where
-    S: ReadStore + Send + Sync + Clone + 'static,
-    P: Publisher + Clone + Send + Sync + 'static,
-    L: LinkSource + ConfigSource + SecretSource + Clone + Send + Sync + 'static,
-{
-    let mut scalers: ScalerList = Vec::new();
-    for component in components.iter() {
-        let traits = component.traits.as_ref();
-        match &component.properties {
-            Properties::Component { properties: props } => {
-                scalers.extend(traits.unwrap_or(&EMPTY_TRAIT_VEC).iter().filter_map(|trt| {
-                    let component_id =
-                        compute_component_id(name, props.id.as_ref(), &component.name);
-                    let (config_scalers, mut config_names) =
-                        config_to_scalers(snapshot_data.clone(), name, &props.config);
-                    let (secret_scalers, secret_names) =
-                        secrets_to_scalers(snapshot_data.clone(), name, &props.secrets, policies);
-
-                    config_names.append(&mut secret_names.clone());
-                    match (trt.trait_type.as_str(), &trt.properties) {
-                        (SPREADSCALER_TRAIT, TraitProperty::SpreadScaler(p)) => {
-                            Some(Box::new(BackoffWrapper::new(
-                                ComponentSpreadScaler::new(
-                                    snapshot_data.clone(),
-                                    props.image.to_owned(),
-                                    component_id,
-                                    lattice_id.to_owned(),
-                                    name.to_owned(),
-                                    p.to_owned(),
-                                    &component.name,
-                                    config_names,
-                                ),
-                                notifier.to_owned(),
-                                config_scalers,
-                                secret_scalers,
-                                notifier_subject,
-                                name,
-                                Some(Duration::from_secs(5)),
-                            )) as BoxedScaler)
-                        }
-                        (DAEMONSCALER_TRAIT, TraitProperty::SpreadScaler(p)) => {
-                            Some(Box::new(BackoffWrapper::new(
-                                ComponentDaemonScaler::new(
-                                    snapshot_data.clone(),
-                                    props.image.to_owned(),
-                                    component_id,
-                                    lattice_id.to_owned(),
-                                    name.to_owned(),
-                                    p.to_owned(),
-                                    &component.name,
-                                    config_names,
-                                ),
-                                notifier.to_owned(),
-                                config_scalers,
-                                secret_scalers,
-                                notifier_subject,
-                                name,
-                                Some(Duration::from_secs(5)),
-                            )) as BoxedScaler)
-                        }
-                        (LINK_TRAIT, TraitProperty::Link(p)) => {
-                            components.iter().find_map(|component| {
-                                let (mut config_scalers, mut source_config) = config_to_scalers(
-                                    snapshot_data.clone(),
-                                    name,
-                                    &p.source.as_ref().unwrap_or(&Default::default()).config,
-                                );
-                                let (target_config_scalers, mut target_config) = config_to_scalers(
-                                    snapshot_data.clone(),
-                                    name,
-                                    &p.target.config,
-                                );
-
-                                let (target_secret_scalers, target_secrets) = secrets_to_scalers(
-                                    snapshot_data.clone(),
-                                    name,
-                                    &p.target.secrets,
-                                    policies,
-                                );
-                                let (mut source_secret_scalers, source_secrets) =
-                                    secrets_to_scalers(
-                                        snapshot_data.clone(),
-                                        name,
-                                        &p.source.as_ref().unwrap_or(&Default::default()).secrets,
-                                        policies,
-                                    );
-                                config_scalers.extend(target_config_scalers);
-                                source_secret_scalers.extend(target_secret_scalers);
-                                target_config.extend(target_secrets);
-                                source_config.extend(source_secrets);
-                                match &component.properties {
-                                    Properties::Capability {
-                                        properties: CapabilityProperties { id, .. },
-                                    }
-                                    | Properties::Component {
-                                        properties: ComponentProperties { id, .. },
-                                    } if component.name == p.target.name => {
-                                        Some(Box::new(BackoffWrapper::new(
-                                            LinkScaler::new(
-                                                snapshot_data.clone(),
-                                                LinkScalerConfig {
-                                                    source_id: component_id.to_string(),
-                                                    target: compute_component_id(
-                                                        name,
-                                                        id.as_ref(),
-                                                        &component.name,
-                                                    ),
-                                                    wit_namespace: p.namespace.to_owned(),
-                                                    wit_package: p.package.to_owned(),
-                                                    wit_interfaces: p.interfaces.to_owned(),
-                                                    name: p.name.to_owned().unwrap_or_else(|| {
-                                                        DEFAULT_LINK_NAME.to_string()
-                                                    }),
-                                                    lattice_id: lattice_id.to_owned(),
-                                                    model_name: name.to_owned(),
-                                                    source_config,
-                                                    target_config,
-                                                },
-                                                snapshot_data.clone(),
-                                            ),
-                                            notifier.to_owned(),
-                                            config_scalers,
-                                            source_secret_scalers,
-                                            notifier_subject,
-                                            name,
-                                            Some(Duration::from_secs(5)),
-                                        ))
-                                            as BoxedScaler)
-                                    }
-                                    _ => None,
-                                }
-                            })
-                        }
-                        _ => None,
-                    }
-                }))
-            }
-            Properties::Capability { properties: props } => {
-                let provider_id = compute_component_id(name, props.id.as_ref(), &component.name);
-                let mut scaler_specified = false;
-                if let Some(traits) = traits {
-                    scalers.extend(traits.iter().filter_map(|trt| {
-                        match (trt.trait_type.as_str(), &trt.properties) {
-                            (SPREADSCALER_TRAIT, TraitProperty::SpreadScaler(p)) => {
-                                scaler_specified = true;
-                                let (config_scalers, mut config_names) =
-                                    config_to_scalers(snapshot_data.clone(), name, &props.config);
-                                let (secret_scalers, secret_names) = secrets_to_scalers(
-                                    snapshot_data.clone(),
-                                    name,
-                                    &props.secrets,
-                                    policies,
-                                );
-                                config_names.append(&mut secret_names.clone());
-
-                                Some(Box::new(BackoffWrapper::new(
-                                    ProviderSpreadScaler::new(
-                                        snapshot_data.clone(),
-                                        ProviderSpreadConfig {
-                                            lattice_id: lattice_id.to_owned(),
-                                            provider_id: provider_id.to_owned(),
-                                            provider_reference: props.image.to_owned(),
-                                            spread_config: p.to_owned(),
-                                            model_name: name.to_owned(),
-                                            provider_config: config_names,
-                                        },
-                                        &component.name,
-                                    ),
-                                    notifier.to_owned(),
-                                    config_scalers,
-                                    secret_scalers,
-                                    notifier_subject,
-                                    name,
-                                    // Providers are a bit longer because it can take a bit to download
-                                    Some(Duration::from_secs(60)),
-                                )) as BoxedScaler)
-                            }
-                            (DAEMONSCALER_TRAIT, TraitProperty::SpreadScaler(p)) => {
-                                scaler_specified = true;
-                                let (config_scalers, mut config_names) =
-                                    config_to_scalers(snapshot_data.clone(), name, &props.config);
-                                let (secret_scalers, secret_names) = secrets_to_scalers(
-                                    snapshot_data.clone(),
-                                    name,
-                                    &props.secrets,
-                                    policies,
-                                );
-                                config_names.append(&mut secret_names.clone());
-                                Some(Box::new(BackoffWrapper::new(
-                                    ProviderDaemonScaler::new(
-                                        snapshot_data.clone(),
-                                        ProviderSpreadConfig {
-                                            lattice_id: lattice_id.to_owned(),
-                                            provider_id: provider_id.to_owned(),
-                                            provider_reference: props.image.to_owned(),
-                                            spread_config: p.to_owned(),
-                                            model_name: name.to_owned(),
-                                            provider_config: config_names,
-                                        },
-                                        &component.name,
-                                    ),
-                                    notifier.to_owned(),
-                                    config_scalers,
-                                    secret_scalers,
-                                    notifier_subject,
-                                    name,
-                                    // Providers are a bit longer because it can take a bit to download
-                                    Some(Duration::from_secs(60)),
-                                )) as BoxedScaler)
-                            }
-                            (LINK_TRAIT, TraitProperty::Link(p)) => {
-                                components.iter().find_map(|component| {
-                                    let (mut config_scalers, mut source_config) = config_to_scalers(
-                                        snapshot_data.clone(),
-                                        name,
-                                        &p.source.as_ref().unwrap_or(&Default::default()).config,
-                                    );
-                                    let (target_config_scalers, mut target_config) =
-                                        config_to_scalers(
-                                            snapshot_data.clone(),
-                                            name,
-                                            &p.target.config,
-                                        );
-                                    let (target_secret_scalers, target_secrets) =
-                                        secrets_to_scalers(
-                                            snapshot_data.clone(),
-                                            name,
-                                            &p.target.secrets,
-                                            policies,
-                                        );
-                                    let (mut source_secret_scalers, source_secrets) =
-                                        secrets_to_scalers(
-                                            snapshot_data.clone(),
-                                            name,
-                                            &p.source
-                                                .as_ref()
-                                                .unwrap_or(&Default::default())
-                                                .secrets,
-                                            policies,
-                                        );
-                                    config_scalers.extend(target_config_scalers);
-                                    source_secret_scalers.extend(target_secret_scalers);
-
-                                    target_config.extend(target_secrets);
-                                    source_config.extend(source_secrets);
-                                    match &component.properties {
-                                        Properties::Component { properties: cappy }
-                                            if component.name == p.target.name =>
-                                        {
-                                            Some(Box::new(BackoffWrapper::new(
-                                                LinkScaler::new(
-                                                    snapshot_data.clone(),
-                                                    LinkScalerConfig {
-                                                        source_id: provider_id.to_string(),
-                                                        target: compute_component_id(
-                                                            name,
-                                                            cappy.id.as_ref(),
-                                                            &component.name,
-                                                        ),
-                                                        wit_namespace: p.namespace.to_owned(),
-                                                        wit_package: p.package.to_owned(),
-                                                        wit_interfaces: p.interfaces.to_owned(),
-                                                        name: p.name.to_owned().unwrap_or_else(
-                                                            || DEFAULT_LINK_NAME.to_string(),
-                                                        ),
-                                                        lattice_id: lattice_id.to_owned(),
-                                                        model_name: name.to_owned(),
-                                                        source_config,
-                                                        target_config,
-                                                    },
-                                                    snapshot_data.clone(),
-                                                ),
-                                                notifier.to_owned(),
-                                                config_scalers,
-                                                source_secret_scalers,
-                                                notifier_subject,
-                                                name,
-                                                Some(Duration::from_secs(5)),
-                                            ))
-                                                as BoxedScaler)
-                                        }
-                                        _ => None,
-                                    }
-                                })
-                            }
-                            _ => None,
-                        }
-                    }))
-                }
-                // Allow providers to omit the scaler entirely for simplicity
-                if !scaler_specified {
-                    let (config_scalers, mut config_names) =
-                        config_to_scalers(snapshot_data.clone(), name, &props.config);
-
-                    let (secret_scalers, secret_names) =
-                        secrets_to_scalers(snapshot_data.clone(), name, &props.secrets, policies);
-                    config_names.append(&mut secret_names.clone());
-
-                    scalers.push(Box::new(BackoffWrapper::new(
-                        ProviderSpreadScaler::new(
-                            snapshot_data.clone(),
-                            ProviderSpreadConfig {
-                                lattice_id: lattice_id.to_owned(),
-                                provider_id,
-                                provider_reference: props.image.to_owned(),
-                                spread_config: SpreadScalerProperty {
-                                    instances: 1,
-                                    spread: vec![],
-                                },
-                                model_name: name.to_owned(),
-                                provider_config: config_names,
-                            },
-                            &component.name,
-                        ),
-                        notifier.to_owned(),
-                        config_scalers,
-                        secret_scalers,
-                        notifier_subject,
-                        name,
-                        // Providers are a bit longer because it can take a bit to download
-                        Some(Duration::from_secs(60)),
-                    )) as BoxedScaler)
-                }
-            }
-        }
-    }
-    scalers
-}
-
-/// Returns a tuple which is a list of scalers and a list of the names of the configs that the
-/// scalers use.
-///
-/// Any input [ConfigProperty] that has a `properties` field will be converted into a [ConfigScaler], and
-/// the name of the configuration will be modified to be unique to the model and component. If the properties
-/// field is not present, the name will be used as-is and assumed that it's managed externally to wadm.
-fn config_to_scalers<C: ConfigSource + Send + Sync + Clone>(
-    config_source: C,
-    model_name: &str,
-    configs: &[ConfigProperty],
-) -> (Vec<ConfigScaler<C>>, Vec<String>) {
-    configs
-        .iter()
-        .map(|config| {
-            let name = if config.properties.is_some() {
-                compute_component_id(model_name, None, &config.name)
-            } else {
-                config.name.clone()
-            };
-            (
-                ConfigScaler::new(config_source.clone(), &name, config.properties.as_ref()),
-                name,
-            )
-        })
-        .unzip()
-}
-
-fn secrets_to_scalers<S: SecretSource + Send + Sync + Clone>(
-    secret_source: S,
-    model_name: &str,
-    secrets: &[SecretProperty],
-    policies: &HashMap<&String, &Policy>,
-) -> (Vec<SecretScaler<S>>, Vec<String>) {
-    secrets
-        .iter()
-        .map(|s| {
-            let name = compute_secret_id(model_name, None, &s.name);
-            let policy = *policies.get(&s.properties.policy).unwrap();
-            (
-                SecretScaler::new(
-                    name.clone(),
-                    policy.clone(),
-                    s.clone(),
-                    secret_source.clone(),
-                ),
-                name,
-            )
-        })
-        .unzip()
-}
-
-/// Based on the name of the model and the optionally provided ID, returns a unique ID for the
-/// component that is a sanitized version of the component reference and model name, separated
-/// by a dash.
-pub(crate) fn compute_component_id(
-    model_name: &str,
-    component_id: Option<&String>,
-    component_name: &str,
-) -> String {
-    if let Some(id) = component_id {
-        id.to_owned()
-    } else {
-        format!(
-            "{}-{}",
-            model_name
-                .to_lowercase()
-                .replace(|c: char| !c.is_ascii_alphanumeric(), "_"),
-            component_name
-                .to_lowercase()
-                .replace(|c: char| !c.is_ascii_alphanumeric(), "_")
-        )
-    }
-}
-
-pub(crate) fn compute_secret_id(
-    model_name: &str,
-    component_id: Option<&String>,
-    component_name: &str,
-) -> String {
-    let name = compute_component_id(model_name, component_id, component_name);
-    format!("{SECRET_PREFIX}_{name}")
-}
-
-#[cfg(test)]
-mod test {
-    use crate::scaler::manager::compute_component_id;
-
-    #[test]
-    fn compute_proper_component_id() {
-        // User supplied ID always takes precedence
-        assert_eq!(
-            compute_component_id("mymodel", Some(&"myid".to_string()), "echo"),
-            "myid"
-        );
-        assert_eq!(
-            compute_component_id(
-                "some model name with spaces cause yaml",
-                Some(&"myid".to_string()),
-                " echo "
-            ),
-            "myid"
-        );
-        // Sanitize component reference
-        assert_eq!(
-            compute_component_id("mymodel", None, "echo-component"),
-            "mymodel-echo_component"
-        );
-        // Ensure we can support spaces in the model name, because YAML strings
-        assert_eq!(
-            compute_component_id("some model name with spaces cause yaml", None, "echo"),
-            "some_model_name_with_spaces_cause_yaml-echo"
-        );
-        // Ensure we can support spaces in the model name, because YAML strings
-        // Ensure we can support lowercasing the reference as well, just in case
-        assert_eq!(
-            compute_component_id("My ThInG", None, "thing.wasm"),
-            "my_thing-thing_wasm"
-        );
     }
 }

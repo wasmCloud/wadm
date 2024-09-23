@@ -341,6 +341,7 @@ pub async fn validate_manifest(manifest: &Manifest) -> Result<Vec<ValidationFail
     failures.extend(check_dangling_links(manifest));
     failures.extend(validate_policies(manifest));
     failures.extend(ensure_no_custom_traits(manifest));
+    failures.extend(validate_component_properties(manifest));
     Ok(failures)
 }
 
@@ -591,6 +592,76 @@ fn validate_policies(manifest: &Manifest) -> Vec<ValidationFailure> {
                     ),
                 )),
             }
+        }
+    }
+    failures
+}
+
+/// Ensure that all components in a manifest either specify an image reference or a shared
+/// component in a different manifest. Note that this does not validate that the image reference
+/// is valid or that the shared component is valid, only that one of the two properties is set.
+pub fn validate_component_properties(application: &Manifest) -> Vec<ValidationFailure> {
+    let mut failures = Vec::new();
+    for component in application.spec.components.iter() {
+        match &component.properties {
+            Properties::Component {
+                properties:
+                    ComponentProperties {
+                        image,
+                        application,
+                        config,
+                        ..
+                    },
+            }
+            | Properties::Capability {
+                properties:
+                    CapabilityProperties {
+                        image,
+                        application,
+                        config,
+                        ..
+                    },
+            } => match (image, application) {
+                (Some(_), Some(_)) => {
+                    failures.push(ValidationFailure::new(
+                        ValidationFailureLevel::Error,
+                        "Component cannot have both 'image' and 'application' properties".into(),
+                    ));
+                }
+                (None, None) => {
+                    failures.push(ValidationFailure::new(
+                        ValidationFailureLevel::Error,
+                        "Component must have either 'image' or 'application' property".into(),
+                    ));
+                }
+                // This is a problem because of our left-folding config implementation. A shared application
+                // could specify additional config and actually overwrite the original manifest's config.
+                (None, Some(shared_properties)) if !config.is_empty() => {
+                    failures.push(ValidationFailure::new(
+                        ValidationFailureLevel::Error,
+                        format!(
+                            "Shared component '{}' cannot specify additional 'config'",
+                            shared_properties.name
+                        ),
+                    ));
+                }
+                // Shared application components already have scale properties defined in their original manifest
+                (None, Some(shared_properties))
+                    if component
+                        .traits
+                        .as_ref()
+                        .is_some_and(|traits| traits.iter().any(|trt| trt.is_scaler())) =>
+                {
+                    failures.push(ValidationFailure::new(
+                        ValidationFailureLevel::Error,
+                        format!(
+                            "Shared component '{}' cannot include a scaler trait",
+                            shared_properties.name
+                        ),
+                    ));
+                }
+                _ => {}
+            },
         }
     }
     failures
