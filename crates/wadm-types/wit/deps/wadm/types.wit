@@ -117,7 +117,8 @@ interface types {
 
     // Properties for a component
     record component-properties {
-        image: string,
+        image: option<string>,
+        application: option<shared-application-component-properties>,
         id: option<string>,
         config: list<config-property>,
         secrets: list<secret-property>,
@@ -125,7 +126,8 @@ interface types {
 
     // Properties for a capability
     record capability-properties {
-        image: string,
+        image: option<string>,
+        application: option<shared-application-component-properties>,
         id: option<string>,
         config: list<config-property>,
         secrets: list<secret-property>,
@@ -185,6 +187,12 @@ interface types {
         key: string,
         field: option<string>,
         version: option<string>,
+    }
+
+    // Shared application component properties
+    record shared-application-component-properties {
+        name: string,
+        component: string
     }
 
     // Target configuration
