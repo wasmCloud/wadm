@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 
 use anyhow::Result;
 use async_trait::async_trait;
+use regex::Regex;
 use tokio::sync::RwLock;
 use tracing::{instrument, trace};
 use wadm_types::{api::StatusInfo, Spread, SpreadScalerProperty, TraitProperty};
@@ -109,7 +110,11 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ComponentDaemonScaler<S> {
                     .iter()
                     .any(|spread| {
                         spread.requirements.iter().all(|(key, value)| {
-                            labels.get(key).map(|val| val == value).unwrap_or(false)
+                            let reg = Regex::new(value).expect("unable to compile regex");
+                            labels
+                                .get(key)
+                                .map(|val| reg.is_match(val))
+                                .unwrap_or(false)
                         })
                     })
                 {
@@ -779,6 +784,293 @@ mod test {
     }
 
     #[tokio::test]
+    async fn can_match_regex_scale_up_and_down() -> Result<()> {
+        let lattice_id = "computing_spread_commands";
+        let echo_ref = "fakecloud.azurecr.io/echo:0.3.4".to_string();
+        let echo_id = "MASDASDIAMAREALCOMPONENTECHO";
+        let blobby_ref = "fakecloud.azurecr.io/blobby:0.5.2".to_string();
+        let blobby_id = "MASDASDIAMAREALCOMPONENTBLOBBY";
+
+        let host_id_one = "NASDASDIMAREALHOSTONE";
+        let host_id_two = "NASDASDIMAREALHOSTTWO";
+        let host_id_three = "NASDASDIMAREALHOSTTREE";
+
+        let store = Arc::new(TestStore::default());
+
+        let echo_spread_property = SpreadScalerProperty {
+            instances: 412,
+            spread: vec![
+                Spread {
+                    name: "RunInEitherCloud".to_string(),
+                    requirements: BTreeMap::from_iter([(
+                        "cloud".to_string(),
+                        "^[a-z]{4}$".to_string(),
+                    )]),
+                    weight: None,
+                },
+                Spread {
+                    name: "RunInPurgatoryCloud".to_string(),
+                    requirements: BTreeMap::from_iter([(
+                        "cloud".to_string(),
+                        "purgatory".to_string(),
+                    )]),
+                    weight: None,
+                },
+            ],
+        };
+
+        let blobby_spread_property = SpreadScalerProperty {
+            instances: 3,
+            spread: vec![
+                Spread {
+                    name: "CrossRegionCustom".to_string(),
+                    requirements: BTreeMap::from_iter([(
+                        "region".to_string(),
+                        "us-([a-z]+)-([0-4])".to_string(),
+                    )]),
+                    weight: Some(123123),
+                },
+                Spread {
+                    name: "RunOnEdge".to_string(),
+                    requirements: BTreeMap::from_iter([(
+                        "location".to_string(),
+                        "edge".to_string(),
+                    )]),
+                    weight: Some(33),
+                },
+            ],
+        };
+
+        let echo_daemonscaler = ComponentDaemonScaler::new(
+            store.clone(),
+            echo_ref.to_string(),
+            echo_id.to_string(),
+            lattice_id.to_string(),
+            MODEL_NAME.to_string(),
+            echo_spread_property,
+            "fake_echo",
+            vec![],
+        );
+
+        let blobby_daemonscaler = ComponentDaemonScaler::new(
+            store.clone(),
+            blobby_ref.to_string(),
+            blobby_id.to_string(),
+            lattice_id.to_string(),
+            MODEL_NAME.to_string(),
+            blobby_spread_property,
+            "fake_blobby",
+            vec![],
+        );
+
+        // STATE SETUP BEGIN
+
+        store
+            .store(
+                lattice_id,
+                echo_id.to_string(),
+                Component {
+                    id: echo_id.to_string(),
+                    name: "Echo".to_string(),
+                    issuer: "AASDASDASDASD".to_string(),
+                    instances: HashMap::from_iter([
+                        (
+                            host_id_one.to_string(),
+                            // One instance on this host
+                            HashSet::from_iter([WadmComponentInfo {
+                                count: 1,
+                                annotations: spreadscaler_annotations(
+                                    "RunInEitherCloud1",
+                                    echo_daemonscaler.id(),
+                                ),
+                            }]),
+                        ),
+                        (
+                            host_id_two.to_string(),
+                            // 103 instances on this host
+                            HashSet::from_iter([WadmComponentInfo {
+                                count: 103,
+                                annotations: spreadscaler_annotations(
+                                    "RunInEitherCloud2",
+                                    echo_daemonscaler.id(),
+                                ),
+                            }]),
+                        ),
+                        (
+                            host_id_three.to_string(),
+                            // 400 instances on this host
+                            HashSet::from_iter([WadmComponentInfo {
+                                count: 400,
+                                annotations: spreadscaler_annotations(
+                                    "RunInPurgatoryCloud",
+                                    echo_daemonscaler.id(),
+                                ),
+                            }]),
+                        ),
+                    ]),
+                    reference: echo_ref.to_string(),
+                },
+            )
+            .await?;
+
+        store
+            .store(
+                lattice_id,
+                blobby_id.to_string(),
+                Component {
+                    id: blobby_id.to_string(),
+                    name: "Blobby".to_string(),
+                    issuer: "AASDASDASDASD".to_string(),
+                    instances: HashMap::from_iter([
+                        (
+                            host_id_one.to_string(),
+                            // 3 instances on this host
+                            HashSet::from_iter([WadmComponentInfo {
+                                count: 3,
+                                annotations: spreadscaler_annotations(
+                                    "CrossRegionCustom",
+                                    blobby_daemonscaler.id(),
+                                ),
+                            }]),
+                        ),
+                        (
+                            host_id_two.to_string(),
+                            // 19 instances on this host
+                            HashSet::from_iter([WadmComponentInfo {
+                                count: 19,
+                                annotations: spreadscaler_annotations(
+                                    "CrossRegionReal",
+                                    blobby_daemonscaler.id(),
+                                ),
+                            }]),
+                        ),
+                    ]),
+                    reference: blobby_ref.to_string(),
+                },
+            )
+            .await?;
+
+        store
+            .store(
+                lattice_id,
+                host_id_one.to_string(),
+                Host {
+                    components: HashMap::from_iter([
+                        (echo_id.to_string(), 1),
+                        (blobby_id.to_string(), 3),
+                        ("MSOMEOTHERCOMPONENT".to_string(), 3),
+                    ]),
+                    friendly_name: "hey".to_string(),
+                    labels: HashMap::from_iter([
+                        ("cloud".to_string(), "fake".to_string()),
+                        ("region".to_string(), "us-brooks-1".to_string()),
+                    ]),
+                    providers: HashSet::new(),
+                    uptime_seconds: 123,
+                    version: None,
+                    id: host_id_one.to_string(),
+                    last_seen: Utc::now(),
+                },
+            )
+            .await?;
+
+        store
+            .store(
+                lattice_id,
+                host_id_two.to_string(),
+                Host {
+                    components: HashMap::from_iter([
+                        (echo_id.to_string(), 103),
+                        (blobby_id.to_string(), 19),
+                    ]),
+                    friendly_name: "hey".to_string(),
+                    labels: HashMap::from_iter([
+                        ("cloud".to_string(), "real".to_string()),
+                        ("region".to_string(), "us-midwest-4".to_string()),
+                        ("label".to_string(), "value".to_string()),
+                    ]),
+                    providers: HashSet::new(),
+                    uptime_seconds: 123,
+                    version: None,
+                    id: host_id_two.to_string(),
+                    last_seen: Utc::now(),
+                },
+            )
+            .await?;
+
+        store
+            .store(
+                lattice_id,
+                host_id_three.to_string(),
+                Host {
+                    components: HashMap::from_iter([(echo_id.to_string(), 400)]),
+                    friendly_name: "hey".to_string(),
+                    labels: HashMap::from_iter([
+                        ("cloud".to_string(), "purgatory".to_string()),
+                        ("location".to_string(), "edge".to_string()),
+                    ]),
+                    providers: HashSet::new(),
+                    uptime_seconds: 123,
+                    version: None,
+                    id: host_id_three.to_string(),
+                    last_seen: Utc::now(),
+                },
+            )
+            .await?;
+
+        // STATE SETUP END
+
+        let cmds = echo_daemonscaler.reconcile().await?;
+        assert_eq!(cmds.len(), 3);
+
+        for cmd in cmds.iter() {
+            match cmd {
+                Command::ScaleComponent(scale) =>
+                {
+                    #[allow(clippy::if_same_then_else)]
+                    if scale.host_id == *host_id_one {
+                        assert_eq!(scale.count, 412);
+                        assert_eq!(scale.reference, echo_ref);
+                    } else if scale.host_id == *host_id_two {
+                        assert_eq!(scale.count, 412);
+                        assert_eq!(scale.reference, echo_ref);
+                    } else {
+                        assert_eq!(scale.count, 412);
+                        assert_eq!(scale.reference, echo_ref);
+                    }
+                }
+                _ => panic!("Unexpected command in daemonscaler list"),
+            }
+        }
+
+        let mut cmds = blobby_daemonscaler.reconcile().await?;
+        assert_eq!(cmds.len(), 2);
+        cmds.sort_by(|a, b| match (a, b) {
+            (Command::ScaleComponent(a), Command::ScaleComponent(b)) => a.host_id.cmp(&b.host_id),
+            _ => panic!("Unexpected command in daemonscaler list"),
+        });
+
+        let mut cmds_iter = cmds.iter();
+        match (
+            cmds_iter.next().expect("one command"),
+            cmds_iter.next().expect("two commands"),
+        ) {
+            (Command::ScaleComponent(scale1), Command::ScaleComponent(scale2)) => {
+                assert_eq!(scale1.host_id, host_id_three.to_string());
+                assert_eq!(scale1.count, 3);
+                assert_eq!(scale1.reference, blobby_ref);
+
+                assert_eq!(scale2.host_id, host_id_two.to_string());
+                assert_eq!(scale2.count, 3);
+                assert_eq!(scale2.component_id, blobby_id.to_string());
+            }
+            _ => panic!("Unexpected commands in daemonscaler list"),
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn can_react_to_host_events() -> Result<()> {
         let lattice_id = "computing_spread_commands";
         let blobby_ref = "fakecloud.azurecr.io/blobby:0.5.2".to_string();
@@ -980,6 +1272,296 @@ mod test {
                 ("cloud".to_string(), "purgatory".to_string()),
                 ("location".to_string(), "edge".to_string()),
                 ("region".to_string(), "us-brooks-1".to_string()),
+            ]),
+            providers: vec![],
+            uptime_seconds: 123,
+            version: semver::Version::new(0, 63, 1),
+            host_id: host_id_three.to_string(),
+            uptime_human: "time_is_a_human_construct".to_string(),
+        };
+
+        worker
+            .do_work(ScopedMessage::<Event> {
+                lattice_id: lattice_id.to_string(),
+                inner: Event::HostHeartbeat(modifying_event.clone()),
+                acker: None,
+            })
+            .await
+            .expect("should be able to handle an event");
+
+        let cmds = blobby_daemonscaler
+            .handle_event(&Event::HostHeartbeat(modifying_event))
+            .await?;
+        assert_eq!(cmds.len(), 1);
+        assert_eq!(
+            blobby_daemonscaler.status().await.status_type,
+            StatusType::Reconciling
+        );
+
+        for cmd in cmds.iter() {
+            match cmd {
+                Command::ScaleComponent(scale) => {
+                    assert_eq!(scale.host_id, host_id_three.to_string());
+                    assert_eq!(scale.count, 10);
+                    assert_eq!(scale.reference, blobby_ref);
+                }
+                _ => panic!("Unexpected command in daemonscaler list"),
+            }
+        }
+
+        // Remove the host, blobby shouldn't be concerned as other hosts match
+        store
+            .delete_many::<Host, _, _>(lattice_id, vec![host_id_three])
+            .await?;
+        store
+            .store(
+                lattice_id,
+                blobby_id.to_string(),
+                Component {
+                    id: blobby_id.to_string(),
+                    name: "Blobby".to_string(),
+                    issuer: "AASDASDASDASD".to_string(),
+                    instances: HashMap::from_iter([
+                        (
+                            host_id_one.to_string(),
+                            // 10 instances on this host
+                            HashSet::from_iter([WadmComponentInfo {
+                                count: 10,
+                                annotations: spreadscaler_annotations(
+                                    "HighAvailability",
+                                    blobby_daemonscaler.id(),
+                                ),
+                            }]),
+                        ),
+                        (
+                            host_id_two.to_string(),
+                            // 10 instances on this host
+                            HashSet::from_iter([WadmComponentInfo {
+                                count: 10,
+                                annotations: spreadscaler_annotations(
+                                    "HighAvailability",
+                                    blobby_daemonscaler.id(),
+                                ),
+                            }]),
+                        ),
+                    ]),
+                    reference: blobby_ref.to_string(),
+                },
+            )
+            .await?;
+        let cmds = blobby_daemonscaler.reconcile().await?;
+        assert_eq!(cmds.len(), 0);
+
+        assert_eq!(
+            blobby_daemonscaler.status().await.status_type,
+            StatusType::Deployed
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn can_react_to_regex_host_events() -> Result<()> {
+        let lattice_id = "computing_spread_commands";
+        let blobby_ref = "fakecloud.azurecr.io/blobby:0.5.2".to_string();
+        let blobby_id = "MASDASDIAMAREALCOMPONENTBLOBBY";
+
+        let host_id_one = "NASDASDIMAREALHOSTONE";
+        let host_id_two = "NASDASDIMAREALHOSTTWO";
+        let host_id_three = "NASDASDIMAREALHOSTTREE";
+
+        let store = Arc::new(TestStore::default());
+
+        let lattice_source = TestLatticeSource::default();
+        // Inserting for heartbeat handling later
+        lattice_source.inventory.write().await.insert(
+            host_id_three.to_string(),
+            HostInventory {
+                components: vec![],
+                friendly_name: "hey".to_string(),
+                labels: HashMap::from_iter([
+                    ("cloud".to_string(), "purgatory".to_string()),
+                    ("location".to_string(), "edge".to_string()),
+                    ("region".to_string(), "us-brooks-1".to_string()),
+                ]),
+                providers: vec![],
+                host_id: host_id_three.to_string(),
+                version: "1.0.0".to_string(),
+                uptime_human: "what is time really anyway maaaan".to_string(),
+                uptime_seconds: 42,
+            },
+        );
+        let command_publisher = CommandPublisher::new(NoopPublisher, "doesntmatter");
+        let status_publisher = StatusPublisher::new(NoopPublisher, None, "doesntmatter");
+        let worker = EventWorker::new(
+            store.clone(),
+            lattice_source.clone(),
+            command_publisher.clone(),
+            status_publisher.clone(),
+            ScalerManager::test_new(
+                NoopPublisher,
+                lattice_id,
+                store.clone(),
+                command_publisher,
+                status_publisher.clone(),
+                lattice_source,
+            )
+            .await,
+        );
+        let blobby_spread_property = SpreadScalerProperty {
+            instances: 10,
+            spread: vec![Spread {
+                name: "HighAvailability".to_string(),
+                requirements: BTreeMap::from_iter([(
+                    "region".to_string(),
+                    "us-brooks-([0-9]{1})".to_string(),
+                )]),
+                weight: None,
+            }],
+        };
+        let blobby_daemonscaler = ComponentDaemonScaler::new(
+            store.clone(),
+            blobby_ref.to_string(),
+            blobby_id.to_string(),
+            lattice_id.to_string(),
+            MODEL_NAME.to_string(),
+            blobby_spread_property,
+            "fake_blobby",
+            vec![],
+        );
+
+        // STATE SETUP BEGIN
+        store
+            .store(
+                lattice_id,
+                blobby_id.to_string(),
+                Component {
+                    id: blobby_id.to_string(),
+                    name: "Blobby".to_string(),
+                    issuer: "AASDASDASDASD".to_string(),
+                    instances: HashMap::from_iter([
+                        (
+                            host_id_one.to_string(),
+                            // 10 instances on this host
+                            HashSet::from_iter([WadmComponentInfo {
+                                count: 10,
+                                annotations: spreadscaler_annotations(
+                                    "HighAvailability",
+                                    blobby_daemonscaler.id(),
+                                ),
+                            }]),
+                        ),
+                        (
+                            host_id_two.to_string(),
+                            // 10 instances on this host
+                            HashSet::from_iter([WadmComponentInfo {
+                                count: 10,
+                                annotations: spreadscaler_annotations(
+                                    "HighAvailability",
+                                    blobby_daemonscaler.id(),
+                                ),
+                            }]),
+                        ),
+                        (
+                            host_id_three.to_string(),
+                            // 0 instances on this host
+                            HashSet::new(),
+                        ),
+                    ]),
+                    reference: blobby_ref.to_string(),
+                },
+            )
+            .await?;
+
+        store
+            .store(
+                lattice_id,
+                host_id_one.to_string(),
+                Host {
+                    components: HashMap::from_iter([
+                        (blobby_id.to_string(), 10),
+                        ("MSOMEOTHERCOMPONENT".to_string(), 3),
+                    ]),
+                    friendly_name: "hey".to_string(),
+                    labels: HashMap::from_iter([
+                        ("cloud".to_string(), "fake".to_string()),
+                        ("region".to_string(), "us-brooks-1".to_string()),
+                    ]),
+                    providers: HashSet::new(),
+                    uptime_seconds: 123,
+                    version: None,
+                    id: host_id_one.to_string(),
+                    last_seen: Utc::now(),
+                },
+            )
+            .await?;
+
+        store
+            .store(
+                lattice_id,
+                host_id_two.to_string(),
+                Host {
+                    components: HashMap::from_iter([(blobby_id.to_string(), 10)]),
+                    friendly_name: "hey".to_string(),
+                    labels: HashMap::from_iter([
+                        ("cloud".to_string(), "real".to_string()),
+                        ("region".to_string(), "us-brooks-2".to_string()),
+                        ("label".to_string(), "value".to_string()),
+                    ]),
+                    providers: HashSet::new(),
+                    uptime_seconds: 123,
+                    version: None,
+                    id: host_id_two.to_string(),
+                    last_seen: Utc::now(),
+                },
+            )
+            .await?;
+
+        // Don't care about these events
+        assert!(blobby_daemonscaler
+            .handle_event(&Event::ProviderStarted(ProviderStarted {
+                claims: None,
+                provider_id: "".to_string(),
+                image_ref: "".to_string(),
+                annotations: BTreeMap::default(),
+                host_id: host_id_one.to_string()
+            }))
+            .await?
+            .is_empty());
+        assert!(blobby_daemonscaler
+            .handle_event(&Event::ProviderStopped(ProviderStopped {
+                annotations: BTreeMap::default(),
+                provider_id: "".to_string(),
+                reason: "".to_string(),
+                host_id: host_id_two.to_string()
+            }))
+            .await?
+            .is_empty());
+        assert!(blobby_daemonscaler
+            .handle_event(&Event::LinkdefSet(LinkdefSet {
+                linkdef: InterfaceLinkDefinition::default()
+            }))
+            .await?
+            .is_empty());
+        assert!(blobby_daemonscaler
+            .handle_event(&Event::LinkdefDeleted(LinkdefDeleted {
+                source_id: "source".to_string(),
+                name: "name".to_string(),
+                wit_namespace: "wasi".to_string(),
+                wit_package: "testy".to_string()
+            }))
+            .await?
+            .is_empty());
+
+        // Let a new host come online, should match the spread
+        let modifying_event = HostHeartbeat {
+            components: vec![],
+            friendly_name: "hey".to_string(),
+            issuer: "".to_string(),
+            labels: HashMap::from_iter([
+                ("cloud".to_string(), "purgatory".to_string()),
+                ("location".to_string(), "edge".to_string()),
+                ("region".to_string(), "us-brooks-3".to_string()),
             ]),
             providers: vec![],
             uptime_seconds: 123,

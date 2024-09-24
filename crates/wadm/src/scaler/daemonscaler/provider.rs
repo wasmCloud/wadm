@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use anyhow::Result;
 use async_trait::async_trait;
+use regex::Regex;
 use tokio::sync::RwLock;
 use tracing::{instrument, trace};
 use wadm_types::{api::StatusInfo, Spread, SpreadScalerProperty, TraitProperty};
@@ -91,7 +92,11 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderDaemonScaler<S> {
             | Event::HostHeartbeat(HostHeartbeat { labels, .. })
                 if self.config.spread_config.spread.iter().any(|spread| {
                     spread.requirements.iter().all(|(key, value)| {
-                        labels.get(key).map(|val| val == value).unwrap_or(false)
+                        let reg = Regex::new(value).expect("unable to compile regex");
+                        labels
+                            .get(key)
+                            .map(|val| reg.is_match(val))
+                            .unwrap_or(false)
                     })
                 }) =>
             {
@@ -446,6 +451,162 @@ mod test {
         );
 
         let mut commands = spreadscaler.reconcile().await?;
+        assert_eq!(commands.len(), 2);
+        // Sort to enable predictable test
+        commands.sort_unstable_by(|a, b| match (a, b) {
+            (Command::StartProvider(a), Command::StartProvider(b)) => a.host_id.cmp(&b.host_id),
+            _ => panic!("Should have been start providers"),
+        });
+
+        let cmd_one = commands.first().cloned();
+        match cmd_one {
+            None => panic!("command should have existed"),
+            Some(Command::StartProvider(start)) => {
+                assert_eq!(
+                    start,
+                    StartProvider {
+                        reference: provider_ref.to_string(),
+                        provider_id: provider_id.to_string(),
+                        host_id: host_id_one.to_string(),
+                        model_name: MODEL_NAME.to_string(),
+                        annotations: spreadscaler_annotations("SimpleOne", spreadscaler.id()),
+                        config: vec!["foobar".to_string()],
+                    }
+                );
+                // This manual assertion is because we don't hash on annotations and I want to be extra sure we have the
+                // correct ones
+                assert_eq!(
+                    start.annotations,
+                    spreadscaler_annotations("SimpleOne", spreadscaler.id())
+                )
+            }
+            Some(_other) => panic!("command should have been a start provider"),
+        }
+
+        let cmd_two = commands.get(1).cloned();
+        match cmd_two {
+            None => panic!("command should have existed"),
+            Some(Command::StartProvider(start)) => {
+                assert_eq!(
+                    start,
+                    StartProvider {
+                        reference: provider_ref.to_string(),
+                        provider_id: provider_id.to_string(),
+                        host_id: host_id_two.to_string(),
+                        model_name: MODEL_NAME.to_string(),
+                        annotations: spreadscaler_annotations("SimpleTwo", spreadscaler.id()),
+                        config: vec!["foobar".to_string()],
+                    }
+                );
+                // This manual assertion is because we don't hash on annotations and I want to be extra sure we have the
+                // correct ones
+                assert_eq!(
+                    start.annotations,
+                    spreadscaler_annotations("SimpleOne", spreadscaler.id())
+                )
+            }
+            Some(_other) => panic!("command should have been a start provider"),
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn can_match_regex_spread_on_multiple_hosts() -> Result<()> {
+        let lattice_id = "provider_spread_multi_host";
+        let provider_ref = "fakecloud.azurecr.io/provider:3.2.1".to_string();
+        let provider_id = "VASDASDIAMAREALPROVIDERPROVIDER";
+
+        let host_id_one = "NASDASDIMAREALHOSTONE";
+        let host_id_two = "NASDASDIMAREALHOSTTWO";
+
+        let store = Arc::new(TestStore::default());
+
+        store
+            .store(
+                lattice_id,
+                host_id_one.to_string(),
+                Host {
+                    components: HashMap::new(),
+                    friendly_name: "hey".to_string(),
+                    labels: HashMap::from_iter([
+                        ("inda".to_string(), "cloud".to_string()),
+                        ("cloud".to_string(), "fake".to_string()),
+                        ("region".to_string(), "us-noneofyourbusiness-1".to_string()),
+                    ]),
+                    providers: HashSet::new(),
+                    uptime_seconds: 123,
+                    version: None,
+                    id: host_id_one.to_string(),
+                    last_seen: Utc::now(),
+                },
+            )
+            .await?;
+
+        store
+            .store(
+                lattice_id,
+                host_id_two.to_string(),
+                Host {
+                    components: HashMap::new(),
+                    friendly_name: "hey".to_string(),
+                    labels: HashMap::from_iter([
+                        ("inda".to_string(), "cloud".to_string()),
+                        ("cloud".to_string(), "real".to_string()),
+                        ("region".to_string(), "us-yourhouse-1".to_string()),
+                    ]),
+                    providers: HashSet::new(),
+                    uptime_seconds: 123,
+                    version: None,
+                    id: host_id_two.to_string(),
+                    last_seen: Utc::now(),
+                },
+            )
+            .await?;
+
+        store
+            .store(
+                lattice_id,
+                provider_id.to_string(),
+                Provider {
+                    id: provider_id.to_string(),
+                    name: "provider".to_string(),
+                    issuer: "issuer".to_string(),
+                    reference: provider_ref.to_string(),
+                    hosts: HashMap::new(),
+                },
+            )
+            .await?;
+
+        // Ensure we spread evenly with equal weights, clean division
+        let multi_spread_even = SpreadScalerProperty {
+            // instances are ignored so putting an absurd number
+            instances: 12312,
+            spread: vec![Spread {
+                name: "SimpleOne".to_string(),
+                requirements: BTreeMap::from_iter([(
+                    "region".to_string(),
+                    "us-([a-z]+)-1".to_string(),
+                )]),
+                weight: Some(100),
+            }],
+        };
+
+        let spreadscaler = ProviderDaemonScaler::new(
+            store.clone(),
+            ProviderSpreadConfig {
+                lattice_id: lattice_id.to_string(),
+                provider_id: provider_id.to_string(),
+                provider_reference: provider_ref.to_string(),
+                spread_config: multi_spread_even,
+                model_name: MODEL_NAME.to_string(),
+                provider_config: vec!["foobar".to_string()],
+            },
+            "fake_component",
+        );
+
+        let mut commands = spreadscaler.reconcile().await?;
+        println!("Provider: {:?}", commands);
         assert_eq!(commands.len(), 2);
         // Sort to enable predictable test
         commands.sort_unstable_by(|a, b| match (a, b) {
