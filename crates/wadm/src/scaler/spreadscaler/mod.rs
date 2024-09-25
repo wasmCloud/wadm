@@ -3,6 +3,7 @@ use std::{cmp::Ordering, cmp::Reverse, collections::HashMap};
 
 use anyhow::Result;
 use async_trait::async_trait;
+use regex::Regex;
 use tokio::sync::RwLock;
 use tracing::{instrument, trace, warn};
 use wadm_types::{
@@ -104,7 +105,11 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ComponentSpreadScaler<S> {
                 // If the host labels match any spread requirement, perform reconcile
                 if self.spread_requirements.iter().any(|(spread, _count)| {
                     spread.requirements.iter().all(|(key, value)| {
-                        labels.get(key).map(|val| val == value).unwrap_or(false)
+                        let reg = Regex::new(value).expect("unable to compile regex");
+                        labels
+                            .get(key)
+                            .map(|val| reg.is_match(val))
+                            .unwrap_or(false)
                     })
                 }) {
                     trace!("Host event matches spread requirements. Will reconcile");
@@ -370,10 +375,13 @@ pub(crate) fn eligible_hosts<'a>(
     all_hosts
         .iter()
         .filter(|(_id, host)| {
-            spread
-                .requirements
-                .iter()
-                .all(|(key, value)| host.labels.get(key).map(|v| v.eq(value)).unwrap_or(false))
+            spread.requirements.iter().all(|(key, value)| {
+                let reg = Regex::new(value).expect("unable to compile regex");
+                host.labels
+                    .get(key)
+                    .map(|val| reg.is_match(val))
+                    .unwrap_or(false)
+            })
         })
         .collect()
 }
@@ -648,6 +656,74 @@ mod test {
         assert_eq!(complex_spread_res[1].1, 10);
         assert_eq!(complex_spread_res[2].1, 8);
         assert_eq!(complex_spread_res[3].1, 0);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn can_match_properly() -> Result<()> {
+        let lattice_id = "hoohah_multi_stop_component";
+        let component_reference = "fakecloud.azurecr.io/echo:0.3.4".to_string();
+        let component_id = "fakecloud_azurecr_io_echo_0_3_4".to_string();
+        let host_id = "NASDASDIMAREALHOST";
+
+        let store = Arc::new(TestStore::default());
+
+        // Basic test for simple regex
+        let simple_regex = SpreadScalerProperty {
+            instances: 1,
+            spread: vec![Spread {
+                name: "Simple".to_string(),
+                requirements: BTreeMap::from_iter([(
+                    "region".to_string(),
+                    "eu-([a-z]{5})-1".to_string(),
+                )]),
+                weight: Some(100),
+            }],
+        };
+
+        store
+            .store(
+                lattice_id,
+                host_id.to_string(),
+                Host {
+                    components: HashMap::new(),
+                    friendly_name: "hey".to_string(),
+                    labels: HashMap::from_iter([
+                        ("cloud".to_string(), "fake".to_string()),
+                        ("region".to_string(), "eu-north-1".to_string()),
+                    ]),
+                    providers: HashSet::new(),
+                    uptime_seconds: 123,
+                    version: None,
+                    id: host_id.to_string(),
+                    last_seen: Utc::now(),
+                },
+            )
+            .await?;
+
+        let simple_spreadscaler = ComponentSpreadScaler::new(
+            store.clone(),
+            component_reference.to_string(),
+            component_id.to_string(),
+            lattice_id.to_string(),
+            MODEL_NAME.to_string(),
+            simple_regex,
+            "fake_component",
+            vec![],
+        );
+
+        let cmds = simple_spreadscaler.reconcile().await?;
+        assert_eq!(cmds.len(), 1);
+        assert!(cmds.contains(&Command::ScaleComponent(ScaleComponent {
+            component_id: component_id.to_string(),
+            reference: component_reference.to_string(),
+            host_id: host_id.to_string(),
+            count: 1,
+            model_name: MODEL_NAME.to_string(),
+            annotations: spreadscaler_annotations("Simple", simple_spreadscaler.id()),
+            config: vec![]
+        })));
 
         Ok(())
     }
@@ -1068,6 +1144,117 @@ mod test {
                 Spread {
                     name: "SimpleOne".to_string(),
                     requirements: BTreeMap::from_iter([("region".to_string(), "east".to_string())]),
+                    weight: Some(75),
+                },
+                Spread {
+                    name: "SimpleTwo".to_string(),
+                    requirements: BTreeMap::from_iter([(
+                        "resilient".to_string(),
+                        "true".to_string(),
+                    )]),
+                    weight: Some(25),
+                },
+            ],
+        };
+
+        let spreadscaler = ComponentSpreadScaler::new(
+            store.clone(),
+            component_reference.to_string(),
+            component_id.to_string(),
+            lattice_id.to_string(),
+            MODEL_NAME.to_string(),
+            real_spread,
+            "fake_component",
+            vec![],
+        );
+
+        // STATE SETUP BEGIN, ONE HOST
+        store
+            .store(
+                lattice_id,
+                host_id.to_string(),
+                Host {
+                    components: HashMap::from_iter([(component_id.to_string(), 10)]),
+                    friendly_name: "hey".to_string(),
+                    labels: HashMap::from_iter([
+                        ("region".to_string(), "east".to_string()),
+                        ("resilient".to_string(), "true".to_string()),
+                    ]),
+                    providers: HashSet::new(),
+                    uptime_seconds: 123,
+                    version: None,
+                    id: host_id.to_string(),
+                    last_seen: Utc::now(),
+                },
+            )
+            .await?;
+
+        store
+            .store(
+                lattice_id,
+                component_id.to_string(),
+                Component {
+                    id: component_id.to_string(),
+                    name: "Faketor".to_string(),
+                    issuer: "AASDASDASDASD".to_string(),
+                    instances: HashMap::from_iter([(
+                        host_id.to_string(),
+                        // 10 instances on this host under the first spread
+                        HashSet::from_iter([WadmComponentInfo {
+                            count: 10,
+                            annotations: spreadscaler_annotations("SimpleOne", spreadscaler.id()),
+                        }]),
+                    )]),
+                    reference: component_reference.to_string(),
+                },
+            )
+            .await?;
+
+        let cmds = spreadscaler.reconcile().await?;
+        assert_eq!(cmds.len(), 2);
+
+        // Should be enforcing 10 instances per spread
+        assert!(cmds.contains(&Command::ScaleComponent(ScaleComponent {
+            component_id: "fakecloud_azurecr_io_echo_0_3_4".to_string(),
+            reference: component_reference.to_string(),
+            host_id: host_id.to_string(),
+            count: 15,
+            model_name: MODEL_NAME.to_string(),
+            annotations: spreadscaler_annotations("SimpleOne", spreadscaler.id()),
+            config: vec![]
+        })));
+        assert!(cmds.contains(&Command::ScaleComponent(ScaleComponent {
+            component_id: "fakecloud_azurecr_io_echo_0_3_4".to_string(),
+            reference: component_reference.to_string(),
+            host_id: host_id.to_string(),
+            count: 5,
+            model_name: MODEL_NAME.to_string(),
+            annotations: spreadscaler_annotations("SimpleTwo", spreadscaler.id()),
+            config: vec![]
+        })));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn can_handle_multiple_spread_regex_matches() -> Result<()> {
+        let lattice_id = "multiple_spread_matches";
+        let component_reference = "fakecloud.azurecr.io/echo:0.3.4".to_string();
+        let component_id = "fakecloud_azurecr_io_echo_0_3_4".to_string();
+        let host_id = "NASDASDIMAREALHOST";
+
+        let store = Arc::new(TestStore::default());
+
+        // Run 75% in east, 25% on resilient hosts
+        let real_spread = SpreadScalerProperty {
+            instances: 20,
+            spread: vec![
+                Spread {
+                    name: "SimpleOne".to_string(),
+                    requirements: BTreeMap::from_iter([(
+                        "region".to_string(),
+                        "^[a-z]{4}$".to_string(),
+                    )]),
                     weight: Some(75),
                 },
                 Spread {
@@ -1585,6 +1772,287 @@ mod test {
     }
 
     #[tokio::test]
+    async fn can_react_to_events_regex() -> Result<()> {
+        let lattice_id = "computing_spread_commands";
+        let blobby_ref = "fakecloud.azurecr.io/blobby:0.5.2".to_string();
+        let blobby_id = "MASDASDIAMAREALCOMPONENTBLOBBY";
+
+        let host_id_one = "NASDASDIMAREALHOSTONE";
+        let host_id_two = "NASDASDIMAREALHOSTTWO";
+        let host_id_three = "NASDASDIMAREALHOSTTREE";
+
+        let store = Arc::new(TestStore::default());
+
+        let lattice_source = TestLatticeSource::default();
+        let command_publisher = CommandPublisher::new(NoopPublisher, "doesntmatter");
+        let status_publisher = StatusPublisher::new(NoopPublisher, None, "doesntmatter");
+        let worker = EventWorker::new(
+            store.clone(),
+            lattice_source.clone(),
+            command_publisher.clone(),
+            status_publisher.clone(),
+            ScalerManager::test_new(
+                NoopPublisher,
+                lattice_id,
+                store.clone(),
+                command_publisher,
+                status_publisher.clone(),
+                lattice_source,
+            )
+            .await,
+        );
+        let blobby_spread_property = SpreadScalerProperty {
+            instances: 9,
+            spread: vec![
+                Spread {
+                    name: "CrossRegionCustom".to_string(),
+                    requirements: BTreeMap::from_iter([(
+                        "region".to_string(),
+                        "us-([a-z]+)-1".to_string(),
+                    )]),
+                    weight: Some(33), // 3
+                },
+                Spread {
+                    name: "CrossRegionReal".to_string(),
+                    requirements: BTreeMap::from_iter([(
+                        "region".to_string(),
+                        "us-midwest-([0-9])".to_string(),
+                    )]),
+                    weight: Some(33), // 3
+                },
+                Spread {
+                    name: "RunOnEdge".to_string(),
+                    requirements: BTreeMap::from_iter([(
+                        "location".to_string(),
+                        "^[a-z]{4}$".to_string(),
+                    )]),
+                    weight: Some(33), // 3
+                },
+            ],
+        };
+
+        let blobby_spreadscaler = ComponentSpreadScaler::new(
+            store.clone(),
+            blobby_ref.to_string(),
+            blobby_id.to_string(),
+            lattice_id.to_string(),
+            MODEL_NAME.to_string(),
+            blobby_spread_property,
+            "fake_blobby",
+            vec![],
+        );
+
+        // STATE SETUP BEGIN
+        store
+            .store(
+                lattice_id,
+                blobby_id.to_string(),
+                Component {
+                    id: blobby_id.to_string(),
+                    name: "Blobby".to_string(),
+                    issuer: "AASDASDASDASD".to_string(),
+                    instances: HashMap::from_iter([
+                        (
+                            host_id_one.to_string(),
+                            // 3 instances on this host
+                            HashSet::from_iter([WadmComponentInfo {
+                                count: 3,
+                                annotations: spreadscaler_annotations(
+                                    "CrossRegionCustom",
+                                    blobby_spreadscaler.id(),
+                                ),
+                            }]),
+                        ),
+                        (
+                            host_id_two.to_string(),
+                            // 19 instances on this host
+                            HashSet::from_iter([WadmComponentInfo {
+                                count: 19,
+                                annotations: spreadscaler_annotations(
+                                    "CrossRegionReal",
+                                    blobby_spreadscaler.id(),
+                                ),
+                            }]),
+                        ),
+                    ]),
+                    reference: blobby_ref.to_string(),
+                },
+            )
+            .await?;
+
+        store
+            .store(
+                lattice_id,
+                host_id_one.to_string(),
+                Host {
+                    components: HashMap::from_iter([
+                        (blobby_id.to_string(), 3),
+                        ("MSOMEOTHERCOMPONENT".to_string(), 3),
+                    ]),
+                    friendly_name: "hey".to_string(),
+                    labels: HashMap::from_iter([
+                        ("cloud".to_string(), "fake".to_string()),
+                        ("region".to_string(), "us-brooks-1".to_string()),
+                    ]),
+                    providers: HashSet::new(),
+                    uptime_seconds: 123,
+                    version: None,
+                    id: host_id_one.to_string(),
+                    last_seen: Utc::now(),
+                },
+            )
+            .await?;
+
+        store
+            .store(
+                lattice_id,
+                host_id_two.to_string(),
+                Host {
+                    components: HashMap::from_iter([(blobby_id.to_string(), 19)]),
+                    friendly_name: "hey".to_string(),
+                    labels: HashMap::from_iter([
+                        ("cloud".to_string(), "real".to_string()),
+                        ("region".to_string(), "us-midwest-4".to_string()),
+                        ("label".to_string(), "value".to_string()),
+                    ]),
+                    providers: HashSet::new(),
+                    uptime_seconds: 123,
+                    version: None,
+                    id: host_id_two.to_string(),
+                    last_seen: Utc::now(),
+                },
+            )
+            .await?;
+
+        store
+            .store(
+                lattice_id,
+                host_id_three.to_string(),
+                Host {
+                    components: HashMap::new(),
+                    friendly_name: "hey".to_string(),
+                    labels: HashMap::from_iter([
+                        ("cloud".to_string(), "purgatory".to_string()),
+                        ("location".to_string(), "edge".to_string()),
+                    ]),
+                    providers: HashSet::new(),
+                    uptime_seconds: 123,
+                    version: None,
+                    id: host_id_three.to_string(),
+                    last_seen: Utc::now(),
+                },
+            )
+            .await?;
+        // STATE SETUP END
+
+        // Don't care about these events
+        assert!(blobby_spreadscaler
+            .handle_event(&Event::ProviderStarted(ProviderStarted {
+                claims: None,
+                provider_id: "".to_string(),
+                annotations: BTreeMap::default(),
+                image_ref: "".to_string(),
+                host_id: host_id_one.to_string()
+            }))
+            .await?
+            .is_empty());
+        assert!(blobby_spreadscaler
+            .handle_event(&Event::ProviderStopped(ProviderStopped {
+                annotations: BTreeMap::default(),
+                provider_id: "".to_string(),
+                reason: "".to_string(),
+                host_id: host_id_two.to_string()
+            }))
+            .await?
+            .is_empty());
+        assert!(blobby_spreadscaler
+            .handle_event(&Event::LinkdefSet(LinkdefSet {
+                linkdef: InterfaceLinkDefinition::default()
+            }))
+            .await?
+            .is_empty());
+        assert!(blobby_spreadscaler
+            .handle_event(&Event::LinkdefDeleted(LinkdefDeleted {
+                source_id: "source".to_string(),
+                name: "name".to_string(),
+                wit_namespace: "wasi".to_string(),
+                wit_package: "testy".to_string()
+            }))
+            .await?
+            .is_empty());
+
+        let mut cmds = blobby_spreadscaler.reconcile().await?;
+        assert_eq!(cmds.len(), 2);
+        cmds.sort_by(|a, b| match (a, b) {
+            (Command::ScaleComponent(a), Command::ScaleComponent(b)) => a.host_id.cmp(&b.host_id),
+            _ => panic!("Unexpected commands in spreadscaler list"),
+        });
+
+        let mut cmds_iter = cmds.iter();
+        match (
+            cmds_iter.next().expect("one scale command"),
+            cmds_iter.next().expect("two scale commands"),
+        ) {
+            (Command::ScaleComponent(scale1), Command::ScaleComponent(scale2)) => {
+                assert_eq!(scale1.host_id, host_id_three.to_string());
+                assert_eq!(scale1.count, 3);
+                assert_eq!(scale1.reference, blobby_ref);
+
+                assert_eq!(scale2.host_id, host_id_two.to_string());
+                assert_eq!(scale2.count, 3);
+                assert_eq!(scale2.component_id, blobby_id.to_string());
+            }
+            _ => panic!("Unexpected commands in spreadscaler list"),
+        }
+
+        let modifying_event = ComponentScaled {
+            annotations: spreadscaler_annotations("CrossRegionReal", blobby_spreadscaler.id()),
+            component_id: blobby_id.to_string(),
+            image_ref: blobby_ref.to_string(),
+            host_id: host_id_two.to_string(),
+            max_instances: 0,
+            claims: None,
+        };
+
+        worker
+            .do_work(ScopedMessage::<Event> {
+                lattice_id: lattice_id.to_string(),
+                inner: Event::ComponentScaled(modifying_event.clone()),
+                acker: None,
+            })
+            .await
+            .expect("should be able to handle an event");
+
+        let mut cmds = blobby_spreadscaler
+            .handle_event(&Event::ComponentScaled(modifying_event))
+            .await?;
+        assert_eq!(cmds.len(), 2);
+        cmds.sort_by(|a, b| match (a, b) {
+            (Command::ScaleComponent(a), Command::ScaleComponent(b)) => a.host_id.cmp(&b.host_id),
+            _ => panic!("Unexpected commands in spreadscaler list"),
+        });
+
+        let mut cmds_iter = cmds.iter();
+        match (
+            cmds_iter.next().expect("one scale command"),
+            cmds_iter.next().expect("two scale commands"),
+        ) {
+            (Command::ScaleComponent(scale1), Command::ScaleComponent(scale2)) => {
+                assert_eq!(scale1.host_id, host_id_three.to_string());
+                assert_eq!(scale1.count, 3);
+                assert_eq!(scale1.reference, blobby_ref);
+
+                assert_eq!(scale2.host_id, host_id_two.to_string());
+                assert_eq!(scale2.count, 3);
+                assert_eq!(scale2.component_id, blobby_id.to_string());
+            }
+            _ => panic!("Unexpected commands in spreadscaler list"),
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn can_calculate_ineligible_hosts() {
         let spreads = [
             Spread {
@@ -1675,5 +2143,104 @@ mod test {
         assert!(ineligible
             .iter()
             .any(|(id, _host)| *id == "NASDASDIMAREALHOST4"));
+    }
+
+    #[tokio::test]
+    async fn can_calculate_ineligible_hosts_regex() {
+        let spreads = [
+            Spread {
+                name: "SimpleOne".to_string(),
+                requirements: BTreeMap::from_iter([(
+                    "region".to_string(),
+                    "us-([a-z]+)-[0-2]".to_string(),
+                )]),
+                weight: Some(75),
+            },
+            Spread {
+                name: "SimpleTwo".to_string(),
+                requirements: BTreeMap::from_iter([(
+                    "resilient".to_string(),
+                    "^[a-z]{4}$".to_string(),
+                )]),
+                weight: Some(25),
+            },
+        ];
+
+        let hosts = HashMap::from_iter([
+            (
+                "NASDASDIMAREALHOST".to_string(),
+                Host {
+                    components: HashMap::from_iter([("fake".to_string(), 1)]),
+                    friendly_name: "hey".to_string(),
+                    labels: HashMap::from_iter([
+                        ("region".to_string(), "us-east-1".to_string()),
+                        ("resilient".to_string(), "true".to_string()),
+                    ]),
+                    providers: HashSet::new(),
+                    uptime_seconds: 123,
+                    version: None,
+                    id: "NASDASDIMAREALHOST".to_string(),
+                    last_seen: Utc::now(),
+                },
+            ),
+            (
+                "NASDASDIMAREALHOST2".to_string(),
+                Host {
+                    components: HashMap::from_iter([("fake".to_string(), 1)]),
+                    friendly_name: "hey".to_string(),
+                    labels: HashMap::from_iter([
+                        ("region".to_string(), "us-west-1".to_string()),
+                        ("resilient".to_string(), "true".to_string()),
+                    ]),
+                    providers: HashSet::new(),
+                    uptime_seconds: 123,
+                    version: None,
+                    id: "NASDASDIMAREALHOST2".to_string(),
+                    last_seen: Utc::now(),
+                },
+            ),
+            (
+                "NASDASDIMAREALHOST3".to_string(),
+                Host {
+                    components: HashMap::from_iter([("fake".to_string(), 1)]),
+                    friendly_name: "hey".to_string(),
+                    labels: HashMap::from_iter([
+                        ("region".to_string(), "us-east-5".to_string()),
+                        ("resilient".to_string(), "false".to_string()),
+                    ]),
+                    providers: HashSet::new(),
+                    uptime_seconds: 123,
+                    version: None,
+                    id: "NASDASDIMAREALHOST3".to_string(),
+                    last_seen: Utc::now(),
+                },
+            ),
+            (
+                "NASDASDIMAREALHOST4".to_string(),
+                Host {
+                    components: HashMap::from_iter([("fake".to_string(), 1)]),
+                    friendly_name: "hey".to_string(),
+                    labels: HashMap::from_iter([
+                        ("region".to_string(), "us-west-2".to_string()),
+                        ("resilient".to_string(), "false".to_string()),
+                        ("arch".to_string(), "nemesis".to_string()),
+                    ]),
+                    providers: HashSet::new(),
+                    uptime_seconds: 123,
+                    version: None,
+                    id: "NASDASDIMAREALHOST4".to_string(),
+                    last_seen: Utc::now(),
+                },
+            ),
+        ]);
+
+        // The first three hosts match at least one of the spread requirements (resilient: true || region: east)
+        // The last host is in west and not resilient.
+        let ineligible = compute_ineligible_hosts(&hosts, spreads.iter().collect());
+
+        assert_eq!(ineligible.len(), 1);
+        assert!(ineligible
+            .iter()
+            .any(|(id, _host)| *id == "NASDASDIMAREALHOST3"));
     }
 }
