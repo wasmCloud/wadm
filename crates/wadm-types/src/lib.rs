@@ -82,6 +82,52 @@ impl Manifest {
         self.spec.components.iter()
     }
 
+    /// Helper function to find shared components that are missing from the given list of
+    /// deployed applications
+    pub fn missing_shared_components(&self, deployed_apps: &Vec<&Manifest>) -> Vec<&Component> {
+        self.spec
+            .components
+            .iter()
+            .filter_map(|shared_component| {
+                match &shared_component.properties {
+                    Properties::Capability {
+                        properties:
+                            CapabilityProperties {
+                                image: None,
+                                application: Some(shared_app),
+                                ..
+                            },
+                    }
+                    | Properties::Component {
+                        properties:
+                            ComponentProperties {
+                                image: None,
+                                application: Some(shared_app),
+                                ..
+                            },
+                    } => {
+                        if deployed_apps.iter().filter(|a| a.shared()).any(|m| {
+                            m.metadata.name == shared_app.name
+                                && m.components().any(|c| {
+                                    c.name == shared_app.component
+                                    // This compares just the enum variant, not the actual properties
+                                    // For example, if we reference a shared component that's a capability,
+                                    // we want to make sure the deployed component is a capability.
+                                    && std::mem::discriminant(&c.properties)
+                                        == std::mem::discriminant(&shared_component.properties)
+                                })
+                        }) {
+                            None
+                        } else {
+                            Some(shared_component)
+                        }
+                    }
+                    _ => None,
+                }
+            })
+            .collect()
+    }
+
     /// Returns only the WebAssembly components in the manifest
     pub fn wasm_components(&self) -> impl Iterator<Item = &Component> {
         self.components()
