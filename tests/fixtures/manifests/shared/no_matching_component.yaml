@@ -1,0 +1,35 @@
+apiVersion: core.oam.dev/v1beta1
+kind: Application
+metadata:
+  name: no-matching-component
+  annotations:
+    description: 'Manifest that refers to a nonexistant component'
+spec:
+  components:
+    - name: hello
+      type: component
+      properties:
+        image: ghcr.io/wasmcloud/components/http-hello-world-rust:0.1.0
+      traits:
+        - type: spreadscaler
+          properties:
+            instances: 12
+    - name: httpserver
+      type: capability
+      properties:
+        application:
+          name: shared-http
+          component: some-nonexistant-component
+      traits:
+        - type: link
+          properties:
+            namespace: wasi
+            package: http
+            interfaces: [incoming-handler]
+            target:
+              name: hello
+            source:
+              config:
+                - name: httpaddr
+                  properties:
+                    address: 0.0.0.0:8080

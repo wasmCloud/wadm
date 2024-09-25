@@ -17,11 +17,12 @@ use crate::{
     helpers::{HELLO_IMAGE_REF, HTTP_SERVER_IMAGE_REF},
 };
 
-const MANIFESTS_PATH: &str = "tests/fixtures/manifests";
+const MANIFESTS_PATH: &str = "tests/fixtures/manifests/shared";
 const DOCKER_COMPOSE_FILE: &str = "tests/docker-compose-e2e-shared.yaml";
 
 const SHARED_COMPONENTS_LATTICE: &str = "shared_components";
 const SHARED_PROVIDERS_LATTICE: &str = "shared_providers";
+const INVALID_TEST_LATTICE: &str = "shared_invalid";
 
 #[cfg(feature = "_e2e_tests")]
 #[tokio::test(flavor = "multi_thread")]
@@ -42,6 +43,8 @@ async fn run_shared_component_tests() {
         .add_ctl_client(SHARED_PROVIDERS_LATTICE, None)
         .await;
     client_info.add_wadm_client(SHARED_PROVIDERS_LATTICE).await;
+    client_info.add_ctl_client(INVALID_TEST_LATTICE, None).await;
+    client_info.add_wadm_client(INVALID_TEST_LATTICE).await;
     client_info.launch_wadm().await;
 
     // Wait for the first event on the lattice prefix before we start deploying and checking
@@ -107,6 +110,7 @@ async fn run_shared_component_tests() {
     let tests = [
         test_shared_providers(&client_info).boxed(),
         test_shared_components(&client_info).boxed(),
+        test_invalid_shared(&client_info).boxed(),
     ];
     futures::future::join_all(tests).await;
 }
@@ -248,6 +252,16 @@ async fn test_shared_providers(client_info: &ClientInfo) {
         )
         .await
         .unwrap();
+
+        // TODO(#381): Additional validation tests coming in a follow-up PR
+        // // You can't undeploy an application that is depended on
+        // assert!(client.undeploy_manifest("shared-http").await.is_err());
+        // assert!(client.delete_manifest("shared-http", None).await.is_err());
+
+        // // Once dependent application is undeployed, you can undeploy and delete
+        // assert!(client.undeploy_manifest("shared-http-dev").await.is_ok());
+        // assert!(client.undeploy_manifest("shared-http").await.is_ok());
+        // assert!(client.delete_manifest("shared-http", None).await.is_ok());
 
         Ok(())
     })
@@ -409,4 +423,55 @@ async fn test_shared_components(client_info: &ClientInfo) {
         Ok(())
     })
     .await;
+}
+
+async fn test_invalid_shared(client_info: &ClientInfo) {
+    let client = client_info.wadm_client(INVALID_TEST_LATTICE);
+
+    // Including `image` and `application` is not supported
+    assert!(client
+        .put_manifest(client_info.load_raw_manifest("both_properties.yaml").await)
+        .await
+        .is_err());
+    // Must include `image` or `application`
+    assert!(client
+        .put_manifest(client_info.load_raw_manifest("no_properties.yaml").await)
+        .await
+        .is_err());
+
+    // If the app or component is mismatched, should warn at put time
+    // and fail to deploy
+    let (name, _version) = client
+        .put_manifest(client_info.load_raw_manifest("no_matching_app.yaml").await)
+        .await
+        .expect("Shouldn't have errored when creating manifest");
+    assert!(client.deploy_manifest(&name, None).await.is_err());
+    let (name, _version) = client
+        .put_manifest(
+            client_info
+                .load_raw_manifest("no_matching_component.yaml")
+                .await,
+        )
+        .await
+        .expect("Shouldn't have errored when creating manifest");
+    assert!(client.deploy_manifest(&name, None).await.is_err());
+
+    // Deploy manifest, but not shared, and another app that depends on it, which should fail
+    let (name, _version) = client
+        .put_manifest(client_info.load_raw_manifest("notshared_http.yaml").await)
+        .await
+        .expect("Shouldn't have errored when creating manifest");
+    client
+        .deploy_manifest(&name, None)
+        .await
+        .expect("Shouldn't have errored when deploying manifest");
+    let (name, _version) = client
+        .put_manifest(
+            client_info
+                .load_raw_manifest("notshared_http_dev.yaml")
+                .await,
+        )
+        .await
+        .expect("Shouldn't have errored when creating manifest");
+    assert!(client.deploy_manifest(&name, None).await.is_err());
 }
