@@ -70,8 +70,7 @@ impl<P: Publisher> Handler<P> {
             self.send_error(
                 msg.reply,
                 format!(
-                    "Manifest name {} contains invalid characters. Manifest names can only contain alphanumeric characters, dashes, and underscores.",
-                    manifest_name
+                    "Manifest name {manifest_name} contains invalid characters. Manifest names can only contain alphanumeric characters, dashes, and underscores.",
                 ),
             )
             .await;
@@ -90,66 +89,48 @@ impl<P: Publisher> Handler<P> {
                 }
             };
 
-        if let Some(error_message) = validate_manifest(manifest.clone()).await.err() {
+        if let Some(error_message) = validate_manifest(&manifest).await.err() {
             self.send_error(msg.reply, error_message.to_string()).await;
             return;
         }
 
-        let all_manifests: Vec<Manifest> = self
+        let all_stored_manifests = self
             .store
             .list(account_id, lattice_id)
             .await
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|manifest| manifest.get_current().shared())
-            // TODO: Do we need to just get deployed here? I assume that would be a warning if not deployed
-            .map(|manifest| manifest.get_current().clone())
+            .unwrap_or_default();
+        let deployed_shared_apps: Vec<&Manifest> = all_stored_manifests
+            .iter()
+            // Only keep deployed, shared applications
+            .filter(|manifest| {
+                manifest.deployed_version().is_some() && manifest.get_current().shared()
+            })
+            .map(|manifest| manifest.get_current())
             .collect();
 
-        // TODO: We are also going to have to ensure that links don't clobber other links. Specifically
-        // this relates to the uniqueness properties of a source/target/interface/etc for a link.
+        // TODO: Consider basic link collision validation, e.g. with link name for same source/ns/package/interface
 
-        // Ensure that all shared components are present in other (deployed?) manifests that are
-        // marked as shared applications
-        let mut shared_components = manifest
-            .components()
-            // Find all shared components
-            .filter_map(|c| match &c.properties {
-                Properties::Capability {
-                    properties:
-                        CapabilityProperties {
-                            image: None,
-                            application: Some(manifest_properties),
-                            ..
-                        },
-                } => Some(manifest_properties),
-                Properties::Component {
-                    properties:
-                        ComponentProperties {
-                            image: None,
-                            application: Some(manifest_properties),
-                            ..
-                        },
-                } => Some(manifest_properties),
-                _ => None,
-            });
-
-        // Ensure all shared components point to a component that is deployed in another manifest
-        // TODO: would be better to find matching bad shared components
-        if !shared_components.all(|properties| {
-            // TODO: ensure that the type of the property is preserved, e.g. component -> component
-            // TODO: ensure that the manifest is deployed
-            all_manifests.iter().any(|m| {
-                m.metadata.name == properties.name
-                    && m.components().any(|c| c.name == properties.component)
-            })
-        }) {
-            self.send_error(msg.reply, "shared component not found".to_string())
-                .await;
-            return;
-        }
-        // Explicitly drop to let the compiler know we're done with the manifest borrow
-        drop(shared_components);
+        // NOTE(brooksmtownsend): You can put an application with missing shared components, because
+        // the time where you truly need them is when you deploy the application. This can cause a bit
+        // of friction when it comes to deploy, but it avoids the frustrating race condition where you
+        // - Put the application looking for a deployed shared component
+        // - Undeploy the application with the shared component
+        // - Deploy the new application looking for the shared component (error)
+        let missing_shared_components = manifest.missing_shared_components(&deployed_shared_apps);
+        let message = if missing_shared_components.is_empty() {
+            format!(
+                "Successfully put manifest {} {}",
+                manifest_name,
+                current_manifests.current_version().to_owned()
+            )
+        } else {
+            format!(
+                "Successfully put manifest {} {}, but some shared components are not deployed: {:?}",
+                manifest_name,
+                current_manifests.current_version().to_owned(),
+                missing_shared_components
+            )
+        };
 
         let incoming_version = manifest.version().to_owned();
         if !current_manifests.add_version(manifest) {
@@ -171,11 +152,7 @@ impl<P: Publisher> Handler<P> {
             },
             name: manifest_name.clone(),
             total_versions: current_manifests.count(),
-            message: format!(
-                "Successfully put manifest {} {}",
-                manifest_name,
-                current_manifests.current_version()
-            ),
+            message,
         };
 
         trace!(total_manifests = %resp.total_versions, "Storing manifests");
@@ -438,6 +415,7 @@ impl<P: Publisher> Handler<P> {
                 }
             }
         };
+        // TODO: if shared and deployed, make sure that no other shared apps are using it
         let reply_data = if let Some(version) = req.version {
             match self.store.get(account_id, lattice_id, name).await {
                 Ok(Some((mut current, current_revision))) => {
@@ -730,6 +708,23 @@ impl<P: Publisher> Handler<P> {
             }
         }
 
+        // TODO: If this app is shared, or the previous version was, I need to make sure
+        // that deploying this version doesn't break a relationship
+
+        let missing_shared_components = staged_model.missing_shared_components(
+            &stored_models
+                .iter()
+                .filter(|a| a.deployed_version().is_some() && a.get_current().shared())
+                .map(|a| a.get_current())
+                .collect(),
+        );
+
+        // Ensure all shared components point to a valid component that is deployed in another application
+        if !missing_shared_components.is_empty() {
+            self.send_error(msg.reply, format!("Application contains shared components that are not deployed in other applications: {:?}", missing_shared_components)).await;
+            return;
+        }
+
         if !manifests.deploy(req.version.clone()) {
             trace!("Requested version does not exist");
             self.send_reply(
@@ -858,6 +853,7 @@ impl<P: Publisher> Handler<P> {
                     return;
                 }
             };
+        // TODO: if shared, make sure that no other shared apps are using it
 
         let reply = if manifests.undeploy() {
             trace!("Manifest undeployed. Storing updated manifest");
@@ -1023,7 +1019,7 @@ fn summary_from_manifest_status(manifest: StoredManifest, status: Status) -> Mod
 }
 
 // Manifest validation
-pub(crate) async fn validate_manifest(manifest: Manifest) -> anyhow::Result<()> {
+pub(crate) async fn validate_manifest(manifest: &Manifest) -> anyhow::Result<()> {
     let failures = wadm_types::validation::validate_manifest(&manifest).await?;
     for failure in failures {
         if matches!(
@@ -1059,12 +1055,12 @@ mod test {
         let correct_manifest = deserialize_yaml("../../tests/fixtures/manifests/simple.yaml")
             .expect("Should be able to parse");
 
-        assert!(validate_manifest(correct_manifest).await.is_ok());
+        assert!(validate_manifest(&correct_manifest).await.is_ok());
 
         let manifest = deserialize_yaml("../../tests/fixtures/manifests/incorrect_component.yaml")
             .expect("Should be able to parse");
 
-        match validate_manifest(manifest).await {
+        match validate_manifest(&manifest).await {
             Ok(()) => panic!("Should have detected incorrect component"),
             Err(e) => {
                 assert!(e
@@ -1076,7 +1072,7 @@ mod test {
         let manifest = deserialize_yaml("../../tests/fixtures/manifests/duplicate_component.yaml")
             .expect("Should be able to parse");
 
-        match validate_manifest(manifest).await {
+        match validate_manifest(&manifest).await {
             Ok(()) => panic!("Should have detected duplicate component"),
             Err(e) => assert!(e
                 .to_string()
@@ -1086,7 +1082,7 @@ mod test {
         let manifest = deserialize_yaml("../../tests/fixtures/manifests/duplicate_id1.yaml")
             .expect("Should be able to parse");
 
-        match validate_manifest(manifest).await {
+        match validate_manifest(&manifest).await {
             Ok(()) => {
                 panic!("Should have detected duplicate component ID in provider properties")
             }
@@ -1098,7 +1094,7 @@ mod test {
         let manifest = deserialize_yaml("../../tests/fixtures/manifests/duplicate_id2.yaml")
             .expect("Should be able to parse");
 
-        match validate_manifest(manifest).await {
+        match validate_manifest(&manifest).await {
             Ok(()) => panic!("Should have detected duplicate component ID in component properties"),
             Err(e) => assert!(e
                 .to_string()
@@ -1109,7 +1105,7 @@ mod test {
             deserialize_yaml("../../tests/fixtures/manifests/missing_capability_component.yaml")
                 .expect("Should be able to parse");
 
-        match validate_manifest(manifest).await {
+        match validate_manifest(&manifest).await {
             Ok(()) => panic!("Should have detected missing capability component"),
             Err(e) => assert!(e
                 .to_string()
@@ -1122,7 +1118,7 @@ mod test {
     #[tokio::test]
     async fn manifest_name_long_image_ref() -> Result<()> {
         validate_manifest(
-            deserialize_yaml("../../tests/fixtures/manifests/long_image_refs.yaml")
+            &deserialize_yaml("../../tests/fixtures/manifests/long_image_refs.yaml")
                 .context("failed to deserialize YAML")?,
         )
         .await
