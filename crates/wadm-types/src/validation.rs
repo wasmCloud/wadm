@@ -610,6 +610,7 @@ pub fn validate_component_properties(application: &Manifest) -> Vec<ValidationFa
                         image,
                         application,
                         config,
+                        secrets,
                         ..
                     },
             }
@@ -619,6 +620,7 @@ pub fn validate_component_properties(application: &Manifest) -> Vec<ValidationFa
                         image,
                         application,
                         config,
+                        secrets,
                         ..
                     },
             } => match (image, application) {
@@ -641,6 +643,15 @@ pub fn validate_component_properties(application: &Manifest) -> Vec<ValidationFa
                         ValidationFailureLevel::Error,
                         format!(
                             "Shared component '{}' cannot specify additional 'config'",
+                            shared_properties.name
+                        ),
+                    ));
+                }
+                (None, Some(shared_properties)) if !secrets.is_empty() => {
+                    failures.push(ValidationFailure::new(
+                        ValidationFailureLevel::Error,
+                        format!(
+                            "Shared component '{}' cannot specify additional 'secrets'",
                             shared_properties.name
                         ),
                     ));

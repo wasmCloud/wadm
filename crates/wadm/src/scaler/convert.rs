@@ -197,7 +197,7 @@ fn component_scalers<S, P, L>(
         );
 
         config_names.append(&mut secret_names.clone());
-        // TODO: Consider a way to report on status of a shared component
+        // TODO(#451): Consider a way to report on status of a shared component
         match (trt.trait_type.as_str(), &trt.properties, &properties.image) {
             // Shared application components already have their own spread/daemon scalers, you
             // cannot modify them from another manifest

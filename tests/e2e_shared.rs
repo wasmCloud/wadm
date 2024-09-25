@@ -141,7 +141,7 @@ async fn test_shared_providers(client_info: &ClientInfo) {
             .get_links()
             .await
             .map_err(|e| anyhow::anyhow!("{e:?}"))?
-            .response
+            .into_data()
             .context("Should have links")?;
 
         ensure!(links.is_empty(), "Shouldn't have any links");
@@ -181,7 +181,7 @@ async fn test_shared_providers(client_info: &ClientInfo) {
             .get_config("shared_http_dev-httpaddr")
             .await
             .map_err(|e| anyhow::anyhow!("should have http provider source config {e}"))?
-            .response
+            .into_data()
             .context("should have http provider source config response")?;
         assert_eq!(
             config,
@@ -197,7 +197,7 @@ async fn test_shared_providers(client_info: &ClientInfo) {
             .get_links()
             .await
             .map_err(|e| anyhow::anyhow!("{e:?}"))?
-            .response
+            .into_data()
             .context("Should have links")?;
 
         ensure!(
@@ -208,12 +208,12 @@ async fn test_shared_providers(client_info: &ClientInfo) {
         if !links.iter().any(|ld| {
             // This is checking that the source ID and the target
             // come from the correct generated manifest IDs
-            ld.source_id == "shared_http-httpserver"
-                && ld.target == "shared_http_dev-hello"
-                && ld.wit_namespace == "wasi"
-                && ld.wit_package == "http"
-                && ld.interfaces == vec!["incoming-handler"]
-                && ld.name == "default"
+            ld.source_id() == "shared_http-httpserver"
+                && ld.target() == "shared_http_dev-hello"
+                && ld.wit_namespace() == "wasi"
+                && ld.wit_package() == "http"
+                && ld.interfaces() == &vec!["incoming-handler"]
+                && ld.name() == "default"
         }) {
             anyhow::bail!(
                 "Link between http server provider and hello component should exist: {:#?}",
@@ -223,12 +223,12 @@ async fn test_shared_providers(client_info: &ClientInfo) {
         if !links.iter().any(|ld| {
             // This is checking that the source ID and the target
             // come from the correct generated manifest IDs
-            ld.source_id == "shared_http_dev-hello"
-                && ld.target == "shared_http-httpclient"
-                && ld.wit_namespace == "wasi"
-                && ld.wit_package == "http"
-                && ld.interfaces == vec!["outgoing-handler"]
-                && ld.name == "default"
+            ld.source_id() == "shared_http_dev-hello"
+                && ld.target() == "shared_http-httpclient"
+                && ld.wit_namespace() == "wasi"
+                && ld.wit_package() == "http"
+                && ld.interfaces() == &vec!["outgoing-handler"]
+                && ld.name() == "default"
         }) {
             anyhow::bail!(
                 "Link between hello component and http client provider should exist: {:#?}",
@@ -253,7 +253,7 @@ async fn test_shared_providers(client_info: &ClientInfo) {
         .await
         .unwrap();
 
-        // TODO(#381): Additional validation tests coming in a follow-up PR
+        // TODO(#451): Additional validation tests coming in a follow-up PR
         // // You can't undeploy an application that is depended on
         // assert!(client.undeploy_manifest("shared-http").await.is_err());
         // assert!(client.delete_manifest("shared-http", None).await.is_err());
@@ -291,7 +291,7 @@ async fn test_shared_components(client_info: &ClientInfo) {
             .get_config("shared_component-defaults")
             .await
             .map_err(|e| anyhow::anyhow!("should have http provider source config {e}"))?
-            .response
+            .into_data()
             .context("should have http provider source config response")?;
         assert_eq!(
             config,
@@ -305,7 +305,7 @@ async fn test_shared_components(client_info: &ClientInfo) {
             .get_links()
             .await
             .map_err(|e| anyhow::anyhow!("{e:?}"))?
-            .response
+            .into_data()
             .context("Should have links")?;
 
         ensure!(links.is_empty(), "Shouldn't have any links");
@@ -352,7 +352,7 @@ async fn test_shared_components(client_info: &ClientInfo) {
             .get_config("shared_component_dev-someconfig")
             .await
             .map_err(|e| anyhow::anyhow!("should have http provider source config {e}"))?
-            .response
+            .into_data()
             .context("should have http provider source config response")?;
         assert_eq!(
             config,
@@ -364,38 +364,38 @@ async fn test_shared_components(client_info: &ClientInfo) {
             .get_links()
             .await
             .map_err(|e| anyhow::anyhow!("{e:?}"))?
-            .response
+            .into_data()
             .context("Should have links")?;
 
         ensure!(links.len() == 3, "Should have three links");
 
         if !links.iter().any(|ld| {
-            ld.source_id == "shared_component_dev-hello"
-                && ld.target == "shared_component-link_to_meee"
-                && ld.wit_namespace == "custom"
-                && ld.wit_package == "package"
-                && ld.interfaces == vec!["inter", "face"]
-                && ld.name == "default"
+            ld.source_id() == "shared_component_dev-hello"
+                && ld.target() == "shared_component-link_to_meee"
+                && ld.wit_namespace() == "custom"
+                && ld.wit_package() == "package"
+                && ld.interfaces() == &vec!["inter", "face"]
+                && ld.name() == "default"
         }) {
             anyhow::bail!("Link between hello components should exist: {:#?}", links)
         }
         if !links.iter().any(|ld| {
-            ld.source_id == "shared_component-link_to_meee"
-                && ld.target == "shared_component_dev-hello"
-                && ld.wit_namespace == "custom"
-                && ld.wit_package == "package"
-                && ld.interfaces == vec!["inter", "face"]
-                && ld.name == "default"
+            ld.source_id() == "shared_component-link_to_meee"
+                && ld.target() == "shared_component_dev-hello"
+                && ld.wit_namespace() == "custom"
+                && ld.wit_package() == "package"
+                && ld.interfaces() == &vec!["inter", "face"]
+                && ld.name() == "default"
         }) {
             anyhow::bail!("Link between hello components should exist: {:#?}", links)
         }
         if !links.iter().any(|ld| {
-            ld.source_id == "shared_component_dev-httpserver"
-                && ld.target == "shared_component-link_to_meee"
-                && ld.wit_namespace == "wasi"
-                && ld.wit_package == "http"
-                && ld.interfaces == vec!["incoming-handler"]
-                && ld.name == "default"
+            ld.source_id() == "shared_component_dev-httpserver"
+                && ld.target() == "shared_component-link_to_meee"
+                && ld.wit_namespace() == "wasi"
+                && ld.wit_package() == "http"
+                && ld.interfaces() == &vec!["incoming-handler"]
+                && ld.name() == "default"
         }) {
             anyhow::bail!(
                 "Link between http server provider and hello component should exist: {:#?}",
