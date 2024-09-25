@@ -344,9 +344,22 @@ fn provider_scalers<S, P, L>(
 
     let mut scaler_specified = false;
     scalers.extend(traits.unwrap_or(&EMPTY_TRAIT_VEC).iter().filter_map(|trt| {
-        // TODO: properties.image to check for shared?
-        match (trt.trait_type.as_str(), &trt.properties) {
-            (SPREADSCALER_TRAIT, TraitProperty::SpreadScaler(p)) => {
+        match (trt.trait_type.as_str(), &trt.properties, &properties.image) {
+            // Shared application components already have their own spread/daemon scalers, you
+            // cannot modify them from another manifest
+            (SPREADSCALER_TRAIT, TraitProperty::SpreadScaler(_), None) => {
+                warn!(
+                    "Unsupported SpreadScaler trait specified for a shared provider {component_name}"
+                );
+                None
+            }
+            (DAEMONSCALER_TRAIT, TraitProperty::SpreadScaler(_), None) => {
+                warn!(
+                    "Unsupported DaemonScaler trait specified for a shared provider {component_name}"
+                );
+                None
+            }
+            (SPREADSCALER_TRAIT, TraitProperty::SpreadScaler(p), Some(image)) => {
                 scaler_specified = true;
                 let (config_scalers, mut config_names) =
                     config_to_scalers(snapshot_data, application_name, &properties.config);
@@ -358,31 +371,29 @@ fn provider_scalers<S, P, L>(
                 );
                 config_names.append(&mut secret_names.clone());
 
-                properties.image.as_ref().map(|image| {
-                    Box::new(BackoffWrapper::new(
-                        ProviderSpreadScaler::new(
-                            snapshot_data.clone(),
-                            ProviderSpreadConfig {
-                                lattice_id: lattice_id.to_owned(),
-                                provider_id: provider_id.to_owned(),
-                                provider_reference: image.to_owned(),
-                                spread_config: p.to_owned(),
-                                model_name: application_name.to_owned(),
-                                provider_config: config_names,
-                            },
-                            component_name,
-                        ),
-                        notifier.clone(),
-                        config_scalers,
-                        secret_scalers,
-                        notifier_subject,
-                        application_name,
-                        // Providers are a bit longer because it can take a bit to download
-                        Some(Duration::from_secs(60)),
-                    )) as BoxedScaler
-                })
+                Some(Box::new(BackoffWrapper::new(
+                    ProviderSpreadScaler::new(
+                        snapshot_data.clone(),
+                        ProviderSpreadConfig {
+                            lattice_id: lattice_id.to_owned(),
+                            provider_id: provider_id.to_owned(),
+                            provider_reference: image.to_owned(),
+                            spread_config: p.to_owned(),
+                            model_name: application_name.to_owned(),
+                            provider_config: config_names,
+                        },
+                        component_name,
+                    ),
+                    notifier.clone(),
+                    config_scalers,
+                    secret_scalers,
+                    notifier_subject,
+                    application_name,
+                    // Providers are a bit longer because it can take a bit to download
+                    Some(Duration::from_secs(60)),
+                )) as BoxedScaler)
             }
-            (DAEMONSCALER_TRAIT, TraitProperty::SpreadScaler(p)) => {
+            (DAEMONSCALER_TRAIT, TraitProperty::SpreadScaler(p), Some(image)) => {
                 scaler_specified = true;
                 let (config_scalers, mut config_names) =
                     config_to_scalers(snapshot_data, application_name, &properties.config);
@@ -393,8 +404,7 @@ fn provider_scalers<S, P, L>(
                     policies,
                 );
                 config_names.append(&mut secret_names.clone());
-                properties.image.as_ref().map(|image| {
-                    Box::new(BackoffWrapper::new(
+                Some(Box::new(BackoffWrapper::new(
                         ProviderDaemonScaler::new(
                             snapshot_data.clone(),
                             ProviderSpreadConfig {
@@ -414,11 +424,10 @@ fn provider_scalers<S, P, L>(
                         application_name,
                         // Providers are a bit longer because it can take a bit to download
                         Some(Duration::from_secs(60)),
-                    )) as BoxedScaler
-                })
+                    )) as BoxedScaler)
             }
             // Find the target component of the link and create a scaler for it.
-            (LINK_TRAIT, TraitProperty::Link(p)) => {
+            (LINK_TRAIT, TraitProperty::Link(p), _) => {
                 components
                     .iter()
                     .find_map(|component| match &component.properties {
