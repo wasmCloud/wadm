@@ -1,0 +1,15 @@
+apiVersion: core.oam.dev/v1beta1
+kind: Application
+metadata:
+  name: no-props
+  annotations:
+    description: 'Contains a component with neither image and application'
+spec:
+  components:
+    - name: httpserver
+      type: capability
+      properties:
+        config:
+          - name: log
+            properties:
+              level: info
