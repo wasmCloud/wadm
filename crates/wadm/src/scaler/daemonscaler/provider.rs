@@ -606,7 +606,6 @@ mod test {
         );
 
         let mut commands = spreadscaler.reconcile().await?;
-        println!("Provider: {:?}", commands);
         assert_eq!(commands.len(), 2);
         // Sort to enable predictable test
         commands.sort_unstable_by(|a, b| match (a, b) {
