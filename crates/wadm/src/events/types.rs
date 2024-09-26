@@ -11,9 +11,7 @@ use std::{
 use cloudevents::{AttributesReader, Data, Event as CloudEvent, EventBuilder, EventBuilderV10};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use wasmcloud_control_interface::{
-    ComponentDescription, InterfaceLinkDefinition, ProviderDescription,
-};
+use wasmcloud_control_interface::{ComponentDescription, Link, ProviderDescription};
 
 use wadm_types::Manifest;
 
@@ -424,7 +422,7 @@ event_impl!(
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct LinkdefSet {
     #[serde(flatten)]
-    pub linkdef: InterfaceLinkDefinition,
+    pub linkdef: Link,
 }
 
 event_impl!(LinkdefSet, "com.wasmcloud.lattice.linkdef_set");

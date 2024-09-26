@@ -286,8 +286,8 @@ impl From<HostHeartbeat> for Host {
             .into_iter()
             .map(|component| {
                 (
-                    component.id, // SAFETY: Unlikely to not fit into a usize, but fallback just in case
-                    component.max_instances.try_into().unwrap_or(usize::MAX),
+                    component.id().into(), // SAFETY: Unlikely to not fit into a usize, but fallback just in case
+                    component.max_instances().try_into().unwrap_or(usize::MAX),
                 )
             })
             .collect();
@@ -326,9 +326,9 @@ impl From<&HostHeartbeat> for Host {
             .iter()
             .map(|component| {
                 (
-                    component.id.to_owned(),
+                    component.id().to_owned(),
                     // SAFETY: Unlikely to not fit into a usize, but fallback just in case
-                    component.max_instances.try_into().unwrap_or(usize::MAX),
+                    component.max_instances().try_into().unwrap_or(usize::MAX),
                 )
             })
             .collect();

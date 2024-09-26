@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use tokio::sync::RwLock;
 use tracing::debug;
-use wasmcloud_control_interface::InterfaceLinkDefinition;
+use wasmcloud_control_interface::Link;
 use wasmcloud_secrets_types::SecretConfig;
 
 use crate::storage::{Component, Host, Provider, ReadStore, StateKind};
@@ -28,7 +28,7 @@ pub struct SnapshotStore<S, L> {
     lattice_source: L,
     lattice_id: String,
     stored_state: Arc<RwLock<InMemoryData>>,
-    links: Arc<RwLock<Vec<InterfaceLinkDefinition>>>,
+    links: Arc<RwLock<Vec<Link>>>,
 }
 
 impl<S, L> Clone for SnapshotStore<S, L>
@@ -165,7 +165,7 @@ where
     S: Send + Sync,
     L: Send + Sync,
 {
-    async fn get_links(&self) -> anyhow::Result<Vec<InterfaceLinkDefinition>> {
+    async fn get_links(&self) -> anyhow::Result<Vec<Link>> {
         Ok(self.links.read().await.clone())
     }
 }

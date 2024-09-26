@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use serde::{de::DeserializeOwned, Serialize};
 use tokio::sync::RwLock;
-use wasmcloud_control_interface::{HostInventory, InterfaceLinkDefinition};
+use wasmcloud_control_interface::{HostInventory, Link};
 use wasmcloud_secrets_types::SecretConfig;
 
 use crate::publisher::Publisher;
@@ -111,7 +111,7 @@ impl crate::storage::Store for TestStore {
 pub struct TestLatticeSource {
     pub claims: HashMap<String, Claims>,
     pub inventory: Arc<RwLock<HashMap<String, HostInventory>>>,
-    pub links: Vec<InterfaceLinkDefinition>,
+    pub links: Vec<Link>,
     pub config: HashMap<String, HashMap<String, String>>,
 }
 
@@ -131,7 +131,7 @@ impl InventorySource for TestLatticeSource {
 
 #[async_trait::async_trait]
 impl LinkSource for TestLatticeSource {
-    async fn get_links(&self) -> anyhow::Result<Vec<InterfaceLinkDefinition>> {
+    async fn get_links(&self) -> anyhow::Result<Vec<Link>> {
         Ok(self.links.clone())
     }
 }

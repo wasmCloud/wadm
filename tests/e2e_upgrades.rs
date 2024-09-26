@@ -136,7 +136,7 @@ async fn test_upgrade(client_info: &ClientInfo) {
             .get_links()
             .await
             .map_err(|e| anyhow::anyhow!("{e:?}"))?
-            .response
+            .into_data()
             .context("should have links")?;
 
         let http_link = links
@@ -305,7 +305,7 @@ async fn test_upgrade(client_info: &ClientInfo) {
             .get_links()
             .await
             .map_err(|e| anyhow::anyhow!("{e:?}"))?
-            .response
+            .into_data()
             .context("should've had links")?;
 
         let http_link = links
@@ -423,7 +423,7 @@ async fn test_upgrade(client_info: &ClientInfo) {
             .get_links()
             .await
             .map_err(|e| anyhow::anyhow!("{e:?}"))?
-            .response
+            .into_data()
             .context("should've had links")?;
 
         let http_link = links

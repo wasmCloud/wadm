@@ -6,7 +6,7 @@ use wasmcloud_secrets_types::SecretConfig;
 
 use tracing::{debug, instrument, trace, warn};
 use wadm_types::api::Status;
-use wasmcloud_control_interface::{CtlResponse, HostInventory, InterfaceLinkDefinition};
+use wasmcloud_control_interface::{HostInventory, Link};
 
 use crate::{commands::Command, publisher::Publisher, APP_SPEC_ANNOTATION};
 
@@ -43,7 +43,7 @@ pub trait InventorySource {
 /// due to testing, but it does allow us to abstract away the concrete type of the client
 #[async_trait::async_trait]
 pub trait LinkSource {
-    async fn get_links(&self) -> anyhow::Result<Vec<InterfaceLinkDefinition>>;
+    async fn get_links(&self) -> anyhow::Result<Vec<Link>>;
 }
 
 /// A trait for anything that can fetch a piece of named configuration
@@ -95,11 +95,8 @@ pub fn secret_config_from_map(map: HashMap<String, String>) -> anyhow::Result<Se
 impl ClaimsSource for wasmcloud_control_interface::Client {
     async fn get_claims(&self) -> anyhow::Result<HashMap<String, Claims>> {
         match self.get_claims().await.map_err(|e| anyhow::anyhow!("{e}")) {
-            Ok(CtlResponse {
-                success: true,
-                response: Some(claims),
-                ..
-            }) => {
+            Ok(ctl_resp) if ctl_resp.succeeded() => {
+                let claims = ctl_resp.data().context("missing claims data")?.to_owned();
                 Ok(claims
                     .into_iter()
                     .filter_map(|mut claim| {
@@ -134,13 +131,12 @@ impl InventorySource for wasmcloud_control_interface::Client {
             .await
             .map_err(|e| anyhow::anyhow!("{e:?}"))?
         {
-            CtlResponse {
-                success: true,
-                response: Some(host_inventory),
-                ..
-            } => Ok(host_inventory),
-            CtlResponse { message, .. } => Err(anyhow::anyhow!(
-                "Failed to get inventory for host {host_id}, {message}"
+            ctl_resp if ctl_resp.succeeded() && ctl_resp.data().is_some() => Ok(ctl_resp
+                .into_data()
+                .context("missing host inventory data")?),
+            ctl_resp => Err(anyhow::anyhow!(
+                "Failed to get inventory for host {host_id}, {}",
+                ctl_resp.message()
             )),
         }
     }
@@ -152,18 +148,19 @@ impl InventorySource for wasmcloud_control_interface::Client {
 // links
 #[async_trait::async_trait]
 impl LinkSource for wasmcloud_control_interface::Client {
-    async fn get_links(&self) -> anyhow::Result<Vec<InterfaceLinkDefinition>> {
+    async fn get_links(&self) -> anyhow::Result<Vec<Link>> {
         match self
             .get_links()
             .await
             .map_err(|e| anyhow::anyhow!("{e:?}"))?
         {
-            CtlResponse {
-                success: true,
-                response: Some(links),
-                ..
-            } => Ok(links),
-            CtlResponse { message, .. } => Err(anyhow::anyhow!("Failed to get links, {message}")),
+            ctl_resp if ctl_resp.succeeded() && ctl_resp.data().is_some() => {
+                Ok(ctl_resp.into_data().context("missing link data")?)
+            }
+            ctl_resp => Err(anyhow::anyhow!(
+                "Failed to get links, {}",
+                ctl_resp.message()
+            )),
         }
     }
 }
@@ -176,15 +173,13 @@ impl ConfigSource for wasmcloud_control_interface::Client {
             .await
             .map_err(|e| anyhow::anyhow!("{e:?}"))?
         {
-            CtlResponse {
-                success: true,
-                response: Some(config),
-                ..
-            } => Ok(Some(config)),
+            ctl_resp if ctl_resp.succeeded() && ctl_resp.data().is_some() => {
+                Ok(ctl_resp.into_data())
+            }
             // TODO(https://github.com/wasmCloud/wasmCloud/issues/1906): The control interface should return a None when config isn't found
             // instead of returning an error.
-            CtlResponse { message, .. } => {
-                debug!("Failed to get config for {name}, {message}");
+            ctl_resp => {
+                debug!("Failed to get config for {name}, {}", ctl_resp.message());
                 Ok(None)
             }
         }
@@ -199,21 +194,16 @@ impl SecretSource for wasmcloud_control_interface::Client {
             .await
             .map_err(|e| anyhow::anyhow!("{e:?}"))?
         {
-            CtlResponse {
-                success: true,
-                response: Some(secret),
-                ..
-            } => secret_config_from_map(secret).map(Some),
-            CtlResponse {
-                message,
-                response: None,
-                ..
-            } => {
-                debug!("Failed to get secret for {name}, {message}");
+            ctl_resp if ctl_resp.succeeded() && ctl_resp.data().is_some() => {
+                secret_config_from_map(ctl_resp.into_data().context("missing secret data")?)
+                    .map(Some)
+            }
+            ctl_resp if ctl_resp.data().is_none() => {
+                debug!("Failed to get secret for {name}, {}", ctl_resp.message());
                 Ok(None)
             }
-            CtlResponse { message, .. } => {
-                debug!("Failed to get secret for {name}, {message}");
+            ctl_resp => {
+                debug!("Failed to get secret for {name}, {}", ctl_resp.message());
                 Ok(None)
             }
         }

@@ -482,7 +482,7 @@ mod test {
     use anyhow::Result;
     use chrono::Utc;
     use wadm_types::{Spread, SpreadScalerProperty};
-    use wasmcloud_control_interface::InterfaceLinkDefinition;
+    use wasmcloud_control_interface::Link;
 
     use crate::{
         commands::Command,
@@ -1499,7 +1499,7 @@ mod test {
             .is_empty());
         assert!(blobby_spreadscaler
             .handle_event(&Event::LinkdefSet(LinkdefSet {
-                linkdef: InterfaceLinkDefinition::default()
+                linkdef: Link::default()
             }))
             .await?
             .is_empty());

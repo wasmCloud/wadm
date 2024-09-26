@@ -242,9 +242,13 @@ impl ClientInfo {
             .await
             .expect("Should be able to fetch hosts")
             .into_iter()
-            .filter_map(|host| {
-                host.response
-                    .map(|resp| (self.ctl_client(lattice_prefix).clone(), resp.id))
+            .filter_map(|resp| {
+                resp.into_data().map(|resp| {
+                    (
+                        self.ctl_client(lattice_prefix).clone(),
+                        resp.id().to_string(),
+                    )
+                })
             })
             .map(|(client, host_id)| async move {
                 let inventory = client
@@ -252,9 +256,9 @@ impl ClientInfo {
                     .await
                     .map_err(|e| anyhow::anyhow!("{e:?}"))?;
                 Ok((
-                    host_id,
+                    host_id.to_string(),
                     inventory
-                        .response
+                        .into_data()
                         .expect("Should have host inventory response"),
                 ))
             });
@@ -333,7 +337,7 @@ pub async fn check_config(
         .get_config(config_name)
         .await
         .map_err(|e| anyhow::anyhow!(e))?
-        .response
+        .into_data()
         .expect("Should have config response");
     for (key, value) in values {
         if let Some(expected) = config.get(key) {
@@ -357,13 +361,12 @@ pub fn check_components(
     manifest_name: &str,
     expected_count: usize,
 ) -> anyhow::Result<()> {
-    let all_components = inventory.values().flat_map(|inv| &inv.components);
+    let all_components = inventory.values().flat_map(|inv| inv.components());
     let component_count: usize = all_components
         .filter(|component| {
-            component.image_ref == image_ref
+            component.image_ref() == image_ref
                 && component
-                    .annotations
-                    .as_ref()
+                    .annotations()
                     .and_then(|annotations| {
                         annotations
                             .get(APP_SPEC_ANNOTATION)
@@ -371,7 +374,7 @@ pub fn check_components(
                     })
                     .unwrap_or(false)
         })
-        .map(|component| component.max_instances as usize)
+        .map(|component| component.max_instances() as usize)
         .sum();
     if component_count != expected_count {
         anyhow::bail!(
@@ -419,7 +422,7 @@ pub fn check_providers(
 ) -> anyhow::Result<()> {
     let provider_count = inventory
         .values()
-        .flat_map(|inv| &inv.providers)
+        .flat_map(|inv| inv.providers())
         .filter(|provider| {
             // You can only have 1 provider per host and that could be created by any manifest,
             // so we can just check the image ref and that it is managed by wadm
@@ -469,12 +472,9 @@ pub async fn get_manifest_status_info(
     match stream
         .get_last_raw_message_by_subject(&format!("wadm.status.{lattice_id}.{name}",))
         .await
-        .map(|raw| {
-            B64decoder
-                .decode(raw.payload)
-                .map(|b| serde_json::from_slice::<Status>(&b))
-        }) {
-        Ok(Ok(Ok(status))) => Some(status.info),
+        .map(|raw| serde_json::from_slice::<Status>(&raw.payload))
+    {
+        Ok(Ok(status)) => Some(status.info),
         // Model status doesn't exist or is invalid, assuming undeployed
         _ => None,
     }

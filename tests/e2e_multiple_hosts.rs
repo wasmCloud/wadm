@@ -133,7 +133,7 @@ async fn test_no_requirements(client_info: &ClientInfo) {
             .get_config("hello_simple-httpaddr")
             .await
             .map_err(|e| anyhow::anyhow!("should have http provider source config {e}"))?
-            .response
+            .into_data()
             .context("should have http provider source config response")?;
         assert_eq!(
             config,
@@ -148,7 +148,7 @@ async fn test_no_requirements(client_info: &ClientInfo) {
             .get_links()
             .await
             .map_err(|e| anyhow::anyhow!("{e:?}"))?
-            .response
+            .into_data()
             .context("Should have links")?;
 
         if !links.iter().any(|ld| {
@@ -206,7 +206,7 @@ async fn test_no_requirements(client_info: &ClientInfo) {
             .get_links()
             .await
             .map_err(|e| anyhow::anyhow!("{e:?}"))?
-            .response
+            .into_data()
             .context("Should have links")?;
 
         if !links.is_empty() {
@@ -309,7 +309,7 @@ async fn test_complex_app(client_info: &ClientInfo) {
             .get_config("complex-defaultcode")
             .await
             .map_err(|e| anyhow::anyhow!("should have blobby component config: {e:?}"))?
-            .response
+            .into_data()
             .context("should have blobby component config response")?;
         assert_eq!(
             blobby_config,
@@ -320,7 +320,7 @@ async fn test_complex_app(client_info: &ClientInfo) {
             .get_config("complex-rootfs")
             .await
             .map_err(|e| anyhow::anyhow!("should have target link config {e:?}"))?
-            .response
+            .into_data()
             .context("should have target link config response")?;
         assert_eq!(
             blobby_target_config,
@@ -331,7 +331,7 @@ async fn test_complex_app(client_info: &ClientInfo) {
             .get_config("complex-httpaddr")
             .await
             .map_err(|e| anyhow::anyhow!("should have source link config {e:?}"))?
-            .response
+            .into_data()
             .context("should have target link config response")?;
         assert_eq!(
             http_source_config,
@@ -342,7 +342,7 @@ async fn test_complex_app(client_info: &ClientInfo) {
             .get_config("complex-defaultfs")
             .await
             .map_err(|e| anyhow::anyhow!("should have provider config {e:?}"))?
-            .response
+            .into_data()
             .context("should have provider config response")?;
         assert_eq!(
             fileserver_config,
@@ -362,7 +362,7 @@ async fn test_complex_app(client_info: &ClientInfo) {
             .get_links()
             .await
             .map_err(|e| anyhow::anyhow!("{e:?}"))?
-            .response
+            .into_data()
             .context("Should have links")?;
 
         if !links.iter().any(|ld| {
@@ -395,12 +395,12 @@ async fn test_complex_app(client_info: &ClientInfo) {
 
         // Make sure nothing is running on things it shouldn't be on
         if inventory.values().any(|inv| {
-            inv.labels
+            inv.labels()
                 .get("region")
                 .map(|region| region == "us-taylor-west" || region == "us-brooks-east")
                 .unwrap_or(false)
                 && inv
-                    .providers
+                    .providers()
                     .iter()
                     .any(|prov| prov.id == BLOBSTORE_FS_PROVIDER_ID)
         }) {
@@ -409,7 +409,7 @@ async fn test_complex_app(client_info: &ClientInfo) {
         let moon_inventory = inventory
             .values()
             .find(|inv| {
-                inv.labels
+                inv.labels()
                     .get("region")
                     .map(|region| region == "moon")
                     .unwrap_or(false)
@@ -417,9 +417,9 @@ async fn test_complex_app(client_info: &ClientInfo) {
             .unwrap();
 
         if moon_inventory
-            .components
+            .components()
             .iter()
-            .any(|component| component.id == BLOBBY_COMPONENT_ID)
+            .any(|component| component.id() == BLOBBY_COMPONENT_ID)
         {
             anyhow::bail!("Actors shouldn't be running on the moon");
         }
@@ -460,16 +460,16 @@ async fn test_stop_host_rebalance(client_info: &ClientInfo) {
         .expect("Unable to fetch inventory")
         .into_iter()
         .filter(|(_, inv)| {
-            inv.labels
+            inv.labels()
                 .get("region")
                 .map(|region| region == "us-brooks-east")
                 .unwrap_or(false)
         })
         .max_by_key(|(_, inv)| {
-            inv.components
+            inv.components()
                 .iter()
-                .find(|component| component.id == HELLO_COMPONENT_ID)
-                .map(|desc| desc.max_instances)
+                .find(|component| component.id() == HELLO_COMPONENT_ID)
+                .map(|desc| desc.max_instances())
                 .unwrap_or(0)
         })
         .map(|(host_id, _)| host_id)
