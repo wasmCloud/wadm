@@ -357,10 +357,10 @@ mod test {
         sync::Arc,
     };
 
-    use anyhow::Result;
+    use anyhow::{anyhow, Result};
     use chrono::Utc;
     use wadm_types::{api::StatusType, Spread, SpreadScalerProperty};
-    use wasmcloud_control_interface::{HostInventory, InterfaceLinkDefinition};
+    use wasmcloud_control_interface::{HostInventory, Link};
 
     use crate::{
         commands::Command,
@@ -794,20 +794,19 @@ mod test {
         // Inserting for heartbeat handling later
         lattice_source.inventory.write().await.insert(
             host_id_three.to_string(),
-            HostInventory {
-                components: vec![],
-                friendly_name: "hey".to_string(),
-                labels: HashMap::from_iter([
+            HostInventory::builder()
+                .friendly_name("hey".into())
+                .labels(BTreeMap::from_iter([
                     ("cloud".to_string(), "purgatory".to_string()),
                     ("location".to_string(), "edge".to_string()),
                     ("region".to_string(), "us-brooks-1".to_string()),
-                ]),
-                providers: vec![],
-                host_id: host_id_three.to_string(),
-                version: "1.0.0".to_string(),
-                uptime_human: "what is time really anyway maaaan".to_string(),
-                uptime_seconds: 42,
-            },
+                ]))
+                .host_id(host_id_three.into())
+                .version("1.0.0".into())
+                .uptime_human("what is time really anyway maaaan".into())
+                .uptime_seconds(42)
+                .build()
+                .map_err(|e| anyhow!("failed to build host inventory: {e}"))?,
         );
         let command_publisher = CommandPublisher::new(NoopPublisher, "doesntmatter");
         let status_publisher = StatusPublisher::new(NoopPublisher, None, "doesntmatter");
@@ -957,7 +956,7 @@ mod test {
             .is_empty());
         assert!(blobby_daemonscaler
             .handle_event(&Event::LinkdefSet(LinkdefSet {
-                linkdef: InterfaceLinkDefinition::default()
+                linkdef: Link::default()
             }))
             .await?
             .is_empty());

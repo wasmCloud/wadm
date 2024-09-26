@@ -101,9 +101,11 @@ impl Worker for CommandWorker {
         .map_err(|e| anyhow::anyhow!("{e:?}"));
 
         match res {
-            Ok(ack) if !ack.success => {
+            Ok(ack) if !ack.succeeded() => {
                 message.nack().await;
-                Err(WorkError::Other(anyhow::anyhow!("{}", ack.message).into()))
+                Err(WorkError::Other(
+                    anyhow::anyhow!("{}", ack.message()).into(),
+                ))
             }
             Ok(_) => message.ack().await.map_err(WorkError::from),
             Err(e) => {

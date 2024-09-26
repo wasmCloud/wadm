@@ -6,7 +6,7 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
-use wasmcloud_control_interface::InterfaceLinkDefinition;
+use wasmcloud_control_interface::Link;
 
 use crate::{
     events::{ComponentScaleFailed, ComponentScaled, Event, ProviderStartFailed, ProviderStarted},
@@ -235,9 +235,9 @@ pub struct PutLink {
     pub model_name: String,
 }
 
-impl From<PutLink> for InterfaceLinkDefinition {
-    fn from(value: PutLink) -> InterfaceLinkDefinition {
-        InterfaceLinkDefinition {
+impl From<PutLink> for Link {
+    fn from(value: PutLink) -> Link {
+        Link {
             source_id: value.source_id,
             target: value.target,
             name: value.name,

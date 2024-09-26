@@ -149,12 +149,15 @@ where
                 (
                     true,
                     // TODO(#88): reverse compare too
-                    // Ensure all named configs are the same
-                    linkdef.source_config.iter().all(|config_name| {
-                        self.config.source_config.iter().any(|c| c == config_name)
-                    }) || linkdef.target_config.iter().all(|config_name| {
-                        self.config.target_config.iter().any(|c| c == config_name)
-                    }),
+                    // Ensure all supplied configs (both source and target) are the same
+                    linkdef
+                        .source_config
+                        .iter()
+                        .eq(self.config.source_config.iter())
+                        && linkdef
+                            .target_config
+                            .iter()
+                            .eq(self.config.target_config.iter()),
                 )
             })
             .unwrap_or((false, false));
@@ -275,7 +278,7 @@ mod test {
         vec,
     };
 
-    use wasmcloud_control_interface::InterfaceLinkDefinition;
+    use wasmcloud_control_interface::Link;
 
     use chrono::Utc;
 
@@ -427,7 +430,7 @@ mod test {
         let provider_ref = "provider_ref".to_string();
         let provider_id = "provider".to_string();
 
-        let linkdef = InterfaceLinkDefinition {
+        let linkdef = Link {
             source_id: component_id.to_string(),
             target: provider_id.to_string(),
             wit_namespace: "namespace".to_string(),
@@ -580,7 +583,7 @@ mod test {
 
         let commands = link_scaler
             .handle_event(&Event::LinkdefSet(LinkdefSet {
-                linkdef: InterfaceLinkDefinition {
+                linkdef: Link {
                     // NOTE: contract, link, and provider id matches but the component is different
                     source_id: "nm0001772".to_string(),
                     target: "VASDASD".to_string(),

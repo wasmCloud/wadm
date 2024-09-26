@@ -32,12 +32,10 @@ async fn test_commands() {
         .await
         .expect("should get hosts back")
         .first()
-        .as_ref()
         .expect("Should be able to find hosts")
-        .response
-        .as_ref()
-        .expect("Should be able to get host")
-        .id
+        .data()
+        .map(|h| h.id())
+        .expect("should be able to get host")
         .to_owned();
 
     let mut sub = nats_client
@@ -70,13 +68,13 @@ async fn test_commands() {
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
     // Get the current components and make sure stuff was started
-    let inventory = ctl_client
+    let resp_data = ctl_client
         .get_host_inventory(&host_id)
         .await
         .expect("should get host inventory back")
-        .response
-        .expect("should have host inventory")
-        .components;
+        .into_data()
+        .expect("should have host inventory");
+    let inventory = resp_data.components();
     assert_eq!(
         inventory.len(),
         1,
@@ -84,17 +82,18 @@ async fn test_commands() {
         inventory
     );
     assert_eq!(
-        inventory[0].image_ref, HELLO_IMAGE_REF,
+        inventory[0].image_ref(),
+        HELLO_IMAGE_REF,
         "Should have started the correct component"
     );
     assert_eq!(
-        inventory[0].max_instances, 2,
+        inventory[0].max_instances(),
+        2,
         "Should have started the component with correct concurrency"
     );
     assert_eq!(
         inventory[0]
-            .annotations
-            .as_ref()
+            .annotations()
             .unwrap()
             .get(wadm::MANAGED_BY_ANNOTATION)
             .expect("Should have the managed by annotation"),
@@ -103,8 +102,7 @@ async fn test_commands() {
     );
     assert_eq!(
         inventory[0]
-            .annotations
-            .as_ref()
+            .annotations()
             .unwrap()
             .get(wadm::APP_SPEC_ANNOTATION)
             .expect("Should have the managed by annotation"),
@@ -150,13 +148,13 @@ async fn test_commands() {
     wait_for_event(&mut sub, "health_check_passed").await;
 
     // Get the current providers and make sure stuff was started
-    let inventory = ctl_client
+    let resp_data = ctl_client
         .get_host_inventory(&host_id)
         .await
         .expect("should get host inventory back")
-        .response
-        .expect("should have host inventory")
-        .providers;
+        .into_data()
+        .expect("should have host inventory");
+    let inventory = resp_data.providers();
     assert_eq!(inventory.len(), 1, "Should only have 1 provider");
     assert_eq!(
         inventory[0].image_ref.as_deref().unwrap(),
@@ -211,7 +209,7 @@ async fn test_commands() {
         .get_links()
         .await
         .expect("should get links back")
-        .response
+        .into_data()
         .expect("should have links");
     // We could have more than one link due to local testing, so search for the proper link
     inventory
@@ -248,7 +246,7 @@ async fn test_commands() {
         .get_links()
         .await
         .expect("should get links back")
-        .response
+        .into_data()
         .expect("should have links");
     // We could have more than one link due to local testing, so search for the proper link
     assert!(
@@ -280,13 +278,13 @@ async fn test_commands() {
     wait_for_event(&mut sub, "provider_stopped").await;
 
     // Get the current providers and make sure stuff was started
-    let inventory = ctl_client
+    let resp_data = ctl_client
         .get_host_inventory(&host_id)
         .await
         .expect("should get host inventory back")
-        .response
-        .expect("should have host inventory")
-        .providers;
+        .into_data()
+        .expect("should have host inventory");
+    let inventory = resp_data.providers();
     assert!(inventory.is_empty(), "Should have no providers");
 
     // Stop the component
@@ -311,13 +309,13 @@ async fn test_commands() {
     wait_for_event(&mut sub, "component_scaled").await;
 
     // Get the current providers and make sure stuff was started
-    let inventory = ctl_client
+    let resp_data = ctl_client
         .get_host_inventory(&host_id)
         .await
         .expect("should get host inventory back")
-        .response
-        .expect("should have host inventory")
-        .components;
+        .into_data()
+        .expect("should have host inventory");
+    let inventory = resp_data.components();
     assert!(inventory.is_empty(), "Should have no components");
 }
 
@@ -344,17 +342,14 @@ async fn test_annotation_stop() {
         .await
         .unwrap();
 
-    let host_id = ctl_client
-        .get_hosts()
-        .await
-        .unwrap()
+    let responses = ctl_client.get_hosts().await.unwrap();
+    let host_id = responses
         .first()
         .expect("Should be able to find hosts")
-        .response
-        .as_ref()
-        .unwrap()
-        .id
-        .to_owned();
+        .data()
+        .map(|v| v.id())
+        .clone()
+        .unwrap();
 
     // Start an unmangaged component
     // NOTE(thomastaylor312): This is a workaround with current behavior where empty annotations
@@ -382,7 +377,7 @@ async fn test_annotation_stop() {
         .publish_command(ScaleComponent {
             component_id: HELLO_COMPONENT_ID.to_string(),
             reference: HELLO_IMAGE_REF.to_string(),
-            host_id: host_id.clone(),
+            host_id: host_id.into(),
             count: 2,
             model_name: "fake".into(),
             annotations: BTreeMap::from_iter([("fake".to_string(), "wake".to_string())]),
@@ -403,18 +398,17 @@ async fn test_annotation_stop() {
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
     // Get the current components and make sure stuff was started
-    let inventory = ctl_client
+    let resp_data = ctl_client
         .get_host_inventory(&host_id)
         .await
         .expect("should get host inventory back")
-        .response
-        .expect("should have host inventory")
-        .components;
+        .into_data()
+        .expect("should have host inventory");
+    let inventory = resp_data.components();
     let managed_inventory = inventory
         .iter()
         .filter(|c| {
-            c.annotations
-                .as_ref()
+            c.annotations()
                 .is_some_and(|a| a.contains_key(MANAGED_BY_ANNOTATION))
         })
         .collect::<Vec<_>>();
@@ -425,16 +419,17 @@ async fn test_annotation_stop() {
         "Should only have 1 managed component"
     );
     assert_eq!(
-        managed_inventory[0].image_ref, HELLO_IMAGE_REF,
+        managed_inventory[0].image_ref(),
+        HELLO_IMAGE_REF,
         "Should have started the correct component"
     );
     assert!(managed_inventory[0]
-        .annotations
-        .as_ref()
+        .annotations()
         .map(|annotations| annotations.contains_key(MANAGED_BY_ANNOTATION))
         .unwrap_or(false));
     assert_eq!(
-        managed_inventory[0].max_instances, 2,
+        managed_inventory[0].max_instances(),
+        2,
         "Should have started the correct concurrency of components"
     );
 
@@ -444,7 +439,7 @@ async fn test_annotation_stop() {
             component_id: HELLO_COMPONENT_ID.to_owned(),
             reference: HELLO_IMAGE_REF.to_string(),
             count: 0,
-            host_id: host_id.clone(),
+            host_id: host_id.into(),
             model_name: "fake".into(),
             annotations: BTreeMap::from_iter([("fake".to_string(), "wake".to_string())]),
             config: vec![],
@@ -460,20 +455,22 @@ async fn test_annotation_stop() {
     wait_for_event(&mut sub, "component_scaled").await;
 
     // Get the current providers and make sure stuff was started
-    let inventory = ctl_client
+    let resp_data = ctl_client
         .get_host_inventory(&host_id)
         .await
         .unwrap()
-        .response
-        .unwrap()
-        .components;
+        .into_data()
+        .unwrap();
+    let inventory = resp_data.components();
     assert_eq!(inventory.len(), 1, "Should only have 1 component");
     assert_eq!(
-        inventory[0].image_ref, HELLO_IMAGE_REF,
+        inventory[0].image_ref(),
+        HELLO_IMAGE_REF,
         "Should have started the correct component"
     );
     assert_eq!(
-        inventory[0].max_instances, 1,
+        inventory[0].max_instances(),
+        1,
         "Should have 1 unmanaged component still running"
     );
 }

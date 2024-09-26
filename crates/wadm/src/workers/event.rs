@@ -495,46 +495,49 @@ where
             .into_iter()
             .map(|component_description| {
                 let instance = HashSet::from_iter([WadmComponentInfo {
-                    count: component_description.max_instances as usize,
+                    count: component_description.max_instances() as usize,
                     annotations: component_description
-                        .annotations
-                        .map(|a| a.into_iter().collect())
+                        .annotations()
+                        .map(|a| a.clone())
                         .unwrap_or_default(),
                 }]);
-                if let Some(component) = components.get(&component_description.id) {
+                if let Some(component) = components.get(component_description.id()) {
                     // Construct modified Component with new instances included
                     let mut new_instances = component.instances.clone();
                     new_instances.insert(host_id.to_owned(), instance);
                     let component = Component {
                         instances: new_instances,
-                        reference: component_description.image_ref,
-                        name: component_description.name.unwrap_or(component.name.clone()),
+                        reference: component_description.image_ref().into(),
+                        name: component_description
+                            .name()
+                            .unwrap_or(&component.name)
+                            .into(),
                         ..component.clone()
                     };
 
-                    (component_description.id, component)
-                } else if let Some(claim) = claims.get(&component_description.id) {
+                    (component_description.id().to_string(), component)
+                } else if let Some(claim) = claims.get(component_description.id()) {
                     (
-                        component_description.id.clone(),
+                        component_description.id().to_string(),
                         Component {
-                            id: component_description.id,
+                            id: component_description.id().into(),
                             name: claim.name.to_owned(),
                             issuer: claim.issuer.to_owned(),
                             instances: HashMap::from_iter([(host_id.to_owned(), instance)]),
-                            reference: component_description.image_ref,
+                            reference: component_description.image_ref().into(),
                         },
                     )
                 } else {
                     debug!("Claims not found for component on host, component is unsigned");
 
                     (
-                        component_description.id.clone(),
+                        component_description.id().to_string(),
                         Component {
-                            id: component_description.id,
+                            id: component_description.id().into(),
                             name: "".to_owned(),
                             issuer: "".to_owned(),
                             instances: HashMap::from_iter([(host_id.to_owned(), instance)]),
-                            reference: component_description.image_ref,
+                            reference: component_description.image_ref().into(),
                         },
                     )
                 }
@@ -558,12 +561,12 @@ where
             .iter()
             .filter_map(|component_description| {
                 if components
-                    .get(&component_description.id)
+                    .get(component_description.id())
                     // NOTE(brooksmtownsend): This code maps the component to a boolean indicating if it's up-to-date with the heartbeat or not.
                     // If the component matches what the heartbeat says, we return None, otherwise we return Some(component_description).
                     .map(|component| {
                         // If the stored reference isn't what we receive on the heartbeat, update
-                        component_description.image_ref == component.reference
+                        component_description.image_ref() == component.reference
                             && component
                                 .instances
                                 .get(&host.host_id)
@@ -575,14 +578,14 @@ where
                                     // Update if annotations or counts are different
                                     let annotations: BTreeMap<String, String> =
                                         component_description
-                                            .annotations
-                                            .clone()
+                                            .annotations()
+                                            .cloned()
                                             .map(|a| a.into_iter().collect())
                                             .unwrap_or_default();
                                     store_instances.get(&annotations).map_or(
                                         false,
                                         |store_instance| {
-                                            component_description.max_instances as usize
+                                            component_description.max_instances() as usize
                                                 == store_instance.count
                                         },
                                     )
@@ -1074,8 +1077,8 @@ mod test {
             .await,
         );
 
-        let host1_id = "DS1".to_string();
-        let host2_id = "starkiller".to_string();
+        let host1_id = "DS1";
+        let host2_id = "starkiller";
 
         /***********************************************************/
         /******************** Host Start Tests *********************/
@@ -1086,7 +1089,7 @@ mod test {
                 lattice_id,
                 &HostStarted {
                     friendly_name: "death-star-42".to_string(),
-                    id: host1_id.clone(),
+                    id: host1_id.into(),
                     labels: labels.clone(),
                 },
             )
@@ -1113,7 +1116,7 @@ mod test {
                 lattice_id,
                 &HostStarted {
                     friendly_name: "starkiller-base-2015".to_string(),
-                    id: host2_id.clone(),
+                    id: host2_id.into(),
                     labels: labels2.clone(),
                 },
             )
@@ -1155,7 +1158,7 @@ mod test {
             }),
             image_ref: "coruscant.galactic.empire/tarkin:0.1.0".into(),
             component_id: "TARKIN".into(),
-            host_id: host1_id.clone(),
+            host_id: host1_id.into(),
             annotations: BTreeMap::default(),
             max_instances: 500,
         };
@@ -1168,14 +1171,14 @@ mod test {
             .get("TARKIN")
             .expect("Component should exist in state");
         let hosts = store.list::<Host>(lattice_id).await.unwrap();
-        let host = hosts.get(&host1_id).expect("Host should exist in state");
+        let host = hosts.get(host1_id).expect("Host should exist in state");
         assert_eq!(
             host.components.get(&component1_scaled.component_id),
             Some(&500),
             "Component count in host should be updated"
         );
         assert_eq!(
-            component.count_for_host(&host1_id),
+            component.count_for_host(host1_id),
             500,
             "Component count should be modified with an increase in scale"
         );
@@ -1190,7 +1193,7 @@ mod test {
             }),
             image_ref: "coruscant.galactic.empire/tarkin:0.1.0".into(),
             component_id: "TARKIN".into(),
-            host_id: host1_id.clone(),
+            host_id: host1_id.into(),
             annotations: BTreeMap::default(),
             max_instances: 200,
         };
@@ -1203,14 +1206,14 @@ mod test {
             .get("TARKIN")
             .expect("Component should exist in state");
         let hosts = store.list::<Host>(lattice_id).await.unwrap();
-        let host = hosts.get(&host1_id).expect("Host should exist in state");
+        let host = hosts.get(host1_id).expect("Host should exist in state");
         assert_eq!(
             host.components.get(&component1_scaled.component_id),
             Some(&200),
             "Component count in host should be updated"
         );
         assert_eq!(
-            component.count_for_host(&host1_id),
+            component.count_for_host(host1_id),
             200,
             "Component count should be modified with a decrease in scale"
         );
@@ -1225,7 +1228,7 @@ mod test {
             }),
             image_ref: "coruscant.galactic.empire/tarkin:0.1.0".into(),
             component_id: "TARKIN".into(),
-            host_id: host1_id.clone(),
+            host_id: host1_id.into(),
             annotations: BTreeMap::default(),
             max_instances: 0,
         };
@@ -1235,7 +1238,7 @@ mod test {
             .expect("Should be able to handle component event");
         let components = store.list::<Component>(lattice_id).await.unwrap();
         let hosts = store.list::<Host>(lattice_id).await.unwrap();
-        let host = hosts.get(&host1_id).expect("Host should exist in state");
+        let host = hosts.get(host1_id).expect("Host should exist in state");
         assert_eq!(
             host.components.get(&component1_scaled.component_id),
             None,
@@ -1256,7 +1259,7 @@ mod test {
             }),
             image_ref: "coruscant.galactic.empire/tarkin:0.1.0".into(),
             component_id: "TARKIN".into(),
-            host_id: host1_id.clone(),
+            host_id: host1_id.into(),
             annotations: BTreeMap::default(),
             max_instances: 1,
         };
@@ -1269,14 +1272,14 @@ mod test {
             .get("TARKIN")
             .expect("Component should exist in state");
         let hosts = store.list::<Host>(lattice_id).await.unwrap();
-        let host = hosts.get(&host1_id).expect("Host should exist in state");
+        let host = hosts.get(host1_id).expect("Host should exist in state");
         assert_eq!(
             host.components.get(&component1_scaled.component_id),
             Some(&1),
             "Component in host should be readded from scratch"
         );
         assert_eq!(
-            component.count_for_host(&host1_id),
+            component.count_for_host(host1_id),
             1,
             "Component count should be modified with an initial start"
         );
@@ -1284,7 +1287,7 @@ mod test {
             .handle_component_scaled(
                 lattice_id,
                 &ComponentScaled {
-                    host_id: host2_id.clone(),
+                    host_id: host2_id.into(),
                     ..component1_scaled.clone()
                 },
             )
@@ -1300,7 +1303,7 @@ mod test {
                 ..Default::default()
             }),
             image_ref: "coruscant.galactic.empire/vader:0.1.0".into(),
-            host_id: host1_id.clone(),
+            host_id: host1_id.into(),
             component_id: "DARTHVADER".into(),
             annotations: BTreeMap::default(),
             max_instances: 2,
@@ -1314,7 +1317,7 @@ mod test {
             .handle_component_scaled(
                 lattice_id,
                 &ComponentScaled {
-                    host_id: host2_id.clone(),
+                    host_id: host2_id.into(),
                     ..component2_scaled.clone()
                 },
             )
@@ -1334,7 +1337,7 @@ mod test {
             }),
             image_ref: "coruscant.galactic.empire/force_choke:0.1.0".into(),
             provider_id: "CHOKE".into(),
-            host_id: host1_id.clone(),
+            host_id: host1_id.into(),
             annotations: BTreeMap::default(),
         };
 
@@ -1347,7 +1350,7 @@ mod test {
             }),
             image_ref: "coruscant.galactic.empire/laser:0.1.0".into(),
             provider_id: "BYEBYEALDERAAN".into(),
-            host_id: host2_id.clone(),
+            host_id: host2_id.into(),
             annotations: BTreeMap::default(),
         };
 
@@ -1357,7 +1360,7 @@ mod test {
             .expect("Should be able to handle provider event");
         let providers = store.list::<Provider>(lattice_id).await.unwrap();
         assert_eq!(providers.len(), 1, "Should only be 1 provider in state");
-        assert_provider(&providers, &provider1, &[&host1_id]);
+        assert_provider(&providers, &provider1, &[host1_id]);
 
         // Now start the second provider on both hosts (so we can test some things in the next test)
         worker
@@ -1368,7 +1371,7 @@ mod test {
             .handle_provider_started(
                 lattice_id,
                 &ProviderStarted {
-                    host_id: host1_id.clone(),
+                    host_id: host1_id.into(),
                     provider_id: provider2.provider_id.clone(),
                     ..provider2.clone()
                 },
@@ -1377,12 +1380,12 @@ mod test {
             .expect("Should be able to handle provider event");
         let providers = store.list::<Provider>(lattice_id).await.unwrap();
         assert_eq!(providers.len(), 2, "Should only be 2 providers in state");
-        assert_provider(&providers, &provider2, &[&host1_id, &host2_id]);
+        assert_provider(&providers, &provider2, &[host1_id, host2_id]);
 
         // Check that hosts got updated properly
         let hosts = store.list::<Host>(lattice_id).await.unwrap();
         assert_eq!(hosts.len(), 2, "Should only have 2 hosts");
-        let host = hosts.get(&host1_id).expect("Host should still exist");
+        let host = hosts.get(host1_id).expect("Host should still exist");
         assert_eq!(
             host.components.len(),
             2,
@@ -1393,7 +1396,7 @@ mod test {
             2,
             "Should have two different providers running"
         );
-        let host = hosts.get(&host2_id).expect("Host should still exist");
+        let host = hosts.get(host2_id).expect("Host should still exist");
         assert_eq!(
             host.components.len(),
             2,
@@ -1405,32 +1408,30 @@ mod test {
             "Should have a single provider running"
         );
 
-        let component_1_id = "TARKIN".to_string();
-        let component_2_id = "DARTHVADER".to_string();
+        let component_1_id = "TARKIN";
+        let component_2_id = "DARTHVADER";
 
         worker
             .handle_host_heartbeat(
                 lattice_id,
                 &HostHeartbeat {
                     components: vec![
-                        ComponentDescription {
-                            id: component_1_id.to_string(),
-                            image_ref: "ref1".to_string(),
-                            annotations: None,
-                            revision: 0,
-                            max_instances: 2,
-                            name: None,
-                        },
-                        ComponentDescription {
-                            id: component_2_id.to_string(),
-                            image_ref: "ref2".to_string(),
-                            annotations: None,
-                            revision: 0,
-                            max_instances: 2,
-                            name: None,
-                        },
+                        ComponentDescription::builder()
+                            .id(component_1_id.into())
+                            .revision(0)
+                            .image_ref("ref1".into())
+                            .max_instances(2)
+                            .build()
+                            .expect("failed to build description"),
+                        ComponentDescription::builder()
+                            .id(component_2_id.into())
+                            .revision(0)
+                            .image_ref("ref2".into())
+                            .max_instances(2)
+                            .build()
+                            .expect("failed to build description"),
                     ],
-                    friendly_name: "death-star-42".to_string(),
+                    friendly_name: "death-star-42".into(),
                     labels: labels.clone(),
                     issuer: "".to_string(),
                     providers: vec![
@@ -1452,7 +1453,7 @@ mod test {
                     uptime_human: "30s".into(),
                     uptime_seconds: 30,
                     version: semver::Version::parse("0.61.0").unwrap(),
-                    host_id: host1_id.clone(),
+                    host_id: host1_id.into(),
                 },
             )
             .await
@@ -1463,22 +1464,20 @@ mod test {
                 lattice_id,
                 &HostHeartbeat {
                     components: vec![
-                        ComponentDescription {
-                            id: component_1_id.to_string(),
-                            image_ref: "ref1".to_string(),
-                            annotations: None,
-                            revision: 0,
-                            max_instances: 2,
-                            name: None,
-                        },
-                        ComponentDescription {
-                            id: component_2_id.to_string(),
-                            image_ref: "ref2".to_string(),
-                            annotations: None,
-                            revision: 0,
-                            max_instances: 2,
-                            name: None,
-                        },
+                        ComponentDescription::builder()
+                            .id(component_1_id.into())
+                            .image_ref("ref1".into())
+                            .revision(0)
+                            .max_instances(2)
+                            .build()
+                            .expect("failed to build description"),
+                        ComponentDescription::builder()
+                            .id(component_2_id.into())
+                            .image_ref("ref2".into())
+                            .revision(0)
+                            .max_instances(2)
+                            .build()
+                            .expect("failed to build description"),
                     ],
                     issuer: "".to_string(),
                     friendly_name: "starkiller-base-2015".to_string(),
@@ -1493,7 +1492,7 @@ mod test {
                     uptime_human: "30s".into(),
                     uptime_seconds: 30,
                     version: semver::Version::parse("0.61.0").unwrap(),
-                    host_id: host2_id.clone(),
+                    host_id: host2_id.into(),
                 },
             )
             .await
@@ -1502,8 +1501,8 @@ mod test {
         // Check that our component and provider data is still correct.
         let providers = store.list::<Provider>(lattice_id).await.unwrap();
         assert_eq!(providers.len(), 2, "Should still have 2 providers in state");
-        assert_provider(&providers, &provider1, &[&host1_id]);
-        assert_provider(&providers, &provider2, &[&host1_id, &host2_id]);
+        assert_provider(&providers, &provider1, &[host1_id]);
+        assert_provider(&providers, &provider2, &[host1_id, host2_id]);
 
         let components = store.list::<Component>(lattice_id).await.unwrap();
         assert_eq!(
@@ -1514,12 +1513,12 @@ mod test {
         assert_component(
             &components,
             &component_1_id,
-            &[(&host1_id, 2), (&host2_id, 2)],
+            &[(host1_id, 2), (host2_id, 2)],
         );
         assert_component(
             &components,
             &component_2_id,
-            &[(&host1_id, 2), (&host2_id, 2)],
+            &[(host1_id, 2), (host2_id, 2)],
         );
 
         /***********************************************************/
@@ -1531,8 +1530,8 @@ mod test {
             claims: None,
             image_ref: "coruscant.galactic.empire/tarkin:0.1.0".into(),
             annotations: BTreeMap::default(),
-            component_id: component_1_id.clone(),
-            host_id: host1_id.clone(),
+            component_id: component_1_id.into(),
+            host_id: host1_id.into(),
             max_instances: 0,
         };
 
@@ -1547,24 +1546,24 @@ mod test {
             2,
             "Should still have 2 components in state"
         );
-        assert_component(&components, &component_1_id, &[(&host2_id, 2)]);
+        assert_component(&components, &component_1_id, &[(host2_id, 2)]);
         assert_component(
             &components,
             &component_2_id,
-            &[(&host1_id, 2), (&host2_id, 2)],
+            &[(host1_id, 2), (host2_id, 2)],
         );
 
         let host = store
-            .get::<Host>(lattice_id, &host2_id)
+            .get::<Host>(lattice_id, host2_id)
             .await
             .expect("Should be able to access store")
             .expect("Should have the host in the store");
-        assert_eq!(*host.components.get(&component_1_id).unwrap_or(&0), 2_usize);
-        assert_eq!(*host.components.get(&component_2_id).unwrap_or(&0), 2_usize);
+        assert_eq!(*host.components.get(component_1_id).unwrap_or(&0), 2_usize);
+        assert_eq!(*host.components.get(component_2_id).unwrap_or(&0), 2_usize);
 
         // Now stop on the other
         let stopped2 = ComponentScaled {
-            host_id: host2_id.clone(),
+            host_id: host2_id.into(),
             ..stopped
         };
 
@@ -1579,7 +1578,7 @@ mod test {
         assert_component(
             &components,
             &component_2_id,
-            &[(&host1_id, 2), (&host2_id, 2)],
+            &[(host1_id, 2), (host2_id, 2)],
         );
 
         /***********************************************************/
@@ -1593,7 +1592,7 @@ mod test {
                     annotations: BTreeMap::default(),
                     provider_id: provider2.provider_id.clone(),
                     reason: String::new(),
-                    host_id: host1_id.clone(),
+                    host_id: host1_id.into(),
                 },
             )
             .await
@@ -1601,16 +1600,16 @@ mod test {
 
         let providers = store.list::<Provider>(lattice_id).await.unwrap();
         assert_eq!(providers.len(), 2, "Should still have 2 providers in state");
-        assert_provider(&providers, &provider1, &[&host1_id]);
-        assert_provider(&providers, &provider2, &[&host2_id]);
+        assert_provider(&providers, &provider1, &[host1_id]);
+        assert_provider(&providers, &provider2, &[host2_id]);
 
         // Check that hosts got updated properly
         let hosts = store.list::<Host>(lattice_id).await.unwrap();
         assert_eq!(hosts.len(), 2, "Should only have 2 hosts");
-        let host = hosts.get(&host1_id).expect("Host should still exist");
+        let host = hosts.get(host1_id).expect("Host should still exist");
         assert_eq!(host.components.len(), 1, "Should have 1 component running");
         assert_eq!(host.providers.len(), 1, "Should have 1 provider running");
-        let host = hosts.get(&host2_id).expect("Host should still exist");
+        let host = hosts.get(host2_id).expect("Host should still exist");
         assert_eq!(host.components.len(), 1, "Should have 1 component running");
         assert_eq!(
             host.providers.len(),
@@ -1627,43 +1626,39 @@ mod test {
         *inventory.write().await = HashMap::from_iter([
             (
                 host1_id.to_string(),
-                HostInventory {
-                    friendly_name: "my-host-3".to_string(),
-                    components: vec![ComponentDescription {
-                        id: component_2_id.to_string(),
-                        image_ref: "ref2".to_string(),
-                        annotations: None,
-                        revision: 0,
-                        max_instances: 2,
-                        name: None,
-                    }],
-                    host_id: host1_id.to_string(),
-                    labels: HashMap::new(),
-                    providers: vec![],
-                    version: semver::Version::parse("0.61.0").unwrap().to_string(),
-                    uptime_human: "60s".into(),
-                    uptime_seconds: 60,
-                },
+                HostInventory::builder()
+                    .friendly_name("my-host-3".into())
+                    .components(vec![ComponentDescription::builder()
+                        .id(component_2_id.into())
+                        .image_ref("ref2".into())
+                        .revision(0)
+                        .max_instances(2)
+                        .build()
+                        .expect("failed to build description")])
+                    .host_id(host1_id.into())
+                    .version(semver::Version::parse("0.61.0").unwrap().to_string())
+                    .uptime_human("60s".into())
+                    .uptime_seconds(60)
+                    .build()
+                    .expect("failed to build host inventory"),
             ),
             (
                 host2_id.to_string(),
-                HostInventory {
-                    friendly_name: "my-host-4".to_string(),
-                    components: vec![ComponentDescription {
-                        id: component_2_id.to_string(),
-                        image_ref: "ref2".to_string(),
-                        annotations: None,
-                        revision: 0,
-                        max_instances: 2,
-                        name: None,
-                    }],
-                    host_id: host2_id.to_string(),
-                    labels: HashMap::new(),
-                    providers: vec![],
-                    version: semver::Version::parse("1.2.3").unwrap().to_string(),
-                    uptime_human: "100s".into(),
-                    uptime_seconds: 100,
-                },
+                HostInventory::builder()
+                    .friendly_name("my-host-4".into())
+                    .components(vec![ComponentDescription::builder()
+                        .id(component_2_id.into())
+                        .image_ref("ref2".into())
+                        .revision(0)
+                        .max_instances(2)
+                        .build()
+                        .expect("failed to build description")])
+                    .host_id(host2_id.into())
+                    .version(semver::Version::parse("1.2.3").unwrap().to_string())
+                    .uptime_human("100s".into())
+                    .uptime_seconds(100)
+                    .build()
+                    .expect("failed to build host inventory"),
             ),
         ]);
 
@@ -1672,14 +1667,13 @@ mod test {
             .handle_host_heartbeat(
                 lattice_id,
                 &HostHeartbeat {
-                    components: vec![ComponentDescription {
-                        id: component_2_id.to_string(),
-                        image_ref: "ref2".to_string(),
-                        annotations: None,
-                        revision: 0,
-                        max_instances: 2,
-                        name: None,
-                    }],
+                    components: vec![ComponentDescription::builder()
+                        .id(component_2_id.into())
+                        .image_ref("ref2".into())
+                        .revision(0)
+                        .max_instances(2)
+                        .build()
+                        .expect("failed to build description")],
                     friendly_name: "death-star-42".to_string(),
                     issuer: "".to_string(),
                     labels,
@@ -1693,7 +1687,7 @@ mod test {
                     uptime_human: "60s".into(),
                     uptime_seconds: 60,
                     version: semver::Version::parse("0.61.0").unwrap(),
-                    host_id: host1_id.clone(),
+                    host_id: host1_id.into(),
                 },
             )
             .await
@@ -1703,14 +1697,13 @@ mod test {
             .handle_host_heartbeat(
                 lattice_id,
                 &HostHeartbeat {
-                    components: vec![ComponentDescription {
-                        id: component_2_id.to_string(),
-                        image_ref: "ref2".to_string(),
-                        annotations: None,
-                        revision: 0,
-                        max_instances: 2,
-                        name: None,
-                    }],
+                    components: vec![ComponentDescription::builder()
+                        .id(component_2_id.into())
+                        .image_ref("ref2".into())
+                        .revision(0)
+                        .max_instances(2)
+                        .build()
+                        .expect("failed to build description")],
                     friendly_name: "starkiller-base-2015".to_string(),
                     labels: labels2,
                     issuer: "".to_string(),
@@ -1724,7 +1717,7 @@ mod test {
                     uptime_human: "60s".into(),
                     uptime_seconds: 60,
                     version: semver::Version::parse("0.61.0").unwrap(),
-                    host_id: host2_id.clone(),
+                    host_id: host2_id.into(),
                 },
             )
             .await
@@ -1733,10 +1726,10 @@ mod test {
         // Check that the heartbeat kept state consistent
         let hosts = store.list::<Host>(lattice_id).await.unwrap();
         assert_eq!(hosts.len(), 2, "Should only have 2 hosts");
-        let host = hosts.get(&host1_id).expect("Host should still exist");
+        let host = hosts.get(host1_id).expect("Host should still exist");
         assert_eq!(host.components.len(), 1, "Should have 1 component running");
         assert_eq!(host.providers.len(), 1, "Should have 1 provider running");
-        let host = hosts.get(&host2_id).expect("Host should still exist");
+        let host = hosts.get(host2_id).expect("Host should still exist");
         assert_eq!(host.components.len(), 1, "Should have 1 component running");
         assert_eq!(
             host.providers.len(),
@@ -1750,13 +1743,13 @@ mod test {
         assert_component(
             &components,
             &component_2_id,
-            &[(&host1_id, 2), (&host2_id, 2)],
+            &[(host1_id, 2), (host2_id, 2)],
         );
 
         let providers = store.list::<Provider>(lattice_id).await.unwrap();
         assert_eq!(providers.len(), 2, "Should still have 2 providers in state");
-        assert_provider(&providers, &provider1, &[&host1_id]);
-        assert_provider(&providers, &provider2, &[&host2_id]);
+        assert_provider(&providers, &provider1, &[host1_id]);
+        assert_provider(&providers, &provider2, &[host2_id]);
 
         /***********************************************************/
         /********************* Host Stop Tests *********************/
@@ -1767,7 +1760,7 @@ mod test {
                 lattice_id,
                 &HostStopped {
                     labels: HashMap::default(),
-                    id: host1_id.clone(),
+                    id: host1_id.into(),
                 },
             )
             .await
@@ -1775,7 +1768,7 @@ mod test {
 
         let hosts = store.list::<Host>(lattice_id).await.unwrap();
         assert_eq!(hosts.len(), 1, "Should only have 1 host");
-        let host = hosts.get(&host2_id).expect("Host should still exist");
+        let host = hosts.get(host2_id).expect("Host should still exist");
         assert_eq!(host.components.len(), 1, "Should have 1 component running");
         assert_eq!(
             host.providers.len(),
@@ -1786,23 +1779,23 @@ mod test {
         // Double check providers and components are the same
         let components = store.list::<Component>(lattice_id).await.unwrap();
         assert_eq!(components.len(), 1, "Should only have 1 component in state");
-        assert_component(&components, &component_2_id, &[(&host2_id, 2)]);
+        assert_component(&components, &component_2_id, &[(host2_id, 2)]);
 
         let providers = store.list::<Provider>(lattice_id).await.unwrap();
         assert_eq!(providers.len(), 1, "Should now have 1 provider in state");
-        assert_provider(&providers, &provider2, &[&host2_id]);
+        assert_provider(&providers, &provider2, &[host2_id]);
     }
 
     #[tokio::test]
     async fn test_discover_running_host() {
-        let component1_id = "SKYWALKER".to_string();
-        let component1_ref = "fakecloud.io/skywalker:0.1.0".to_string();
-        let component2_id = "ORGANA".to_string();
-        let component2_ref = "fakecloud.io/organa:0.1.0".to_string();
+        let component1_id = "SKYWALKER";
+        let component1_ref = "fakecloud.io/skywalker:0.1.0";
+        let component2_id = "ORGANA";
+        let component2_ref = "fakecloud.io/organa:0.1.0";
         let lattice_id = "discover_running_host";
         let claims = HashMap::from([
             (
-                component1_id.clone(),
+                component1_id.into(),
                 Claims {
                     name: "tosche_station".to_string(),
                     capabilities: vec!["wasmcloud:httpserver".to_string()],
@@ -1810,7 +1803,7 @@ mod test {
                 },
             ),
             (
-                component2_id.clone(),
+                component2_id.into(),
                 Claims {
                     name: "alderaan".to_string(),
                     capabilities: vec!["wasmcloud:keyvalue".to_string()],
@@ -1843,45 +1836,43 @@ mod test {
             .await,
         );
 
-        let provider_id = "HYPERDRIVE".to_string();
-        let host_id = "WHATAPIECEOFJUNK".to_string();
+        let provider_id = "HYPERDRIVE";
+        let host_id = "WHATAPIECEOFJUNK";
         // NOTE(brooksmtownsend): Painful manual manipulation of host inventory
         // to satisfy the way we currently query the inventory when handling heartbeats.
         *inventory.write().await = HashMap::from_iter([(
             host_id.to_string(),
-            HostInventory {
-                friendly_name: "my-host-5".to_string(),
-                components: vec![
-                    ComponentDescription {
-                        id: component1_id.to_string(),
-                        image_ref: component1_ref.to_string(),
-                        annotations: None,
-                        revision: 0,
-                        max_instances: 2,
-                        name: None,
-                    },
-                    ComponentDescription {
-                        id: component2_id.to_string(),
-                        image_ref: component2_ref.to_string(),
-                        annotations: None,
-                        revision: 0,
-                        max_instances: 1,
-                        name: None,
-                    },
-                ],
-                host_id: host_id.to_string(),
-                labels: HashMap::new(),
-                providers: vec![ProviderDescription {
-                    id: provider_id.clone(),
+            HostInventory::builder()
+                .friendly_name("my-host-5".into())
+                .components(vec![
+                    ComponentDescription::builder()
+                        .id(component1_id.into())
+                        .image_ref(component1_ref.into())
+                        .revision(0)
+                        .max_instances(2)
+                        .build()
+                        .expect("failed to build description"),
+                    ComponentDescription::builder()
+                        .id(component2_id.into())
+                        .image_ref(component2_ref.into())
+                        .revision(0)
+                        .max_instances(1)
+                        .build()
+                        .expect("failed to build description"),
+                ])
+                .host_id(host_id.into())
+                .providers(vec![ProviderDescription {
+                    id: provider_id.into(),
                     annotations: None,
                     image_ref: None,
                     name: None,
                     revision: 0,
-                }],
-                version: semver::Version::parse("0.61.0").unwrap().to_string(),
-                uptime_human: "60s".into(),
-                uptime_seconds: 60,
-            },
+                }])
+                .version(semver::Version::parse("0.61.0").unwrap().to_string())
+                .uptime_human("60s".into())
+                .uptime_seconds(60)
+                .build()
+                .expect("failed to build host inventory"),
         )]);
 
         // Heartbeat with components and providers that don't exist in the store yet
@@ -1890,28 +1881,26 @@ mod test {
                 lattice_id,
                 &HostHeartbeat {
                     components: vec![
-                        ComponentDescription {
-                            id: component1_id.to_string(),
-                            image_ref: component1_ref.to_string(),
-                            annotations: None,
-                            revision: 0,
-                            max_instances: 2,
-                            name: None,
-                        },
-                        ComponentDescription {
-                            id: component2_id.to_string(),
-                            image_ref: component2_ref.to_string(),
-                            annotations: None,
-                            revision: 0,
-                            max_instances: 1,
-                            name: None,
-                        },
+                        ComponentDescription::builder()
+                            .id(component1_id.into())
+                            .image_ref(component1_ref.into())
+                            .revision(0)
+                            .max_instances(2)
+                            .build()
+                            .expect("failed to build description"),
+                        ComponentDescription::builder()
+                            .id(component2_id.into())
+                            .image_ref(component2_ref.into())
+                            .revision(0)
+                            .max_instances(1)
+                            .build()
+                            .expect("failed to build description"),
                     ],
                     friendly_name: "millenium_falcon-1977".to_string(),
                     labels: HashMap::default(),
                     issuer: "".to_string(),
                     providers: vec![ProviderDescription {
-                        id: provider_id.clone(),
+                        id: provider_id.into(),
                         annotations: None,
                         image_ref: None,
                         name: None,
@@ -1920,7 +1909,7 @@ mod test {
                     uptime_human: "60s".into(),
                     uptime_seconds: 60,
                     version: semver::Version::parse("0.61.0").unwrap(),
-                    host_id: host_id.clone(),
+                    host_id: host_id.into(),
                 },
             )
             .await
@@ -1931,15 +1920,15 @@ mod test {
         let components = store.list::<Component>(lattice_id).await.unwrap();
         assert_eq!(components.len(), 2, "Store should now have two components");
         let component = components
-            .get(&component1_id)
+            .get(component1_id)
             .expect("component should exist");
-        let expected = claims.get(&component1_id).unwrap();
+        let expected = claims.get(component1_id).unwrap();
         assert_eq!(component.name, expected.name, "Data should match");
         assert_eq!(component.issuer, expected.issuer, "Data should match");
         assert_eq!(
             component
                 .instances
-                .get(&host_id)
+                .get(host_id)
                 .expect("Host should exist in count")
                 .get(&BTreeMap::new())
                 .expect("Should find a component with the correct annotations")
@@ -1949,15 +1938,15 @@ mod test {
         );
 
         let component = components
-            .get(&component2_id)
+            .get(component2_id)
             .expect("Component should exist");
-        let expected = claims.get(&component2_id).unwrap();
+        let expected = claims.get(component2_id).unwrap();
         assert_eq!(component.name, expected.name, "Data should match");
         assert_eq!(component.issuer, expected.issuer, "Data should match");
         assert_eq!(
             component
                 .instances
-                .get(&host_id)
+                .get(host_id)
                 .expect("Host should exist in count")
                 .len(),
             1,
@@ -1966,10 +1955,10 @@ mod test {
 
         let providers = store.list::<Provider>(lattice_id).await.unwrap();
         assert_eq!(providers.len(), 1, "Should have 1 provider in the store");
-        let provider = providers.get(&provider_id).expect("Provider should exist");
+        let provider = providers.get(provider_id).expect("Provider should exist");
         assert_eq!(provider.id, provider_id, "Data should match");
         assert!(
-            provider.hosts.contains_key(&host_id),
+            provider.hosts.contains_key(host_id),
             "Should have found host in provider store"
         );
     }
@@ -1997,7 +1986,7 @@ mod test {
             .await,
         );
 
-        let host_id = "CLOUDCITY".to_string();
+        let host_id = "CLOUDCITY";
 
         // Trigger a provider started and then a health check
         let provider = ProviderStarted {
@@ -2009,7 +1998,7 @@ mod test {
             }),
             image_ref: "bespin.lando.inc/tibanna:0.1.0".into(),
             provider_id: "GAS".into(),
-            host_id: host_id.clone(),
+            host_id: host_id.into(),
             annotations: BTreeMap::default(),
         };
 
@@ -2022,7 +2011,7 @@ mod test {
                 lattice_id,
                 &ProviderHealthCheckInfo {
                     provider_id: provider.provider_id.clone(),
-                    host_id: host_id.clone(),
+                    host_id: host_id.into(),
                 },
                 Some(false),
             )
@@ -2037,7 +2026,7 @@ mod test {
         assert!(
             matches!(
                 prov.hosts
-                    .get(&host_id)
+                    .get(host_id)
                     .expect("Should find status for host"),
                 ProviderStatus::Running
             ),
@@ -2050,7 +2039,7 @@ mod test {
                 lattice_id,
                 &ProviderHealthCheckInfo {
                     provider_id: provider.provider_id.clone(),
-                    host_id: host_id.clone(),
+                    host_id: host_id.into(),
                 },
                 Some(true),
             )
@@ -2065,7 +2054,7 @@ mod test {
         assert!(
             matches!(
                 prov.hosts
-                    .get(&host_id)
+                    .get(host_id)
                     .expect("Should find status for host"),
                 ProviderStatus::Failed
             ),
@@ -2142,25 +2131,26 @@ mod test {
                 lattice_id,
                 &HostHeartbeat {
                     components: vec![
-                        ComponentDescription {
-                            id: "jabba".to_string(),
-                            image_ref: "jabba.tatooinecr.io/jabba:latest".to_string(),
-                            name: Some("Da Hutt".to_string()),
-                            annotations: Some(HashMap::from_iter([(
+                        ComponentDescription::builder()
+                            .id("jabba".into())
+                            .image_ref("jabba.tatooinecr.io/jabba:latest".into())
+                            .name("Da Hutt".into())
+                            .annotations(BTreeMap::from_iter([(
                                 "da".to_string(),
                                 "gobah".to_string(),
-                            )])),
-                            revision: 0,
-                            max_instances: 5,
-                        },
-                        ComponentDescription {
-                            id: "jabba2".to_string(),
-                            image_ref: "jabba.tatooinecr.io/jabba:latest".to_string(),
-                            name: Some("Da Hutt".to_string()),
-                            annotations: None,
-                            revision: 0,
-                            max_instances: 1,
-                        },
+                            )]))
+                            .revision(0)
+                            .max_instances(5)
+                            .build()
+                            .expect("failed to build description"),
+                        ComponentDescription::builder()
+                            .id("jabba2".into())
+                            .image_ref("jabba.tatooinecr.io/jabba:latest".into())
+                            .name("Da Hutt".into())
+                            .revision(0)
+                            .max_instances(1)
+                            .build()
+                            .expect("failed to build description"),
                     ],
                     friendly_name: "palace-1983".to_string(),
                     labels: HashMap::default(),
