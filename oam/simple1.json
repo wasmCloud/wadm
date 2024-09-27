@@ -26,12 +26,19 @@
                   "requirements": {
                     "zone": "us-east-1"
                   },
-                  "weight": 80
+                  "weight": 60
                 },
                 {
                   "name": "westcoast",
                   "requirements": {
                     "zone": "us-west-1"
+                  },
+                  "weight": 20
+                },
+                {
+                  "name": "eithercoast",
+                  "requirements": {
+                    "zone": "us-([a-z]{4})-1"
                   },
                   "weight": 20
                 }
@@ -75,6 +82,12 @@
                   "name": "haslights",
                   "requirements": {
                     "ledenabled": "true"
+                  }
+                },
+                {
+                  "name": "hascloud",
+                  "requirements": {
+                    "cloud": "^[a-z]+$"
                   }
                 }
               ]
