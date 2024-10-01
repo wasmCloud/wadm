@@ -1,9 +1,14 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "wasmCloud Application Deployment Manager (wadm) Manifest",
+  "title": "Manifest",
   "description": "Manifest file based on the Open Application Model (OAM) specification for declaratively managing wasmCloud applications",
   "type": "object",
-  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
   "properties": {
     "apiVersion": {
       "description": "The OAM version of the manifest",
@@ -34,8 +39,18 @@
   "definitions": {
     "CapabilityProperties": {
       "type": "object",
-      "required": ["image"],
       "properties": {
+        "application": {
+          "description": "Information to locate a component within a shared application. Cannot be specified if the image is specified.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SharedApplicationComponentProperties"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "config": {
           "description": "Named configuration to pass to the provider. The merged set of configuration will be passed to the provider at runtime using the provider SDK's `init()` function.",
           "type": "array",
@@ -45,11 +60,17 @@
         },
         "id": {
           "description": "The component ID to use for this provider. If not supplied, it will be generated as a combination of the [Metadata::name] and the image reference.",
-          "type": ["string", "null"]
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "image": {
-          "description": "The image reference to use",
-          "type": "string"
+          "description": "The image reference to use. Required unless the component is a shared component that is defined in another shared application.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "secrets": {
           "description": "Named secret references to pass to the t. The provider will be able to retrieve these values at runtime using `wasmcloud:secrets/store`.",
@@ -67,32 +88,44 @@
       "oneOf": [
         {
           "type": "object",
-          "required": ["properties", "type"],
+          "required": [
+            "properties",
+            "type"
+          ],
           "properties": {
             "properties": {
               "$ref": "#/definitions/ComponentProperties"
             },
             "type": {
               "type": "string",
-              "enum": ["component"]
+              "enum": [
+                "component"
+              ]
             }
           }
         },
         {
           "type": "object",
-          "required": ["properties", "type"],
+          "required": [
+            "properties",
+            "type"
+          ],
           "properties": {
             "properties": {
               "$ref": "#/definitions/CapabilityProperties"
             },
             "type": {
               "type": "string",
-              "enum": ["capability"]
+              "enum": [
+                "capability"
+              ]
             }
           }
         }
       ],
-      "required": ["name"],
+      "required": [
+        "name"
+      ],
       "properties": {
         "name": {
           "description": "The name of this component",
@@ -100,7 +133,10 @@
         },
         "traits": {
           "description": "A list of various traits assigned to this component",
-          "type": ["array", "null"],
+          "type": [
+            "array",
+            "null"
+          ],
           "items": {
             "$ref": "#/definitions/Trait"
           }
@@ -109,8 +145,18 @@
     },
     "ComponentProperties": {
       "type": "object",
-      "required": ["image"],
       "properties": {
+        "application": {
+          "description": "Information to locate a component within a shared application. Cannot be specified if the image is specified.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SharedApplicationComponentProperties"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "config": {
           "description": "Named configuration to pass to the component. The component will be able to retrieve these values at runtime using `wasi:runtime/config.`",
           "type": "array",
@@ -120,11 +166,17 @@
         },
         "id": {
           "description": "The component ID to use for this component. If not supplied, it will be generated as a combination of the [Metadata::name] and the image reference.",
-          "type": ["string", "null"]
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "image": {
-          "description": "The image reference to use",
-          "type": "string"
+          "description": "The image reference to use. Required unless the component is a shared component that is defined in another shared application.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "secrets": {
           "description": "Named secret references to pass to the component. The component will be able to retrieve these values at runtime using `wasmcloud:secrets/store`.",
@@ -156,7 +208,9 @@
     "ConfigProperty": {
       "description": "Properties for the config list associated with components, providers, and links\n\n## Usage Defining a config block, like so: ```yaml source_config: - name: \"external-secret-kv\" - name: \"default-port\" properties: port: \"8080\" ```\n\nWill result in two config scalers being created, one with the name `basic-kv` and one with the name `default-port`. Wadm will not resolve collisions with configuration names between manifests.",
       "type": "object",
-      "required": ["name"],
+      "required": [
+        "name"
+      ],
       "properties": {
         "name": {
           "description": "Name of the config to ensure exists",
@@ -164,7 +218,10 @@
         },
         "properties": {
           "description": "Optional properties to put with the configuration. If the properties are omitted in the manifest, wadm will assume that the configuration is externally managed and will not attempt to create it, only reporting the status as failed if not found.",
-          "type": ["object", "null"],
+          "type": [
+            "object",
+            "null"
+          ],
           "additionalProperties": {
             "type": "string"
           }
@@ -175,7 +232,12 @@
     "LinkProperty": {
       "description": "Properties for links",
       "type": "object",
-      "required": ["interfaces", "namespace", "package", "target"],
+      "required": [
+        "interfaces",
+        "namespace",
+        "package",
+        "target"
+      ],
       "properties": {
         "interfaces": {
           "description": "WIT interfaces for the link",
@@ -186,7 +248,10 @@
         },
         "name": {
           "description": "The name of this link",
-          "type": ["string", "null"]
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "namespace": {
           "description": "WIT namespace for the link",
@@ -210,7 +275,10 @@
         "source_config": {
           "deprecated": true,
           "writeOnly": true,
-          "type": ["array", "null"],
+          "type": [
+            "array",
+            "null"
+          ],
           "items": {
             "$ref": "#/definitions/ConfigProperty"
           }
@@ -226,17 +294,24 @@
         "target_config": {
           "deprecated": true,
           "writeOnly": true,
-          "type": ["array", "null"],
+          "type": [
+            "array",
+            "null"
+          ],
           "items": {
             "$ref": "#/definitions/ConfigProperty"
           }
         }
-      }
+      },
+      "additionalProperties": false
     },
     "Metadata": {
       "description": "The metadata describing the manifest",
       "type": "object",
-      "required": ["annotations", "name"],
+      "required": [
+        "annotations",
+        "name"
+      ],
       "properties": {
         "annotations": {
           "description": "Optional data for annotating this manifest see <https://github.com/oam-dev/spec/blob/master/metadata.md#annotations-format>",
@@ -261,7 +336,11 @@
     "Policy": {
       "description": "A policy definition",
       "type": "object",
-      "required": ["name", "properties", "type"],
+      "required": [
+        "name",
+        "properties",
+        "type"
+      ],
       "properties": {
         "name": {
           "description": "The name of this policy",
@@ -282,14 +361,17 @@
     },
     "SecretProperty": {
       "type": "object",
-      "required": ["name", "properties"],
+      "required": [
+        "name",
+        "properties"
+      ],
       "properties": {
         "name": {
           "description": "The name of the secret. This is used by a reference by the component or capability to get the secret value as a resource.",
           "type": "string"
         },
         "properties": {
-          "description": "The of the secret. This indicates how to retrieve the secret value from a secrets backend and which backend to actually query.",
+          "description": "The properties of the secret that indicate how to retrieve the secret value from a secrets backend and which backend to actually query.",
           "allOf": [
             {
               "$ref": "#/definitions/SecretSourceProperty"
@@ -300,8 +382,18 @@
     },
     "SecretSourceProperty": {
       "type": "object",
-      "required": ["key", "policy"],
+      "required": [
+        "key",
+        "policy"
+      ],
       "properties": {
+        "field": {
+          "description": "The field to use for retrieving the secret from the backend. This is optional and can be used to retrieve a specific field from a secret.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "key": {
           "description": "The key to use for retrieving the secret from the backend.",
           "type": "string"
@@ -312,14 +404,36 @@
         },
         "version": {
           "description": "The version of the secret to retrieve. If not supplied, the latest version will be used.",
-          "type": ["string", "null"]
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "SharedApplicationComponentProperties": {
+      "type": "object",
+      "required": [
+        "component",
+        "name"
+      ],
+      "properties": {
+        "component": {
+          "description": "The name of the component in the shared application",
+          "type": "string"
+        },
+        "name": {
+          "description": "The name of the shared application",
+          "type": "string"
         }
       }
     },
     "Specification": {
       "description": "A representation of an OAM specification",
       "type": "object",
-      "required": ["components"],
+      "required": [
+        "components"
+      ],
       "properties": {
         "components": {
           "description": "The list of components for describing an application",
@@ -340,7 +454,10 @@
     "Spread": {
       "description": "Configuration for various spreading requirements",
       "type": "object",
-      "required": ["name", "requirements"],
+      "required": [
+        "name",
+        "requirements"
+      ],
       "properties": {
         "name": {
           "description": "The name of this spread requirement",
@@ -355,7 +472,10 @@
         },
         "weight": {
           "description": "An optional weight for this spread. Higher weights are given more precedence",
-          "type": ["integer", "null"],
+          "type": [
+            "integer",
+            "null"
+          ],
           "format": "uint",
           "minimum": 0.0
         }
@@ -365,7 +485,9 @@
     "SpreadScalerProperty": {
       "description": "Properties for spread scalers",
       "type": "object",
-      "required": ["instances"],
+      "required": [
+        "instances"
+      ],
       "properties": {
         "instances": {
           "description": "Number of instances to spread across matching requirements",
@@ -385,7 +507,9 @@
     },
     "TargetConfig": {
       "type": "object",
-      "required": ["name"],
+      "required": [
+        "name"
+      ],
       "properties": {
         "config": {
           "type": "array",
@@ -407,7 +531,10 @@
     },
     "Trait": {
       "type": "object",
-      "required": ["properties", "type"],
+      "required": [
+        "properties",
+        "type"
+      ],
       "properties": {
         "properties": {
           "description": "The properties of this trait",

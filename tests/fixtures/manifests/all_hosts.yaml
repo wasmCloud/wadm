@@ -9,7 +9,7 @@ spec:
     - name: test-policy
       type: test
       properties:
-        test: "data"
+        test: 'data'
   components:
     - name: hello
       type: component
@@ -36,7 +36,7 @@ spec:
     - name: httpserver
       type: capability
       properties:
-        image: ghcr.io/wasmcloud/http-server:0.21.0
+        image: ghcr.io/wasmcloud/http-server:0.23.0
       traits:
         - type: spreadscaler
           properties:

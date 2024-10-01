@@ -1,0 +1,28 @@
+services:
+  nats:
+    image: nats:2.10-alpine
+    command: ['-js']
+    ports:
+      - 4222:4222
+  wasmcloud_test_host_one:
+    image: wasmcloud/wasmcloud:latest
+    depends_on:
+      - nats
+    deploy:
+      replicas: 2
+    environment:
+      LC_ALL: en_US.UTF-8
+      RUST_LOG: debug,hyper=info
+      WASMCLOUD_NATS_HOST: nats
+      WASMCLOUD_LATTICE: shared_providers
+  wasmcloud_test_host_two:
+    image: wasmcloud/wasmcloud:latest
+    depends_on:
+      - nats
+    deploy:
+      replicas: 2
+    environment:
+      LC_ALL: en_US.UTF-8
+      RUST_LOG: debug,hyper=info
+      WASMCLOUD_NATS_HOST: nats
+      WASMCLOUD_LATTICE: shared_components
