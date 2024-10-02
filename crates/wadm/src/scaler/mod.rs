@@ -91,16 +91,16 @@ pub trait Scaler {
 /// necessary prerequisites to reconcile.
 ///
 /// 1. `required_config` & `required_secrets`: With the introduction of configuration
-/// for wadm applications, the most necessary prerequisite for components, providers
-/// and links to start is that their configuration is available. Scalers will not be
-/// able to issue commands until the configuration exists.
+///    for wadm applications, the most necessary prerequisite for components, providers
+///    and links to start is that their configuration is available. Scalers will not be
+///    able to issue commands until the configuration exists.
 /// 2. `expected_events`: For scalers that issue commands that should result in events,
-/// the BackoffWrapper is responsible for ensuring that the scaler doesn't continually
-/// issue commands that it's already expecting events for. Commonly this will allow a host
-/// to download larger images from an OCI repository without being bombarded with repeat requests.
+///    the BackoffWrapper is responsible for ensuring that the scaler doesn't continually
+///    issue commands that it's already expecting events for. Commonly this will allow a host
+///    to download larger images from an OCI repository without being bombarded with repeat requests.
 /// 3. `backoff_status`: If a scaler receives an event that it was expecting, but it was a failure
-/// event, the scaler should back off exponentially while reporting that failure status. This both
-/// allows for diagnosing issues with reconciliation and prevents thrashing.
+///    event, the scaler should back off exponentially while reporting that failure status. This both
+///    allows for diagnosing issues with reconciliation and prevents thrashing.
 ///
 /// All of the above effectively allows the inner Scaler to only worry about the logic around
 /// reconciling and handling events, rather than be concerned about whether or not
