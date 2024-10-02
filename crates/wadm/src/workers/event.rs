@@ -498,7 +498,7 @@ where
                     count: component_description.max_instances() as usize,
                     annotations: component_description
                         .annotations()
-                        .map(|a| a.clone())
+                        .cloned()
                         .unwrap_or_default(),
                 }]);
                 if let Some(component) = components.get(component_description.id()) {
@@ -628,15 +628,15 @@ where
             // NOTE: We can do this without cloning, but it led to some confusing code involving
             // `remove` from the owned `providers` map. This is more readable at the expense of
             // a clone for few providers
-            match providers.get(&info.id).cloned() {
+            match providers.get(info.id()).cloned() {
                 Some(mut prov) => {
                     let mut has_changes = false;
                     if prov.name.is_empty() {
-                        prov.name = info.name.clone().unwrap_or_default();
+                        prov.name = info.name().map(String::from).unwrap_or_default();
                         has_changes = true;
                     }
                     if prov.reference.is_empty() {
-                        prov.reference = info.image_ref.clone().unwrap_or_default();
+                        prov.reference = info.image_ref().map(String::from).unwrap_or_default();
                         has_changes = true;
                     }
                     if let Entry::Vacant(entry) = prov.hosts.entry(heartbeat.host_id.clone()) {
@@ -644,7 +644,7 @@ where
                         has_changes = true;
                     }
                     if has_changes {
-                        Some((info.id.clone(), prov))
+                        Some((info.id().to_string(), prov))
                     } else {
                         None
                     }
@@ -653,12 +653,12 @@ where
                     // If we don't already have the provider, create a basic one so we know it
                     // exists at least. The next provider heartbeat will fix it for us
                     Some((
-                        info.id.clone(),
+                        info.id().to_string(),
                         Provider {
-                            id: info.id.clone(),
+                            id: info.id().to_string(),
                             hosts: [(heartbeat.host_id.clone(), ProviderStatus::default())].into(),
-                            name: info.name.clone().unwrap_or_default(),
-                            reference: info.image_ref.clone().unwrap_or_default(),
+                            name: info.name().map(String::from).unwrap_or_default(),
+                            reference: info.image_ref().map(String::from).unwrap_or_default(),
                             ..Default::default()
                         },
                     ))
@@ -1435,20 +1435,18 @@ mod test {
                     labels: labels.clone(),
                     issuer: "".to_string(),
                     providers: vec![
-                        ProviderDescription {
-                            id: provider1.provider_id.clone(),
-                            image_ref: Some(provider1.image_ref.clone()),
-                            annotations: None,
-                            revision: 0,
-                            name: None,
-                        },
-                        ProviderDescription {
-                            id: provider2.provider_id.clone(),
-                            image_ref: Some(provider2.image_ref.clone()),
-                            annotations: None,
-                            revision: 0,
-                            name: None,
-                        },
+                        ProviderDescription::builder()
+                            .id(&provider1.provider_id)
+                            .image_ref(&provider1.image_ref)
+                            .revision(0)
+                            .build()
+                            .expect("failed to build provider description"),
+                        ProviderDescription::builder()
+                            .id(&provider2.provider_id)
+                            .image_ref(&provider2.image_ref)
+                            .revision(0)
+                            .build()
+                            .expect("failed to build provider description"),
                     ],
                     uptime_human: "30s".into(),
                     uptime_seconds: 30,
@@ -1482,13 +1480,12 @@ mod test {
                     issuer: "".to_string(),
                     friendly_name: "starkiller-base-2015".to_string(),
                     labels: labels2.clone(),
-                    providers: vec![ProviderDescription {
-                        id: provider2.provider_id.clone(),
-                        image_ref: Some(provider2.image_ref.clone()),
-                        annotations: None,
-                        revision: 0,
-                        name: None,
-                    }],
+                    providers: vec![ProviderDescription::builder()
+                        .id(&provider2.provider_id)
+                        .image_ref(&provider2.image_ref)
+                        .revision(0)
+                        .build()
+                        .expect("failed to build provider description")],
                     uptime_human: "30s".into(),
                     uptime_seconds: 30,
                     version: semver::Version::parse("0.61.0").unwrap(),
@@ -1677,13 +1674,12 @@ mod test {
                     friendly_name: "death-star-42".to_string(),
                     issuer: "".to_string(),
                     labels,
-                    providers: vec![ProviderDescription {
-                        id: provider1.provider_id.clone(),
-                        image_ref: Some(provider1.image_ref.clone()),
-                        name: None,
-                        revision: 1,
-                        annotations: None,
-                    }],
+                    providers: vec![ProviderDescription::builder()
+                        .id(&provider1.provider_id)
+                        .image_ref(&provider1.image_ref)
+                        .revision(1)
+                        .build()
+                        .expect("failed to build provider description")],
                     uptime_human: "60s".into(),
                     uptime_seconds: 60,
                     version: semver::Version::parse("0.61.0").unwrap(),
@@ -1707,13 +1703,12 @@ mod test {
                     friendly_name: "starkiller-base-2015".to_string(),
                     labels: labels2,
                     issuer: "".to_string(),
-                    providers: vec![ProviderDescription {
-                        id: provider2.provider_id.clone(),
-                        image_ref: Some(provider2.image_ref.clone()),
-                        revision: 0,
-                        name: None,
-                        annotations: None,
-                    }],
+                    providers: vec![ProviderDescription::builder()
+                        .id(&provider2.provider_id)
+                        .image_ref(&provider2.image_ref)
+                        .revision(0)
+                        .build()
+                        .expect("failed to build provider description")],
                     uptime_human: "60s".into(),
                     uptime_seconds: 60,
                     version: semver::Version::parse("0.61.0").unwrap(),
@@ -1861,13 +1856,11 @@ mod test {
                         .expect("failed to build description"),
                 ])
                 .host_id(host_id.into())
-                .providers(vec![ProviderDescription {
-                    id: provider_id.into(),
-                    annotations: None,
-                    image_ref: None,
-                    name: None,
-                    revision: 0,
-                }])
+                .providers(vec![ProviderDescription::builder()
+                    .id(&provider_id)
+                    .revision(0)
+                    .build()
+                    .expect("failed to build provider description")])
                 .version(semver::Version::parse("0.61.0").unwrap().to_string())
                 .uptime_human("60s".into())
                 .uptime_seconds(60)
@@ -1899,13 +1892,11 @@ mod test {
                     friendly_name: "millenium_falcon-1977".to_string(),
                     labels: HashMap::default(),
                     issuer: "".to_string(),
-                    providers: vec![ProviderDescription {
-                        id: provider_id.into(),
-                        annotations: None,
-                        image_ref: None,
-                        name: None,
-                        revision: 0,
-                    }],
+                    providers: vec![ProviderDescription::builder()
+                        .id(&provider_id)
+                        .revision(0)
+                        .build()
+                        .expect("failed to build provider description")],
                     uptime_human: "60s".into(),
                     uptime_seconds: 60,
                     version: semver::Version::parse("0.61.0").unwrap(),
@@ -2155,16 +2146,17 @@ mod test {
                     friendly_name: "palace-1983".to_string(),
                     labels: HashMap::default(),
                     issuer: "".to_string(),
-                    providers: vec![ProviderDescription {
-                        annotations: Some(HashMap::from_iter([(
+                    providers: vec![ProviderDescription::builder()
+                        .annotations(BTreeMap::from_iter([(
                             "one".to_string(),
                             "two".to_string(),
-                        )])),
-                        id: "jabbatheprovider".to_string(),
-                        image_ref: Some("jabba.tatooinecr.io/provider:latest".to_string()),
-                        name: Some("Jabba The Provider".to_string()),
-                        revision: 0,
-                    }],
+                        )]))
+                        .id("jabbatheprovider")
+                        .image_ref("jabba.tatooinecr.io/provider:latest")
+                        .name("Jabba The Provider")
+                        .revision(0)
+                        .build()
+                        .expect("failed to build provider description")],
                     uptime_human: "60s".into(),
                     uptime_seconds: 60,
                     version: semver::Version::parse("0.61.0").unwrap(),

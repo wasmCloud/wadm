@@ -1,8 +1,6 @@
-use std::{
-    borrow::Borrow,
-    collections::{BTreeMap, HashMap, HashSet},
-    hash::{Hash, Hasher},
-};
+use std::borrow::{Borrow, ToOwned};
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::hash::{Hash, Hasher};
 
 use chrono::{DateTime, Utc};
 use semver::Version;
@@ -296,12 +294,13 @@ impl From<HostHeartbeat> for Host {
             .providers
             .into_iter()
             .map(|provider| ProviderInfo {
-                provider_id: provider.id,
+                provider_id: provider.id().to_string(),
                 // NOTE: Provider should _always_ have an image ref. The control interface type should be updated.
-                provider_ref: provider.image_ref.unwrap_or_default(),
+                provider_ref: provider.image_ref().map(String::from).unwrap_or_default(),
                 annotations: provider
-                    .annotations
-                    .map(|a| a.into_iter().collect())
+                    .annotations()
+                    .map(ToOwned::to_owned)
+                    .map(BTreeMap::from_iter)
                     .unwrap_or_default(),
             })
             .collect();
@@ -337,12 +336,12 @@ impl From<&HostHeartbeat> for Host {
             .providers
             .iter()
             .map(|provider| ProviderInfo {
-                provider_id: provider.id.to_owned(),
-                provider_ref: provider.image_ref.to_owned().unwrap_or_default(),
+                provider_id: provider.id().to_owned(),
+                provider_ref: provider.image_ref().map(String::from).unwrap_or_default(),
                 annotations: provider
-                    .annotations
-                    .clone()
-                    .map(|a| a.into_iter().collect())
+                    .annotations()
+                    .map(ToOwned::to_owned)
+                    .map(BTreeMap::from_iter)
                     .unwrap_or_default(),
             })
             .collect();

@@ -3893,9 +3893,9 @@ dependencies = [
 
 [[package]]
 name = "wasmcloud-control-interface"
-version = "2.0.0"
+version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6f3f68ca2a4f433d05ec51c196a176e8e70d2c0f4a7fcb58a472129760cbf0fd"
+checksum = "5c24228587ab5677ebd3693fafaab88049ec2f2e8664584e932950ffa0e11623"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -3916,9 +3916,9 @@ dependencies = [
 
 [[package]]
 name = "wasmcloud-core"
-version = "0.10.0"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b919220df2d9635ce9d25e25ac52c0d74a504f6e59188f61203a0dd821cb978"
+checksum = "49624b74846fef8c6c005b8334873c01fc521da940f50579384f47bdd9d86ee7"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -3936,7 +3936,6 @@ dependencies = [
  "serde_bytes",
  "sha2",
  "tokio",
- "tower",
  "tracing",
  "ulid",
  "url",

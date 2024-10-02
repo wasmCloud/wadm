@@ -157,14 +157,13 @@ async fn test_commands() {
     let inventory = resp_data.providers();
     assert_eq!(inventory.len(), 1, "Should only have 1 provider");
     assert_eq!(
-        inventory[0].image_ref.as_deref().unwrap(),
+        inventory[0].image_ref().unwrap(),
         HTTP_SERVER_IMAGE_REF,
         "Should have started the correct provider"
     );
     assert_eq!(
         inventory[0]
-            .annotations
-            .as_ref()
+            .annotations()
             .unwrap()
             .get(wadm::MANAGED_BY_ANNOTATION)
             .expect("Should have the managed by annotation"),
@@ -173,8 +172,7 @@ async fn test_commands() {
     );
     assert_eq!(
         inventory[0]
-            .annotations
-            .as_ref()
+            .annotations()
             .unwrap()
             .get(wadm::APP_SPEC_ANNOTATION)
             .expect("Should have the managed by annotation"),
@@ -348,7 +346,6 @@ async fn test_annotation_stop() {
         .expect("Should be able to find hosts")
         .data()
         .map(|v| v.id())
-        .clone()
         .unwrap();
 
     // Start an unmangaged component
@@ -357,7 +354,7 @@ async fn test_annotation_stop() {
     // the managed components after https://github.com/wasmCloud/wasmCloud/issues/746 is resolved
     ctl_client
         .scale_component(
-            &host_id,
+            host_id,
             HELLO_IMAGE_REF,
             "unmanaged-hello",
             1,
@@ -399,7 +396,7 @@ async fn test_annotation_stop() {
 
     // Get the current components and make sure stuff was started
     let resp_data = ctl_client
-        .get_host_inventory(&host_id)
+        .get_host_inventory(host_id)
         .await
         .expect("should get host inventory back")
         .into_data()
@@ -456,7 +453,7 @@ async fn test_annotation_stop() {
 
     // Get the current providers and make sure stuff was started
     let resp_data = ctl_client
-        .get_host_inventory(&host_id)
+        .get_host_inventory(host_id)
         .await
         .unwrap()
         .into_data()
