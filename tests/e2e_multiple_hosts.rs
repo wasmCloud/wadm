@@ -402,7 +402,7 @@ async fn test_complex_app(client_info: &ClientInfo) {
                 && inv
                     .providers()
                     .iter()
-                    .any(|prov| prov.id == BLOBSTORE_FS_PROVIDER_ID)
+                    .any(|prov| prov.id() == BLOBSTORE_FS_PROVIDER_ID)
         }) {
             anyhow::bail!("Provider should only be running on the moon");
         }

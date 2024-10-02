@@ -10,7 +10,6 @@ use async_nats::{
     jetstream::{self, stream::Stream},
     Client,
 };
-use base64::{engine::general_purpose::STANDARD as B64decoder, Engine};
 use futures::Future;
 use tokio::{
     process::{Child, Command},
@@ -427,13 +426,11 @@ pub fn check_providers(
             // You can only have 1 provider per host and that could be created by any manifest,
             // so we can just check the image ref and that it is managed by wadm
             provider
-                .image_ref
-                .as_deref()
+                .image_ref()
                 .map(|image| image == image_ref)
                 .unwrap_or(false)
                 && provider
-                    .annotations
-                    .as_ref()
+                    .annotations()
                     .and_then(|annotations| {
                         annotations
                             .get(MANAGED_BY_ANNOTATION)
