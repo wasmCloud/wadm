@@ -161,14 +161,14 @@ async fn test_event_stream() -> Result<()> {
     let mut evt = wait_for_event(&mut stream, LINK_OPERATION_TIMEOUT_DURATION).await;
     if let Event::LinkdefSet(event) = evt.as_ref() {
         assert_eq!(
-            event.linkdef.source_id, HELLO_COMPONENT_ID,
+            event.linkdef.source_id(), HELLO_COMPONENT_ID,
             "Expected to get a linkdef event for the right component and provider, got component ID: {}",
-            event.linkdef.source_id,
+            event.linkdef.source_id(),
         );
         assert_eq!(
-            event.linkdef.target, HTTP_SERVER_COMPONENT_ID,
+            event.linkdef.target(), HTTP_SERVER_COMPONENT_ID,
             "Expected to get a linkdef event for the right component and provider, got provider ID: {}",
-            event.linkdef.target,
+            event.linkdef.target(),
         );
     } else {
         panic!("Event wasn't an link set event");

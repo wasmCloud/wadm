@@ -213,10 +213,10 @@ async fn test_commands() {
     inventory
         .into_iter()
         .find(|ld| {
-            ld.source_id == HTTP_SERVER_COMPONENT_ID
-                && ld.target == HELLO_COMPONENT_ID
-                && ld.wit_namespace == "wasi"
-                && ld.wit_package == "http"
+            ld.source_id() == HTTP_SERVER_COMPONENT_ID
+                && ld.target() == HELLO_COMPONENT_ID
+                && ld.wit_namespace() == "wasi"
+                && ld.wit_package() == "http"
         })
         .expect("Linkdef should exist");
 
@@ -249,10 +249,10 @@ async fn test_commands() {
     // We could have more than one link due to local testing, so search for the proper link
     assert!(
         !inventory.into_iter().any(|ld| {
-            ld.target == HELLO_COMPONENT_ID
-                && ld.source_id == HTTP_SERVER_COMPONENT_ID
-                && ld.wit_namespace == "wasi"
-                && ld.wit_package == "http"
+            ld.target() == HELLO_COMPONENT_ID
+                && ld.source_id() == HTTP_SERVER_COMPONENT_ID
+                && ld.wit_namespace() == "wasi"
+                && ld.wit_package() == "http"
         }),
         "Linkdef should be deleted"
     );

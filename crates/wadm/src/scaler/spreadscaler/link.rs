@@ -122,9 +122,9 @@ where
                 self.reconcile().await
             }
             Event::LinkdefSet(LinkdefSet { linkdef })
-                if linkdef.source_id == self.config.source_id
-                    && linkdef.target == self.config.target
-                    && linkdef.name == self.config.name =>
+                if linkdef.source_id() == self.config.source_id
+                    && linkdef.target() == self.config.target
+                    && linkdef.name() == self.config.name =>
             {
                 *self.status.write().await = StatusInfo::deployed("");
                 Ok(Vec::new())
@@ -141,9 +141,9 @@ where
         let (exists, _config_different) = linkdefs
             .into_iter()
             .find(|linkdef| {
-                &linkdef.source_id == source_id
-                    && &linkdef.target == target
-                    && linkdef.name == self.config.name
+                linkdef.source_id() == source_id
+                    && linkdef.target() == target
+                    && linkdef.name() == self.config.name
             })
             .map(|linkdef| {
                 (
@@ -151,11 +151,11 @@ where
                     // TODO(#88): reverse compare too
                     // Ensure all supplied configs (both source and target) are the same
                     linkdef
-                        .source_config
+                        .source_config()
                         .iter()
                         .eq(self.config.source_config.iter())
                         && linkdef
-                            .target_config
+                            .target_config()
                             .iter()
                             .eq(self.config.target_config.iter()),
                 )
@@ -430,26 +430,25 @@ mod test {
         let provider_ref = "provider_ref".to_string();
         let provider_id = "provider".to_string();
 
-        let linkdef = Link {
-            source_id: component_id.to_string(),
-            target: provider_id.to_string(),
-            wit_namespace: "namespace".to_string(),
-            wit_package: "package".to_string(),
-            interfaces: vec!["interface".to_string()],
-            name: "default".to_string(),
-            source_config: vec![],
-            target_config: vec![],
-        };
+        let linkdef = Link::builder()
+            .source_id(&component_id)
+            .target(&provider_id)
+            .wit_namespace("namespace")
+            .wit_package("package")
+            .interfaces(vec!["interface".to_string()])
+            .name("default")
+            .build()
+            .unwrap();
 
         let scaler = LinkScaler::new(
             create_store(&lattice_id, &component_ref, &provider_ref).await,
             LinkScalerConfig {
-                source_id: linkdef.source_id.clone(),
-                target: linkdef.target.clone(),
-                wit_namespace: linkdef.wit_namespace.clone(),
-                wit_package: linkdef.wit_package.clone(),
-                wit_interfaces: linkdef.interfaces.clone(),
-                name: linkdef.name.clone(),
+                source_id: linkdef.source_id().to_string(),
+                target: linkdef.target().to_string(),
+                wit_namespace: linkdef.wit_namespace().to_string(),
+                wit_package: linkdef.wit_package().to_string(),
+                wit_interfaces: linkdef.interfaces().clone(),
+                name: linkdef.name().to_string(),
                 source_config: vec![],
                 target_config: vec![],
                 lattice_id: lattice_id.clone(),
@@ -583,17 +582,15 @@ mod test {
 
         let commands = link_scaler
             .handle_event(&Event::LinkdefSet(LinkdefSet {
-                linkdef: Link {
+                linkdef: Link::builder()
                     // NOTE: contract, link, and provider id matches but the component is different
-                    source_id: "nm0001772".to_string(),
-                    target: "VASDASD".to_string(),
-                    wit_namespace: "wasmcloud".to_string(),
-                    wit_package: "httpserver".to_string(),
-                    interfaces: vec![],
-                    name: "default".to_string(),
-                    source_config: vec![],
-                    target_config: vec![],
-                },
+                    .source_id("nm0001772")
+                    .target("VASDASD")
+                    .wit_namespace("wasmcloud")
+                    .wit_package("httpserver")
+                    .name("default")
+                    .build()
+                    .unwrap(),
             }))
             .await
             .expect("");
