@@ -152,12 +152,12 @@ async fn test_no_requirements(client_info: &ClientInfo) {
             .context("Should have links")?;
 
         if !links.iter().any(|ld| {
-            ld.source_id == HTTP_SERVER_COMPONENT_ID
-                && ld.target == HELLO_COMPONENT_ID
-                && ld.wit_namespace == "wasi"
-                && ld.wit_package == "http"
-                && ld.interfaces == vec!["incoming-handler"]
-                && ld.name == "default"
+            ld.source_id() == HTTP_SERVER_COMPONENT_ID
+                && ld.target() == HELLO_COMPONENT_ID
+                && ld.wit_namespace() == "wasi"
+                && ld.wit_package() == "http"
+                && ld.name() == "default"
+                && *ld.interfaces() == vec!["incoming-handler"]
         }) {
             anyhow::bail!(
                 "Link between http provider and hello component should exist: {:#?}",
@@ -366,12 +366,12 @@ async fn test_complex_app(client_info: &ClientInfo) {
             .context("Should have links")?;
 
         if !links.iter().any(|ld| {
-            ld.source_id == HTTP_SERVER_COMPONENT_ID
-                && ld.target == BLOBBY_COMPONENT_ID
-                && ld.wit_namespace == "wasi"
-                && ld.wit_package == "http"
-                && ld.interfaces == vec!["incoming-handler"]
-                && ld.name == "default"
+            ld.source_id() == HTTP_SERVER_COMPONENT_ID
+                && ld.target() == BLOBBY_COMPONENT_ID
+                && ld.wit_namespace() == "wasi"
+                && ld.wit_package() == "http"
+                && ld.name() == "default"
+                && *ld.interfaces() == vec!["incoming-handler"]
         }) {
             anyhow::bail!(
                 "Link between blobby component and http provider should exist: {:#?}",
@@ -380,12 +380,12 @@ async fn test_complex_app(client_info: &ClientInfo) {
         }
 
         if !links.iter().any(|ld| {
-            ld.source_id == BLOBBY_COMPONENT_ID
-                && ld.target == BLOBSTORE_FS_PROVIDER_ID
-                && ld.wit_namespace == "wasi"
-                && ld.wit_package == "blobstore"
-                && ld.interfaces == vec!["blobstore"]
-                && ld.name == "default"
+            ld.source_id() == BLOBBY_COMPONENT_ID
+                && ld.target() == BLOBSTORE_FS_PROVIDER_ID
+                && ld.wit_namespace() == "wasi"
+                && ld.wit_package() == "blobstore"
+                && ld.name() == "default"
+                && *ld.interfaces() == vec!["blobstore"]
         }) {
             anyhow::bail!(
                 "Link between blobby component and blobstore-fs provider should exist: {:#?}",

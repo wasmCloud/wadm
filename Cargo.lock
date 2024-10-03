@@ -3893,9 +3893,9 @@ dependencies = [
 
 [[package]]
 name = "wasmcloud-control-interface"
-version = "2.1.0"
+version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5c24228587ab5677ebd3693fafaab88049ec2f2e8664584e932950ffa0e11623"
+checksum = "2ca8a9d9e20c30eef3a92cf5fad7392df703b7594fc7e794d49023106e921cb4"
 dependencies = [
  "anyhow",
  "async-nats",

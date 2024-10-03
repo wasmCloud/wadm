@@ -74,7 +74,7 @@ impl Worker for CommandWorker {
                 trace!(command = ?ld, "Handling put linkdef command");
                 // TODO(thomastaylor312): We should probably change ScopedMessage to allow us `pub`
                 // access to the inner type so we don't have to clone, but no need to worry for now
-                self.client.put_link(ld.clone().into()).await
+                self.client.put_link(ld.clone().try_into()?).await
             }
             Command::DeleteLink(ld) => {
                 trace!(command = ?ld, "Handling delete linkdef command");

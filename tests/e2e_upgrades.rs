@@ -142,15 +142,15 @@ async fn test_upgrade(client_info: &ClientInfo) {
         let http_link = links
             .iter()
             .find(|link| {
-                link.target == HELLO_COMPONENT_ID
-                    && link.source_id == HTTP_SERVER_COMPONENT_ID
-                    && link.wit_namespace == "wasi"
-                    && link.wit_package == "http"
+                link.target() == HELLO_COMPONENT_ID
+                    && link.source_id() == HTTP_SERVER_COMPONENT_ID
+                    && link.wit_namespace() == "wasi"
+                    && link.wit_package() == "http"
             })
             .context("Should have http link with hello")?;
         if let Err(e) = check_config(
             client_info.ctl_client("default"),
-            &http_link.source_config[0],
+            &http_link.source_config()[0],
             &HashMap::from_iter([("address".to_string(), "0.0.0.0:8080".to_string())]),
         )
         .await
@@ -164,15 +164,15 @@ async fn test_upgrade(client_info: &ClientInfo) {
         let dog_link = links
             .iter()
             .find(|link| {
-                link.target == generated_dogfetcher_id
-                    && link.source_id == HTTP_SERVER_COMPONENT_ID
-                    && link.wit_namespace == "wasi"
-                    && link.wit_package == "http"
+                link.target() == generated_dogfetcher_id
+                    && link.source_id() == HTTP_SERVER_COMPONENT_ID
+                    && link.wit_namespace() == "wasi"
+                    && link.wit_package() == "http"
             })
             .context("Should have http link with dog-fetcher")?;
         if let Err(e) = check_config(
             client_info.ctl_client("default"),
-            &dog_link.source_config[0],
+            &dog_link.source_config()[0],
             &HashMap::from_iter([("address".to_string(), "0.0.0.0:8081".to_string())]),
         )
         .await
@@ -186,15 +186,15 @@ async fn test_upgrade(client_info: &ClientInfo) {
         let kv_link = links
             .iter()
             .find(|link| {
-                link.source_id == generated_kvcounter_id
-                    && link.target == KEYVALUE_REDIS_COMPONENT_ID
-                    && link.wit_namespace == "wasi"
-                    && link.wit_package == "keyvalue"
+                link.source_id() == generated_kvcounter_id
+                    && link.target() == KEYVALUE_REDIS_COMPONENT_ID
+                    && link.wit_namespace() == "wasi"
+                    && link.wit_package() == "keyvalue"
             })
             .context("Should have redis link with kvcounter")?;
         if let Err(e) = check_config(
             client_info.ctl_client("default"),
-            &kv_link.target_config[0],
+            &kv_link.target_config()[0],
             &HashMap::from_iter([("URL".to_string(), "redis://127.0.0.1:6379".to_string())]),
         )
         .await
@@ -311,16 +311,16 @@ async fn test_upgrade(client_info: &ClientInfo) {
         let http_link = links
             .iter()
             .find(|link| {
-                link.target == HELLO_COMPONENT_ID
-                    && link.source_id == HTTP_SERVER_COMPONENT_ID
-                    && link.wit_namespace == "wasi"
-                    && link.wit_package == "http"
+                link.target() == HELLO_COMPONENT_ID
+                    && link.source_id() == HTTP_SERVER_COMPONENT_ID
+                    && link.wit_namespace() == "wasi"
+                    && link.wit_package() == "http"
             })
             .ok_or_else(|| anyhow::anyhow!("Should have http link with hello"))?;
 
         if let Err(e) = check_config(
             client_info.ctl_client("default"),
-            &http_link.source_config[0],
+            &http_link.source_config()[0],
             &HashMap::from([("address".to_string(), "0.0.0.0:8082".to_string())]),
         )
         .await
@@ -332,10 +332,10 @@ async fn test_upgrade(client_info: &ClientInfo) {
         }
 
         if links.iter().any(|ld| {
-            ld.source_id == generated_kvcounter_id
-                && ld.target == KEYVALUE_REDIS_COMPONENT_ID
-                && ld.wit_namespace == "wasi"
-                && ld.wit_package == "keyvalue"
+            ld.source_id() == generated_kvcounter_id
+                && ld.target() == KEYVALUE_REDIS_COMPONENT_ID
+                && ld.wit_namespace() == "wasi"
+                && ld.wit_package() == "keyvalue"
         }) {
             anyhow::bail!(
                 "Link between kvcounter component and redis provider should not exist: {:#?}",
@@ -429,16 +429,16 @@ async fn test_upgrade(client_info: &ClientInfo) {
         let http_link = links
             .iter()
             .find(|link| {
-                link.target == HELLO_COMPONENT_ID
-                    && link.source_id == HTTP_SERVER_COMPONENT_ID
-                    && link.wit_namespace == "wasi"
-                    && link.wit_package == "http"
+                link.target() == HELLO_COMPONENT_ID
+                    && link.source_id() == HTTP_SERVER_COMPONENT_ID
+                    && link.wit_namespace() == "wasi"
+                    && link.wit_package() == "http"
             })
             .ok_or_else(|| anyhow::anyhow!("Should have http link with hello"))?;
 
         if let Err(e) = check_config(
             client_info.ctl_client("default"),
-            &http_link.source_config[0],
+            &http_link.source_config()[0],
             &HashMap::from([("address".to_string(), "0.0.0.0:8080".to_string())]),
         )
         .await
@@ -452,16 +452,16 @@ async fn test_upgrade(client_info: &ClientInfo) {
         let dog_link = links
             .iter()
             .find(|link| {
-                link.target == generated_dogfetcher_id
-                    && link.source_id == HTTP_SERVER_COMPONENT_ID
-                    && link.wit_namespace == "wasi"
-                    && link.wit_package == "http"
+                link.target() == generated_dogfetcher_id
+                    && link.source_id() == HTTP_SERVER_COMPONENT_ID
+                    && link.wit_namespace() == "wasi"
+                    && link.wit_package() == "http"
             })
             .ok_or_else(|| anyhow::anyhow!("Should have dog link with hello"))?;
 
         if let Err(e) = check_config(
             client_info.ctl_client("default"),
-            &dog_link.source_config[0],
+            &dog_link.source_config()[0],
             &HashMap::from([("address".to_string(), "0.0.0.0:8081".to_string())]),
         )
         .await
@@ -473,10 +473,10 @@ async fn test_upgrade(client_info: &ClientInfo) {
         }
 
         if links.iter().any(|ld| {
-            ld.source_id == generated_kvcounter_id
-                && ld.target == KEYVALUE_REDIS_COMPONENT_ID
-                && ld.wit_namespace == "wasi"
-                && ld.wit_package == "keyvalue"
+            ld.source_id() == generated_kvcounter_id
+                && ld.target() == KEYVALUE_REDIS_COMPONENT_ID
+                && ld.wit_namespace() == "wasi"
+                && ld.wit_package() == "keyvalue"
         }) {
             anyhow::bail!(
                 "Link between kvcounter component and redis provider should not exist: {:#?}",

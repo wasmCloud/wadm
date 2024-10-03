@@ -2,6 +2,7 @@
 
 use std::{
     collections::{BTreeMap, HashMap},
+    error::Error,
     hash::{Hash, Hasher},
 };
 
@@ -235,18 +236,20 @@ pub struct PutLink {
     pub model_name: String,
 }
 
-impl From<PutLink> for Link {
-    fn from(value: PutLink) -> Link {
-        Link {
-            source_id: value.source_id,
-            target: value.target,
-            name: value.name,
-            wit_namespace: value.wit_namespace,
-            wit_package: value.wit_package,
-            interfaces: value.interfaces,
-            source_config: value.source_config,
-            target_config: value.target_config,
-        }
+impl TryFrom<PutLink> for Link {
+    type Error = Box<dyn Error + Send + Sync>;
+
+    fn try_from(value: PutLink) -> Result<Link, Self::Error> {
+        Link::builder()
+            .source_id(&value.source_id)
+            .target(&value.target)
+            .name(&value.name)
+            .wit_namespace(&value.wit_namespace)
+            .wit_package(&value.wit_package)
+            .interfaces(value.interfaces)
+            .source_config(value.source_config)
+            .target_config(value.target_config)
+            .build()
     }
 }
 
