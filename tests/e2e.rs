@@ -94,10 +94,18 @@ impl ClientInfo {
             .kill_on_drop(true)
             .spawn()
             .expect("Unable to watch docker logs");
+
         // Connect to NATS
-        let client = async_nats::connect("127.0.0.1:4222")
-            .await
-            .expect("Unable to connect to nats");
+        let client = tokio::time::timeout(Duration::from_secs(3), async {
+            loop {
+                if let Ok(client) = async_nats::connect("127.0.0.1:4222").await {
+                    return client;
+                }
+                tokio::time::sleep(Duration::from_millis(250)).await;
+            }
+        })
+        .await
+        .expect("timed out while creating NATS client");
 
         ClientInfo {
             client,
