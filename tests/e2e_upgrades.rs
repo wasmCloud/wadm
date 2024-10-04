@@ -17,7 +17,7 @@ use e2e::{
 use helpers::{HELLO_COMPONENT_ID, HELLO_IMAGE_REF, HTTP_SERVER_COMPONENT_ID};
 
 const MANIFESTS_PATH: &str = "tests/fixtures/manifests";
-const DOCKER_COMPOSE_FILE: &str = "tests/docker-compose-e2e-upgrade.yaml";
+const DOCKER_COMPOSE_FILE: &str = "tests/docker-compose-e2e_upgrades.yaml";
 const KEYVALUE_REDIS_COMPONENT_ID: &str = "keyvalue_redis";
 const DOG_FETCHER_GENERATED_ID: &str = "dog_fetcher";
 const KVCOUNTER_GENERATED_ID: &str = "kvcounter";
