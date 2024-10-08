@@ -119,6 +119,7 @@ interface types {
     record component-properties {
         image: string,
         id: option<string>,
+        resources: option<resource-property>
         config: list<config-property>,
         secrets: list<secret-property>,
     }
@@ -171,6 +172,11 @@ interface types {
     record config-property {
         name: string,
         properties: option<list<tuple<string, string>>>,
+    }
+
+    // Resource properties
+    record resource-property {
+        memory: u32,
     }
 
     // Secret properties

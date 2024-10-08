@@ -224,6 +224,9 @@ pub struct ComponentProperties {
     /// these values at runtime using `wasi:runtime/config.`
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub config: Vec<ConfigProperty>,
+    /// Configuration for setting the amount of resources available for the component
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resources: Option<ResourceProperty>,
     /// Named secret references to pass to the component. The component will be able to retrieve
     /// these values at runtime using `wasmcloud:secrets/store`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -236,6 +239,13 @@ pub struct ConfigDefinition {
     pub config: Vec<ConfigProperty>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub secrets: Vec<SecretProperty>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash, JsonSchema)]
+pub struct ResourceProperty {
+    /// The maximum amount of memory, in megabytes, that the component is allowed to consume.
+    #[validate(range(min = 1))]
+    pub memory: usize,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash, JsonSchema)]
@@ -759,6 +769,7 @@ mod test {
                     image: "wasmcloud.azurecr.io/fake:1".to_string(),
                     id: None,
                     config: vec![],
+                    resources: None,
                     secrets: vec![],
                 },
             },
