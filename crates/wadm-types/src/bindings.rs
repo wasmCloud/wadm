@@ -89,6 +89,7 @@ impl From<ComponentProperties> for wadm::types::ComponentProperties {
         wadm::types::ComponentProperties {
             image: properties.image,
             id: properties.id,
+            resources: properties.resources,
             config: properties.config.into_iter().map(|c| c.into()).collect(),
             secrets: properties.secrets.into_iter().map(|c| c.into()).collect(),
         }
@@ -392,6 +393,7 @@ impl From<wadm::types::ComponentProperties> for ComponentProperties {
         ComponentProperties {
             image: properties.image,
             id: properties.id,
+            resources: properties.resources,
             config: properties.config.into_iter().map(|c| c.into()).collect(),
             secrets: properties.secrets.into_iter().map(|c| c.into()).collect(),
         }

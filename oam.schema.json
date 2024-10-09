@@ -126,6 +126,17 @@
           "description": "The image reference to use",
           "type": "string"
         },
+        "resources": {
+          "description": "Configuration for setting the amount of resources available for the component",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ResourceProperty"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "secrets": {
           "description": "Named secret references to pass to the component. The component will be able to retrieve these values at runtime using `wasmcloud:secrets/store`.",
           "type": "array",
@@ -277,6 +288,20 @@
         "type": {
           "description": "The type of the policy",
           "type": "string"
+        }
+      }
+    },
+    "ResourceProperty": {
+      "type": "object",
+      "required": [
+        "memory"
+      ],
+      "properties": {
+        "memory": {
+          "description": "The maximum amount of memory, in megabytes, that the component is allowed to consume.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 1.0
         }
       }
     },
