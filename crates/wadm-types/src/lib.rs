@@ -722,6 +722,12 @@ mod test {
             weight: Some(20),
         };
         spread_vec.push(spread_item);
+        let spread_item = Spread {
+            name: "northcoast".to_string(),
+            requirements: BTreeMap::from([("zone".to_string(), "([a-z]{2}-north-([0-9])".to_string())]),
+            weight: Some(40),
+        };
+        spread_vec.push(spread_item);
         let mut trait_vec: Vec<Trait> = Vec::new();
         let spreadscalerprop = SpreadScalerProperty {
             instances: 4,
@@ -783,6 +789,12 @@ mod test {
         let spread_item = Spread {
             name: "haslights".to_string(),
             requirements: BTreeMap::from([("zone".to_string(), "enabled".to_string())]),
+            weight: Some(DEFAULT_SPREAD_WEIGHT),
+        };
+        spread_vec.push(spread_item);
+        let spread_item = Spread {
+            name: "hascloud".to_string(),
+            requirements: BTreeMap::from([("cloud".to_string(), "^[a-z]+$".to_string())]),
             weight: Some(DEFAULT_SPREAD_WEIGHT),
         };
         spread_vec.push(spread_item);
