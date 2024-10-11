@@ -25,7 +25,7 @@ pub const VERSION_ANNOTATION_KEY: &str = "version";
 /// spec](https://github.com/oam-dev/spec/blob/master/metadata.md#annotations-format)
 pub const DESCRIPTION_ANNOTATION_KEY: &str = "description";
 /// The annotation key for shared applications
-pub const SHARED_ANNOTATION_KEY: &str = "wasmcloud.dev/shared";
+pub const SHARED_ANNOTATION_KEY: &str = "experimental.wasmcloud.dev/shared";
 /// The identifier for the builtin spreadscaler trait type
 pub const SPREADSCALER_TRAIT: &str = "spreadscaler";
 /// The identifier for the builtin daemonscaler trait type

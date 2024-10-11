@@ -4,7 +4,7 @@ metadata:
   name: shared-component
   annotations:
     description: 'A shared component!'
-    wasmcloud.dev/shared: 'true'
+    experimental.wasmcloud.dev/shared: 'true'
 spec:
   components:
     - name: link-to-meee
