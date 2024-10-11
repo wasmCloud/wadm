@@ -18,7 +18,7 @@ use crate::{
 };
 
 const MANIFESTS_PATH: &str = "tests/fixtures/manifests/shared";
-const DOCKER_COMPOSE_FILE: &str = "tests/docker-compose-e2e-shared.yaml";
+const DOCKER_COMPOSE_FILE: &str = "tests/docker-compose-e2e_shared.yaml";
 
 const SHARED_COMPONENTS_LATTICE: &str = "shared_components";
 const SHARED_PROVIDERS_LATTICE: &str = "shared_providers";

@@ -4,7 +4,7 @@ metadata:
   name: shared-http
   annotations:
     description: 'A shared HTTP server and client, for everybody!!!!!!!!!!!!!!!!!!!!'
-    wasmcloud.dev/shared: 'true'
+    experimental.wasmcloud.dev/shared: 'true'
 spec:
   components:
     - name: httpclient
