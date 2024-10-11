@@ -45,6 +45,7 @@ spec:
       traits:
         - type: link
           properties:
+            name: hello
             target:
               name: hello-world
             namespace: wasi
@@ -59,6 +60,7 @@ spec:
                     address: 0.0.0.0:8080
         - type: link
           properties:
+            name: dog
             target:
               name: dog-fetcher
             namespace: wasi
