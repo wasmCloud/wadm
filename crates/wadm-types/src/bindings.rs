@@ -5,9 +5,10 @@ use crate::{
     },
     CapabilityProperties, Component, ComponentProperties, ConfigDefinition, ConfigProperty,
     LinkProperty, Manifest, Metadata, Policy, Properties, SecretProperty, SecretSourceProperty,
-    Specification, Spread, SpreadScalerProperty, TargetConfig, Trait, TraitProperty,
+    SharedApplicationComponentProperties, Specification, Spread, SpreadScalerProperty,
+    TargetConfig, Trait, TraitProperty,
 };
-use wasmcloud::wadm;
+use wasmcloud::wadm::{self};
 
 wit_bindgen_wrpc::generate!({
     generate_unused_types: true,
@@ -87,6 +88,7 @@ impl From<Properties> for wadm::types::Properties {
 impl From<ComponentProperties> for wadm::types::ComponentProperties {
     fn from(properties: ComponentProperties) -> Self {
         wadm::types::ComponentProperties {
+            application: properties.application.map(Into::into),
             image: properties.image,
             id: properties.id,
             config: properties.config.into_iter().map(|c| c.into()).collect(),
@@ -98,6 +100,7 @@ impl From<ComponentProperties> for wadm::types::ComponentProperties {
 impl From<CapabilityProperties> for wadm::types::CapabilityProperties {
     fn from(properties: CapabilityProperties) -> Self {
         wadm::types::CapabilityProperties {
+            application: properties.application.map(Into::into),
             image: properties.image,
             id: properties.id,
             config: properties.config.into_iter().map(|c| c.into()).collect(),
@@ -131,6 +134,17 @@ impl From<SecretSourceProperty> for wadm::types::SecretSourceProperty {
             key: property.key,
             field: property.field,
             version: property.version,
+        }
+    }
+}
+
+impl From<SharedApplicationComponentProperties>
+    for wadm::types::SharedApplicationComponentProperties
+{
+    fn from(properties: SharedApplicationComponentProperties) -> Self {
+        wadm::types::SharedApplicationComponentProperties {
+            name: properties.name,
+            component: properties.component,
         }
     }
 }
@@ -391,6 +405,7 @@ impl From<wadm::types::ComponentProperties> for ComponentProperties {
     fn from(properties: wadm::types::ComponentProperties) -> Self {
         ComponentProperties {
             image: properties.image,
+            application: properties.application.map(Into::into),
             id: properties.id,
             config: properties.config.into_iter().map(|c| c.into()).collect(),
             secrets: properties.secrets.into_iter().map(|c| c.into()).collect(),
@@ -402,6 +417,7 @@ impl From<wadm::types::CapabilityProperties> for CapabilityProperties {
     fn from(properties: wadm::types::CapabilityProperties) -> Self {
         CapabilityProperties {
             image: properties.image,
+            application: properties.application.map(Into::into),
             id: properties.id,
             config: properties.config.into_iter().map(|c| c.into()).collect(),
             secrets: properties.secrets.into_iter().map(|c| c.into()).collect(),
@@ -434,6 +450,17 @@ impl From<wadm::types::SecretSourceProperty> for SecretSourceProperty {
             key: property.key,
             field: property.field,
             version: property.version,
+        }
+    }
+}
+
+impl From<wadm::types::SharedApplicationComponentProperties>
+    for SharedApplicationComponentProperties
+{
+    fn from(properties: wadm::types::SharedApplicationComponentProperties) -> Self {
+        SharedApplicationComponentProperties {
+            name: properties.name,
+            component: properties.component,
         }
     }
 }

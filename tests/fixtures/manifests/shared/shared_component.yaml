@@ -1,0 +1,21 @@
+apiVersion: core.oam.dev/v1beta1
+kind: Application
+metadata:
+  name: shared-component
+  annotations:
+    description: 'A shared component!'
+    experimental.wasmcloud.dev/shared: 'true'
+spec:
+  components:
+    - name: link-to-meee
+      type: component
+      properties:
+        image: ghcr.io/wasmcloud/components/http-hello-world-rust:0.1.0
+        config:
+          - name: defaults
+            properties:
+              left: right
+      traits:
+        - type: spreadscaler
+          properties:
+            instances: 1

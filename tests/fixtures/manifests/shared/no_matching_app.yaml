@@ -1,30 +1,26 @@
 apiVersion: core.oam.dev/v1beta1
 kind: Application
 metadata:
-  name: hello-simple
+  name: some-nonexistant-app
   annotations:
-    description: 'A Hello World app for testing, most basic HTTP link'
+    description: 'Manifest that refers to a nonexistant app'
 spec:
   components:
     - name: hello
       type: component
       properties:
         image: ghcr.io/wasmcloud/components/http-hello-world-rust:0.1.0
-        id: http_hello_world
       traits:
         - type: spreadscaler
           properties:
-            instances: 4
-
+            instances: 12
     - name: httpserver
       type: capability
       properties:
-        image: ghcr.io/wasmcloud/http-server:0.23.0
-        id: http_server
+        application:
+          name: some-nonexistant-app
+          component: httpserver
       traits:
-        - type: spreadscaler
-          properties:
-            instances: 1
         - type: link
           properties:
             namespace: wasi

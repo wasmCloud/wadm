@@ -12,9 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # TODO: Re-enable the multitenant and upgrades tests in followup to #247
-        # test: [e2e_multiple_hosts, e2e_multitenant, e2e_upgrades]
-        test: [e2e_multiple_hosts, e2e_upgrades]
+        test: [e2e_multiple_hosts, e2e_upgrades, e2e_shared]
 
     steps:
       - uses: actions/checkout@v4

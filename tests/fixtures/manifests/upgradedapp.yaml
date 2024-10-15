@@ -40,12 +40,13 @@ spec:
     - name: httpserver
       type: capability
       properties:
-        image: ghcr.io/wasmcloud/http-server:0.21.0
+        image: ghcr.io/wasmcloud/http-server:0.23.0
         id: http_server
       traits:
         # Updated linkdef trait
         - type: link
           properties:
+            name: hello
             target:
               name: hello-world
             namespace: wasi
@@ -59,6 +60,7 @@ spec:
                     address: 0.0.0.0:8082
         - type: link
           properties:
+            name: dog
             target:
               name: dog-fetcher
             namespace: wasi
