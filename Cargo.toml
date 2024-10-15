@@ -10,7 +10,7 @@ readme = "README.md"
 repository = "https://github.com/wasmcloud/wadm"
 
 [workspace.package]
-version = "0.17.0"
+version = "0.17.1"
 
 [features]
 default = []
@@ -66,7 +66,9 @@ opentelemetry-otlp = { version = "0.10", features = [
     "reqwest-client",
 ] }
 rand = { version = "0.8", features = ["small_rng"] }
-regex = "1.11.0"
+# NOTE(thomastaylor312): Pinning this temporarily to 1.10 due to transitive dependency with oci
+# crates that are pinned to 1.10
+regex = "~1.10"
 schemars = "0.8"
 semver = { version = "1.0.16", features = ["serde"] }
 serde = "1"
@@ -82,9 +84,9 @@ tracing-subscriber = { version = "0.3.7", features = ["env-filter", "json"] }
 ulid = { version = "1", features = ["serde"] }
 utoipa = "4"
 uuid = "1"
-wadm = { version = "0.17.0", path = "./crates/wadm" }
-wadm-client = { version = "0.6.0", path = "./crates/wadm-client" }
-wadm-types = { version = "0.6.0", path = "./crates/wadm-types" }
+wadm = { version = "0.17.1", path = "./crates/wadm" }
+wadm-client = { version = "0.6.1", path = "./crates/wadm-client" }
+wadm-types = { version = "0.6.1", path = "./crates/wadm-types" }
 wasmcloud-control-interface = { version = "2.2.0" }
 wasmcloud-secrets-types = "0.2.0"
 wit-bindgen-wrpc = { version = "0.3.7", default-features = false }

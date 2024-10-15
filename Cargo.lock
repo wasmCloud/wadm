@@ -1564,7 +1564,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4979f22fdb869068da03c9f7528f8297c6fd2606bc3a4affe42e6a823fdb8da4"
 dependencies = [
  "cfg-if",
- "windows-targets 0.48.5",
+ "windows-targets 0.52.5",
 ]
 
 [[package]]
@@ -2351,9 +2351,9 @@ dependencies = [
 
 [[package]]
 name = "regex"
-version = "1.11.0"
+version = "1.10.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38200e5ee88914975b69f657f0801b6f6dccafd44fd9326302a4aaeecfacb1d8"
+checksum = "4219d74c6b67a3654a9fbebc4b419e22126d13d2f3c4a07ee0cb61ff79a79619"
 dependencies = [
  "aho-corasick",
  "memchr",
@@ -3642,7 +3642,7 @@ checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 
 [[package]]
 name = "wadm"
-version = "0.17.0"
+version = "0.17.1"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -3676,7 +3676,7 @@ dependencies = [
 
 [[package]]
 name = "wadm-cli"
-version = "0.17.0"
+version = "0.17.1"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -3706,7 +3706,7 @@ dependencies = [
 
 [[package]]
 name = "wadm-client"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -3725,7 +3725,7 @@ dependencies = [
 
 [[package]]
 name = "wadm-types"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "anyhow",
  "async-nats",
