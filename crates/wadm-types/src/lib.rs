@@ -84,11 +84,11 @@ impl Manifest {
 
     /// Helper function to find shared components that are missing from the given list of
     /// deployed applications
-    pub fn missing_shared_components(&self, deployed_apps: &Vec<&Manifest>) -> Vec<&Component> {
+    pub fn missing_shared_components(&self, deployed_apps: &[&Manifest]) -> Vec<&Component> {
         self.spec
             .components
             .iter()
-            .filter_map(|shared_component| {
+            .filter(|shared_component| {
                 match &shared_component.properties {
                     Properties::Capability {
                         properties:
@@ -117,12 +117,12 @@ impl Manifest {
                                         == std::mem::discriminant(&shared_component.properties)
                                 })
                         }) {
-                            None
+                            false
                         } else {
-                            Some(shared_component)
+                            true
                         }
                     }
-                    _ => None,
+                    _ => false,
                 }
             })
             .collect()

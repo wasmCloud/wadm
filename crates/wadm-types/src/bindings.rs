@@ -8,7 +8,7 @@ use crate::{
     SharedApplicationComponentProperties, Specification, Spread, SpreadScalerProperty,
     TargetConfig, Trait, TraitProperty,
 };
-use wasmcloud::wadm::{self};
+use wasmcloud::wadm;
 
 wit_bindgen_wrpc::generate!({
     generate_unused_types: true,
