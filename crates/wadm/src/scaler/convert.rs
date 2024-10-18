@@ -35,8 +35,8 @@ use super::{
     BackoffWrapper,
 };
 
-pub type BoxedScaler = Box<dyn Scaler + Send + Sync + 'static>;
-pub type ScalerList = Vec<BoxedScaler>;
+pub(crate) type BoxedScaler = Box<dyn Scaler + Send + Sync + 'static>;
+pub(crate) type ScalerList = Vec<BoxedScaler>;
 
 const EMPTY_TRAIT_VEC: Vec<Trait> = Vec::new();
 
@@ -83,7 +83,7 @@ where
                         scalers.push(Box::new(StatusScaler::new(
                             uuid::Uuid::new_v4().to_string(),
                             SPREAD_SCALER_KIND,
-                            component.name.to_owned(),
+                            &component.name,
                             StatusInfo::failed(err),
                         )) as BoxedScaler);
                         return;
@@ -119,7 +119,7 @@ where
                         scalers.push(Box::new(StatusScaler::new(
                             uuid::Uuid::new_v4().to_string(),
                             SPREAD_SCALER_KIND,
-                            component.name.to_owned(),
+                            &component.name,
                             StatusInfo::failed(err),
                         )) as BoxedScaler);
                         return;
@@ -153,7 +153,7 @@ where
 /// * `properties` - The properties of the component to convert
 /// * `traits` - The traits of the component to convert
 /// * `manifest_name` - The name of the manifest that the scalers are being created for
-/// * `application_name` - The name of the application that the component is in
+/// * `application_name` - The name of the application that the scalers are being created for
 /// * `component_name` - The name of the component to convert
 /// * **The following arguments are required to create scalers, passed directly through to the scaler
 /// * `lattice_id` - The lattice id the scalers operate on
@@ -308,7 +308,7 @@ fn component_scalers<S, P, L>(
 /// * `properties` - The properties of the capability provider to convert
 /// * `traits` - The traits of the component to convert
 /// * `manifest_name` - The name of the manifest that the scalers are being created for
-/// * `application_name` - The name of the application that the component is in
+/// * `application_name` - The name of the application that the scalers are being created for
 /// * `component_name` - The name of the component to convert
 /// * **The following arguments are required to create scalers, passed directly through to the scaler
 /// * `lattice_id` - The lattice id the scalers operate on
@@ -337,9 +337,9 @@ fn provider_scalers<S, P, L>(
 {
     // If an image is specified, then it's a provider in the same manifest. Otherwise, it's a shared component
     let provider_id = if properties.image.is_some() {
-        compute_component_id(manifest_name, properties.id.as_ref(), &component_name)
+        compute_component_id(manifest_name, properties.id.as_ref(), component_name)
     } else {
-        compute_component_id(application_name, properties.id.as_ref(), &component_name)
+        compute_component_id(application_name, properties.id.as_ref(), component_name)
     };
 
     let mut scaler_specified = false;
@@ -515,7 +515,7 @@ fn provider_scalers<S, P, L>(
 /// * `link_property` - The properties of the link to convert
 /// * `lattice_id` - The lattice id the scalers operate on
 /// * `manifest_name` - The name of the manifest that the scalers are being created for
-/// * `application_name` - The name of the application that the component is in
+/// * `application_name` - The name of the application that the scalers are being created for
 /// * `component_name` - The name of the component to convert
 /// * `source_id` - The ID of the source component
 /// * `target_id` - The optional ID of the target component

@@ -708,13 +708,12 @@ impl<P: Publisher> Handler<P> {
         // TODO(#451): If this app is shared, or the previous version was, make sure that shared
         // components that have dependent applications are still present
 
-        let missing_shared_components = staged_model.missing_shared_components(
-            &stored_models
-                .iter()
-                .filter(|a| a.deployed_version().is_some() && a.get_current().shared())
-                .map(|a| a.get_current())
-                .collect(),
-        );
+        let deployed_apps: Vec<&Manifest> = stored_models
+            .iter()
+            .filter(|a| a.deployed_version().is_some() && a.get_current().shared())
+            .map(|a| a.get_current())
+            .collect();
+        let missing_shared_components = staged_model.missing_shared_components(&deployed_apps);
 
         // Ensure all shared components point to a valid component that is deployed in another application
         if !missing_shared_components.is_empty() {
@@ -1017,7 +1016,7 @@ fn summary_from_manifest_status(manifest: StoredManifest, status: Status) -> Mod
 
 // Manifest validation
 pub(crate) async fn validate_manifest(manifest: &Manifest) -> anyhow::Result<()> {
-    let failures = wadm_types::validation::validate_manifest(&manifest).await?;
+    let failures = wadm_types::validation::validate_manifest(manifest).await?;
     for failure in failures {
         if matches!(
             failure.level,
