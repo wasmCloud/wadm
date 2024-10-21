@@ -86,7 +86,7 @@ utoipa = "5"
 uuid = "1"
 wadm = { version = "0.17.1", path = "./crates/wadm" }
 wadm-client = { version = "0.6.1", path = "./crates/wadm-client" }
-wadm-types = { version = "0.6.1", path = "./crates/wadm-types" }
+wadm-types = { version = "0.7.0", path = "./crates/wadm-types" }
 wasmcloud-control-interface = { version = "2.2.0" }
 wasmcloud-secrets-types = "0.2.0"
 wit-bindgen-wrpc = { version = "0.3.7", default-features = false }
