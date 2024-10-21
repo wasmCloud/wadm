@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use schemars::JsonSchema;
 use serde::{de, Deserialize, Serialize};
+use utoipa::ToSchema;
 
 pub mod api;
 #[cfg(feature = "wit")]
@@ -37,7 +38,7 @@ pub const LINK_TRAIT: &str = "link";
 pub const LATEST_VERSION: &str = "latest";
 
 /// Manifest file based on the Open Application Model (OAM) specification for declaratively managing wasmCloud applications
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, utoipa::ToSchema, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, ToSchema, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Manifest {
     /// The OAM version of the manifest
@@ -171,7 +172,7 @@ impl Manifest {
 }
 
 /// The metadata describing the manifest
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, ToSchema, JsonSchema)]
 pub struct Metadata {
     /// The name of the manifest. This must be unique per lattice
     pub name: String,
@@ -184,7 +185,7 @@ pub struct Metadata {
 }
 
 /// A representation of an OAM specification
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, ToSchema, JsonSchema)]
 pub struct Specification {
     /// The list of components for describing an application
     pub components: Vec<Component>,
@@ -197,7 +198,7 @@ pub struct Specification {
 }
 
 /// A policy definition
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, ToSchema, JsonSchema)]
 pub struct Policy {
     /// The name of this policy
     pub name: String,
@@ -209,7 +210,7 @@ pub struct Policy {
 }
 
 /// A component definition
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, ToSchema, JsonSchema)]
 // TODO: figure out why this can't be uncommented
 // #[serde(deny_unknown_fields)]
 pub struct Component {
@@ -258,7 +259,7 @@ impl Component {
 }
 
 /// Properties that can be defined for a component
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, ToSchema, JsonSchema)]
 #[serde(tag = "type")]
 pub enum Properties {
     #[serde(rename = "component", alias = "actor")]
@@ -267,7 +268,7 @@ pub enum Properties {
     Capability { properties: CapabilityProperties },
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, ToSchema, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ComponentProperties {
     /// The image reference to use. Required unless the component is a shared component
@@ -292,7 +293,7 @@ pub struct ComponentProperties {
     pub secrets: Vec<SecretProperty>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Default, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Default, ToSchema, JsonSchema)]
 pub struct ConfigDefinition {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub config: Vec<ConfigProperty>,
@@ -300,7 +301,7 @@ pub struct ConfigDefinition {
     pub secrets: Vec<SecretProperty>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash, ToSchema, JsonSchema)]
 pub struct SecretProperty {
     /// The name of the secret. This is used by a reference by the component or capability to
     /// get the secret value as a resource.
@@ -310,7 +311,7 @@ pub struct SecretProperty {
     pub properties: SecretSourceProperty,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash, ToSchema, JsonSchema)]
 pub struct SecretSourceProperty {
     /// The policy to use for retrieving the secret.
     pub policy: String,
@@ -325,7 +326,7 @@ pub struct SecretSourceProperty {
     pub version: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, ToSchema, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CapabilityProperties {
     /// The image reference to use. Required unless the component is a shared component
@@ -350,7 +351,7 @@ pub struct CapabilityProperties {
     pub secrets: Vec<SecretProperty>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, ToSchema, JsonSchema)]
 pub struct SharedApplicationComponentProperties {
     /// The name of the shared application
     pub name: String,
@@ -358,7 +359,7 @@ pub struct SharedApplicationComponentProperties {
     pub component: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, ToSchema, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Trait {
     /// The type of trait specified. This should be a unique string for the type of scaler. As we
@@ -405,7 +406,7 @@ impl Trait {
 }
 
 /// Properties for defining traits
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, ToSchema, JsonSchema)]
 #[serde(untagged)]
 #[allow(clippy::large_enum_variant)]
 pub enum TraitProperty {
@@ -449,7 +450,7 @@ impl From<SpreadScalerProperty> for TraitProperty {
 ///
 /// Will result in two config scalers being created, one with the name `basic-kv` and one with the
 /// name `default-port`. Wadm will not resolve collisions with configuration names between manifests.
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, ToSchema, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ConfigProperty {
     /// Name of the config to ensure exists
@@ -469,7 +470,7 @@ impl PartialEq<ConfigProperty> for String {
 }
 
 /// Properties for links
-#[derive(Debug, Serialize, Clone, PartialEq, Eq, JsonSchema, Default)]
+#[derive(Debug, Serialize, Clone, PartialEq, Eq, ToSchema, JsonSchema, Default)]
 #[serde(deny_unknown_fields)]
 pub struct LinkProperty {
     /// WIT namespace for the link
@@ -569,7 +570,7 @@ impl<'de> Deserialize<'de> for LinkProperty {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Default, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Default, ToSchema, JsonSchema)]
 pub struct TargetConfig {
     /// The target this link applies to. This should be the name of a component in the manifest
     pub name: String,
@@ -586,7 +587,7 @@ impl PartialEq<TargetConfig> for String {
 }
 
 /// Properties for spread scalers
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, ToSchema, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SpreadScalerProperty {
     /// Number of instances to spread across matching requirements
@@ -598,7 +599,7 @@ pub struct SpreadScalerProperty {
 }
 
 /// Configuration for various spreading requirements
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, ToSchema, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Spread {
     /// The name of this spread requirement
