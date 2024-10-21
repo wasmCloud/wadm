@@ -1,4 +1,4 @@
-FROM chainguard/wolfi-base:latest AS base
+FROM cgr.dev/chainguard/wolfi-base:latest AS base
 
 FROM base AS base-amd64
 ARG BIN_AMD64
