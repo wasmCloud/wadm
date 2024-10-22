@@ -82,11 +82,11 @@ tracing-futures = "0.2"
 tracing-opentelemetry = { version = "0.17" }
 tracing-subscriber = { version = "0.3.7", features = ["env-filter", "json"] }
 ulid = { version = "1", features = ["serde"] }
-utoipa = "4"
+utoipa = "5"
 uuid = "1"
 wadm = { version = "0.18.0-rc.1", path = "./crates/wadm" }
 wadm-client = { version = "0.6.1", path = "./crates/wadm-client" }
-wadm-types = { version = "0.6.1", path = "./crates/wadm-types" }
+wadm-types = { version = "0.7.0", path = "./crates/wadm-types" }
 wasmcloud-control-interface = { version = "2.2.0" }
 wasmcloud-secrets-types = "0.2.0"
 wit-bindgen-wrpc = { version = "0.3.7", default-features = false }
