@@ -95,6 +95,7 @@ async fn run_multiple_host_tests() {
     // The futures must be boxed or they're technically different types
     let tests = [
         test_spread_all_hosts(&client_info).boxed(),
+        test_regex_spread(&client_info).boxed(),
         test_lotta_components(&client_info).boxed(),
         test_complex_app(&client_info).boxed(),
     ];
@@ -423,6 +424,43 @@ async fn test_complex_app(client_info: &ClientInfo) {
         {
             anyhow::bail!("Actors shouldn't be running on the moon");
         }
+
+        Ok(())
+    })
+    .await;
+}
+
+async fn test_regex_spread(client_info: &ClientInfo) {
+    let client = client_info.wadm_client(DEFAULT_LATTICE_ID);
+    let (name, _version) = client
+        .put_manifest(client_info.load_raw_manifest("regex_spread.yaml").await)
+        .await
+        .expect("Shouldn't have errored when creating manifest");
+
+    client
+        .deploy_manifest(&name, None)
+        .await
+        .expect("Shouldn't have errored when deploying manifest");
+
+    assert_status(None, Some(7), || async {
+        let inventory = client_info.get_all_inventory(DEFAULT_LATTICE_ID).await?;
+
+        // Make sure that the component is only running on the correct region
+        if inventory.values().any(|inv| {
+            inv.labels
+                .get("region")
+                .map(|region| region != "us-brooks-east")
+                .unwrap_or(true)
+                && inv
+                    .components
+                    .iter()
+                    .any(|component| component.id == "regex_spread-hello")
+        }) {
+            anyhow::bail!("Provider should only be running on us-brooks-east");
+        }
+
+        check_components(&inventory, HELLO_IMAGE_REF, "regex-spread", 5)?;
+        check_providers(&inventory, HTTP_SERVER_IMAGE_REF, ExpectedCount::AtLeast(5))?;
 
         Ok(())
     })
