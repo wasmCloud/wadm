@@ -56,9 +56,9 @@ spec:
             - name: WADM_TRACING_ENDPOINT
               value: {{ .Values.wadm.config.tracingEndpoint | quote }}
           {{- end }}
-          {{- if .Values.wadm.config.jetstreamDomain }}
+          {{- if .Values.wadm.config.nats.jetstreamDomain }}
             - name: WADM_JETSTREAM_DOMAIN
-              value: {{ .Values.wadm.config.jetstreamDomain | quote }}
+              value: {{ .Values.wadm.config.nats.jetstreamDomain | quote }}
           {{- end }}
           {{- if .Values.wadm.config.maxJobs }}
             - name: WADM_MAX_JOBS
