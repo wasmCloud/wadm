@@ -3685,16 +3685,12 @@ version = "0.7.1"
 dependencies = [
  "anyhow",
  "async-nats",
- "bytes",
  "futures",
  "nkeys",
- "serde",
  "serde_json",
  "serde_yaml",
  "thiserror",
  "tokio",
- "tracing",
- "tracing-futures",
  "wadm-types",
 ]
 
