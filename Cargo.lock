@@ -1564,7 +1564,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4979f22fdb869068da03c9f7528f8297c6fd2606bc3a4affe42e6a823fdb8da4"
 dependencies = [
  "cfg-if",
- "windows-targets 0.48.5",
+ "windows-targets 0.52.5",
 ]
 
 [[package]]
@@ -3918,9 +3918,9 @@ dependencies = [
 
 [[package]]
 name = "wasmcloud-secrets-types"
-version = "0.2.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6e141cc3ac1fd9b71ec0813796e0a40767afea090d6395fa2b82abca9c882426"
+checksum = "8ee8358ba91cf74b60d0de37e0c33031b6059e4aa173e0d4bd14950a776d67ed"
 dependencies = [
  "anyhow",
  "async-trait",
