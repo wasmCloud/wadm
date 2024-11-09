@@ -15,29 +15,10 @@ wit = ["wit-bindgen-wrpc"]
 [dependencies]
 serde_yaml = { workspace = true }
 anyhow = { workspace = true }
-async-nats = { workspace = true }
-async-trait = { workspace = true }
-bytes = { workspace = true }
-chrono = { workspace = true }
-cloudevents-sdk = { workspace = true }
-indexmap = { workspace = true, features = ["serde"] }
-jsonschema = { workspace = true }
-lazy_static = { workspace = true }
-nkeys = { workspace = true }
-rand = { workspace = true, features = ["small_rng"] }
 regex = { workspace = true }
 schemars = { workspace = true }
-semver = { workspace = true, features = ["serde"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
-sha2 = { workspace = true }
-thiserror = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
-tracing = { workspace = true, features = ["log"] }
-tracing-futures = { workspace = true }
-ulid = { workspace = true, features = ["serde"] }
 utoipa = { workspace = true }
-uuid = { workspace = true }
-wasmcloud-control-interface = { workspace = true }
-wasmcloud-secrets-types = { workspace = true }
 wit-bindgen-wrpc = { workspace = true, optional = true }
