@@ -1,5 +1,6 @@
-use std::collections::{BTreeMap, HashSet};
-use std::{cmp::Ordering, cmp::Reverse, collections::HashMap};
+use std::{
+    cmp::Ordering, cmp::Reverse, collections::BTreeMap, collections::HashMap, collections::HashSet,
+};
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -171,6 +172,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ComponentSpreadScaler<S> {
 
         let mut spread_status = vec![];
         trace!(spread_requirements = ?self.spread_requirements, ?component_id, "Computing commands");
+        let mut component_instances_per_eligible_host: HashMap<&String, usize> = HashMap::new();
         let commands = self
             .spread_requirements
             .iter()
@@ -207,6 +209,14 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ComponentSpreadScaler<S> {
                                 }).collect()
                         })
                         .unwrap_or_default();
+                    running_components_per_host.iter().for_each(|(host_id, count)| {
+                        component_instances_per_eligible_host
+                            .entry(host_id)
+                            .and_modify(|e| *e += count)
+                            .or_insert(*count);
+                    });
+
+
                     let current_count: usize = running_components_per_host.values().sum();
                     trace!(current = %current_count, expected = %count, "Calculated running components, reconciling with expected count");
                     // Here we'll generate commands for the proper host depending on where they are running
@@ -265,6 +275,16 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ComponentSpreadScaler<S> {
             .flatten()
             .collect::<Vec<Command>>();
         trace!(?commands, "Calculated commands for component scaler");
+
+        // Detect spread requirement violations
+        if let Some(message) = detect_spread_requirement_violations(
+            &self.spread_requirements,
+            &hosts,
+            &component_instances_per_eligible_host,
+            &commands,
+        ) {
+            spread_status.push(StatusInfo::failed(&message));
+        }
 
         let status = match (spread_status.is_empty(), commands.is_empty()) {
             // No failures, no commands, scaler satisfied
@@ -470,6 +490,94 @@ fn compute_spread(spread_config: &SpreadScalerProperty) -> Vec<(Spread, usize)> 
     computed_spreads
 }
 
+fn detect_spread_requirement_violations(
+    spread_requirements: &[(Spread, usize)],
+    hosts: &HashMap<String, Host>,
+    running_instances_per_host: &HashMap<&String, usize>,
+    commands: &[Command],
+) -> Option<String> {
+    // Step 1: Determine the union of all eligible hosts for the configured spreads
+    // and collect the current instance count for each eligible host
+    let mut eligible_hosts_instances: HashMap<String, usize> = HashMap::new();
+    for (spread, _) in spread_requirements {
+        for (host_id, host) in hosts {
+            if spread.requirements.iter().all(|(key, value)| {
+                host.labels
+                    .get(key)
+                    .map(|val| val == value)
+                    .unwrap_or(false)
+            }) {
+                let count = running_instances_per_host
+                    .get(host_id)
+                    .cloned()
+                    .unwrap_or(0);
+                eligible_hosts_instances.insert(host_id.clone(), count);
+            }
+        }
+    }
+
+    // Step 2: derive changeset from commands (for commands that share the same host_id, select the command with the highest instance count & idx is used as a tiebreaker)
+    let mut changeset: HashMap<String, (usize, usize)> = HashMap::new();
+    for (idx, command) in commands.iter().enumerate() {
+        if let Command::ScaleComponent(ScaleComponent { host_id, count, .. }) = command {
+            let entry = changeset.entry(host_id.clone()).or_insert((0, usize::MAX));
+            if *count as usize > entry.0 || (*count as usize == entry.0 && idx < entry.1) {
+                *entry = (*count as usize, idx);
+            }
+        }
+    }
+
+    // Apply changeset to the eligible_hosts_instances
+    for (host_id, (count, _)) in changeset {
+        if let Some(current_count) = eligible_hosts_instances.get_mut(&host_id) {
+            *current_count = count;
+        }
+    }
+
+    // Step 3: Create a structure that maps a Spread to a tuple
+    // (spread_eligible_hosts_total_instance_count_if_all_commands_are_applied, target_instance_count_based_on_spread_weight)
+    let mut spread_instances: HashMap<String, (usize, usize)> = HashMap::new();
+    for (spread, target_count) in spread_requirements {
+        let projected_count: usize = eligible_hosts_instances
+            .iter()
+            .filter_map(|(host_id, count)| {
+                if spread.requirements.iter().all(|(key, value)| {
+                    hosts
+                        .get(host_id)
+                        .unwrap()
+                        .labels
+                        .get(key)
+                        .map(|val| val == value)
+                        .unwrap_or(false)
+                }) {
+                    Some(count)
+                } else {
+                    None
+                }
+            })
+            .sum();
+
+        spread_instances.insert(spread.name.clone(), (projected_count, *target_count));
+    }
+
+    // Step 4: Compare the tuples' values to detect conflicts
+    let mut violations = Vec::new();
+    for (spread_name, (projected_count, target_count)) in spread_instances {
+        if projected_count != target_count {
+            violations.push(format!(
+                "Spread requirement violation: {} spread requires {} instances vs {} computed from reconcialiation commands", 
+                spread_name, target_count, projected_count
+            ));
+        }
+    }
+
+    if violations.is_empty() {
+        return None;
+    }
+
+    Some(violations.join(", "))
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -481,7 +589,7 @@ mod test {
 
     use anyhow::Result;
     use chrono::Utc;
-    use wadm_types::{Spread, SpreadScalerProperty};
+    use wadm_types::{api::StatusType, Spread, SpreadScalerProperty};
     use wasmcloud_control_interface::Link;
 
     use crate::{
@@ -1675,5 +1783,359 @@ mod test {
         assert!(ineligible
             .iter()
             .any(|(id, _host)| *id == "NASDASDIMAREALHOST4"));
+    }
+
+    #[tokio::test]
+    async fn can_detect_spread_requirements_violation_1() -> Result<()> {
+        let lattice_id = "spread_requirements_violation";
+        let component_reference = "fakecloud.azurecr.io/echo:0.1.0".to_string();
+        let component_id = "fakecloud_azurecr_io_echo_0_1_0".to_string();
+        let component_name = "fakecomponent".to_string();
+
+        let store = Arc::new(TestStore::default());
+
+        let host_id_1 = "NASDASDIMAREALHOST1";
+        let host_id_2 = "NASDASDIMAREALHOST2";
+        let host_id_3 = "NASDASDIMAREALHOST3";
+        let host_id_4 = "NASDASDIMAREALHOST4";
+
+        // Create hosts with the specified labels and add them to the store
+        store
+            .store(
+                lattice_id,
+                host_id_1.to_string(),
+                Host {
+                    components: HashMap::new(),
+                    friendly_name: "node1".to_string(),
+                    labels: HashMap::from_iter([
+                        ("region".to_string(), "us-east-1".to_string()),
+                        ("cloud".to_string(), "real".to_string()),
+                    ]),
+                    providers: HashSet::new(),
+                    uptime_seconds: 123,
+                    version: None,
+                    id: host_id_1.to_string(),
+                    last_seen: Utc::now(),
+                },
+            )
+            .await?;
+
+        store
+            .store(
+                lattice_id,
+                host_id_2.to_string(),
+                Host {
+                    components: HashMap::new(),
+                    friendly_name: "node2".to_string(),
+                    labels: HashMap::from_iter([
+                        ("region".to_string(), "us-east-2".to_string()),
+                        ("cloud".to_string(), "real".to_string()),
+                    ]),
+                    providers: HashSet::new(),
+                    uptime_seconds: 123,
+                    version: None,
+                    id: host_id_2.to_string(),
+                    last_seen: Utc::now(),
+                },
+            )
+            .await?;
+
+        store
+            .store(
+                lattice_id,
+                host_id_3.to_string(),
+                Host {
+                    components: HashMap::new(),
+                    friendly_name: "node3".to_string(),
+                    labels: HashMap::from_iter([
+                        ("region".to_string(), "us-west-1".to_string()),
+                        ("cloud".to_string(), "real".to_string()),
+                    ]),
+                    providers: HashSet::new(),
+                    uptime_seconds: 123,
+                    version: None,
+                    id: host_id_3.to_string(),
+                    last_seen: Utc::now(),
+                },
+            )
+            .await?;
+
+        store
+            .store(
+                lattice_id,
+                host_id_4.to_string(),
+                Host {
+                    components: HashMap::new(),
+                    friendly_name: "node4".to_string(),
+                    labels: HashMap::from_iter([
+                        ("region".to_string(), "us-west-2".to_string()),
+                        ("cloud".to_string(), "real".to_string()),
+                    ]),
+                    providers: HashSet::new(),
+                    uptime_seconds: 123,
+                    version: None,
+                    id: host_id_4.to_string(),
+                    last_seen: Utc::now(),
+                },
+            )
+            .await?;
+
+        let spread_property = SpreadScalerProperty {
+            instances: 12,
+            spread: vec![
+                Spread {
+                    name: "eastcoast".to_string(),
+                    requirements: BTreeMap::from([("region".to_string(), "us-east-1".to_string())]),
+                    weight: Some(25),
+                },
+                Spread {
+                    name: "westcoast".to_string(),
+                    requirements: BTreeMap::from([("region".to_string(), "us-west-1".to_string())]),
+                    weight: Some(25),
+                },
+                Spread {
+                    name: "realcloud".to_string(),
+                    requirements: BTreeMap::from([("cloud".to_string(), "real".to_string())]),
+                    weight: Some(50),
+                },
+            ],
+        };
+
+        let spreadscaler = ComponentSpreadScaler::new(
+            store.clone(),
+            component_reference.to_string(),
+            component_id.to_string(),
+            lattice_id.to_string(),
+            MODEL_NAME.to_string(),
+            spread_property,
+            &component_name,
+            vec![],
+        );
+
+        spreadscaler.reconcile().await?;
+
+        // Check the status after reconciliation
+        let status = spreadscaler.status().await;
+        assert_eq!(status.status_type, StatusType::Failed,);
+        println!("{:?}", status);
+        assert!(status.message.contains(&format!(
+            "Spread requirement violation: {} spread requires {} instances",
+            "realcloud", 6
+        )));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn can_detect_spread_requirements_violation_2() -> Result<()> {
+        let lattice_id = "spread_requirements_violation";
+        let component_reference = "fakecloud.azurecr.io/echo:0.1.0";
+        let component_id = "fakecloud_azurecr_io_echo_0_1_0";
+        let component_name = "fakecomponent";
+
+        let store = Arc::new(TestStore::default());
+
+        let host_id_1 = "NASDASDIMAREALHOST1";
+        let host_id_2 = "NASDASDIMAREALHOST2";
+        let host_id_3 = "NASDASDIMAREALHOST3";
+        let host_id_4 = "NASDASDIMAREALHOST4";
+
+        let spread_property = SpreadScalerProperty {
+            instances: 12,
+            spread: vec![
+                Spread {
+                    name: "eastcoast".to_string(),
+                    requirements: BTreeMap::from([("region".to_string(), "us-east-1".to_string())]),
+                    weight: Some(25),
+                },
+                Spread {
+                    name: "westcoast".to_string(),
+                    requirements: BTreeMap::from([("region".to_string(), "us-west-1".to_string())]),
+                    weight: Some(25),
+                },
+                Spread {
+                    name: "realcloud".to_string(),
+                    requirements: BTreeMap::from([("cloud".to_string(), "real".to_string())]),
+                    weight: Some(50),
+                },
+            ],
+        };
+
+        let spreadscaler = ComponentSpreadScaler::new(
+            store.clone(),
+            component_reference.to_string(),
+            component_id.to_string(),
+            lattice_id.to_string(),
+            MODEL_NAME.to_string(),
+            spread_property,
+            component_name,
+            vec![],
+        );
+
+        // Create components with the specified labels and add them to the store
+        store
+            .store(
+                lattice_id,
+                component_id.to_string(),
+                Component {
+                    id: component_id.to_string(),
+                    name: component_name.to_string(),
+                    issuer: "AASDASDASDASD".to_string(),
+                    instances: HashMap::from_iter([
+                        (
+                            host_id_1.to_string(),
+                            // 1 (realcloud) + 11 (eastcoast) = 12 instances on this host
+                            HashSet::from_iter([
+                                WadmComponentInfo {
+                                    count: 1,
+                                    annotations: spreadscaler_annotations(
+                                        "realcloud",
+                                        spreadscaler.id(),
+                                    ),
+                                },
+                                WadmComponentInfo {
+                                    count: 11,
+                                    annotations: spreadscaler_annotations(
+                                        "eastcoast",
+                                        spreadscaler.id(),
+                                    ),
+                                },
+                            ]),
+                        ),
+                        (
+                            host_id_2.to_string(),
+                            // 0 instances on this host
+                            HashSet::from_iter([]),
+                        ),
+                        (
+                            host_id_3.to_string(),
+                            // 2 (realcloud) + 33 (west) = 35 instances on this host
+                            HashSet::from_iter([
+                                WadmComponentInfo {
+                                    count: 2,
+                                    annotations: spreadscaler_annotations(
+                                        "realcloud",
+                                        spreadscaler.id(),
+                                    ),
+                                },
+                                WadmComponentInfo {
+                                    count: 33,
+                                    annotations: spreadscaler_annotations(
+                                        "westcoast",
+                                        spreadscaler.id(),
+                                    ),
+                                },
+                            ]),
+                        ),
+                        (
+                            host_id_4.to_string(),
+                            // 44 (realcloud) instances on this host
+                            HashSet::from_iter([WadmComponentInfo {
+                                count: 44,
+                                annotations: spreadscaler_annotations(
+                                    "realcloud",
+                                    spreadscaler.id(),
+                                ),
+                            }]),
+                        ),
+                    ]),
+                    reference: component_reference.to_string(),
+                },
+            )
+            .await?;
+
+        // Create hosts with the specified labels and add them to the store
+        store
+            .store(
+                lattice_id,
+                host_id_1.to_string(),
+                Host {
+                    components: HashMap::from_iter([(component_id.to_string(), 12)]),
+                    friendly_name: "node1".to_string(),
+                    labels: HashMap::from_iter([
+                        ("region".to_string(), "us-east-1".to_string()),
+                        ("cloud".to_string(), "real".to_string()),
+                    ]),
+                    providers: HashSet::new(),
+                    uptime_seconds: 123,
+                    version: None,
+                    id: host_id_1.to_string(),
+                    last_seen: Utc::now(),
+                },
+            )
+            .await?;
+
+        store
+            .store(
+                lattice_id,
+                host_id_2.to_string(),
+                Host {
+                    components: HashMap::from_iter([(component_id.to_string(), 0)]),
+                    friendly_name: "node2".to_string(),
+                    labels: HashMap::from_iter([
+                        ("region".to_string(), "us-east-2".to_string()),
+                        ("cloud".to_string(), "real".to_string()),
+                    ]),
+                    providers: HashSet::new(),
+                    uptime_seconds: 123,
+                    version: None,
+                    id: host_id_2.to_string(),
+                    last_seen: Utc::now(),
+                },
+            )
+            .await?;
+
+        store
+            .store(
+                lattice_id,
+                host_id_3.to_string(),
+                Host {
+                    components: HashMap::from_iter([(component_id.to_string(), 35)]),
+                    friendly_name: "node3".to_string(),
+                    labels: HashMap::from_iter([
+                        ("region".to_string(), "us-west-1".to_string()),
+                        ("cloud".to_string(), "real".to_string()),
+                    ]),
+                    providers: HashSet::new(),
+                    uptime_seconds: 123,
+                    version: None,
+                    id: host_id_3.to_string(),
+                    last_seen: Utc::now(),
+                },
+            )
+            .await?;
+
+        store
+            .store(
+                lattice_id,
+                host_id_4.to_string(),
+                Host {
+                    components: HashMap::from_iter([(component_id.to_string(), 44)]),
+                    friendly_name: "node4".to_string(),
+                    labels: HashMap::from_iter([
+                        ("region".to_string(), "us-west-2".to_string()),
+                        ("cloud".to_string(), "real".to_string()),
+                    ]),
+                    providers: HashSet::new(),
+                    uptime_seconds: 123,
+                    version: None,
+                    id: host_id_4.to_string(),
+                    last_seen: Utc::now(),
+                },
+            )
+            .await?;
+
+        spreadscaler.reconcile().await?;
+
+        // Check the status after reconciliation
+        let status = spreadscaler.status().await;
+        assert_eq!(status.status_type, StatusType::Failed,);
+        println!("{:?}", status);
+        assert!(status.message.contains(&format!(
+            "Spread requirement violation: {} spread requires {} instances",
+            "realcloud", 6
+        )));
+
+        Ok(())
     }
 }
