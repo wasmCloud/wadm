@@ -215,7 +215,7 @@ jobs:
         run: |
           echo "OWNER=${GITHUB_REPOSITORY_OWNER,,}" >>$GITHUB_ENV
 
-      - name: test_stuff
+      - name: test_stuff_2
         run: | 
           echo "ghcr.io/${{ env.OWNER }}/wadm:latest,ghcr.io/${{ env.OWNER }}/wadm:${{ env.RELEASE_VERSION }}"
 
