@@ -29,34 +29,34 @@ jobs:
               uploadArtifactSuffix: 'linux-amd64',
               buildOutputPath: 'target/x86_64-unknown-linux-musl/release/wadm',
             }
-          - {
-              runnerOs: 'ubuntu-latest',
-              buildCommand: 'cargo zigbuild',
-              target: 'aarch64-unknown-linux-musl',
-              uploadArtifactSuffix: 'linux-aarch64',
-              buildOutputPath: 'target/aarch64-unknown-linux-musl/release/wadm',
-            }
-          - {
-              runnerOs: 'macos-14',
-              buildCommand: 'cargo zigbuild',
-              target: 'x86_64-apple-darwin',
-              uploadArtifactSuffix: 'macos-amd64',
-              buildOutputPath: 'target/x86_64-apple-darwin/release/wadm',
-            }
-          - {
-              runnerOs: 'macos-14',
-              buildCommand: 'cargo zigbuild',
-              target: 'aarch64-apple-darwin',
-              uploadArtifactSuffix: 'macos-aarch64',
-              buildOutputPath: 'target/aarch64-apple-darwin/release/wadm',
-            }
-          - {
-              runnerOs: 'windows-latest',
-              buildCommand: 'cargo build',
-              target: 'x86_64-pc-windows-msvc',
-              uploadArtifactSuffix: 'windows-amd64',
-              buildOutputPath: 'target/x86_64-pc-windows-msvc/release/wadm.exe',
-            }
+#          - {
+#              runnerOs: 'ubuntu-latest',
+#              buildCommand: 'cargo zigbuild',
+#              target: 'aarch64-unknown-linux-musl',
+#              uploadArtifactSuffix: 'linux-aarch64',
+#              buildOutputPath: 'target/aarch64-unknown-linux-musl/release/wadm',
+#            }
+#          - {
+#              runnerOs: 'macos-14',
+#              buildCommand: 'cargo zigbuild',
+#              target: 'x86_64-apple-darwin',
+#              uploadArtifactSuffix: 'macos-amd64',
+#              buildOutputPath: 'target/x86_64-apple-darwin/release/wadm',
+#            }
+#          - {
+#              runnerOs: 'macos-14',
+#              buildCommand: 'cargo zigbuild',
+#              target: 'aarch64-apple-darwin',
+#              uploadArtifactSuffix: 'macos-aarch64',
+#              buildOutputPath: 'target/aarch64-apple-darwin/release/wadm',
+#            }
+#          - {
+#              runnerOs: 'windows-latest',
+#              buildCommand: 'cargo build',
+#              target: 'x86_64-pc-windows-msvc',
+#              uploadArtifactSuffix: 'windows-amd64',
+#              buildOutputPath: 'target/x86_64-pc-windows-msvc/release/wadm.exe',
+#            }
     steps:
       - uses: actions/checkout@v4
 
@@ -122,53 +122,53 @@ jobs:
             sha256sum "${tarball}" >> SHA256SUMS
           done
 
-      - name: Create github release
-        uses: softprops/action-gh-release@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          prerelease: false
-          draft: false
-          files: |
-            SHA256SUMS
-            wadm-${{ env.RELEASE_VERSION }}-linux-aarch64.tar.gz
-            wadm-${{ env.RELEASE_VERSION }}-linux-amd64.tar.gz
-            wadm-${{ env.RELEASE_VERSION }}-macos-aarch64.tar.gz
-            wadm-${{ env.RELEASE_VERSION }}-macos-amd64.tar.gz
-            wadm-${{ env.RELEASE_VERSION }}-windows-amd64.tar.gz
+#      - name: Create github release
+#        uses: softprops/action-gh-release@v2
+#        with:
+#          token: ${{ secrets.GITHUB_TOKEN }}
+#          prerelease: false
+#          draft: false
+#          files: |
+#            SHA256SUMS
+#            wadm-${{ env.RELEASE_VERSION }}-linux-aarch64.tar.gz
+#            wadm-${{ env.RELEASE_VERSION }}-linux-amd64.tar.gz
+#            wadm-${{ env.RELEASE_VERSION }}-macos-aarch64.tar.gz
+#            wadm-${{ env.RELEASE_VERSION }}-macos-amd64.tar.gz
+#            wadm-${{ env.RELEASE_VERSION }}-windows-amd64.tar.gz
 
-  crate:
-    if: ${{ startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/types-v') || startsWith(github.ref, 'refs/tags/client-v') }}
-    name: Publish crate
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install latest Rust stable toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
-
-      - name: Cargo login
-        run: |
-          cargo login ${{ secrets.CRATES_TOKEN }}
-
-      - name: Cargo publish wadm-types
-        if: ${{ startsWith(github.ref, 'refs/tags/types-v') }}
-        working-directory: ./crates/wadm-types
-        run: |
-          cargo publish
-
-      - name: Cargo publish wadm lib
-        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
-        working-directory: ./crates/wadm
-        run: |
-          cargo publish
-
-      - name: Cargo publish wadm-client
-        if: ${{ startsWith(github.ref, 'refs/tags/client-v') }}
-        working-directory: ./crates/wadm-client
-        run: |
-          cargo publish
+#  crate:
+#    if: ${{ startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/types-v') || startsWith(github.ref, 'refs/tags/client-v') }}
+#    name: Publish crate
+#    runs-on: ubuntu-latest
+#    needs: build
+#    steps:
+#      - uses: actions/checkout@v4
+#      - name: Install latest Rust stable toolchain
+#        uses: dtolnay/rust-toolchain@stable
+#        with:
+#          toolchain: stable
+#
+#      - name: Cargo login
+#        run: |
+#          cargo login ${{ secrets.CRATES_TOKEN }}
+#
+#      - name: Cargo publish wadm-types
+#        if: ${{ startsWith(github.ref, 'refs/tags/types-v') }}
+#        working-directory: ./crates/wadm-types
+#        run: |
+#          cargo publish
+#
+#      - name: Cargo publish wadm lib
+#        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+#        working-directory: ./crates/wadm
+#        run: |
+#          cargo publish
+#
+#      - name: Cargo publish wadm-client
+#        if: ${{ startsWith(github.ref, 'refs/tags/client-v') }}
+#        working-directory: ./crates/wadm-client
+#        run: |
+#          cargo publish
 
   docker-image:
     name: Build and push docker images
