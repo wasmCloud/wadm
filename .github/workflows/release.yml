@@ -218,7 +218,7 @@ jobs:
       - name: test_stuff_2
         run: | 
           echo "ghcr.io/${{ env.OWNER }}/wadm:latest,ghcr.io/${{ env.OWNER }}/wadm:${{ env.RELEASE_VERSION }}"
-          echo "${{ env.RELEASE_VERSION#v }}"
+          echo "test:${{ env.RELEASE_VERSION#v }}"
 
       - name: Build and push (tag)
         uses: docker/build-push-action@v6
