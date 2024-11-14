@@ -215,6 +215,10 @@ jobs:
         run: |
           echo "OWNER=${GITHUB_REPOSITORY_OWNER,,}" >>$GITHUB_ENV
 
+      - name: test_stuff
+        run: | 
+          echo "ghcr.io/${{ env.OWNER }}/wadm:latest,ghcr.io/${{ env.OWNER }}/wadm:${{ env.RELEASE_VERSION }}"
+
       - name: Build and push (tag)
         uses: docker/build-push-action@v6
         if: ${{ startsWith(github.ref, 'refs/tags/v') }}
