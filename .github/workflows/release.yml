@@ -122,19 +122,19 @@ jobs:
             sha256sum "${tarball}" >> SHA256SUMS
           done
 
-#      - name: Create github release
-#        uses: softprops/action-gh-release@v2
-#        with:
-#          token: ${{ secrets.GITHUB_TOKEN }}
-#          prerelease: false
-#          draft: false
-#          files: |
-#            SHA256SUMS
-#            wadm-${{ env.RELEASE_VERSION }}-linux-aarch64.tar.gz
-#            wadm-${{ env.RELEASE_VERSION }}-linux-amd64.tar.gz
-#            wadm-${{ env.RELEASE_VERSION }}-macos-aarch64.tar.gz
-#            wadm-${{ env.RELEASE_VERSION }}-macos-amd64.tar.gz
-#            wadm-${{ env.RELEASE_VERSION }}-windows-amd64.tar.gz
+      - name: Create github release
+        uses: softprops/action-gh-release@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          prerelease: false
+          draft: false
+          files: |
+            SHA256SUMS
+            wadm-${{ env.RELEASE_VERSION }}-linux-aarch64.tar.gz
+            wadm-${{ env.RELEASE_VERSION }}-linux-amd64.tar.gz
+            wadm-${{ env.RELEASE_VERSION }}-macos-aarch64.tar.gz
+            wadm-${{ env.RELEASE_VERSION }}-macos-amd64.tar.gz
+            wadm-${{ env.RELEASE_VERSION }}-windows-amd64.tar.gz
 
 #  crate:
 #    if: ${{ startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/types-v') || startsWith(github.ref, 'refs/tags/client-v') }}
