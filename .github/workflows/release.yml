@@ -230,7 +230,9 @@ jobs:
           build-args: |
             BIN_ARM64=./artifacts/wadm-${{ env.RELEASE_VERSION }}-linux-aarch64
             BIN_AMD64=./artifacts/wadm-${{ env.RELEASE_VERSION }}-linux-amd64
-          tags: ghcr.io/${{ env.OWNER }}/wadm:latest,ghcr.io/${{ env.OWNER }}/wadm:${{ env.RELEASE_VERSION }}
+          tags: | 
+            ghcr.io/${{ env.OWNER }}/wadm:latest,ghcr.io/${{ env.OWNER }}/wadm:${{ env.RELEASE_VERSION }},
+            ghcr.io/${{ env.OWNER }}/wadm:latest,ghcr.io/${{ env.OWNER }}/wadm:${{ env.RELEASE_VERSION_DOCKER_TAG }}
 
 
       - name: Build and push wolfi (tag)
@@ -244,7 +246,10 @@ jobs:
           build-args: |
             BIN_ARM64=./artifacts/wadm-${{ env.RELEASE_VERSION }}-linux-aarch64
             BIN_AMD64=./artifacts/wadm-${{ env.RELEASE_VERSION }}-linux-amd64
-          tags: ghcr.io/${{ env.OWNER }}/wadm:latest-wolfi,ghcr.io/${{ env.OWNER }}/wadm:${{ env.RELEASE_VERSION }}-wolfi
+          tags: | 
+            ghcr.io/${{ env.OWNER }}/wadm:latest-wolfi,ghcr.io/${{ env.OWNER }}/wadm:${{ env.RELEASE_VERSION }}-wolfi,
+            ghcr.io/${{ env.OWNER }}/wadm:latest-wolfi,ghcr.io/${{ env.OWNER }}/wadm:${{ env.RELEASE_VERSION_DOCKER_TAG }}-wolfi
+            
 
       - name: Build and push (main)
         uses: docker/build-push-action@v6
