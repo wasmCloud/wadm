@@ -218,7 +218,10 @@ jobs:
       - name: Set the formatted release version for the docker tag
         if: ${{ startsWith(github.ref, 'refs/tags/v') }}
         run: |
-          echo "RELEASE_VERSION_DOCKER_TAG=${GITHUB_REF/refs\/tags\/v/}" >> $GITHUB_ENV
+          echo "RELEASE_VERSION_DOCKER_TAG=${RELEASE_VERSION#v}" >> $GITHUB_ENV
+
+      - name: Test run
+        run: echo "${{ env.RELEASE_VERSION_DOCKER_TAG }}"
 
       - name: Build and push (tag)
         uses: docker/build-push-action@v6
