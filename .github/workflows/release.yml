@@ -215,6 +215,11 @@ jobs:
         run: |
           echo "OWNER=${GITHUB_REPOSITORY_OWNER,,}" >>$GITHUB_ENV
 
+      - name: Set the formatted release version for the docker tag
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        run: |
+          echo "RELEASE_VERSION_DOCKER_TAG=${RELEASE_VERSION#v}" >> $GITHUB_ENV
+
       - name: Build and push (tag)
         uses: docker/build-push-action@v6
         if: ${{ startsWith(github.ref, 'refs/tags/v') }}
@@ -225,7 +230,10 @@ jobs:
           build-args: |
             BIN_ARM64=./artifacts/wadm-${{ env.RELEASE_VERSION }}-linux-aarch64
             BIN_AMD64=./artifacts/wadm-${{ env.RELEASE_VERSION }}-linux-amd64
-          tags: ghcr.io/${{ env.OWNER }}/wadm:latest,ghcr.io/${{ env.OWNER }}/wadm:${{ env.RELEASE_VERSION }}
+          tags: | 
+            ghcr.io/${{ env.OWNER }}/wadm:latest
+            ghcr.io/${{ env.OWNER }}/wadm:${{ env.RELEASE_VERSION }},
+            ghcr.io/${{ env.OWNER }}/wadm:${{ env.RELEASE_VERSION_DOCKER_TAG }}
 
       - name: Build and push wolfi (tag)
         uses: docker/build-push-action@v6
@@ -238,7 +246,10 @@ jobs:
           build-args: |
             BIN_ARM64=./artifacts/wadm-${{ env.RELEASE_VERSION }}-linux-aarch64
             BIN_AMD64=./artifacts/wadm-${{ env.RELEASE_VERSION }}-linux-amd64
-          tags: ghcr.io/${{ env.OWNER }}/wadm:latest-wolfi,ghcr.io/${{ env.OWNER }}/wadm:${{ env.RELEASE_VERSION }}-wolfi
+          tags: | 
+            ghcr.io/${{ env.OWNER }}/wadm:latest-wolfi
+            ghcr.io/${{ env.OWNER }}/wadm:${{ env.RELEASE_VERSION }}-wolfi
+            ghcr.io/${{ env.OWNER }}/wadm:${{ env.RELEASE_VERSION_DOCKER_TAG }}-wolfi
 
       - name: Build and push (main)
         uses: docker/build-push-action@v6
