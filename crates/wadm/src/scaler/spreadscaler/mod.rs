@@ -565,7 +565,7 @@ fn detect_spread_requirement_violations(
     for (spread_name, (projected_count, target_count)) in spread_instances {
         if projected_count != target_count {
             violations.push(format!(
-                "Spread requirement violation: {} spread requires {} instances vs {} computed from reconcialiation commands", 
+                "Spread requirement violation: {} spread requires {} instances vs {} computed from reconciliation commands", 
                 spread_name, target_count, projected_count
             ));
         }
