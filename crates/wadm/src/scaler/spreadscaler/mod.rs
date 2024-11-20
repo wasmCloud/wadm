@@ -276,14 +276,17 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ComponentSpreadScaler<S> {
             .collect::<Vec<Command>>();
         trace!(?commands, "Calculated commands for component scaler");
 
-        // Detect spread requirement violations
-        if let Some(message) = detect_spread_requirement_violations(
+        // Detect spread requirement conflicts
+        if let Some(message) = detect_spread_requirement_conflicts(
             &self.spread_requirements,
             &hosts,
             &component_instances_per_eligible_host,
             &commands,
         ) {
-            spread_status.push(StatusInfo::failed(&message));
+            let status = StatusInfo::failed(&message);
+            trace!(?status, "Updating scaler status");
+            *self.status.write().await = status;
+            return Ok(vec![]);
         }
 
         let status = match (spread_status.is_empty(), commands.is_empty()) {
@@ -490,7 +493,7 @@ fn compute_spread(spread_config: &SpreadScalerProperty) -> Vec<(Spread, usize)> 
     computed_spreads
 }
 
-fn detect_spread_requirement_violations(
+fn detect_spread_requirement_conflicts(
     spread_requirements: &[(Spread, usize)],
     hosts: &HashMap<String, Host>,
     running_instances_per_host: &HashMap<&String, usize>,
@@ -561,21 +564,21 @@ fn detect_spread_requirement_violations(
     }
 
     // Step 4: Compare the tuples' values to detect conflicts
-    let mut violations = Vec::new();
+    let mut conflicts = Vec::new();
     for (spread_name, (projected_count, target_count)) in spread_instances {
         if projected_count != target_count {
-            violations.push(format!(
-                "Spread requirement violation: {} spread requires {} instances vs {} computed from reconciliation commands", 
+            conflicts.push(format!(
+                "Spread requirement conflict: {} spread requires {} instances vs {} computed from reconciliation commands", 
                 spread_name, target_count, projected_count
             ));
         }
     }
 
-    if violations.is_empty() {
+    if conflicts.is_empty() {
         return None;
     }
 
-    Some(violations.join(", "))
+    Some(conflicts.join(", "))
 }
 
 #[cfg(test)]
