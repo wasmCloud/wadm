@@ -9,20 +9,17 @@ license = "Apache-2.0"
 readme = "../../README.md"
 repository = "https://github.com/wasmcloud/wadm"
 
+[package.metadata.cargo-machete]
+ignored = ["cloudevents-sdk"]
+
 [dependencies]
 anyhow = { workspace = true }
 async-nats = { workspace = true }
 async-trait = { workspace = true }
-bytes = { workspace = true }
 chrono = { workspace = true }
 cloudevents-sdk = { workspace = true }
 futures = { workspace = true }
 indexmap = { workspace = true, features = ["serde"] }
-jsonschema = { workspace = true }
-lazy_static = { workspace = true }
-nkeys = { workspace = true }
-rand = { workspace = true, features = ["small_rng"] }
-regex = { workspace = true }
 semver = { workspace = true, features = ["serde"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
