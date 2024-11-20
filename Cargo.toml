@@ -38,7 +38,6 @@ schemars = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 tracing = { workspace = true, features = ["log"] }
-tracing-futures = { workspace = true }
 tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
 wasmcloud-control-interface = { workspace = true }

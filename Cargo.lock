@@ -3664,7 +3664,6 @@ dependencies = [
  "testcontainers",
  "tokio",
  "tracing",
- "tracing-futures",
  "tracing-opentelemetry 0.17.4",
  "tracing-subscriber",
  "wadm",
