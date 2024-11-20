@@ -1789,8 +1789,8 @@ mod test {
     }
 
     #[tokio::test]
-    async fn can_detect_spread_requirements_violation_1() -> Result<()> {
-        let lattice_id = "spread_requirements_violation";
+    async fn can_detect_spread_requirement_conflicts_1() -> Result<()> {
+        let lattice_id = "spread_requirement_conflicts";
         let component_reference = "fakecloud.azurecr.io/echo:0.1.0".to_string();
         let component_id = "fakecloud_azurecr_io_echo_0_1_0".to_string();
         let component_name = "fakecomponent".to_string();
@@ -1922,7 +1922,7 @@ mod test {
         assert_eq!(status.status_type, StatusType::Failed,);
         println!("{:?}", status);
         assert!(status.message.contains(&format!(
-            "Spread requirement violation: {} spread requires {} instances",
+            "Spread requirement conflicts: {} spread requires {} instances",
             "realcloud", 6
         )));
 
@@ -1930,8 +1930,8 @@ mod test {
     }
 
     #[tokio::test]
-    async fn can_detect_spread_requirements_violation_2() -> Result<()> {
-        let lattice_id = "spread_requirements_violation";
+    async fn can_detect_spread_requirement_conflicts_2() -> Result<()> {
+        let lattice_id = "spread_requirement_conflicts";
         let component_reference = "fakecloud.azurecr.io/echo:0.1.0";
         let component_id = "fakecloud_azurecr_io_echo_0_1_0";
         let component_name = "fakecomponent";
@@ -2135,7 +2135,7 @@ mod test {
         assert_eq!(status.status_type, StatusType::Failed,);
         println!("{:?}", status);
         assert!(status.message.contains(&format!(
-            "Spread requirement violation: {} spread requires {} instances",
+            "Spread requirement conflicts: {} spread requires {} instances",
             "realcloud", 6
         )));
 
