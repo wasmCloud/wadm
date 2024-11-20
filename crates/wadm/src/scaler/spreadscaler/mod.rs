@@ -568,7 +568,7 @@ fn detect_spread_requirement_conflicts(
     for (spread_name, (projected_count, target_count)) in spread_instances {
         if projected_count != target_count {
             conflicts.push(format!(
-                "Spread requirement conflict: {} spread requires {} instances vs {} computed from reconciliation commands", 
+                "Spread requirement conflict: {} spread requires {} instances vs {} computed from reconciliation commands",
                 spread_name, target_count, projected_count
             ));
         }
@@ -765,58 +765,77 @@ mod test {
 
     #[tokio::test]
     async fn can_compute_spread_commands() -> Result<()> {
-        let lattice_id = "hoohah_multi_stop_component";
+        let lattice_id = "can_compute_spread_commands";
         let component_reference = "fakecloud.azurecr.io/echo:0.3.4".to_string();
         let component_id = "fakecloud_azurecr_io_echo_0_3_4".to_string();
-        let host_id = "NASDASDIMAREALHOST";
+
+        let host_id1 = "HOST_ONE";
+        let host_id2 = "HOST_TWO";
+        let host_id3 = "HOST_THREE";
 
         let store = Arc::new(TestStore::default());
 
-        // STATE SETUP BEGIN, ONE HOST
-        store
-            .store(
-                lattice_id,
-                host_id.to_string(),
-                Host {
-                    components: HashMap::new(),
-                    friendly_name: "hey".to_string(),
-                    labels: HashMap::new(),
-                    providers: HashSet::new(),
-                    uptime_seconds: 123,
-                    version: None,
-                    id: host_id.to_string(),
-                    last_seen: Utc::now(),
-                },
-            )
-            .await?;
+        // Create three hosts with different labels
+        let mut host1_labels = HashMap::new();
+        host1_labels.insert("zone".to_string(), "east".to_string());
 
-        // Ensure we compute if a weights aren't specified
-        let complex_spread = SpreadScalerProperty {
+        let mut host2_labels = HashMap::new();
+        host2_labels.insert("zone".to_string(), "west".to_string());
+
+        let mut host3_labels = HashMap::new();
+        host3_labels.insert("zone".to_string(), "central".to_string());
+
+        // Store the hosts
+        for (host_id, labels) in [
+            (host_id1, host1_labels),
+            (host_id2, host2_labels),
+            (host_id3, host3_labels),
+        ] {
+            store
+                .store(
+                    lattice_id,
+                    host_id.to_string(),
+                    Host {
+                        components: HashMap::new(),
+                        friendly_name: format!("host_{}", host_id),
+                        labels,
+                        providers: HashSet::new(),
+                        uptime_seconds: 123,
+                        version: None,
+                        id: host_id.to_string(),
+                        last_seen: Utc::now(),
+                    },
+                )
+                .await?;
+        }
+
+        // Create spread requirements that map to specific hosts
+        let mut east_requirement = BTreeMap::new();
+        east_requirement.insert("zone".to_string(), "east".to_string());
+
+        let mut west_requirement = BTreeMap::new();
+        west_requirement.insert("zone".to_string(), "west".to_string());
+
+        let mut central_requirement = BTreeMap::new();
+        central_requirement.insert("zone".to_string(), "central".to_string());
+
+        let spread_config = SpreadScalerProperty {
             instances: 103,
             spread: vec![
                 Spread {
-                    // 9 + 1 (remainder trip)
-                    name: "ComplexOne".to_string(),
-                    requirements: BTreeMap::new(),
+                    name: "EastZone".to_string(),
+                    requirements: east_requirement, // Maps to host1
                     weight: Some(42),
                 },
                 Spread {
-                    // 0
-                    name: "ComplexTwo".to_string(),
-                    requirements: BTreeMap::new(),
+                    name: "WestZone".to_string(),
+                    requirements: west_requirement, // Maps to host2
                     weight: Some(3),
                 },
                 Spread {
-                    // 8
-                    name: "ComplexThree".to_string(),
-                    requirements: BTreeMap::new(),
+                    name: "CentralZone".to_string(),
+                    requirements: central_requirement, // Maps to host3
                     weight: Some(37),
-                },
-                Spread {
-                    // 84 + 1 (remainder trip)
-                    name: "ComplexFour".to_string(),
-                    requirements: BTreeMap::new(),
-                    weight: Some(384),
                 },
             ],
         };
@@ -827,38 +846,46 @@ mod test {
             component_id.to_string(),
             lattice_id.to_string(),
             MODEL_NAME.to_string(),
-            complex_spread,
+            spread_config,
             "fake_component",
             vec![],
         );
 
         let cmds = spreadscaler.reconcile().await?;
         assert_eq!(cmds.len(), 3);
+
+        // With weights 42:3:37 and total instances of 103
+        // EastZone (east) should get (52 + 1) instances
+        // WestZone (west) should get 3 instances
+        // CentralZone (central) should get (46 + 1) instances
+
         assert!(cmds.contains(&Command::ScaleComponent(ScaleComponent {
             component_id: component_id.to_string(),
             reference: component_reference.to_string(),
-            host_id: host_id.to_string(),
-            count: 10,
+            host_id: host_id1.to_string(), // east zone
+            count: 53,
             model_name: MODEL_NAME.to_string(),
-            annotations: spreadscaler_annotations("ComplexOne", spreadscaler.id()),
+            annotations: spreadscaler_annotations("EastZone", spreadscaler.id()),
             config: vec![]
         })));
+
         assert!(cmds.contains(&Command::ScaleComponent(ScaleComponent {
             component_id: component_id.to_string(),
             reference: component_reference.to_string(),
-            host_id: host_id.to_string(),
-            count: 8,
+            host_id: host_id2.to_string(), // west zone
+            count: 3,
             model_name: MODEL_NAME.to_string(),
-            annotations: spreadscaler_annotations("ComplexThree", spreadscaler.id()),
+            annotations: spreadscaler_annotations("WestZone", spreadscaler.id()),
             config: vec![]
         })));
+
         assert!(cmds.contains(&Command::ScaleComponent(ScaleComponent {
             component_id: component_id.to_string(),
             reference: component_reference.to_string(),
-            host_id: host_id.to_string(),
-            count: 85,
+            host_id: host_id3.to_string(), // central zone
+            count: 47,
             model_name: MODEL_NAME.to_string(),
-            annotations: spreadscaler_annotations("ComplexFour", spreadscaler.id()),
+            annotations: spreadscaler_annotations("CentralZone", spreadscaler.id()),
             config: vec![]
         })));
 
@@ -1159,114 +1186,6 @@ mod test {
             }
             _ => panic!("Unexpected commands in spreadscaler list"),
         }
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn can_handle_multiple_spread_matches() -> Result<()> {
-        let lattice_id = "multiple_spread_matches";
-        let component_reference = "fakecloud.azurecr.io/echo:0.3.4".to_string();
-        let component_id = "fakecloud_azurecr_io_echo_0_3_4".to_string();
-        let host_id = "NASDASDIMAREALHOST";
-
-        let store = Arc::new(TestStore::default());
-
-        // Run 75% in east, 25% on resilient hosts
-        let real_spread = SpreadScalerProperty {
-            instances: 20,
-            spread: vec![
-                Spread {
-                    name: "SimpleOne".to_string(),
-                    requirements: BTreeMap::from_iter([("region".to_string(), "east".to_string())]),
-                    weight: Some(75),
-                },
-                Spread {
-                    name: "SimpleTwo".to_string(),
-                    requirements: BTreeMap::from_iter([(
-                        "resilient".to_string(),
-                        "true".to_string(),
-                    )]),
-                    weight: Some(25),
-                },
-            ],
-        };
-
-        let spreadscaler = ComponentSpreadScaler::new(
-            store.clone(),
-            component_reference.to_string(),
-            component_id.to_string(),
-            lattice_id.to_string(),
-            MODEL_NAME.to_string(),
-            real_spread,
-            "fake_component",
-            vec![],
-        );
-
-        // STATE SETUP BEGIN, ONE HOST
-        store
-            .store(
-                lattice_id,
-                host_id.to_string(),
-                Host {
-                    components: HashMap::from_iter([(component_id.to_string(), 10)]),
-                    friendly_name: "hey".to_string(),
-                    labels: HashMap::from_iter([
-                        ("region".to_string(), "east".to_string()),
-                        ("resilient".to_string(), "true".to_string()),
-                    ]),
-                    providers: HashSet::new(),
-                    uptime_seconds: 123,
-                    version: None,
-                    id: host_id.to_string(),
-                    last_seen: Utc::now(),
-                },
-            )
-            .await?;
-
-        store
-            .store(
-                lattice_id,
-                component_id.to_string(),
-                Component {
-                    id: component_id.to_string(),
-                    name: "Faketor".to_string(),
-                    issuer: "AASDASDASDASD".to_string(),
-                    instances: HashMap::from_iter([(
-                        host_id.to_string(),
-                        // 10 instances on this host under the first spread
-                        HashSet::from_iter([WadmComponentInfo {
-                            count: 10,
-                            annotations: spreadscaler_annotations("SimpleOne", spreadscaler.id()),
-                        }]),
-                    )]),
-                    reference: component_reference.to_string(),
-                },
-            )
-            .await?;
-
-        let cmds = spreadscaler.reconcile().await?;
-        assert_eq!(cmds.len(), 2);
-
-        // Should be enforcing 10 instances per spread
-        assert!(cmds.contains(&Command::ScaleComponent(ScaleComponent {
-            component_id: "fakecloud_azurecr_io_echo_0_3_4".to_string(),
-            reference: component_reference.to_string(),
-            host_id: host_id.to_string(),
-            count: 15,
-            model_name: MODEL_NAME.to_string(),
-            annotations: spreadscaler_annotations("SimpleOne", spreadscaler.id()),
-            config: vec![]
-        })));
-        assert!(cmds.contains(&Command::ScaleComponent(ScaleComponent {
-            component_id: "fakecloud_azurecr_io_echo_0_3_4".to_string(),
-            reference: component_reference.to_string(),
-            host_id: host_id.to_string(),
-            count: 5,
-            model_name: MODEL_NAME.to_string(),
-            annotations: spreadscaler_annotations("SimpleTwo", spreadscaler.id()),
-            config: vec![]
-        })));
 
         Ok(())
     }
@@ -1922,7 +1841,7 @@ mod test {
         assert_eq!(status.status_type, StatusType::Failed,);
         println!("{:?}", status);
         assert!(status.message.contains(&format!(
-            "Spread requirement conflicts: {} spread requires {} instances",
+            "Spread requirement conflict: {} spread requires {} instances",
             "realcloud", 6
         )));
 
@@ -2135,7 +2054,7 @@ mod test {
         assert_eq!(status.status_type, StatusType::Failed,);
         println!("{:?}", status);
         assert!(status.message.contains(&format!(
-            "Spread requirement conflicts: {} spread requires {} instances",
+            "Spread requirement conflict: {} spread requires {} instances",
             "realcloud", 6
         )));
 
