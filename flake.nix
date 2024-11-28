@@ -1,0 +1,194 @@
+{
+  description = "Build a cargo workspace";
+
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/24.11-beta";
+
+    crane.url = "github:ipetkov/crane";
+
+    fenix = {
+      url = "github:nix-community/fenix";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.rust-analyzer-src.follows = "";
+    };
+
+    flake-utils.url = "github:numtide/flake-utils";
+
+    advisory-db = {
+      url = "github:rustsec/advisory-db";
+      flake = false;
+    };
+
+    # The wash CLI flag is always after the latest host release tag we want
+    wasmcloud.url = "github:wasmCloud/wasmCloud/wash-cli-v0.37.0";
+  };
+
+  outputs =
+    { self, nixpkgs, crane, fenix, flake-utils, advisory-db, wasmcloud, ... }:
+    flake-utils.lib.eachDefaultSystem (system:
+      let
+        pkgs = nixpkgs.legacyPackages.${system};
+
+        inherit (pkgs) lib;
+
+        craneLib = crane.mkLib pkgs;
+        src = craneLib.cleanCargoSource ./.;
+
+        # Common arguments can be set here to avoid repeating them later
+        commonArgs = {
+          inherit src;
+          strictDeps = true;
+
+          buildInputs = [
+            # Add additional build inputs here
+          ] ++ lib.optionals pkgs.stdenv.isDarwin [
+            # Additional darwin specific inputs can be set here
+            pkgs.libiconv
+          ];
+
+          # Additional environment variables can be set directly
+          # MY_CUSTOM_VAR = "some value";
+        };
+
+        craneLibLLvmTools = craneLib.overrideToolchain
+          (fenix.packages.${system}.complete.withComponents [
+            "cargo"
+            "llvm-tools"
+            "rustc"
+          ]);
+
+        # Build *just* the cargo dependencies (of the entire workspace),
+        # so we can reuse all of that work (e.g. via cachix) when running in CI
+        # It is *highly* recommended to use something like cargo-hakari to avoid
+        # cache misses when building individual top-level-crates
+        cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+
+        individualCrateArgs = commonArgs // {
+          inherit cargoArtifacts;
+          inherit (craneLib.crateNameFromCargoToml { inherit src; }) version;
+          # TODO(thomastaylor312) We run unit tests here and e2e tests later. The nextest step
+          # wasn't letting me pass in the fileset
+          doCheck = true;
+        };
+
+        fileSetForCrate = crate:
+          lib.fileset.toSource {
+            root = ./.;
+            fileset = lib.fileset.unions [
+              ./Cargo.toml
+              ./Cargo.lock
+              ./tests
+              ./oam
+              (craneLib.fileset.commonCargoSources ./crates/wadm)
+              (craneLib.fileset.commonCargoSources ./crates/wadm-client)
+              (craneLib.fileset.commonCargoSources ./crates/wadm-types)
+              (craneLib.fileset.commonCargoSources crate)
+            ];
+          };
+
+        # Build the top-level crates of the workspace as individual derivations.
+        # This allows consumers to only depend on (and build) only what they need.
+        # Though it is possible to build the entire workspace as a single derivation,
+        # so this is left up to you on how to organize things
+        #
+        # Note that the cargo workspace must define `workspace.members` using wildcards,
+        # otherwise, omitting a crate (like we do below) will result in errors since
+        # cargo won't be able to find the sources for all members.
+        wadm = craneLib.buildPackage (individualCrateArgs // {
+          pname = "wadm";
+          cargoExtraArgs = "-p wadm";
+          src = fileSetForCrate ./crates/wadm;
+          cargoArtifacts = cargoArtifacts;
+        });
+        wadm-cli = craneLib.buildPackage (individualCrateArgs // {
+          pname = "wadm-cli";
+          cargoExtraArgs = "--bin wadm";
+          src = fileSetForCrate ./.;
+          cargoArtifacts = cargoArtifacts;
+        });
+        wadm-client = craneLib.buildPackage (individualCrateArgs // {
+          pname = "wadm-client";
+          cargoExtraArgs = "-p wadm-client";
+          src = fileSetForCrate ./crates/wadm-client;
+          cargoArtifacts = cargoArtifacts;
+        });
+        wadm-types = craneLib.buildPackage (individualCrateArgs // {
+          pname = "wadm-types";
+          cargoExtraArgs = "-p wadm-types";
+          src = fileSetForCrate ./crates/wadm-types;
+          cargoArtifacts = cargoArtifacts;
+        });
+      in {
+        checks = {
+          # Build the crates as part of `nix flake check` for convenience
+          inherit wadm wadm-client wadm-types;
+
+          # Run clippy (and deny all warnings) on the workspace source,
+          # again, reusing the dependency artifacts from above.
+          #
+          # Note that this is done as a separate derivation so that
+          # we can block the CI if there are issues here, but not
+          # prevent downstream consumers from building our crate by itself.
+          workspace-clippy = craneLib.cargoClippy (commonArgs // {
+            inherit cargoArtifacts;
+            cargoClippyExtraArgs = "--all-targets -- --deny warnings";
+          });
+
+          workspace-doc =
+            craneLib.cargoDoc (commonArgs // { inherit cargoArtifacts; });
+
+          # Check formatting
+          workspace-fmt = craneLib.cargoFmt { inherit src; };
+
+          # Audit dependencies
+          workspace-audit = craneLib.cargoAudit { inherit src advisory-db; };
+
+          # Audit licenses
+          # my-workspace-deny = craneLib.cargoDeny {
+          #   inherit src;
+          # };
+
+          runE2ETests = pkgs.runCommand "e2e-tests" {
+            nativeBuildInputs = with pkgs;
+              [
+                nats-server
+                # wasmcloud.wasmcloud
+              ];
+          } ''
+
+            # TODO: run test setup with wash and figure out how to expose it in the flake
+            touch $out
+          '';
+        };
+
+        packages = {
+          inherit wadm wadm-client wadm-types wadm-cli;
+          default = wadm-cli;
+        } // lib.optionalAttrs (!pkgs.stdenv.isDarwin) {
+          workspace-llvm-coverage = craneLibLLvmTools.cargoLlvmCov
+            (commonArgs // { inherit cargoArtifacts; });
+        };
+
+        apps = {
+          wadm-cli = flake-utils.lib.mkApp { drv = wadm-cli; };
+          default = flake-utils.lib.mkApp { drv = wadm-cli; };
+        };
+
+        devShells.default = craneLib.devShell {
+          # Inherit inputs from checks.
+          checks = self.checks.${system};
+
+          RUST_SRC_PATH =
+            "${pkgs.rust.packages.stable.rustPlatform.rustLibSrc}";
+
+          # Extra inputs can be added here; cargo and rustc are provided by default.
+          packages = [
+            pkgs.nats-server
+            pkgs.natscli
+            pkgs.docker
+            pkgs.git
+            wasmcloud.outputs.packages.${system}.default
+          ];
+        };
+      });
+}
