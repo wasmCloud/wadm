@@ -10,9 +10,9 @@ repository = "https://github.com/wasmcloud/wadm"
 
 [features]
 default = ["std"]
-std = ["dep:tokio"]         # Use dep: prefix to be explicit
-wasm = []                   # For wasm environments
-wrpc = ["wit-bindgen-wrpc"] # For RPC functionality
+std = ["dep:tokio"]
+wasm = []
+wrpc = ["wit-bindgen-wrpc"]
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio = { workspace = true, optional = true, features = ["full"] }
