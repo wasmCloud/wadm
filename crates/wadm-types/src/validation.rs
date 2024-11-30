@@ -274,7 +274,7 @@ impl ValidationOutput for Vec<ValidationFailure> {
 ///
 /// * `path` - Path to the Manifest that will be read into memory and validated
 #[cfg(not(feature = "wasm"))]
-pub async fn validate_manifest_fißle(
+pub async fn validate_manifest_file(
     path: impl AsRef<Path>,
 ) -> Result<(Manifest, Vec<ValidationFailure>)> {
     let content = tokio::fs::read_to_string(path.as_ref())
