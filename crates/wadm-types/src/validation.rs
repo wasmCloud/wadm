@@ -2,6 +2,7 @@
 //!
 
 use std::collections::{HashMap, HashSet};
+#[cfg(feature = "std")]
 use std::path::Path;
 use std::sync::OnceLock;
 
@@ -273,6 +274,7 @@ impl ValidationOutput for Vec<ValidationFailure> {
 /// # Arguments
 ///
 /// * `path` - Path to the Manifest that will be read into memory and validated
+#[cfg(feature = "std")]
 pub async fn validate_manifest_file(
     path: impl AsRef<Path>,
 ) -> Result<(Manifest, Vec<ValidationFailure>)> {

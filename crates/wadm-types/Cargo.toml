@@ -1,7 +1,7 @@
 [package]
 name = "wadm-types"
 description = "Types and validators for the wadm API"
-version = "0.7.1"
+version = "0.7.2"
 edition = "2021"
 authors = ["wasmCloud Team"]
 keywords = ["webassembly", "wasmcloud", "wadm"]
@@ -9,16 +9,18 @@ license = "Apache-2.0"
 repository = "https://github.com/wasmcloud/wadm"
 
 [features]
-default = []
-wit = ["wit-bindgen-wrpc"]
+default = ["std"]
+std = ["dep:tokio"]
+wasm = []
+wrpc = ["wit-bindgen-wrpc"]
 
 [dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 anyhow = { workspace = true }
 regex = { workspace = true }
 schemars = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-tokio = { workspace = true, features = ["full"] }
 utoipa = { workspace = true }
+tokio = { workspace = true, optional = true, features = ["full"] }
 wit-bindgen-wrpc = { workspace = true, optional = true }
