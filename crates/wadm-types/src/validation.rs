@@ -2,6 +2,7 @@
 //!
 
 use std::collections::{HashMap, HashSet};
+#[cfg(feature = "std")]
 use std::path::Path;
 use std::sync::OnceLock;
 
