@@ -5,9 +5,14 @@ on:
     tags:
       - 'wit-wasmcloud-wadm-v*'
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
     - uses: actions/checkout@v4
       with:
