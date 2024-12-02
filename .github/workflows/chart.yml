@@ -13,6 +13,9 @@ on:
       - 'charts/**'
       - '.github/workflows/chart.yml'
 
+permissions:
+  contents: read
+
 jobs:
   validate:
     runs-on: ubuntu-22.04
@@ -72,6 +75,7 @@ jobs:
     runs-on: ubuntu-22.04
     needs: validate
     permissions:
+      contents: read
       packages: write
 
     steps:
