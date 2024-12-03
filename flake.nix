@@ -57,14 +57,30 @@
             "rustc"
           ]);
 
+        # Get the lock file for filtering
+        rawLockFile = builtins.fromTOML (builtins.readFile ./Cargo.lock);
+
+        # Filter out the workspace members
+        filteredLockFile = rawLockFile // {
+          package = builtins.filter (x: !lib.strings.hasPrefix "wadm" x.name)
+            rawLockFile.package;
+        };
+
+        cargoVendorDir =
+          craneLib.vendorCargoDeps { cargoLockParsed = filteredLockFile; };
+
+        cargoLock = craneLib.writeTOML "Cargo.lock" filteredLockFile;
+
         # Build *just* the cargo dependencies (of the entire workspace),
         # so we can reuse all of that work (e.g. via cachix) when running in CI
         # It is *highly* recommended to use something like cargo-hakari to avoid
         # cache misses when building individual top-level-crates
-        cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+        cargoArtifacts = craneLib.buildDepsOnly commonArgs // {
+          inherit cargoVendorDir;
+          inherit cargoLock;
+        };
 
         individualCrateArgs = commonArgs // {
-          inherit cargoArtifacts;
           inherit (craneLib.crateNameFromCargoToml { inherit src; }) version;
           # TODO(thomastaylor312) We run unit tests here and e2e tests later. The nextest step
           # wasn't letting me pass in the fileset
@@ -76,7 +92,7 @@
             root = ./.;
             fileset = lib.fileset.unions [
               ./Cargo.toml
-              ./Cargo.lock
+              # ./Cargo.lock
               ./tests
               ./oam
               (craneLib.fileset.commonCargoSources ./crates/wadm)
@@ -94,29 +110,32 @@
         # Note that the cargo workspace must define `workspace.members` using wildcards,
         # otherwise, omitting a crate (like we do below) will result in errors since
         # cargo won't be able to find the sources for all members.
-        wadm = craneLib.buildPackage (individualCrateArgs // {
+        wadm-lib = craneLib.cargoBuild (individualCrateArgs // {
           pname = "wadm";
           cargoExtraArgs = "-p wadm";
           src = fileSetForCrate ./crates/wadm;
-          cargoArtifacts = cargoArtifacts;
+          cargoArtifacts = wadm-types;
+          doInstallCargoArtifacts = true;
         });
-        wadm-cli = craneLib.buildPackage (individualCrateArgs // {
+        wadm = craneLib.buildPackage (individualCrateArgs // {
           pname = "wadm-cli";
           cargoExtraArgs = "--bin wadm";
           src = fileSetForCrate ./.;
-          cargoArtifacts = cargoArtifacts;
+          cargoArtifacts = wadm-lib;
         });
-        wadm-client = craneLib.buildPackage (individualCrateArgs // {
+        wadm-client = craneLib.cargoBuild (individualCrateArgs // {
           pname = "wadm-client";
           cargoExtraArgs = "-p wadm-client";
           src = fileSetForCrate ./crates/wadm-client;
-          cargoArtifacts = cargoArtifacts;
+          cargoArtifacts = wadm-types;
+          doInstallCargoArtifacts = true;
         });
-        wadm-types = craneLib.buildPackage (individualCrateArgs // {
+        wadm-types = craneLib.cargoBuild (individualCrateArgs // {
+          inherit cargoArtifacts;
           pname = "wadm-types";
           cargoExtraArgs = "-p wadm-types";
           src = fileSetForCrate ./crates/wadm-types;
-          cargoArtifacts = cargoArtifacts;
+          doInstallCargoArtifacts = true;
         });
       in {
         checks = {
@@ -130,12 +149,13 @@
           # we can block the CI if there are issues here, but not
           # prevent downstream consumers from building our crate by itself.
           workspace-clippy = craneLib.cargoClippy (commonArgs // {
-            inherit cargoArtifacts;
+            # TODO: This will get better if we do the dummy build step mentioned above
+            cargoArtifacts = wadm-lib;
             cargoClippyExtraArgs = "--all-targets -- --deny warnings";
           });
 
           workspace-doc =
-            craneLib.cargoDoc (commonArgs // { inherit cargoArtifacts; });
+            craneLib.cargoDoc (commonArgs // { cargoArtifacts = wadm-lib; });
 
           # Check formatting
           workspace-fmt = craneLib.cargoFmt { inherit src; };
@@ -162,16 +182,16 @@
         };
 
         packages = {
-          inherit wadm wadm-client wadm-types wadm-cli;
-          default = wadm-cli;
+          inherit wadm wadm-client wadm-types wadm-lib cargoArtifacts cargoLock;
+          default = wadm;
         } // lib.optionalAttrs (!pkgs.stdenv.isDarwin) {
           workspace-llvm-coverage = craneLibLLvmTools.cargoLlvmCov
-            (commonArgs // { inherit cargoArtifacts; });
+            (commonArgs // { cargoArtifacts = wadm-lib; });
         };
 
         apps = {
-          wadm-cli = flake-utils.lib.mkApp { drv = wadm-cli; };
-          default = flake-utils.lib.mkApp { drv = wadm-cli; };
+          wadm = flake-utils.lib.mkApp { drv = wadm; };
+          default = flake-utils.lib.mkApp { drv = wadm; };
         };
 
         devShells.default = craneLib.devShell {
