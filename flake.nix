@@ -75,10 +75,63 @@
         # so we can reuse all of that work (e.g. via cachix) when running in CI
         # It is *highly* recommended to use something like cargo-hakari to avoid
         # cache misses when building individual top-level-crates
-        cargoArtifacts = craneLib.buildDepsOnly commonArgs // {
-          inherit cargoVendorDir;
-          inherit cargoLock;
-        };
+        cargoArtifacts = let
+          commonArgs' = removeAttrs commonArgs ["src"];
+
+          # Get the manifest file for filtering
+          rawManifestFile = builtins.fromTOML (builtins.readFile ./Cargo.toml);
+
+          # Filter out the workspace members from manifest
+          filteredManifestFile = with lib; let
+            filterWadmAttrs = filterAttrs (name: _: !strings.hasPrefix "wadm" name);
+
+            workspace = removeAttrs rawManifestFile.workspace ["members"];
+          in
+            rawManifestFile
+            // {
+              workspace =
+                workspace
+                // {
+                  dependencies = filterWadmAttrs workspace.dependencies;
+                  package =
+                    workspace.package
+                    // {
+                      # pin version to avoid rebuilds on bumps
+                      version = "0.0.0";
+                    };
+                };
+
+              dependencies = filterWadmAttrs rawManifestFile.dependencies;
+
+              dev-dependencies = filterWadmAttrs rawManifestFile.dev-dependencies;
+
+              build-dependencies = filterWadmAttrs rawManifestFile.build-dependencies;
+            };
+
+          cargoToml = craneLib.writeTOML "Cargo.toml" filteredManifestFile;
+
+          dummySrc = craneLib.mkDummySrc {
+            src = pkgs.runCommand "wadm-dummy-src" {} ''
+              mkdir -p $out
+              cp --recursive --no-preserve=mode,ownership ${src}/. -t $out
+              cp ${cargoToml} $out/Cargo.toml
+            '';
+          };
+
+          args =
+            commonArgs'
+            // {
+              inherit
+                cargoLock
+                cargoToml
+                cargoVendorDir
+                dummySrc
+                ;
+
+              cargoExtraArgs = ""; # disable `--locked` passed by default by crane
+            };
+        in
+          craneLib.buildDepsOnly args;
 
         individualCrateArgs = commonArgs // {
           inherit (craneLib.crateNameFromCargoToml { inherit src; }) version;
