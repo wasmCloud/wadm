@@ -472,12 +472,10 @@ async fn test_delete_noop() {
     let resp: DeleteModelResponse = test_server
         .get_response(
             "default.model.del.my-example-app",
-            serde_json::to_vec(&DeleteModelRequest {
-                version: None,
-            }).unwrap(),
+            serde_json::to_vec(&DeleteModelRequest { version: None }).unwrap(),
             None,
-    )
-    .await;
+        )
+        .await;
     assert!(
         matches!(resp.result, DeleteResult::Noop),
         "Should have gotten noop response for already deleted model"
