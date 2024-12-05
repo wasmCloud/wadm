@@ -412,98 +412,110 @@ impl<P: Publisher> Handler<P> {
                 }
             }
         };
+
         // TODO(#451): if shared and deployed, make sure that no other shared apps are using it
-        let reply_data = if let Some(version) = req.version {
+        let reply_data = {
             match self.store.get(account_id, lattice_id, name).await {
                 Ok(Some((mut current, current_revision))) => {
-                    let deleted = current.delete_version(&version);
-                    if deleted && !current.is_empty() {
-                        // If the version we deleted was the deployed one, undeploy it
-                        let deployed_version = current.deployed_version();
-                        let undeploy = if deployed_version.map(|v| v == version).unwrap_or(false) {
-                            trace!(?deployed_version, deleted_version = %version, "Deployed version matches deleted. Will undeploy");
-                            current.undeploy();
-                            true
+                    if let Some(version) = req.version {
+                        let deleted = current.delete_version(&version);
+                        if deleted && !current.is_empty() {
+                            // If the version we deleted was the deployed one, undeploy it
+                            let deployed_version = current.deployed_version();
+                            let undeploy = if deployed_version
+                                .map(|v| v == version)
+                                .unwrap_or(false)
+                            {
+                                trace!(?deployed_version, deleted_version = %version, "Deployed version matches deleted. Will undeploy");
+                                current.undeploy();
+                                true
+                            } else {
+                                trace!(?deployed_version, deleted_version = %version, "Deployed version does not match deleted version. Will not undeploy");
+                                false
+                            };
+                            self.store
+                                .set(account_id, lattice_id, current, Some(current_revision))
+                                .await
+                                .map(|_| DeleteModelResponse {
+                                    result: DeleteResult::Deleted,
+                                    message: format!(
+                                        "Successfully deleted version {version} of application {name}"
+                                    ),
+                                    undeploy,
+                                })
+                                .unwrap_or_else(|e| {
+                                    error!(error = %e, "Unable to delete data");
+                                    DeleteModelResponse {
+                                        result: DeleteResult::Error,
+                                        message: format!(
+                                            "Internal storage error when deleting {version} of application {name}"
+                                        ),
+                                        undeploy: false,
+                                    }
+                                })
+                        } else if deleted && current.is_empty() {
+                            // If we deleted the last one, delete the model from the store
+                            self.store
+                                .delete(account_id, lattice_id, name)
+                                .await
+                                .map(|_| DeleteModelResponse {
+                                    result: DeleteResult::Deleted,
+                                    message: format!(
+                                        "Successfully deleted last version of application {name}"
+                                    ),
+                                    // By default if it is all gone, we definitely undeployed things
+                                    undeploy: true,
+                                })
+                                .unwrap_or_else(|e| {
+                                    error!(error = %e, "Unable to delete data");
+                                    DeleteModelResponse {
+                                        result: DeleteResult::Deleted,
+                                        message: format!(
+                                            "Internal storage error when deleting {version} of application {name}"
+                                        ),
+                                        undeploy: false,
+                                    }
+                                })
                         } else {
-                            trace!(?deployed_version, deleted_version = %version, "Deployed version does not match deleted version. Will not undeploy");
-                            false
-                        };
-                        self.store
-                            .set(account_id, lattice_id, current, Some(current_revision))
-                            .await
-                            .map(|_| DeleteModelResponse {
-                                result: DeleteResult::Deleted,
-                                message: format!(
-                                    "Successfully deleted version {version} of application {name}"
-                                ),
-                                undeploy,
-                            })
-                            .unwrap_or_else(|e| {
+                            DeleteModelResponse {
+                                result: DeleteResult::Noop,
+                                message: format!("Application version {version} doesn't exist"),
+                                undeploy: false,
+                            }
+                        }
+                    } else {
+                        match self.store.delete(account_id, lattice_id, name).await {
+                            Ok(_) => {
+                                DeleteModelResponse {
+                                    result: DeleteResult::Deleted,
+                                    message: format!("Successfully deleted application {name}"),
+                                    // By default if it is all gone, we definitely undeployed things
+                                    undeploy: true,
+                                }
+                            }
+                            Err(e) => {
                                 error!(error = %e, "Unable to delete data");
                                 DeleteModelResponse {
                                     result: DeleteResult::Error,
-                                    message: "Internal storage error".to_string(),
+                                    message: format!(
+                                        "Internal storage error when deleting application {name}"
+                                    ),
                                     undeploy: false,
                                 }
-                            })
-                    } else if deleted && current.is_empty() {
-                        // If we deleted the last one, delete the model from the store
-                        self.store
-                            .delete(account_id, lattice_id, name)
-                            .await
-                            .map(|_| DeleteModelResponse {
-                                result: DeleteResult::Deleted,
-                                message: format!(
-                                    "Successfully deleted last version of application {name}"
-                                ),
-                                // By default if it is all gone, we definitely undeployed things
-                                undeploy: true,
-                            })
-                            .unwrap_or_else(|e| {
-                                error!(error = %e, "Unable to delete data");
-                                DeleteModelResponse {
-                                    result: DeleteResult::Deleted,
-                                    message: "Internal storage error".to_string(),
-                                    undeploy: false,
-                                }
-                            })
-                    } else {
-                        DeleteModelResponse {
-                            result: DeleteResult::Noop,
-                            message: format!("Application version {version} doesn't exist"),
-                            undeploy: false,
+                            }
                         }
                     }
                 }
                 Ok(None) => DeleteModelResponse {
                     result: DeleteResult::Noop,
-                    message: format!("Application {name} doesn't exist"),
+                    message: format!("Application {name} doesn't exist or was already deleted"),
                     undeploy: false,
                 },
                 Err(e) => {
-                    error!(error = %e, "Unable to fetch current data data");
+                    error!(error = %e, "Unable to fetch current manifest data for application {name}");
                     DeleteModelResponse {
                         result: DeleteResult::Error,
-                        message: "Internal storage error".to_string(),
-                        undeploy: false,
-                    }
-                }
-            }
-        } else {
-            match self.store.delete(account_id, lattice_id, name).await {
-                Ok(_) => {
-                    DeleteModelResponse {
-                        result: DeleteResult::Deleted,
-                        message: format!("Successfully deleted application {}", name),
-                        // By default if it is all gone, we definitely undeployed things
-                        undeploy: true,
-                    }
-                }
-                Err(e) => {
-                    error!(error = %e, "Unable to delete data");
-                    DeleteModelResponse {
-                        result: DeleteResult::Error,
-                        message: "Internal storage error".to_string(),
+                        message: format!("Internal storage error while fetching manifest data for application {name}"),
                         undeploy: false,
                     }
                 }
