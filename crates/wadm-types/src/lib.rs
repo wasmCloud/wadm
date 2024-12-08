@@ -36,6 +36,8 @@ pub const LINK_TRAIT: &str = "link";
 /// The string used for indicating a latest version. It is explicitly forbidden to use as a version
 /// for a manifest
 pub const LATEST_VERSION: &str = "latest";
+/// The default link name
+pub const DEFAULT_LINK_NAME: &str = "default";
 
 /// Manifest file based on the Open Application Model (OAM) specification for declaratively managing wasmCloud applications
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, ToSchema, JsonSchema)]

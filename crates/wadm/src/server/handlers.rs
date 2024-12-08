@@ -1107,6 +1107,16 @@ mod test {
                 .to_string()
                 .contains("The following capability component(s) are missing from the manifest: ")),
         }
+
+        let manifest = deserialize_yaml("../../tests/fixtures/manifests/duplicate_links.yaml")
+            .expect("Should be able to parse");
+
+        match validate_manifest(&manifest).await {
+            Ok(()) => panic!("Should have detected duplicate links"),
+            Err(e) => assert!(e
+                .to_string()
+                .contains("Duplicate links found inside component")),
+        }
     }
 
     /// Ensure that a long image ref in a manifest works,
