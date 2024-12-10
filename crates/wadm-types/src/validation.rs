@@ -725,42 +725,39 @@ pub fn is_valid_label_name(name: &str) -> bool {
 
 /// Checks whether a manifest contains "duplicate" links.
 ///
-/// Multiple links from the same source with the same name, namespace, package
-/// and interface are considered duplicate links.
+/// Multiple links from the same source with the same name, namespace and package
+/// are considered duplicate links.
 fn check_duplicate_links(manifest: &Manifest) -> Vec<ValidationFailure> {
     let mut failures = Vec::new();
     let mut link_ids = HashSet::new();
     for component in manifest.components() {
-        if let Some(traits) = component.traits.as_ref() {
-            link_ids.clear();
-            let link_traits = traits.iter().filter(|t| t.is_link());
-            for link_trait in link_traits {
-                if let TraitProperty::Link(LinkProperty {
-                    name,
+        for link in component.links() {
+            if let TraitProperty::Link(LinkProperty {
+                name,
+                namespace,
+                package,
+                ..
+            }) = &link.properties
+            {
+                if !link_ids.insert((
+                    component.name.clone(),
+                    name.clone()
+                        .unwrap_or_else(|| DEFAULT_LINK_NAME.to_string()),
                     namespace,
                     package,
-                    interfaces,
-                    ..
-                }) = &link_trait.properties
-                {
-                    for interface in interfaces {
-                        if !link_ids.insert((
+                )) {
+                    failures.push(ValidationFailure::new(
+                        ValidationFailureLevel::Error,
+                        format!(
+                            "Duplicate link found inside component '{}': {} ({}:{})",
+                            component.name,
                             name.clone()
                                 .unwrap_or_else(|| DEFAULT_LINK_NAME.to_string()),
                             namespace,
-                            package,
-                            interface,
-                        )) {
-                            failures.push(ValidationFailure::new(
-                                ValidationFailureLevel::Error,
-                                format!(
-                                    "Duplicate links found inside component: {}",
-                                    component.name
-                                ),
-                            ));
-                        };
-                    }
-                }
+                            package
+                        ),
+                    ));
+                };
             }
         }
     }
