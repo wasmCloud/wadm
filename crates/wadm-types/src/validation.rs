@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     CapabilityProperties, ComponentProperties, LinkProperty, Manifest, Properties, Trait,
-    TraitProperty, LATEST_VERSION,
+    TraitProperty, DEFAULT_LINK_NAME, LATEST_VERSION,
 };
 
 /// A namespace -> package -> interface lookup
@@ -342,6 +342,7 @@ pub async fn validate_manifest(manifest: &Manifest) -> Result<Vec<ValidationFail
     failures.extend(validate_policies(manifest));
     failures.extend(ensure_no_custom_traits(manifest));
     failures.extend(validate_component_properties(manifest));
+    failures.extend(check_duplicate_links(manifest));
     Ok(failures)
 }
 
@@ -720,6 +721,46 @@ pub fn is_valid_label_name(name: &str) -> bool {
         && name
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
+}
+
+/// Checks whether a manifest contains "duplicate" links.
+///
+/// Multiple links from the same source with the same name, namespace and package
+/// are considered duplicate links.
+fn check_duplicate_links(manifest: &Manifest) -> Vec<ValidationFailure> {
+    let mut failures = Vec::new();
+    for component in manifest.components() {
+        let mut link_ids = HashSet::new();
+        for link in component.links() {
+            if let TraitProperty::Link(LinkProperty {
+                name,
+                namespace,
+                package,
+                ..
+            }) = &link.properties
+            {
+                if !link_ids.insert((
+                    name.clone()
+                        .unwrap_or_else(|| DEFAULT_LINK_NAME.to_string()),
+                    namespace,
+                    package,
+                )) {
+                    failures.push(ValidationFailure::new(
+                        ValidationFailureLevel::Error,
+                        format!(
+                            "Duplicate link found inside component '{}': {} ({}:{})",
+                            component.name,
+                            name.clone()
+                                .unwrap_or_else(|| DEFAULT_LINK_NAME.to_string()),
+                            namespace,
+                            package
+                        ),
+                    ));
+                };
+            }
+        }
+    }
+    failures
 }
 
 #[cfg(test)]
