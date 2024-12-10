@@ -729,8 +729,8 @@ pub fn is_valid_label_name(name: &str) -> bool {
 /// are considered duplicate links.
 fn check_duplicate_links(manifest: &Manifest) -> Vec<ValidationFailure> {
     let mut failures = Vec::new();
-    let mut link_ids = HashSet::new();
     for component in manifest.components() {
+        let mut link_ids = HashSet::new();
         for link in component.links() {
             if let TraitProperty::Link(LinkProperty {
                 name,
@@ -740,7 +740,6 @@ fn check_duplicate_links(manifest: &Manifest) -> Vec<ValidationFailure> {
             }) = &link.properties
             {
                 if !link_ids.insert((
-                    component.name.clone(),
                     name.clone()
                         .unwrap_or_else(|| DEFAULT_LINK_NAME.to_string()),
                     namespace,
