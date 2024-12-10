@@ -10,8 +10,8 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    CapabilityProperties, ComponentProperties, LinkProperty, Manifest, Properties, Trait,
-    TraitProperty, LATEST_VERSION,
+    CapabilityProperties, Component, ComponentProperties, LinkProperty, Manifest, Properties,
+    Trait, TraitProperty, LATEST_VERSION,
 };
 
 /// A namespace -> package -> interface lookup
@@ -342,6 +342,7 @@ pub async fn validate_manifest(manifest: &Manifest) -> Result<Vec<ValidationFail
     failures.extend(validate_policies(manifest));
     failures.extend(ensure_no_custom_traits(manifest));
     failures.extend(validate_component_properties(manifest));
+    failures.extend(validate_component_configs(manifest));
     Ok(failures)
 }
 
@@ -676,6 +677,43 @@ pub fn validate_component_properties(application: &Manifest) -> Vec<ValidationFa
         }
     }
     failures
+}
+
+/// Funtion to validate the component configs
+/// from 0.13.0 source_config is deprecated and replaced with source:config:
+/// this function validates the component configs
+pub fn validate_component_configs(application: &Manifest) -> Vec<ValidationFailure> {
+    let mut failures = Vec::new();
+    for component in application.spec.components.iter() {
+        if has_deprecated_trait_property(component) {
+            failures.push(ValidationFailure::new(
+                ValidationFailureLevel::Error,
+                format!(
+                    "Component '{}' has deprecated source_config or target_config properties",
+                    component.name
+                ),
+            ));
+        }
+    }
+    failures
+}
+
+fn has_deprecated_trait_property(component: &Component) -> bool {
+    match &component.traits {
+        Some(traits) => {
+            for trait_ in traits {
+                match &trait_.properties {
+                    #[allow(deprecated)]
+                    TraitProperty::Link(link) => {
+                        link.source_config.is_some() || link.target_config.is_some()
+                    }
+                    _ => false,
+                };
+            }
+            false
+        }
+        None => false,
+    }
 }
 
 /// This function validates that a key/value pair is a valid OAM label. It's using fairly
