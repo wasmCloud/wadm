@@ -258,6 +258,11 @@ impl Component {
         };
         secrets
     }
+
+    /// Returns only links in the component
+    fn links(&self) -> impl Iterator<Item = &Trait> {
+        self.traits.iter().flatten().filter(|t| t.is_link())
+    }
 }
 
 /// Properties that can be defined for a component

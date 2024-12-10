@@ -1115,7 +1115,7 @@ mod test {
             Ok(()) => panic!("Should have detected duplicate links"),
             Err(e) => assert!(e
                 .to_string()
-                .contains("Duplicate links found inside component")),
+                .contains("Duplicate link found inside component")),
         }
     }
 
