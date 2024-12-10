@@ -452,7 +452,7 @@ async fn test_delete_noop() {
         .expect("should have created a nats client");
     let test_server = setup_server("delete_noop", nats_client).await;
 
-    // Delete something that doesn't exist
+    // Delete a model that doesn't exist
     let resp: DeleteModelResponse = test_server
         .get_response(
             "default.model.del.my-example-app",
@@ -469,7 +469,21 @@ async fn test_delete_noop() {
     );
     assert!(!resp.message.is_empty(), "Should have a message set");
 
-    // Delete a non-existent version
+    let resp: DeleteModelResponse = test_server
+        .get_response(
+            "default.model.del.my-example-app",
+            serde_json::to_vec(&DeleteModelRequest {
+                version: None,
+            }).unwrap(),
+            None,
+    )
+    .await;
+    assert!(
+        matches!(resp.result, DeleteResult::Noop),
+        "Should have gotten noop response for already deleted model"
+    );
+
+    // Delete a non-existent version for an existing model
     let raw = tokio::fs::read("./oam/sqldbpostgres.yaml")
         .await
         .expect("Unable to load file");
