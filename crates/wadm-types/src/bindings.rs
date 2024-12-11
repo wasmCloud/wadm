@@ -16,6 +16,11 @@ wit_bindgen_wrpc::generate!({
         serde::Serialize,
         serde::Deserialize,
     ],
+    with: {
+        "wasmcloud:wadm/types@0.2.0": generate,
+        "wasmcloud:wadm/client@0.2.0": generate,
+        "wasmcloud:wadm/handler@0.2.0": generate
+    }
 });
 
 // Trait implementations for converting types in the API module to the generated types
