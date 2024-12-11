@@ -5,9 +5,9 @@ use serde::{de, Deserialize, Serialize};
 use utoipa::ToSchema;
 
 pub mod api;
-#[cfg(feature = "wrpc")]
+#[cfg(feature = "wit")]
 pub mod bindings;
-#[cfg(feature = "wrpc")]
+#[cfg(feature = "wit")]
 pub use bindings::*;
 pub mod validation;
 

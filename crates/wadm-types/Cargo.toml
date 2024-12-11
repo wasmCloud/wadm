@@ -11,8 +11,7 @@ repository = "https://github.com/wasmcloud/wadm"
 [features]
 default = ["std"]
 std = ["dep:tokio"]
-wasm = []
-wrpc = ["wit-bindgen-wrpc"]
+wit = ["wit-bindgen-wrpc"]
 
 [dependencies]
 serde = { workspace = true, features = ["derive"] }
