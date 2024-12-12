@@ -1,0 +1,78 @@
+apiVersion: core.oam.dev/v1beta1
+kind: Application
+metadata:
+  name: my-example-app
+  annotations:
+    description: "This is my app"
+spec:
+  components:
+    - name: userinfo1
+      type: component
+      properties:
+        image: wasmcloud.azurecr.io/fake:1
+      traits:
+        - type: link
+          properties:
+            namespace: wasi
+            package: keyvalue
+            interfaces: [atomics, store]
+            target:
+              name: kvredis
+              config:
+                - name: redis-url
+
+    - name: userinfo2
+      type: component
+      properties:
+        image: wasmcloud.azurecr.io/fake:1
+      traits:
+        - type: link
+          properties:
+            namespace: wasi
+            package: keyvalue
+            interfaces: [atomics, store]
+            target:
+              name: kvredis
+              config:
+                - name: redis-url
+
+    - name: webcap1
+      type: capability
+      properties:
+        id: httpserver1
+        image: wasmcloud.azurecr.io/httpserver:0.13.1
+      traits:
+        - type: link
+          properties:
+            namespace: wasi
+            package: http
+            interfaces: ["incoming-handler"]
+            target:
+              name: userinfo1
+            source:
+              config:
+                - name: default-port
+                - name: alternate-port
+                - name: alternate-port
+
+    - name: webcap2
+      type: capability
+      properties:
+        id: httpserver2
+        image: wasmcloud.azurecr.io/httpserver:0.14.1
+      traits:
+        - type: link
+          properties:
+            target:
+              name: userinfo2
+            namespace: wasi
+            package: http
+            interfaces: ["incoming-handler"]
+            source:
+              config:
+                - name: default-port
+
+    - name: kvredis
+      type: capability
+      properties:
+        image: ghcr.io/wasmcloud/keyvalue-redis:0.28.1
