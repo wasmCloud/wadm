@@ -126,12 +126,12 @@ async fn validate_deprecated_configs() -> Result<()> {
     )
     .await
     .context("failed to validate manifest")?;
-    assert!(!failures.is_empty(), "failures present");
     assert!(!failures.valid(), "expected invalid manifest");
+    assert!(failures.iter().all(|f| f.level == ValidationFailureLevel::Warning));
     assert_eq!(
         failures.len(),
         2,
-        "expected 2 errors during validating manifest"
+        "expected 2 warning during validating manifest"
     );
     Ok(())
 }

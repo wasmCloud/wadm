@@ -687,9 +687,9 @@ pub fn validate_component_configs(application: &Manifest) -> Vec<ValidationFailu
     for component in application.spec.components.iter() {
         if has_deprecated_trait_property(component) {
             failures.push(ValidationFailure::new(
-                ValidationFailureLevel::Error,
+                ValidationFailureLevel::Warning,
                 format!(
-                    "Component '{}' has deprecated source_config or target_config properties",
+                    "Component '{}' has deprecated source_config or target_config properties on a link trait, please use the source:config or target:config properties instead",
                     component.name
                 ),
             ));
