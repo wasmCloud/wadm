@@ -118,3 +118,26 @@ async fn validate_policy() -> Result<()> {
     assert!(failures.valid(), "manifest is valid");
     Ok(())
 }
+
+/// Ensure that we can detect duplicated link config names
+#[tokio::test]
+async fn validate_link_config_names() -> Result<()> {
+    let (_manifest, failures) =
+        validate_manifest_file("./tests/fixtures/manifests/duplicate_link_config_names.wadm.yaml")
+            .await
+            .context("failed to validate manifest")?;
+        let expected_errors = 3;
+        assert!(
+            !failures.is_empty()
+                && failures
+                    .iter()
+                    .all(|f| f.level == ValidationFailureLevel::Error)
+                && failures.len() == expected_errors,
+            "expected {} errors because manifest contains {} duplicated link config names, instead {} errors were found", expected_errors, expected_errors, failures.len().to_string()
+        );
+        assert!(
+            !failures.valid(),
+            "manifest should be invalid (duplicated link config names lead to a dead loop)"
+        );
+    Ok(())
+}

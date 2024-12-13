@@ -345,6 +345,7 @@ pub async fn validate_manifest(manifest: &Manifest) -> Result<Vec<ValidationFail
     failures.extend(ensure_no_custom_traits(manifest));
     failures.extend(validate_component_properties(manifest));
     failures.extend(check_duplicate_links(manifest));
+    failures.extend(validate_link_configs(manifest));
     Ok(failures)
 }
 
@@ -678,6 +679,60 @@ pub fn validate_component_properties(application: &Manifest) -> Vec<ValidationFa
             },
         }
     }
+    failures
+}
+
+/// Validates link configs in a WADM application manifest.
+///
+/// At present this can check for:
+/// - all config names are unique
+///
+pub fn validate_link_configs(manifest: &Manifest) -> Vec<ValidationFailure> {
+    let mut failures = Vec::new();
+    let mut link_config_names = HashSet::new();
+    for link_trait in manifest.links() {
+        if let TraitProperty::Link(LinkProperty {
+            name: _name,
+            namespace: _namespace,
+            package: _package,
+            interfaces: _interfaces,
+            target,
+            source,
+            ..
+        }) = &link_trait.properties {
+            for config in target.config.iter() {
+                // Check if config name is unique
+                if !link_config_names.insert((
+                    config.name.clone(),
+                )) {
+                    failures.push(ValidationFailure::new(
+                        ValidationFailureLevel::Error,
+                        format!(
+                            "Duplicate link config name found: '{}'",
+                            config.name
+                        ),
+                    ));
+                }
+            }
+
+            if let Some(source) = source {
+                for config in source.config.iter() {
+                    // Check if config name is unique
+                    if !link_config_names.insert((
+                        config.name.clone(),
+                    )) {
+                        failures.push(ValidationFailure::new(
+                            ValidationFailureLevel::Error,
+                            format!(
+                                "Duplicate link config name found: '{}'",
+                                config.name
+                            ),
+                        ));
+                    }
+                }
+            }
+        }
+    };
     failures
 }
 

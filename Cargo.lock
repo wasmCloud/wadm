@@ -3553,7 +3553,7 @@ dependencies = [
  "serde_yaml",
  "serial_test",
  "sha2",
- "thiserror 2.0.6",
+ "thiserror 2.0.7",
  "tokio",
  "tracing",
  "tracing-futures",
@@ -3603,7 +3603,7 @@ dependencies = [
  "nkeys",
  "serde_json",
  "serde_yaml",
- "thiserror 2.0.6",
+ "thiserror 2.0.7",
  "tokio",
  "wadm-types",
 ]
