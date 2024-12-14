@@ -1,0 +1,44 @@
+apiVersion: core.oam.dev/v1beta1
+kind: Application
+metadata:
+  name: test-duplicate-interfaces
+  annotations:
+    description: "test"
+spec:
+  components:
+    - name: my-component
+      type: component
+      properties:
+        image: test:latest
+      traits:
+        - type: spreadscaler
+          properties:
+            instances: 1
+        - type: link
+          properties:
+            target: redis-1
+            namespace: wasi
+            package: keyvalue
+            interfaces: [atomics]
+        - type: link
+          properties:
+            target: redis-2
+            namespace: wasi
+            package: keyvalue
+            interfaces: [atomics]
+    - name: redis-1
+      type: capability
+      properties:
+        image: test:latest
+      traits:
+        - type: spreadscaler
+          properties:
+            instances: 1
+    - name: redis-2
+      type: capability
+      properties:
+        image: test:latest
+      traits:
+        - type: spreadscaler
+          properties:
+            instances: 1
