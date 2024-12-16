@@ -14,7 +14,7 @@ jobs:
     permissions:
       contents: write
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       with:
         sparse-checkout: |
           wit
@@ -29,7 +29,7 @@ jobs:
       run: |
         tar cvzf ${{ steps.ctx.outputs.tarball }} -C wit wadm/wit
     - name: Release
-      uses: softprops/action-gh-release@v2
+      uses: softprops/action-gh-release@e7a8f85e1c67a31e6ed99a94b41bd0b71bbee6b8 # v2.0.9
       with:
         files: ${{ steps.ctx.outputs.tarball }}
         make_latest: "false"
