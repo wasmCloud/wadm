@@ -5,7 +5,7 @@ use async_nats::{
     jetstream::{
         self,
         kv::{Config as KvConfig, Store},
-        stream::{Config as StreamConfig, Source, Stream, SubjectTransform},
+        stream::{Config as StreamConfig, Source, StorageType, Stream, SubjectTransform},
         Context,
     },
     Client, ConnectOptions,
@@ -13,6 +13,36 @@ use async_nats::{
 
 use tracing::{debug, warn};
 use wadm::DEFAULT_EXPIRY_TIME;
+
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+pub enum StreamPersistance {
+    File,
+    Memory,
+}
+
+impl ToString for StreamPersistance {
+    fn to_string(&self) -> String {
+        match self {
+            StreamPersistance::File => "File".to_string(),
+            StreamPersistance::Memory => "Memory".to_string(),
+        }
+    }
+}
+
+impl Default for StreamPersistance {
+    fn default() -> Self {
+        StreamPersistance::File
+    }
+}
+
+impl From<StreamPersistance> for StorageType {
+    fn from(persistance: StreamPersistance) -> Self {
+        match persistance {
+            StreamPersistance::File => StorageType::File,
+            StreamPersistance::Memory => StorageType::Memory,
+        }
+    }
+}
 
 /// Creates a NATS client from the given options
 pub async fn get_client_and_context(
@@ -121,6 +151,7 @@ pub async fn ensure_stream(
     subjects: Vec<String>,
     description: Option<String>,
     max_bytes: i64,
+    storage: StorageType,
 ) -> Result<Stream> {
     debug!("Ensuring stream {name} exists");
     let stream_config = StreamConfig {
@@ -130,7 +161,7 @@ pub async fn ensure_stream(
         retention: async_nats::jetstream::stream::RetentionPolicy::WorkQueue,
         subjects,
         max_age: DEFAULT_EXPIRY_TIME,
-        storage: async_nats::jetstream::stream::StorageType::File,
+        storage,
         allow_rollup: false,
         max_bytes,
         ..Default::default()
@@ -161,6 +192,7 @@ pub async fn ensure_limits_stream(
     subjects: Vec<String>,
     description: Option<String>,
     max_bytes: i64,
+    storage: StorageType,
 ) -> Result<Stream> {
     debug!("Ensuring stream {name} exists");
     let stream_config = StreamConfig {
@@ -170,7 +202,7 @@ pub async fn ensure_limits_stream(
         retention: async_nats::jetstream::stream::RetentionPolicy::Limits,
         subjects,
         max_age: DEFAULT_EXPIRY_TIME,
-        storage: async_nats::jetstream::stream::StorageType::File,
+        storage,
         allow_rollup: false,
         max_bytes,
         ..Default::default()
@@ -202,6 +234,7 @@ pub async fn ensure_event_consumer_stream(
     streams: Vec<&Stream>,
     description: Option<String>,
     max_bytes: i64,
+    storage: StorageType,
 ) -> Result<Stream> {
     debug!("Ensuring stream {name} exists");
     // This maps the upstream (wasmbus.evt.*.> & wadm.evt.*.>) Streams into
@@ -242,7 +275,7 @@ pub async fn ensure_event_consumer_stream(
         subjects: vec![],
         max_age: DEFAULT_EXPIRY_TIME,
         sources: Some(sources),
-        storage: async_nats::jetstream::stream::StorageType::File,
+        storage,
         allow_rollup: false,
         max_bytes,
         ..Default::default()
@@ -268,6 +301,7 @@ pub async fn ensure_status_stream(
     name: String,
     subjects: Vec<String>,
     max_bytes: i64,
+    storage: StorageType,
 ) -> Result<Stream> {
     debug!("Ensuring stream {name} exists");
     context
@@ -282,7 +316,7 @@ pub async fn ensure_status_stream(
             max_messages_per_subject: 10,
             subjects,
             max_age: std::time::Duration::from_nanos(0),
-            storage: async_nats::jetstream::stream::StorageType::File,
+            storage,
             max_bytes,
             ..Default::default()
         })
@@ -296,6 +330,7 @@ pub async fn ensure_notify_stream(
     name: String,
     subjects: Vec<String>,
     max_bytes: i64,
+    storage: StorageType,
 ) -> Result<Stream> {
     debug!("Ensuring stream {name} exists");
     context
@@ -306,7 +341,7 @@ pub async fn ensure_notify_stream(
             retention: async_nats::jetstream::stream::RetentionPolicy::Interest,
             subjects,
             max_age: DEFAULT_EXPIRY_TIME,
-            storage: async_nats::jetstream::stream::StorageType::File,
+            storage,
             max_bytes,
             ..Default::default()
         })
