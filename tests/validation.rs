@@ -118,3 +118,19 @@ async fn validate_policy() -> Result<()> {
     assert!(failures.valid(), "manifest is valid");
     Ok(())
 }
+
+#[tokio::test]
+async fn validate_deprecated_configs_raw_yaml() -> Result<()> {
+    let (_manifest, failures) = validate_manifest_file(
+        "./tests/fixtures/manifests/deprecated-source-and-target-config.yaml",
+    )
+    .await
+    .context("failed to validate manifest")?;
+    assert!(failures.valid(), "expected valid manifest");
+    assert_eq!(
+        failures.warnings().len(),
+        2,
+        "expected 2 warnings during validating manifest"
+    );
+    Ok(())
+}
