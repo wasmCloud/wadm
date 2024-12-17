@@ -31,7 +31,7 @@ pub struct Provider {
     pub hosts: HashMap<String, ProviderStatus>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub enum ProviderStatus {
     /// The provider is starting and hasn't returned a heartbeat yet
     Pending,
@@ -40,6 +40,7 @@ pub enum ProviderStatus {
     /// The provider failed to start
     // TODO(thomastaylor312): In the future, we'll probably want to decay out a provider from state
     // if it hasn't had a heartbeat
+    // if it fails a recent health check
     Failed,
 }
 
