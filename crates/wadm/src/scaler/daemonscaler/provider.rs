@@ -531,4 +531,226 @@ mod test {
 
         Ok(())
     }
+
+    #[tokio::test]
+    async fn test_healthy_providers_return_healthy_status() -> Result<()> {
+        let lattice_id = "test_healthy_providers";
+        let provider_ref = "fakecloud.azurecr.io/provider:3.2.1".to_string();
+        let provider_id = "VASDASDIAMAREALPROVIDERPROVIDER";
+
+        let host_id_one = "NASDASDIMAREALHOSTONE";
+        let host_id_two = "NASDASDIMAREALHOSTTWO";
+
+        let store = Arc::new(TestStore::default());
+
+        store
+            .store(
+                lattice_id,
+                host_id_one.to_string(),
+                Host {
+                    components: HashMap::new(),
+                    friendly_name: "hey".to_string(),
+                    labels: HashMap::from_iter([
+                        ("inda".to_string(), "cloud".to_string()),
+                        ("cloud".to_string(), "fake".to_string()),
+                        ("region".to_string(), "us-noneofyourbusiness-1".to_string()),
+                    ]),
+                    providers: HashSet::from_iter([ProviderInfo {
+                        provider_id: provider_id.to_string(),
+                        provider_ref: provider_ref.to_string(),
+                        annotations: BTreeMap::default(),
+                    }]),
+                    uptime_seconds: 123,
+                    version: None,
+                    id: host_id_one.to_string(),
+                    last_seen: Utc::now(),
+                },
+            )
+            .await?;
+
+        store
+            .store(
+                lattice_id,
+                host_id_two.to_string(),
+                Host {
+                    components: HashMap::new(),
+                    friendly_name: "hey".to_string(),
+                    labels: HashMap::from_iter([
+                        ("inda".to_string(), "cloud".to_string()),
+                        ("cloud".to_string(), "real".to_string()),
+                        ("region".to_string(), "us-yourhouse-1".to_string()),
+                    ]),
+                    providers: HashSet::from_iter([ProviderInfo {
+                        provider_id: provider_id.to_string(),
+                        provider_ref: provider_ref.to_string(),
+                        annotations: BTreeMap::default(),
+                    }]),
+                    uptime_seconds: 123,
+                    version: None,
+                    id: host_id_two.to_string(),
+                    last_seen: Utc::now(),
+                },
+            )
+            .await?;
+
+        store
+            .store(
+                lattice_id,
+                provider_id.to_string(),
+                Provider {
+                    id: provider_id.to_string(),
+                    name: "provider".to_string(),
+                    issuer: "issuer".to_string(),
+                    reference: provider_ref.to_string(),
+                    hosts: HashMap::from([
+                        (host_id_one.to_string(), ProviderStatus::Pending),
+                        (host_id_two.to_string(), ProviderStatus::Running),
+                    ]),
+                },
+            )
+            .await?;
+
+        // Ensure we spread evenly with equal weights, clean division
+        let multi_spread_even = SpreadScalerProperty {
+            // instances are ignored so putting an absurd number
+            instances: 2,
+            spread: vec![Spread {
+                name: "SimpleOne".to_string(),
+                requirements: BTreeMap::from_iter([("inda".to_string(), "cloud".to_string())]),
+                weight: Some(100),
+            }],
+        };
+
+        let spreadscaler = ProviderDaemonScaler::new(
+            store.clone(),
+            ProviderSpreadConfig {
+                lattice_id: lattice_id.to_string(),
+                provider_id: provider_id.to_string(),
+                provider_reference: provider_ref.to_string(),
+                spread_config: multi_spread_even,
+                model_name: MODEL_NAME.to_string(),
+                provider_config: vec!["foobar".to_string()],
+            },
+            "fake_component",
+        );
+
+        spreadscaler.reconcile().await?;
+
+        assert_eq!(
+            spreadscaler.status.read().await.to_owned(),
+            StatusInfo::deployed("")
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_unhealthy_providers_return_unhealthy_status() -> Result<()> {
+        let lattice_id = "test_unhealthy_providers";
+        let provider_ref = "fakecloud.azurecr.io/provider:3.2.1".to_string();
+        let provider_id = "VASDASDIAMAREALPROVIDERPROVIDER";
+
+        let host_id_one = "NASDASDIMAREALHOSTONE";
+        let host_id_two = "NASDASDIMAREALHOSTTWO";
+
+        let store = Arc::new(TestStore::default());
+
+        store
+            .store(
+                lattice_id,
+                host_id_one.to_string(),
+                Host {
+                    components: HashMap::new(),
+                    friendly_name: "hey".to_string(),
+                    labels: HashMap::from_iter([
+                        ("inda".to_string(), "cloud".to_string()),
+                        ("cloud".to_string(), "fake".to_string()),
+                        ("region".to_string(), "us-noneofyourbusiness-1".to_string()),
+                    ]),
+                    providers: HashSet::from_iter([ProviderInfo {
+                        provider_id: provider_id.to_string(),
+                        provider_ref: provider_ref.to_string(),
+                        annotations: BTreeMap::default(),
+                    }]),
+                    uptime_seconds: 123,
+                    version: None,
+                    id: host_id_one.to_string(),
+                    last_seen: Utc::now(),
+                },
+            )
+            .await?;
+
+        store
+            .store(
+                lattice_id,
+                host_id_two.to_string(),
+                Host {
+                    components: HashMap::new(),
+                    friendly_name: "hey".to_string(),
+                    labels: HashMap::from_iter([
+                        ("inda".to_string(), "cloud".to_string()),
+                        ("cloud".to_string(), "real".to_string()),
+                        ("region".to_string(), "us-yourhouse-1".to_string()),
+                    ]),
+                    providers: HashSet::from_iter([ProviderInfo {
+                        provider_id: provider_id.to_string(),
+                        provider_ref: provider_ref.to_string(),
+                        annotations: BTreeMap::default(),
+                    }]),
+                    uptime_seconds: 123,
+                    version: None,
+                    id: host_id_two.to_string(),
+                    last_seen: Utc::now(),
+                },
+            )
+            .await?;
+
+        store
+            .store(
+                lattice_id,
+                provider_id.to_string(),
+                Provider {
+                    id: provider_id.to_string(),
+                    name: "provider".to_string(),
+                    issuer: "issuer".to_string(),
+                    reference: provider_ref.to_string(),
+                    hosts: HashMap::from([
+                        (host_id_one.to_string(), ProviderStatus::Failed),
+                        (host_id_two.to_string(), ProviderStatus::Running),
+                    ]),
+                },
+            )
+            .await?;
+
+        // Ensure we spread evenly with equal weights, clean division
+        let multi_spread_even = SpreadScalerProperty {
+            // instances are ignored so putting an absurd number
+            instances: 2,
+            spread: vec![Spread {
+                name: "SimpleOne".to_string(),
+                requirements: BTreeMap::from_iter([("inda".to_string(), "cloud".to_string())]),
+                weight: Some(100),
+            }],
+        };
+
+        let spreadscaler = ProviderDaemonScaler::new(
+            store.clone(),
+            ProviderSpreadConfig {
+                lattice_id: lattice_id.to_string(),
+                provider_id: provider_id.to_string(),
+                provider_reference: provider_ref.to_string(),
+                spread_config: multi_spread_even,
+                model_name: MODEL_NAME.to_string(),
+                provider_config: vec!["foobar".to_string()],
+            },
+            "fake_component",
+        );
+
+        spreadscaler.reconcile().await?;
+
+        assert_eq!(
+            spreadscaler.status.read().await.to_owned(),
+            StatusInfo::failed("Unhealthy provider on 1 host(s)")
+        );
+        Ok(())
+    }
 }
