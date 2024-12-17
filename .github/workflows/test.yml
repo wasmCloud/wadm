@@ -18,16 +18,16 @@ jobs:
         nats_version: [2.10.7]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Install latest Rust stable toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1ff72ee08e3cb84d84adba594e0a297990fc1ed3 # stable
         with:
           toolchain: stable
           components: clippy, rustfmt
 
       # Cache: rust
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@82a92a6e8fbeee089604da2575dc567ae9ddeaab # v2.7.5
         with:
           key: '${{ matrix.os }}-rust-cache'
 
@@ -40,7 +40,7 @@ jobs:
             exit 1
           fi
       - name: Install wash
-        uses: wasmCloud/common-actions/install-wash@main
+        uses: wasmCloud/common-actions/install-wash@bc9f2b3966835575aa6f70faafd9efb8e24992c4 # main
 
       # GH Actions doesn't currently support passing args to service containers and there is no way
       # to use an environment variable to turn on jetstream for nats, so we manually start it here
