@@ -10,8 +10,8 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    CapabilityProperties, Component, ComponentProperties, LinkProperty, Manifest, Properties,
-    Trait, TraitProperty, LATEST_VERSION,
+    CapabilityProperties, ComponentProperties, LinkProperty, Manifest, Properties, Trait,
+    TraitProperty, LATEST_VERSION,
 };
 
 /// A namespace -> package -> interface lookup
@@ -296,9 +296,12 @@ pub async fn validate_manifest_file(
 pub async fn validate_manifest_bytes(
     content: impl AsRef<[u8]>,
 ) -> Result<(Manifest, Vec<ValidationFailure>)> {
+    let raw_yaml_content = content.as_ref();
     let manifest =
         serde_yaml::from_slice(content.as_ref()).context("failed to parse manifest content")?;
-    let failures = validate_manifest(&manifest).await?;
+    let mut failures = validate_manifest(&manifest).await?;
+    let mut yaml_issues = validate_raw_yaml(raw_yaml_content)?;
+    failures.append(&mut yaml_issues);
     Ok((manifest, failures))
 }
 
@@ -342,7 +345,14 @@ pub async fn validate_manifest(manifest: &Manifest) -> Result<Vec<ValidationFail
     failures.extend(validate_policies(manifest));
     failures.extend(ensure_no_custom_traits(manifest));
     failures.extend(validate_component_properties(manifest));
-    failures.extend(validate_component_configs(manifest));
+    Ok(failures)
+}
+
+pub fn validate_raw_yaml(content: &[u8]) -> Result<Vec<ValidationFailure>> {
+    let mut failures = Vec::new();
+    let raw_content: serde_yaml::Value =
+        serde_yaml::from_slice(content).context("failed read raw yaml content")?;
+    failures.extend(validate_components_configs(&raw_content));
     Ok(failures)
 }
 
@@ -681,39 +691,50 @@ pub fn validate_component_properties(application: &Manifest) -> Vec<ValidationFa
 
 /// Funtion to validate the component configs
 /// from 0.13.0 source_config is deprecated and replaced with source:config:
-/// this function validates the component configs
-pub fn validate_component_configs(application: &Manifest) -> Vec<ValidationFailure> {
+/// this function validates the raw yaml to check for deprecated source_config and target_config
+pub fn validate_components_configs(application: &serde_yaml::Value) -> Vec<ValidationFailure> {
     let mut failures = Vec::new();
-    for component in application.spec.components.iter() {
-        if has_deprecated_trait_property(component) {
-            failures.push(ValidationFailure::new(
-                ValidationFailureLevel::Warning,
-                format!(
-                    "Component '{}' has deprecated source_config or target_config properties on a link trait, please use the source:config or target:config properties instead",
-                    component.name
-                ),
-            ));
+
+    if let Some(specs) = application.get("spec") {
+        if let Some(components) = specs.get("components") {
+            if let Some(components_sequence) = components.as_sequence() {
+                for component in components_sequence.iter() {
+                    failures.extend(get_deprecated_configs(component));
+                }
+            }
         }
     }
     failures
 }
 
-fn has_deprecated_trait_property(component: &Component) -> bool {
-    match &component.traits {
-        Some(traits) => {
-            for trait_ in traits {
-                match &trait_.properties {
-                    #[allow(deprecated)]
-                    TraitProperty::Link(link) => {
-                        link.source_config.is_some() || link.target_config.is_some()
+fn get_deprecated_configs(component: &serde_yaml::Value) -> Vec<ValidationFailure> {
+    let mut failures = vec![];
+    if let Some(traits) = component.get("traits") {
+        if let Some(traits_sequence) = traits.as_sequence() {
+            for trait_ in traits_sequence.iter() {
+                if let Some(trait_type) = trait_.get("type") {
+                    if trait_type.ne("link") {
+                        continue;
                     }
-                    _ => false,
-                };
+                }
+                if let Some(trait_properties) = trait_.get("properties") {
+                    if let Some(_) = trait_properties.get("source_config") {
+                        failures.push(ValidationFailure {
+                            level: ValidationFailureLevel::Warning,
+                            msg: "one of the components' link trait contains a source_config key, please use source:config: rather".to_string(),
+                        });
+                    }
+                    if let Some(_) = trait_properties.get("target_config") {
+                        failures.push(ValidationFailure {
+                            level: ValidationFailureLevel::Warning,
+                            msg: "one of the components' link trait contains a target_config key, please use target:config: rather".to_string(),
+                        });
+                    }
+                }
             }
-            false
         }
-        None => false,
     }
+    failures
 }
 
 /// This function validates that a key/value pair is a valid OAM label. It's using fairly
