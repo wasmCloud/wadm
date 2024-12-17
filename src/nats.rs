@@ -14,24 +14,19 @@ use async_nats::{
 use tracing::{debug, warn};
 use wadm::DEFAULT_EXPIRY_TIME;
 
-#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+#[derive(Debug, Clone, Copy, Default, clap::ValueEnum)]
 pub enum StreamPersistance {
+    #[default]
     File,
     Memory,
 }
 
-impl ToString for StreamPersistance {
-    fn to_string(&self) -> String {
+impl std::fmt::Display for StreamPersistance {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            StreamPersistance::File => "File".to_string(),
-            StreamPersistance::Memory => "Memory".to_string(),
+            StreamPersistance::File => write!(f, "File"),
+            StreamPersistance::Memory => write!(f, "Memory"),
         }
-    }
-}
-
-impl Default for StreamPersistance {
-    fn default() -> Self {
-        StreamPersistance::File
     }
 }
 
