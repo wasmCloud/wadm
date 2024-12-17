@@ -156,9 +156,10 @@ pub async fn ensure_stream(
         retention: async_nats::jetstream::stream::RetentionPolicy::WorkQueue,
         subjects,
         max_age: DEFAULT_EXPIRY_TIME,
-        storage,
         allow_rollup: false,
         max_bytes,
+        // storage,
+        // storage: StorageType::File,
         ..Default::default()
     };
 
@@ -197,9 +198,10 @@ pub async fn ensure_limits_stream(
         retention: async_nats::jetstream::stream::RetentionPolicy::Limits,
         subjects,
         max_age: DEFAULT_EXPIRY_TIME,
-        storage,
         allow_rollup: false,
         max_bytes,
+        // storage,
+        // storage: StorageType::File,
         ..Default::default()
     };
 
@@ -270,9 +272,10 @@ pub async fn ensure_event_consumer_stream(
         subjects: vec![],
         max_age: DEFAULT_EXPIRY_TIME,
         sources: Some(sources),
-        storage,
         allow_rollup: false,
         max_bytes,
+        // storage,
+        // storage: StorageType::File,
         ..Default::default()
     };
 
@@ -311,8 +314,9 @@ pub async fn ensure_status_stream(
             max_messages_per_subject: 10,
             subjects,
             max_age: std::time::Duration::from_nanos(0),
-            storage,
             max_bytes,
+            // storage,
+            // storage: StorageType::File,
             ..Default::default()
         })
         .await
@@ -336,8 +340,9 @@ pub async fn ensure_notify_stream(
             retention: async_nats::jetstream::stream::RetentionPolicy::Interest,
             subjects,
             max_age: DEFAULT_EXPIRY_TIME,
-            storage,
             max_bytes,
+            // storage,
+            storage: StorageType::File,
             ..Default::default()
         })
         .await

@@ -305,7 +305,8 @@ async fn main() -> anyhow::Result<()> {
                 .to_string(),
         ),
         args.max_event_stream_bytes,
-        args.stream_persistance.into(),
+        // args.stream_persistance.into(),
+        async_nats::jetstream::stream::StorageType::File,
     )
     .await?;
 
@@ -317,7 +318,8 @@ async fn main() -> anyhow::Result<()> {
         vec![DEFAULT_COMMANDS_TOPIC.to_owned()],
         Some("A stream that stores all commands for wadm".to_string()),
         args.max_command_stream_bytes,
-        args.stream_persistance.into(),
+        // args.stream_persistance.into(),
+        async_nats::jetstream::stream::StorageType::File,
     )
     .await?;
 
@@ -326,7 +328,8 @@ async fn main() -> anyhow::Result<()> {
         internal_stream_name(STATUS_STREAM_NAME),
         vec![DEFAULT_STATUS_TOPIC.to_owned()],
         args.max_status_stream_bytes,
-        args.stream_persistance.into(),
+        // args.stream_persistance.into(),
+        async_nats::jetstream::stream::StorageType::File,
     )
     .await?;
 
@@ -356,7 +359,8 @@ async fn main() -> anyhow::Result<()> {
                 .to_string(),
         ),
         args.max_wasmbus_event_stream_bytes,
-        args.stream_persistance.into(),
+        // args.stream_persistance.into(),
+        async_nats::jetstream::stream::StorageType::File,
     )
     .await?;
 
@@ -367,7 +371,8 @@ async fn main() -> anyhow::Result<()> {
         NOTIFY_STREAM_NAME.to_owned(),
         vec![format!("{WADM_NOTIFY_PREFIX}.*")],
         args.max_notify_stream_bytes,
-        args.stream_persistance.into(),
+        // args.stream_persistance.into(),
+        async_nats::jetstream::stream::StorageType::File,
     )
     .await?;
 
@@ -383,7 +388,8 @@ async fn main() -> anyhow::Result<()> {
                 .to_string(),
         ),
         args.max_event_consumer_stream_bytes,
-        args.stream_persistance.into(),
+        // args.stream_persistance.into(),
+        async_nats::jetstream::stream::StorageType::File,
     )
     .await?;
 
