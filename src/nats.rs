@@ -15,26 +15,27 @@ use tracing::{debug, warn};
 use wadm::DEFAULT_EXPIRY_TIME;
 
 #[derive(Debug, Clone, Copy, Default, clap::ValueEnum)]
-pub enum StreamPersistance {
+#[clap(rename_all = "PascalCase")]
+pub enum StreamPersistence {
     #[default]
     File,
     Memory,
 }
 
-impl std::fmt::Display for StreamPersistance {
+impl std::fmt::Display for StreamPersistence {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            StreamPersistance::File => write!(f, "File"),
-            StreamPersistance::Memory => write!(f, "Memory"),
+            StreamPersistence::File => write!(f, "File"),
+            StreamPersistence::Memory => write!(f, "Memory"),
         }
     }
 }
 
-impl From<StreamPersistance> for StorageType {
-    fn from(persistance: StreamPersistance) -> Self {
+impl From<StreamPersistence> for StorageType {
+    fn from(persistance: StreamPersistence) -> Self {
         match persistance {
-            StreamPersistance::File => StorageType::File,
-            StreamPersistance::Memory => StorageType::Memory,
+            StreamPersistence::File => StorageType::File,
+            StreamPersistence::Memory => StorageType::Memory,
         }
     }
 }
@@ -158,8 +159,7 @@ pub async fn ensure_stream(
         max_age: DEFAULT_EXPIRY_TIME,
         allow_rollup: false,
         max_bytes,
-        // storage,
-        // storage: StorageType::File,
+        storage,
         ..Default::default()
     };
 
@@ -200,8 +200,7 @@ pub async fn ensure_limits_stream(
         max_age: DEFAULT_EXPIRY_TIME,
         allow_rollup: false,
         max_bytes,
-        // storage,
-        // storage: StorageType::File,
+        storage,
         ..Default::default()
     };
 
@@ -274,8 +273,7 @@ pub async fn ensure_event_consumer_stream(
         sources: Some(sources),
         allow_rollup: false,
         max_bytes,
-        // storage,
-        // storage: StorageType::File,
+        storage,
         ..Default::default()
     };
 
@@ -315,8 +313,7 @@ pub async fn ensure_status_stream(
             subjects,
             max_age: std::time::Duration::from_nanos(0),
             max_bytes,
-            // storage,
-            // storage: StorageType::File,
+            storage,
             ..Default::default()
         })
         .await
@@ -341,8 +338,7 @@ pub async fn ensure_notify_stream(
             subjects,
             max_age: DEFAULT_EXPIRY_TIME,
             max_bytes,
-            // storage,
-            storage: StorageType::File,
+            storage,
             ..Default::default()
         })
         .await
