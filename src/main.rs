@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use async_nats::jetstream::{stream::Stream, Context};
 use clap::Parser;
-use nats::StreamPersistance;
+use nats::StreamPersistence;
 use tokio::sync::Semaphore;
 use tracing::log::debug;
 use wadm_types::api::DEFAULT_WADM_TOPIC_PREFIX;
@@ -183,15 +183,15 @@ struct Args {
         hide = true
     )]
     max_manifest_bucket_bytes: i64,
-    /// The storage type to use for the streams, maps to [`StorageType`](async_nats::jetstream::stream::StorageType)
-    /// Possible values: "File" or "Memory", Default is `File`
+    /// The storage type of nats streams, maps to [`StorageType`](async_nats::jetstream::stream::StorageType)
+    /// Possible values: "File" or "Memory", default is `File`
     #[arg(
         long = "stream-persistence",
         env = "WADM_STREAM_PERSISTENCE",
-        default_value_t = StreamPersistance::File,
+        default_value_t = StreamPersistence::File,
         hide = true
     )]
-    stream_persistance: StreamPersistance,
+    stream_persistance: StreamPersistence,
     /// Maximum bytes to keep for the command stream
     #[arg(
         long = "command-stream-max-bytes",
@@ -305,8 +305,7 @@ async fn main() -> anyhow::Result<()> {
                 .to_string(),
         ),
         args.max_event_stream_bytes,
-        // args.stream_persistance.into(),
-        async_nats::jetstream::stream::StorageType::File,
+        args.stream_persistance.into(),
     )
     .await?;
 
@@ -318,8 +317,7 @@ async fn main() -> anyhow::Result<()> {
         vec![DEFAULT_COMMANDS_TOPIC.to_owned()],
         Some("A stream that stores all commands for wadm".to_string()),
         args.max_command_stream_bytes,
-        // args.stream_persistance.into(),
-        async_nats::jetstream::stream::StorageType::File,
+        args.stream_persistance.into(),
     )
     .await?;
 
@@ -328,8 +326,7 @@ async fn main() -> anyhow::Result<()> {
         internal_stream_name(STATUS_STREAM_NAME),
         vec![DEFAULT_STATUS_TOPIC.to_owned()],
         args.max_status_stream_bytes,
-        // args.stream_persistance.into(),
-        async_nats::jetstream::stream::StorageType::File,
+        args.stream_persistance.into(),
     )
     .await?;
 
@@ -359,8 +356,7 @@ async fn main() -> anyhow::Result<()> {
                 .to_string(),
         ),
         args.max_wasmbus_event_stream_bytes,
-        // args.stream_persistance.into(),
-        async_nats::jetstream::stream::StorageType::File,
+        args.stream_persistance.into(),
     )
     .await?;
 
@@ -371,8 +367,7 @@ async fn main() -> anyhow::Result<()> {
         NOTIFY_STREAM_NAME.to_owned(),
         vec![format!("{WADM_NOTIFY_PREFIX}.*")],
         args.max_notify_stream_bytes,
-        // args.stream_persistance.into(),
-        async_nats::jetstream::stream::StorageType::File,
+        args.stream_persistance.into(),
     )
     .await?;
 
@@ -388,8 +383,7 @@ async fn main() -> anyhow::Result<()> {
                 .to_string(),
         ),
         args.max_event_consumer_stream_bytes,
-        // args.stream_persistance.into(),
-        async_nats::jetstream::stream::StorageType::File,
+        args.stream_persistance.into(),
     )
     .await?;
 
