@@ -7,12 +7,16 @@ use tracing::{instrument, trace};
 use wadm_types::{api::StatusInfo, Spread, SpreadScalerProperty, TraitProperty};
 
 use crate::commands::StopProvider;
-use crate::events::{HostHeartbeat, ProviderInfo, ProviderStarted, ProviderStopped};
+use crate::events::{
+    HostHeartbeat, ProviderHealthCheckFailed, ProviderHealthCheckInfo, ProviderHealthCheckPassed,
+    ProviderInfo, ProviderStarted, ProviderStopped,
+};
 use crate::scaler::compute_id_sha256;
 use crate::scaler::spreadscaler::{
     compute_ineligible_hosts, eligible_hosts, provider::ProviderSpreadConfig,
     spreadscaler_annotations,
 };
+use crate::storage::{Provider, ProviderStatus};
 use crate::SCALER_KEY;
 use crate::{
     commands::{Command, StartProvider},
@@ -81,10 +85,12 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderDaemonScaler<S> {
         match event {
             Event::ProviderStarted(ProviderStarted { provider_id, .. })
             | Event::ProviderStopped(ProviderStopped { provider_id, .. })
-                if provider_id == &self.config.provider_id =>
-            {
-                self.reconcile().await
-            }
+            | Event::ProviderHealthCheckFailed(ProviderHealthCheckFailed {
+                data: ProviderHealthCheckInfo { provider_id, .. },
+            })
+            | Event::ProviderHealthCheckPassed(ProviderHealthCheckPassed {
+                data: ProviderHealthCheckInfo { provider_id, .. },
+            }) if provider_id == &self.config.provider_id => self.reconcile().await,
             // If the host labels match any spread requirement, perform reconcile
             Event::HostStopped(HostStopped { labels, .. })
             | Event::HostStarted(HostStarted { labels, .. })
@@ -105,7 +111,10 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderDaemonScaler<S> {
     #[instrument(level = "trace", skip_all, fields(name = %self.config.model_name, scaler_id = %self.id))]
     async fn reconcile(&self) -> Result<Vec<Command>> {
         let hosts = self.store.list::<Host>(&self.config.lattice_id).await?;
-
+        let provider = self
+            .store
+            .get::<Provider>(&self.config.lattice_id, &self.config.provider_id)
+            .await?;
         let provider_id = &self.config.provider_id;
         let provider_ref = &self.config.provider_reference;
 
@@ -213,15 +222,32 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderDaemonScaler<S> {
 
         trace!(?commands, "Calculated commands for provider daemonscaler");
 
-        let status = match (spread_status.is_empty(), commands.is_empty()) {
+        let unhealthy_providers = provider.map_or(0, |p| {
+            p.hosts
+                .values()
+                .filter(|s| *s == &ProviderStatus::Failed)
+                .count()
+        });
+
+        let status = match (
+            spread_status.is_empty(),
+            commands.is_empty(),
+            unhealthy_providers > 0,
+        ) {
             // No failures, no commands, scaler satisfied
-            (true, true) => StatusInfo::deployed(""),
+            (true, true, false) => StatusInfo::deployed(""),
+            // scaler satisfied but contains unhealthy providers
+            (true, true, true) => StatusInfo::failed(&format!(
+                "Unhealthy provider on {} host(s)",
+                unhealthy_providers
+            )),
+
             // No failures, commands generated, scaler is reconciling
-            (true, false) => {
+            (true, false, _) => {
                 StatusInfo::reconciling(&format!("Scaling provider on {} host(s)", commands.len()))
             }
             // Failures occurred, scaler is in a failed state
-            (false, _) => StatusInfo::failed(
+            (false, _, _) => StatusInfo::failed(
                 &spread_status
                     .into_iter()
                     .map(|s| s.message)
