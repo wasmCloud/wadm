@@ -692,10 +692,6 @@ pub fn validate_link_configs(manifest: &Manifest) -> Vec<ValidationFailure> {
     let mut link_config_names = HashSet::new();
     for link_trait in manifest.links() {
         if let TraitProperty::Link(LinkProperty {
-            name: _name,
-            namespace: _namespace,
-            package: _package,
-            interfaces: _interfaces,
             target,
             source,
             ..
