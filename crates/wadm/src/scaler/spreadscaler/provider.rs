@@ -7,7 +7,10 @@ use anyhow::Result;
 use async_trait::async_trait;
 use tokio::sync::{OnceCell, RwLock};
 use tracing::{instrument, trace};
-use wadm_types::{api::StatusInfo, Spread, SpreadScalerProperty, TraitProperty};
+use wadm_types::{
+    api::{StatusInfo, StatusType},
+    Spread, SpreadScalerProperty, TraitProperty,
+};
 
 use crate::{
     commands::{Command, StartProvider, StopProvider},
@@ -100,12 +103,10 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
         match event {
             Event::ProviderStarted(ProviderStarted { provider_id, .. })
             | Event::ProviderStopped(ProviderStopped { provider_id, .. })
-            | Event::ProviderHealthCheckFailed(ProviderHealthCheckFailed {
-                data: ProviderHealthCheckInfo { provider_id, .. },
-            })
-            | Event::ProviderHealthCheckPassed(ProviderHealthCheckPassed {
-                data: ProviderHealthCheckInfo { provider_id, .. },
-            }) if provider_id == &self.config.provider_id => self.reconcile().await,
+                if provider_id == &self.config.provider_id =>
+            {
+                self.reconcile().await
+            }
             // If the host labels match any spread requirement, perform reconcile
             Event::HostStopped(HostStopped { labels, .. })
             | Event::HostStarted(HostStarted { labels, .. })
@@ -118,6 +119,44 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
             {
                 self.reconcile().await
             }
+            // perform status updates for health check events
+            Event::ProviderHealthCheckFailed(ProviderHealthCheckFailed {
+                data: ProviderHealthCheckInfo { provider_id, .. },
+            })
+            | Event::ProviderHealthCheckPassed(ProviderHealthCheckPassed {
+                data: ProviderHealthCheckInfo { provider_id, .. },
+            }) if provider_id == &self.config.provider_id => {
+                let provider = self
+                    .store
+                    .get::<Provider>(&self.config.lattice_id, &self.config.provider_id)
+                    .await?;
+
+                let unhealthy_providers = provider.map_or(0, |p| {
+                    p.hosts
+                        .values()
+                        .filter(|s| *s == &ProviderStatus::Failed)
+                        .count()
+                });
+                let status = self.status.read().await.to_owned();
+                // update health status of scaler
+                if let Some(status) = match (status.status_type, unhealthy_providers > 0) {
+                    // scaler is deployed but contains unhealthy providers
+                    (StatusType::Deployed, true) => Some(StatusInfo::unhealthy(&format!(
+                        "Unhealthy provider on {} host(s)",
+                        unhealthy_providers
+                    ))),
+                    // scaler can become unhealthy only if it was previously deployed
+                    // once scaler becomes healthy again revert back to deployed state
+                    (StatusType::Unhealthy, false) => Some(StatusInfo::deployed("")),
+                    // don't update status if scaler is not deployed
+                    _ => None,
+                } {
+                    *self.status.write().await = status;
+                }
+
+                // only status needs update no new commands required
+                Ok(Vec::new())
+            }
             // No other event impacts the job of this scaler so we can ignore it
             _ => Ok(Vec::new()),
         }
@@ -126,10 +165,6 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
     #[instrument(level = "debug", skip_all, fields(provider_ref = %self.config.provider_reference, provider_id = %self.config.provider_id, scaler_id = %self.id))]
     async fn reconcile(&self) -> Result<Vec<Command>> {
         let hosts = self.store.list::<Host>(&self.config.lattice_id).await?;
-        let provider = self
-            .store
-            .get::<Provider>(&self.config.lattice_id, &self.config.provider_id)
-            .await?;
         let provider_id = &self.config.provider_id;
         let provider_ref = &self.config.provider_reference;
 
@@ -291,31 +326,15 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
 
         trace!(?commands, "Calculated commands for provider scaler");
 
-        let unhealthy_providers = provider.map_or(0, |p| {
-            p.hosts
-                .values()
-                .filter(|s| *s == &ProviderStatus::Failed)
-                .count()
-        });
-
-        let status = match (
-            spread_status.is_empty(),
-            commands.is_empty(),
-            unhealthy_providers > 0,
-        ) {
+        let status = match (spread_status.is_empty(), commands.is_empty()) {
             // No failures, no commands, scaler satisfied
-            (true, true, false) => StatusInfo::deployed(""),
-            // scaler satisfied but contains unhealthy providers
-            (true, true, true) => StatusInfo::failed(&format!(
-                "Unhealthy provider on {} host(s)",
-                unhealthy_providers
-            )),
+            (true, true) => StatusInfo::deployed(""),
             // No failures, commands generated, scaler is reconciling
-            (true, false, _) => {
+            (true, false) => {
                 StatusInfo::reconciling(&format!("Scaling provider on {} host(s)", commands.len()))
             }
             // Failures occurred, scaler is in a failed state
-            (false, _, _) => StatusInfo::failed(
+            (false, _) => StatusInfo::failed(
                 &spread_status
                     .into_iter()
                     .map(|s| s.message)
@@ -1333,6 +1352,16 @@ mod test {
             .await?;
 
         spreadscaler.reconcile().await?;
+        spreadscaler
+        .handle_event(&&Event::ProviderHealthCheckPassed(
+            ProviderHealthCheckPassed {
+                data: ProviderHealthCheckInfo {
+                    provider_id: provider_id.to_string(),
+                    host_id: host_id_two.to_string(),
+                },
+            },
+        ))
+        .await?;
 
         assert_eq!(
             spreadscaler.status.read().await.to_owned(),
@@ -1444,10 +1473,20 @@ mod test {
             .await?;
 
         spreadscaler.reconcile().await?;
+        spreadscaler
+        .handle_event(&Event::ProviderHealthCheckFailed(
+            ProviderHealthCheckFailed {
+                data: ProviderHealthCheckInfo {
+                    provider_id: provider_id.to_string(),
+                    host_id: host_id_one.to_string(),
+                },
+            },
+        ))
+        .await?;
 
         assert_eq!(
             spreadscaler.status.read().await.to_owned(),
-            StatusInfo::failed("Unhealthy provider on 1 host(s)")
+            StatusInfo::unhealthy("Unhealthy provider on 1 host(s)")
         );
         Ok(())
     }
