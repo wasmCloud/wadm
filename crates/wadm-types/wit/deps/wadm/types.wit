@@ -73,6 +73,7 @@ interface types {
         deployed,
         failed,
         waiting,
+        unhealthy,
     }
 
     enum deploy-result {
