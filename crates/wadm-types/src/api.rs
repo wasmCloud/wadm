@@ -283,6 +283,13 @@ impl StatusInfo {
             message: message.to_owned(),
         }
     }
+
+    pub fn unhealthy(message: &str) -> Self {
+        StatusInfo {
+            status_type: StatusType::Unhealthy,
+            message: message.to_owned(),
+        }
+    }
 }
 
 /// All possible status types
@@ -297,6 +304,7 @@ pub enum StatusType {
     #[serde(alias = "ready")]
     Deployed,
     Failed,
+    Unhealthy,
 }
 
 // Implementing add makes it easy for use to get an aggregate status by summing all of them together
@@ -324,6 +332,8 @@ impl std::ops::Add for StatusType {
             (_, Self::Waiting) => Self::Waiting,
             (Self::Reconciling, _) => Self::Reconciling,
             (_, Self::Reconciling) => Self::Reconciling,
+            (Self::Unhealthy, _) => Self::Unhealthy,
+            (_, Self::Unhealthy) => Self::Unhealthy,
             // This is technically covered in the first comparison, but we'll be explicit
             (Self::Deployed, Self::Deployed) => Self::Deployed,
         }
@@ -389,6 +399,20 @@ mod test {
             .into_iter()
             .sum(),
             StatusType::Failed
+        ));
+
+        assert!(matches!(
+            [StatusType::Deployed, StatusType::Unhealthy]
+                .into_iter()
+                .sum(),
+            StatusType::Unhealthy
+        ));
+
+        assert!(matches!(
+            [StatusType::Reconciling, StatusType::Unhealthy]
+                .into_iter()
+                .sum(),
+            StatusType::Reconciling
         ));
 
         let empty: Vec<StatusType> = Vec::new();
