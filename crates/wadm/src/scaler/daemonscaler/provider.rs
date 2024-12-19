@@ -4,15 +4,20 @@ use anyhow::Result;
 use async_trait::async_trait;
 use tokio::sync::RwLock;
 use tracing::{instrument, trace};
+use wadm_types::api::StatusType;
 use wadm_types::{api::StatusInfo, Spread, SpreadScalerProperty, TraitProperty};
 
 use crate::commands::StopProvider;
-use crate::events::{HostHeartbeat, ProviderInfo, ProviderStarted, ProviderStopped};
+use crate::events::{
+    HostHeartbeat, ProviderHealthCheckFailed, ProviderHealthCheckInfo, ProviderHealthCheckPassed,
+    ProviderInfo, ProviderStarted, ProviderStopped,
+};
 use crate::scaler::compute_id_sha256;
 use crate::scaler::spreadscaler::{
     compute_ineligible_hosts, eligible_hosts, provider::ProviderSpreadConfig,
     spreadscaler_annotations,
 };
+use crate::storage::{Provider, ProviderStatus};
 use crate::SCALER_KEY;
 use crate::{
     commands::{Command, StartProvider},
@@ -97,6 +102,60 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderDaemonScaler<S> {
             {
                 self.reconcile().await
             }
+            // perform status updates for health check events
+            Event::ProviderHealthCheckFailed(ProviderHealthCheckFailed {
+                data: ProviderHealthCheckInfo { provider_id, .. },
+            })
+            | Event::ProviderHealthCheckPassed(ProviderHealthCheckPassed {
+                data: ProviderHealthCheckInfo { provider_id, .. },
+            }) if provider_id == &self.config.provider_id => {
+                let provider = self
+                    .store
+                    .get::<Provider>(&self.config.lattice_id, &self.config.provider_id)
+                    .await?;
+
+                let unhealthy_providers = provider.map_or(0, |p| {
+                    p.hosts
+                        .values()
+                        .filter(|s| *s == &ProviderStatus::Failed)
+                        .count()
+                });
+                let status = self.status.read().await.to_owned();
+                // update health status of scaler
+                if let Some(status) = match (status, unhealthy_providers > 0) {
+                    // scaler is deployed but contains unhealthy providers
+                    (
+                        StatusInfo {
+                            status_type: StatusType::Deployed,
+                            ..
+                        },
+                        true,
+                    ) => Some(StatusInfo::failed(&format!(
+                        "Unhealthy provider on {} host(s)",
+                        unhealthy_providers
+                    ))),
+                    // scaler can become unhealthy only if it was previously deployed
+                    // once scaler becomes healthy again revert back to deployed state
+                    // this is a workaround to detect unhealthy status until
+                    // StatusType::Unhealthy can be used
+                    (
+                        StatusInfo {
+                            status_type: StatusType::Failed,
+                            message,
+                        },
+                        false,
+                    ) if message.starts_with("Unhealthy provider on") => {
+                        Some(StatusInfo::deployed(""))
+                    }
+                    // don't update status if scaler is not deployed
+                    _ => None,
+                } {
+                    *self.status.write().await = status;
+                }
+
+                // only status needs update no new commands required
+                Ok(Vec::new())
+            }
             // No other event impacts the job of this scaler so we can ignore it
             _ => Ok(Vec::new()),
         }
@@ -105,7 +164,6 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderDaemonScaler<S> {
     #[instrument(level = "trace", skip_all, fields(name = %self.config.model_name, scaler_id = %self.id))]
     async fn reconcile(&self) -> Result<Vec<Command>> {
         let hosts = self.store.list::<Host>(&self.config.lattice_id).await?;
-
         let provider_id = &self.config.provider_id;
         let provider_ref = &self.config.provider_reference;
 
@@ -503,6 +561,276 @@ mod test {
             Some(_other) => panic!("command should have been a start provider"),
         }
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_healthy_providers_return_healthy_status() -> Result<()> {
+        let lattice_id = "test_healthy_providers";
+        let provider_ref = "fakecloud.azurecr.io/provider:3.2.1".to_string();
+        let provider_id = "VASDASDIAMAREALPROVIDERPROVIDER";
+
+        let host_id_one = "NASDASDIMAREALHOSTONE";
+        let host_id_two = "NASDASDIMAREALHOSTTWO";
+
+        let store = Arc::new(TestStore::default());
+
+        store
+            .store(
+                lattice_id,
+                host_id_one.to_string(),
+                Host {
+                    components: HashMap::new(),
+                    friendly_name: "hey".to_string(),
+                    labels: HashMap::from_iter([
+                        ("inda".to_string(), "cloud".to_string()),
+                        ("cloud".to_string(), "fake".to_string()),
+                        ("region".to_string(), "us-noneofyourbusiness-1".to_string()),
+                    ]),
+                    providers: HashSet::from_iter([ProviderInfo {
+                        provider_id: provider_id.to_string(),
+                        provider_ref: provider_ref.to_string(),
+                        annotations: BTreeMap::default(),
+                    }]),
+                    uptime_seconds: 123,
+                    version: None,
+                    id: host_id_one.to_string(),
+                    last_seen: Utc::now(),
+                },
+            )
+            .await?;
+
+        store
+            .store(
+                lattice_id,
+                host_id_two.to_string(),
+                Host {
+                    components: HashMap::new(),
+                    friendly_name: "hey".to_string(),
+                    labels: HashMap::from_iter([
+                        ("inda".to_string(), "cloud".to_string()),
+                        ("cloud".to_string(), "real".to_string()),
+                        ("region".to_string(), "us-yourhouse-1".to_string()),
+                    ]),
+                    providers: HashSet::from_iter([ProviderInfo {
+                        provider_id: provider_id.to_string(),
+                        provider_ref: provider_ref.to_string(),
+                        annotations: BTreeMap::default(),
+                    }]),
+                    uptime_seconds: 123,
+                    version: None,
+                    id: host_id_two.to_string(),
+                    last_seen: Utc::now(),
+                },
+            )
+            .await?;
+
+        store
+            .store(
+                lattice_id,
+                provider_id.to_string(),
+                Provider {
+                    id: provider_id.to_string(),
+                    name: "provider".to_string(),
+                    issuer: "issuer".to_string(),
+                    reference: provider_ref.to_string(),
+                    hosts: HashMap::from([
+                        (host_id_one.to_string(), ProviderStatus::Failed),
+                        (host_id_two.to_string(), ProviderStatus::Running),
+                    ]),
+                },
+            )
+            .await?;
+
+        // Ensure we spread evenly with equal weights, clean division
+        let multi_spread_even = SpreadScalerProperty {
+            // instances are ignored so putting an absurd number
+            instances: 2,
+            spread: vec![Spread {
+                name: "SimpleOne".to_string(),
+                requirements: BTreeMap::from_iter([("inda".to_string(), "cloud".to_string())]),
+                weight: Some(100),
+            }],
+        };
+
+        let spreadscaler = ProviderDaemonScaler::new(
+            store.clone(),
+            ProviderSpreadConfig {
+                lattice_id: lattice_id.to_string(),
+                provider_id: provider_id.to_string(),
+                provider_reference: provider_ref.to_string(),
+                spread_config: multi_spread_even,
+                model_name: MODEL_NAME.to_string(),
+                provider_config: vec!["foobar".to_string()],
+            },
+            "fake_component",
+        );
+
+        spreadscaler.reconcile().await?;
+        spreadscaler
+            .handle_event(&Event::ProviderHealthCheckFailed(
+                ProviderHealthCheckFailed {
+                    data: ProviderHealthCheckInfo {
+                        provider_id: provider_id.to_string(),
+                        host_id: host_id_one.to_string(),
+                    },
+                },
+            ))
+            .await?;
+
+        store
+            .store(
+                lattice_id,
+                provider_id.to_string(),
+                Provider {
+                    id: provider_id.to_string(),
+                    name: "provider".to_string(),
+                    issuer: "issuer".to_string(),
+                    reference: provider_ref.to_string(),
+                    hosts: HashMap::from([
+                        (host_id_one.to_string(), ProviderStatus::Pending),
+                        (host_id_two.to_string(), ProviderStatus::Running),
+                    ]),
+                },
+            )
+            .await?;
+
+        spreadscaler
+            .handle_event(&&Event::ProviderHealthCheckPassed(
+                ProviderHealthCheckPassed {
+                    data: ProviderHealthCheckInfo {
+                        provider_id: provider_id.to_string(),
+                        host_id: host_id_two.to_string(),
+                    },
+                },
+            ))
+            .await?;
+
+        assert_eq!(
+            spreadscaler.status.read().await.to_owned(),
+            StatusInfo::deployed("")
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_unhealthy_providers_return_unhealthy_status() -> Result<()> {
+        let lattice_id = "test_unhealthy_providers";
+        let provider_ref = "fakecloud.azurecr.io/provider:3.2.1".to_string();
+        let provider_id = "VASDASDIAMAREALPROVIDERPROVIDER";
+
+        let host_id_one = "NASDASDIMAREALHOSTONE";
+        let host_id_two = "NASDASDIMAREALHOSTTWO";
+
+        let store = Arc::new(TestStore::default());
+
+        store
+            .store(
+                lattice_id,
+                host_id_one.to_string(),
+                Host {
+                    components: HashMap::new(),
+                    friendly_name: "hey".to_string(),
+                    labels: HashMap::from_iter([
+                        ("inda".to_string(), "cloud".to_string()),
+                        ("cloud".to_string(), "fake".to_string()),
+                        ("region".to_string(), "us-noneofyourbusiness-1".to_string()),
+                    ]),
+                    providers: HashSet::from_iter([ProviderInfo {
+                        provider_id: provider_id.to_string(),
+                        provider_ref: provider_ref.to_string(),
+                        annotations: BTreeMap::default(),
+                    }]),
+                    uptime_seconds: 123,
+                    version: None,
+                    id: host_id_one.to_string(),
+                    last_seen: Utc::now(),
+                },
+            )
+            .await?;
+
+        store
+            .store(
+                lattice_id,
+                host_id_two.to_string(),
+                Host {
+                    components: HashMap::new(),
+                    friendly_name: "hey".to_string(),
+                    labels: HashMap::from_iter([
+                        ("inda".to_string(), "cloud".to_string()),
+                        ("cloud".to_string(), "real".to_string()),
+                        ("region".to_string(), "us-yourhouse-1".to_string()),
+                    ]),
+                    providers: HashSet::from_iter([ProviderInfo {
+                        provider_id: provider_id.to_string(),
+                        provider_ref: provider_ref.to_string(),
+                        annotations: BTreeMap::default(),
+                    }]),
+                    uptime_seconds: 123,
+                    version: None,
+                    id: host_id_two.to_string(),
+                    last_seen: Utc::now(),
+                },
+            )
+            .await?;
+
+        store
+            .store(
+                lattice_id,
+                provider_id.to_string(),
+                Provider {
+                    id: provider_id.to_string(),
+                    name: "provider".to_string(),
+                    issuer: "issuer".to_string(),
+                    reference: provider_ref.to_string(),
+                    hosts: HashMap::from([
+                        (host_id_one.to_string(), ProviderStatus::Failed),
+                        (host_id_two.to_string(), ProviderStatus::Running),
+                    ]),
+                },
+            )
+            .await?;
+
+        // Ensure we spread evenly with equal weights, clean division
+        let multi_spread_even = SpreadScalerProperty {
+            // instances are ignored so putting an absurd number
+            instances: 2,
+            spread: vec![Spread {
+                name: "SimpleOne".to_string(),
+                requirements: BTreeMap::from_iter([("inda".to_string(), "cloud".to_string())]),
+                weight: Some(100),
+            }],
+        };
+
+        let spreadscaler = ProviderDaemonScaler::new(
+            store.clone(),
+            ProviderSpreadConfig {
+                lattice_id: lattice_id.to_string(),
+                provider_id: provider_id.to_string(),
+                provider_reference: provider_ref.to_string(),
+                spread_config: multi_spread_even,
+                model_name: MODEL_NAME.to_string(),
+                provider_config: vec!["foobar".to_string()],
+            },
+            "fake_component",
+        );
+
+        spreadscaler.reconcile().await?;
+        spreadscaler
+            .handle_event(&Event::ProviderHealthCheckFailed(
+                ProviderHealthCheckFailed {
+                    data: ProviderHealthCheckInfo {
+                        provider_id: provider_id.to_string(),
+                        host_id: host_id_one.to_string(),
+                    },
+                },
+            ))
+            .await?;
+
+        assert_eq!(
+            spreadscaler.status.read().await.to_owned(),
+            StatusInfo::failed("Unhealthy provider on 1 host(s)")
+        );
         Ok(())
     }
 }
