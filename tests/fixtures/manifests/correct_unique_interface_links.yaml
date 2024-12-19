@@ -1,0 +1,36 @@
+apiVersion: core.oam.dev/v1beta1
+kind: Application
+metadata:
+  name: test-different-interfaces
+  annotations:
+    description: "test"
+spec:
+  components:
+    - name: my-component
+      type: component
+      properties:
+        image: test:latest
+      traits:
+        - type: spreadscaler
+          properties:
+            instances: 1
+        - type: link
+          properties:
+            target: redis
+            namespace: wasi
+            package: keyvalue
+            interfaces: [atomics]
+        - type: link
+          properties:
+            target: redis
+            namespace: wasi
+            package: keyvalue
+            interfaces: [store]
+    - name: redis
+      type: capability
+      properties:
+        image: test:latest
+      traits:
+        - type: spreadscaler
+          properties:
+            instances: 1

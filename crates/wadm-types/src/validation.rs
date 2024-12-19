@@ -778,7 +778,7 @@ pub fn is_valid_label_name(name: &str) -> bool {
 
 /// Checks whether a manifest contains "duplicate" links.
 ///
-/// Multiple links from the same source with the same name, namespace and package
+/// Multiple links from the same source with the same name, namespace, package and interface
 /// are considered duplicate links.
 fn check_duplicate_links(manifest: &Manifest) -> Vec<ValidationFailure> {
     let mut failures = Vec::new();
@@ -789,27 +789,32 @@ fn check_duplicate_links(manifest: &Manifest) -> Vec<ValidationFailure> {
                 name,
                 namespace,
                 package,
+                interfaces,
                 ..
             }) = &link.properties
             {
-                if !link_ids.insert((
-                    name.clone()
-                        .unwrap_or_else(|| DEFAULT_LINK_NAME.to_string()),
-                    namespace,
-                    package,
-                )) {
-                    failures.push(ValidationFailure::new(
-                        ValidationFailureLevel::Error,
-                        format!(
-                            "Duplicate link found inside component '{}': {} ({}:{})",
-                            component.name,
-                            name.clone()
-                                .unwrap_or_else(|| DEFAULT_LINK_NAME.to_string()),
-                            namespace,
-                            package
-                        ),
-                    ));
-                };
+                for interface in interfaces {
+                    if !link_ids.insert((
+                        name.clone()
+                            .unwrap_or_else(|| DEFAULT_LINK_NAME.to_string()),
+                        namespace,
+                        package,
+                        interface,
+                    )) {
+                        failures.push(ValidationFailure::new(
+                            ValidationFailureLevel::Error,
+                            format!(
+                                "Duplicate link found inside component '{}': {} ({}:{}/{})",
+                                component.name,
+                                name.clone()
+                                    .unwrap_or_else(|| DEFAULT_LINK_NAME.to_string()),
+                                namespace,
+                                package,
+                                interface
+                            ),
+                        ));
+                    };
+                }
             }
         }
     }
