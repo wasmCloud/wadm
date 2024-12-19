@@ -139,15 +139,31 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
                 });
                 let status = self.status.read().await.to_owned();
                 // update health status of scaler
-                if let Some(status) = match (status.status_type, unhealthy_providers > 0) {
+                if let Some(status) = match (status, unhealthy_providers > 0) {
                     // scaler is deployed but contains unhealthy providers
-                    (StatusType::Deployed, true) => Some(StatusInfo::unhealthy(&format!(
+                    (
+                        StatusInfo {
+                            status_type: StatusType::Deployed,
+                            ..
+                        },
+                        true,
+                    ) => Some(StatusInfo::failed(&format!(
                         "Unhealthy provider on {} host(s)",
                         unhealthy_providers
                     ))),
                     // scaler can become unhealthy only if it was previously deployed
                     // once scaler becomes healthy again revert back to deployed state
-                    (StatusType::Unhealthy, false) => Some(StatusInfo::deployed("")),
+                    // this is a workaround to detect unhealthy status until
+                    // StatusType::Unhealthy can be used
+                    (
+                        StatusInfo {
+                            status_type: StatusType::Failed,
+                            message,
+                        },
+                        false,
+                    ) if message.starts_with("Unhealthy provider on") => {
+                        Some(StatusInfo::deployed(""))
+                    }
                     // don't update status if scaler is not deployed
                     _ => None,
                 } {
@@ -1486,7 +1502,7 @@ mod test {
 
         assert_eq!(
             spreadscaler.status.read().await.to_owned(),
-            StatusInfo::unhealthy("Unhealthy provider on 1 host(s)")
+            StatusInfo::failed("Unhealthy provider on 1 host(s)")
         );
         Ok(())
     }
