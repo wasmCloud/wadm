@@ -183,13 +183,11 @@ struct Args {
         hide = true
     )]
     max_manifest_bucket_bytes: i64,
-    /// The storage type of nats streams, maps to [`StorageType`](async_nats::jetstream::stream::StorageType)
-    /// Possible values: "File" or "Memory", default is `File`
+    /// The storage type of nats streams, possible values: "file" or "memory", default is "file"
     #[arg(
         long = "stream-persistence",
         env = "WADM_STREAM_PERSISTENCE",
-        default_value_t = StreamPersistence::File,
-        hide = true
+        default_value_t = StreamPersistence::File
     )]
     stream_persistence: StreamPersistence,
     /// Maximum bytes to keep for the command stream
