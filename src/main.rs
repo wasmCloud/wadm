@@ -183,7 +183,7 @@ struct Args {
         hide = true
     )]
     max_manifest_bucket_bytes: i64,
-    /// The storage type of nats streams, possible values: "file" or "memory", default is "file"
+    /// The storage type of nats streams
     #[arg(
         long = "stream-persistence",
         env = "WADM_STREAM_PERSISTENCE",
