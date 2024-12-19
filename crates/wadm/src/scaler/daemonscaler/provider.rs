@@ -635,7 +635,7 @@ mod test {
                     issuer: "issuer".to_string(),
                     reference: provider_ref.to_string(),
                     hosts: HashMap::from([
-                        (host_id_one.to_string(), ProviderStatus::Pending),
+                        (host_id_one.to_string(), ProviderStatus::Failed),
                         (host_id_two.to_string(), ProviderStatus::Running),
                     ]),
                 },
@@ -667,6 +667,34 @@ mod test {
         );
 
         spreadscaler.reconcile().await?;
+        spreadscaler
+            .handle_event(&Event::ProviderHealthCheckFailed(
+                ProviderHealthCheckFailed {
+                    data: ProviderHealthCheckInfo {
+                        provider_id: provider_id.to_string(),
+                        host_id: host_id_one.to_string(),
+                    },
+                },
+            ))
+            .await?;
+
+        store
+            .store(
+                lattice_id,
+                provider_id.to_string(),
+                Provider {
+                    id: provider_id.to_string(),
+                    name: "provider".to_string(),
+                    issuer: "issuer".to_string(),
+                    reference: provider_ref.to_string(),
+                    hosts: HashMap::from([
+                        (host_id_one.to_string(), ProviderStatus::Pending),
+                        (host_id_two.to_string(), ProviderStatus::Running),
+                    ]),
+                },
+            )
+            .await?;
+
         spreadscaler
             .handle_event(&&Event::ProviderHealthCheckPassed(
                 ProviderHealthCheckPassed {
