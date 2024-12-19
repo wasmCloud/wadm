@@ -298,9 +298,12 @@ pub async fn validate_manifest_file(
 pub async fn validate_manifest_bytes(
     content: impl AsRef<[u8]>,
 ) -> Result<(Manifest, Vec<ValidationFailure>)> {
+    let raw_yaml_content = content.as_ref();
     let manifest =
         serde_yaml::from_slice(content.as_ref()).context("failed to parse manifest content")?;
-    let failures = validate_manifest(&manifest).await?;
+    let mut failures = validate_manifest(&manifest).await?;
+    let mut yaml_issues = validate_raw_yaml(raw_yaml_content)?;
+    failures.append(&mut yaml_issues);
     Ok((manifest, failures))
 }
 
@@ -346,6 +349,14 @@ pub async fn validate_manifest(manifest: &Manifest) -> Result<Vec<ValidationFail
     failures.extend(validate_component_properties(manifest));
     failures.extend(check_duplicate_links(manifest));
     failures.extend(validate_link_configs(manifest));
+    Ok(failures)
+}
+
+pub fn validate_raw_yaml(content: &[u8]) -> Result<Vec<ValidationFailure>> {
+    let mut failures = Vec::new();
+    let raw_content: serde_yaml::Value =
+        serde_yaml::from_slice(content).context("failed read raw yaml content")?;
+    failures.extend(validate_components_configs(&raw_content));
     Ok(failures)
 }
 
@@ -728,7 +739,55 @@ pub fn validate_link_configs(manifest: &Manifest) -> Vec<ValidationFailure> {
                 }
             }
         }
-    };
+    }
+    failures
+}
+
+/// Funtion to validate the component configs
+/// from 0.13.0 source_config is deprecated and replaced with source:config:
+/// this function validates the raw yaml to check for deprecated source_config and target_config
+pub fn validate_components_configs(application: &serde_yaml::Value) -> Vec<ValidationFailure> {
+    let mut failures = Vec::new();
+
+    if let Some(specs) = application.get("spec") {
+        if let Some(components) = specs.get("components") {
+            if let Some(components_sequence) = components.as_sequence() {
+                for component in components_sequence.iter() {
+                    failures.extend(get_deprecated_configs(component));
+                }
+            }
+        }
+    }
+    failures
+}
+
+fn get_deprecated_configs(component: &serde_yaml::Value) -> Vec<ValidationFailure> {
+    let mut failures = vec![];
+    if let Some(traits) = component.get("traits") {
+        if let Some(traits_sequence) = traits.as_sequence() {
+            for trait_ in traits_sequence.iter() {
+                if let Some(trait_type) = trait_.get("type") {
+                    if trait_type.ne("link") {
+                        continue;
+                    }
+                }
+                if let Some(trait_properties) = trait_.get("properties") {
+                    if let Some(_) = trait_properties.get("source_config") {
+                        failures.push(ValidationFailure {
+                            level: ValidationFailureLevel::Warning,
+                            msg: "one of the components' link trait contains a source_config key, please use source:config: rather".to_string(),
+                        });
+                    }
+                    if let Some(_) = trait_properties.get("target_config") {
+                        failures.push(ValidationFailure {
+                            level: ValidationFailureLevel::Warning,
+                            msg: "one of the components' link trait contains a target_config key, please use target:config: rather".to_string(),
+                        });
+                    }
+                }
+            }
+        }
+    }
     failures
 }
 
