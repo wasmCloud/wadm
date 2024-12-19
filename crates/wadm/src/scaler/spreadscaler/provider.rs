@@ -1369,15 +1369,15 @@ mod test {
 
         spreadscaler.reconcile().await?;
         spreadscaler
-        .handle_event(&&Event::ProviderHealthCheckPassed(
-            ProviderHealthCheckPassed {
-                data: ProviderHealthCheckInfo {
-                    provider_id: provider_id.to_string(),
-                    host_id: host_id_two.to_string(),
+            .handle_event(&&Event::ProviderHealthCheckPassed(
+                ProviderHealthCheckPassed {
+                    data: ProviderHealthCheckInfo {
+                        provider_id: provider_id.to_string(),
+                        host_id: host_id_two.to_string(),
+                    },
                 },
-            },
-        ))
-        .await?;
+            ))
+            .await?;
 
         assert_eq!(
             spreadscaler.status.read().await.to_owned(),
@@ -1490,15 +1490,15 @@ mod test {
 
         spreadscaler.reconcile().await?;
         spreadscaler
-        .handle_event(&Event::ProviderHealthCheckFailed(
-            ProviderHealthCheckFailed {
-                data: ProviderHealthCheckInfo {
-                    provider_id: provider_id.to_string(),
-                    host_id: host_id_one.to_string(),
+            .handle_event(&Event::ProviderHealthCheckFailed(
+                ProviderHealthCheckFailed {
+                    data: ProviderHealthCheckInfo {
+                        provider_id: provider_id.to_string(),
+                        host_id: host_id_one.to_string(),
+                    },
                 },
-            },
-        ))
-        .await?;
+            ))
+            .await?;
 
         assert_eq!(
             spreadscaler.status.read().await.to_owned(),
