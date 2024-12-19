@@ -15,7 +15,7 @@ use tracing::{debug, warn};
 use wadm::DEFAULT_EXPIRY_TIME;
 
 #[derive(Debug, Clone, Copy, Default, clap::ValueEnum)]
-#[clap(rename_all = "PascalCase")]
+#[clap(rename_all = "lower")]
 pub enum StreamPersistence {
     #[default]
     File,
@@ -25,8 +25,8 @@ pub enum StreamPersistence {
 impl std::fmt::Display for StreamPersistence {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            StreamPersistence::File => write!(f, "File"),
-            StreamPersistence::Memory => write!(f, "Memory"),
+            StreamPersistence::File => write!(f, "file"),
+            StreamPersistence::Memory => write!(f, "memory"),
         }
     }
 }
