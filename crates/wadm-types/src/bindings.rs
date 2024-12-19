@@ -277,7 +277,7 @@ impl From<StatusType> for wadm::types::StatusType {
             StatusType::Deployed => wadm::types::StatusType::Deployed,
             StatusType::Failed => wadm::types::StatusType::Failed,
             StatusType::Waiting => wadm::types::StatusType::Waiting,
-            StatusType::Unhealthy => wadm::types::StatusType::Unhealthy
+            StatusType::Unhealthy => wadm::types::StatusType::Unhealthy,
         }
     }
 }
@@ -292,7 +292,7 @@ impl From<wadm::types::StatusType> for StatusType {
             wadm::types::StatusType::Deployed => StatusType::Deployed,
             wadm::types::StatusType::Failed => StatusType::Failed,
             wadm::types::StatusType::Waiting => StatusType::Waiting,
-            wadm::types::StatusType::Unhealthy => StatusType::Unhealthy
+            wadm::types::StatusType::Unhealthy => StatusType::Unhealthy,
         }
     }
 }
