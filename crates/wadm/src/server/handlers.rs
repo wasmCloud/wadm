@@ -1129,6 +1129,25 @@ mod test {
                 .to_string()
                 .contains("Duplicate link found inside component")),
         }
+
+        let manifest =
+            deserialize_yaml("../../tests/fixtures/manifests/correct_unique_interface_links.yaml")
+                .expect("Should be able to parse");
+        assert!(validate_manifest(&manifest).await.is_ok());
+
+        let manifest = deserialize_yaml(
+            "../../tests/fixtures/manifests/incorrect_unique_interface_links.yaml",
+        )
+        .expect("Should be able to parse");
+        match validate_manifest(&manifest).await {
+            Ok(()) => panic!("Should have detected duplicate interface links"),
+            Err(e) => assert!(
+                e.to_string()
+                    .contains("Duplicate link found inside component")
+                    && e.to_string().contains("atomics"),
+                "Error should mention duplicate interface"
+            ),
+        }
     }
 
     /// Ensure that a long image ref in a manifest works,
