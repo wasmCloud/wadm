@@ -154,7 +154,7 @@ impl ClientInfo {
         self.wadm_clients.insert(lattice_prefix.to_string(), client);
     }
 
-    pub async fn launch_wadm(&mut self) {
+    pub async fn launch_wadm(&mut self, extra_envs: Option<HashMap<&str, &str>>) {
         let repo_root =
             PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("Unable to find repo root"));
         // Create the logging directory
@@ -172,6 +172,12 @@ impl ClientInfo {
                 wadm_binary_path.display()
             )
         }
+        let mut envs = HashMap::from([
+            ("RUST_LOG","info,wadm=debug,wadm::scaler=trace,wadm::workers::event=trace,wasmcloud_control_interface=trace")
+        ]);
+        if let Some(extra_envs) = extra_envs {
+            envs.extend(extra_envs);
+        }
 
         for i in 0..3 {
             let log_path = log_dir.join(format!("wadm-{i}"));
@@ -184,10 +190,7 @@ impl ClientInfo {
                 .stderr(file)
                 .stdout(Stdio::null())
                 .kill_on_drop(true)
-                .env(
-                    "RUST_LOG",
-                    "info,wadm=debug,wadm::scaler=trace,wadm::workers::event=trace,wasmcloud_control_interface=trace",
-                )
+                .envs(&envs)
                 .spawn()
                 .expect("Unable to spawn wadm binary");
             self.commands.push(child);
