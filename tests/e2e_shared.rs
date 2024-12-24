@@ -45,7 +45,7 @@ async fn run_shared_component_tests() {
     client_info.add_wadm_client(SHARED_PROVIDERS_LATTICE).await;
     client_info.add_ctl_client(INVALID_TEST_LATTICE, None).await;
     client_info.add_wadm_client(INVALID_TEST_LATTICE).await;
-    client_info.launch_wadm().await;
+    client_info.launch_wadm(None).await;
 
     // Wait for the first event on the lattice prefix before we start deploying and checking
     // statuses. Wadm can absolutely handle hosts starting before you start the wadm process, but the first event

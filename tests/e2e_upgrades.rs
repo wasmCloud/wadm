@@ -35,7 +35,9 @@ async fn run_upgrade_tests() {
     let mut client_info = ClientInfo::new(manifest_dir, compose_file).await;
     client_info.add_ctl_client("default", None).await;
     client_info.add_wadm_client("default").await;
-    client_info.launch_wadm().await;
+    client_info
+        .launch_wadm(Some(HashMap::from([("--stream-persistence", "memory")])))
+        .await;
 
     // Wait for the first event on the lattice prefix before we start deploying and checking
     // statuses. Wadm can absolutely handle hosts starting before you start the wadm process, but the first event
