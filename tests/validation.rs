@@ -44,12 +44,12 @@ async fn validate_misnamed_interface() -> Result<()> {
         !failures.is_empty()
             && failures
                 .iter()
-                .all(|f| f.level == ValidationFailureLevel::Error),
-        "failures present, all errors"
+                .all(|f| f.level == ValidationFailureLevel::Warning),
+        "failures present, all warnings"
     );
     assert!(
-        !failures.valid(),
-        "manifest should be invalid (misnamed interface w/ right namespace & package is probably a bug)"
+        failures.valid(),
+        "manifest should be valid (misnamed interface w/ right namespace & package is probably a bug but might be intentional)"
     );
     Ok(())
 }
@@ -126,8 +126,8 @@ async fn validate_link_config_names() -> Result<()> {
         validate_manifest_file("./tests/fixtures/manifests/duplicate_link_config_names.wadm.yaml")
             .await
             .context("failed to validate manifest")?;
-        let expected_errors = 3;
-        assert!(
+    let expected_errors = 3;
+    assert!(
             !failures.is_empty()
                 && failures
                     .iter()
@@ -135,10 +135,10 @@ async fn validate_link_config_names() -> Result<()> {
                 && failures.len() == expected_errors,
             "expected {} errors because manifest contains {} duplicated link config names, instead {} errors were found", expected_errors, expected_errors, failures.len().to_string()
         );
-        assert!(
-            !failures.valid(),
-            "manifest should be invalid (duplicated link config names lead to a dead loop)"
-        );
+    assert!(
+        !failures.valid(),
+        "manifest should be invalid (duplicated link config names lead to a dead loop)"
+    );
     Ok(())
 }
 
