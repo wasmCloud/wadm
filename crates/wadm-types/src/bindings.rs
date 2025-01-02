@@ -10,7 +10,8 @@ use crate::{
 };
 use wasmcloud::wadm;
 
-#[cfg(feature = "wit-wasm")]
+#[cfg(feature = "wit")]
+#[cfg(target_arch = "wasm32")]
 wit_bindgen::generate!({
     path: "wit",
     additional_derives: [
@@ -24,7 +25,8 @@ wit_bindgen::generate!({
     }
 });
 
-#[cfg(feature = "wit-std")]
+#[cfg(feature = "wit")]
+#[cfg(not(target_arch = "wasm32"))]
 wit_bindgen_wrpc::generate!({
     generate_unused_types: true,
     additional_derives: [
