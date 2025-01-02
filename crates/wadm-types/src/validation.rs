@@ -160,9 +160,10 @@ fn is_invalid_known_interface(
     };
     // Unknown interface inside known namespace and package is probably a bug
     if !iface_lookup.contains_key(interface) {
-        // Unknown package inside a known interface we control is probably a bug
+        // Unknown package inside a known interface we control is probably a bug, but may be
+        // a new interface we don't know about yet
         return vec![ValidationFailure::new(
-            ValidationFailureLevel::Error,
+            ValidationFailureLevel::Warning,
             format!("unrecognized interface [{namespace}:{package}/{interface}]"),
         )];
     }
@@ -702,22 +703,13 @@ pub fn validate_link_configs(manifest: &Manifest) -> Vec<ValidationFailure> {
     let mut failures = Vec::new();
     let mut link_config_names = HashSet::new();
     for link_trait in manifest.links() {
-        if let TraitProperty::Link(LinkProperty {
-            target,
-            source,
-            ..
-        }) = &link_trait.properties {
+        if let TraitProperty::Link(LinkProperty { target, source, .. }) = &link_trait.properties {
             for config in target.config.iter() {
                 // Check if config name is unique
-                if !link_config_names.insert((
-                    config.name.clone(),
-                )) {
+                if !link_config_names.insert((config.name.clone(),)) {
                     failures.push(ValidationFailure::new(
                         ValidationFailureLevel::Error,
-                        format!(
-                            "Duplicate link config name found: '{}'",
-                            config.name
-                        ),
+                        format!("Duplicate link config name found: '{}'", config.name),
                     ));
                 }
             }
@@ -725,15 +717,10 @@ pub fn validate_link_configs(manifest: &Manifest) -> Vec<ValidationFailure> {
             if let Some(source) = source {
                 for config in source.config.iter() {
                     // Check if config name is unique
-                    if !link_config_names.insert((
-                        config.name.clone(),
-                    )) {
+                    if !link_config_names.insert((config.name.clone(),)) {
                         failures.push(ValidationFailure::new(
                             ValidationFailureLevel::Error,
-                            format!(
-                                "Duplicate link config name found: '{}'",
-                                config.name
-                            ),
+                            format!("Duplicate link config name found: '{}'", config.name),
                         ));
                     }
                 }
