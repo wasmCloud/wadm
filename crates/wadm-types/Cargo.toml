@@ -9,8 +9,6 @@ license = "Apache-2.0"
 repository = "https://github.com/wasmcloud/wadm"
 
 [features]
-default = ["std"]
-std = ["dep:tokio"]
 wit = []
 
 [dependencies]
@@ -22,10 +20,9 @@ regex = { workspace = true }
 schemars = { workspace = true }
 utoipa = { workspace = true }
 
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-tokio = { workspace = true, optional = true, features = ["full"] }
-wit-bindgen-wrpc = { workspace = true, optional = true }
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+tokio = { workspace = true, features = ["full"] }
+wit-bindgen-wrpc = { workspace = true }
 
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-tokio = { workspace = true, optional = true }
-wit-bindgen = { workspace = true, optional = true, features = ["macros"] }
+[target.'cfg(target_family = "wasm")'.dependencies]
+wit-bindgen = { workspace = true, features = ["macros"] }
