@@ -10,7 +10,7 @@ readme = "README.md"
 repository = "https://github.com/wasmcloud/wadm"
 
 [workspace.package]
-version = "0.18.0"
+version = "0.19.0"
 
 [features]
 default = []
@@ -83,9 +83,9 @@ tracing-subscriber = { version = "0.3.7", features = ["env-filter", "json"] }
 ulid = { version = "1", features = ["serde"] }
 utoipa = "5"
 uuid = "1"
-wadm = { version = "0.18.0", path = "./crates/wadm" }
-wadm-client = { version = "0.7.1", path = "./crates/wadm-client" }
-wadm-types = { version = "0.7.1", path = "./crates/wadm-types" }
+wadm = { version = "0.19.0", path = "./crates/wadm" }
+wadm-client = { version = "0.8.0", path = "./crates/wadm-client" }
+wadm-types = { version = "0.8.0", path = "./crates/wadm-types" }
 wasmcloud-control-interface = { version = "2.2.0" }
 wasmcloud-secrets-types = "0.5.0"
 wit-bindgen-wrpc = { version = "0.9", default-features = false }
