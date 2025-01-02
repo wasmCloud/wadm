@@ -10,6 +10,21 @@ use crate::{
 };
 use wasmcloud::wadm;
 
+#[cfg(feature = "wit-wasm")]
+wit_bindgen::generate!({
+    path: "wit",
+    additional_derives: [
+        serde::Serialize,
+        serde::Deserialize,
+    ],
+    with: {
+        "wasmcloud:wadm/types@0.2.0": generate,
+        "wasmcloud:wadm/client@0.2.0": generate,
+        "wasmcloud:wadm/handler@0.2.0": generate
+    }
+});
+
+#[cfg(feature = "wit-std")]
 wit_bindgen_wrpc::generate!({
     generate_unused_types: true,
     additional_derives: [
