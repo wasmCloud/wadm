@@ -16,6 +16,7 @@ wit_bindgen::generate!({
     additional_derives: [
         serde::Serialize,
         serde::Deserialize,
+        Hash
     ],
     with: {
         "wasmcloud:wadm/types@0.2.0": generate,
@@ -30,6 +31,7 @@ wit_bindgen_wrpc::generate!({
     additional_derives: [
         serde::Serialize,
         serde::Deserialize,
+        Hash
     ],
     with: {
         "wasmcloud:wadm/types@0.2.0": generate,
