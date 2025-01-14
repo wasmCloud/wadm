@@ -24,8 +24,13 @@ members = ["crates/*"]
 anyhow = { workspace = true }
 async-nats = { workspace = true }
 async-trait = { workspace = true }
+bytes = { workspace = true }
 clap = { workspace = true, features = ["derive", "cargo", "env"] }
 futures = { workspace = true }
+http = { workspace = true, features = ["std"] }
+http-body-util = { workspace = true }
+hyper = { workspace = true }
+hyper-util = { workspace = true, features = ["server"] }
 nkeys = { workspace = true }
 # One version back to avoid clashes with 0.10 of otlp
 opentelemetry = { workspace = true, features = ["rt-tokio"] }
@@ -53,6 +58,10 @@ chrono = "0.4"
 clap = { version = "4", features = ["derive", "cargo", "env"] }
 cloudevents-sdk = "0.7"
 futures = "0.3"
+http = { version = "1", default-features = false }
+http-body-util = { version = "0.1", default-features = false }
+hyper = { version = "1", default-features = false }
+hyper-util = { version = "0.1", default-features = false }
 indexmap = { version = "2", features = ["serde"] }
 jsonschema = "0.17"
 lazy_static = "1"

@@ -1,12 +1,19 @@
+use core::net::SocketAddr;
+
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
+use anyhow::Context as _;
 use async_nats::jetstream::{stream::Stream, Context};
+use bytes::Bytes;
 use clap::Parser;
+use hyper_util::rt::{TokioExecutor, TokioIo};
 use nats::StreamPersistence;
+use tokio::net::TcpListener;
+use tokio::spawn;
 use tokio::sync::Semaphore;
-use tracing::log::debug;
+use tracing::{debug, error};
 use wadm_types::api::DEFAULT_WADM_TOPIC_PREFIX;
 
 use wadm::{
@@ -238,6 +245,10 @@ struct Args {
         hide = true
     )]
     max_wasmbus_event_stream_bytes: i64,
+
+    #[clap(long = "http-admin", env = "WADM_HTTP_ADMIN")]
+    /// HTTP administration endpoint address
+    http_admin: Option<SocketAddr>,
 }
 
 #[tokio::main]
@@ -456,6 +467,60 @@ async fn main() -> anyhow::Result<()> {
         ManifestNotifier::new(wadm_event_prefix, context),
     )
     .await?;
+
+    if let Some(addr) = args.http_admin {
+        let socket = TcpListener::bind(addr)
+            .await
+            .context("failed to bind on HTTP administation endpoint")?;
+        let svc = hyper::service::service_fn(move |req| {
+            const OK: &str = r#"{"status":"ok"}"#;
+            async move {
+                let (http::request::Parts { method, uri, .. }, _) = req.into_parts();
+                match (method.as_str(), uri.path()) {
+                    ("HEAD", "/livez") => Ok(http::Response::default()),
+                    ("GET", "/livez") => Ok(http::Response::new(http_body_util::Full::new(
+                        Bytes::from(OK),
+                    ))),
+                    (method, "/livez") => http::Response::builder()
+                        .status(http::StatusCode::METHOD_NOT_ALLOWED)
+                        .body(http_body_util::Full::new(Bytes::from(format!(
+                            "method `{method}` not supported for path `/livez`"
+                        )))),
+                    ("HEAD", "/readyz") => Ok(http::Response::default()),
+                    ("GET", "/readyz") => Ok(http::Response::new(http_body_util::Full::new(
+                        Bytes::from(OK),
+                    ))),
+                    (method, "/readyz") => http::Response::builder()
+                        .status(http::StatusCode::METHOD_NOT_ALLOWED)
+                        .body(http_body_util::Full::new(Bytes::from(format!(
+                            "method `{method}` not supported for path `/readyz`"
+                        )))),
+                    (.., path) => http::Response::builder()
+                        .status(http::StatusCode::NOT_FOUND)
+                        .body(http_body_util::Full::new(Bytes::from(format!(
+                            "unknown endpoint `{path}`"
+                        )))),
+                }
+            }
+        });
+        let srv = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new());
+        spawn(async move {
+            loop {
+                let stream = match socket.accept().await {
+                    Ok((stream, _)) => stream,
+                    Err(err) => {
+                        error!(?err, "failed to accept HTTP administration connection");
+                        continue;
+                    }
+                };
+                let svc = svc.clone();
+                if let Err(err) = srv.serve_connection(TokioIo::new(stream), svc).await {
+                    error!(?err, "failed to serve HTTP administration connection");
+                }
+            }
+        });
+    }
+
     tokio::select! {
         res = server.serve() => {
             res?
