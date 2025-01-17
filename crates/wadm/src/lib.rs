@@ -90,9 +90,9 @@ pub(crate) const WASMBUS_EVENT_STREAM_NAME: &str = "wasmbus_events";
 /// # Usage
 ///
 /// ```no_run
-///     let mut wadm = start_wadm(args.into())
-///         .await
-///         .context("failed to run wadm")?;
+/// async {
+///     let config = wadm::config::WadmConfig::default();
+///     let mut wadm = wadm::start_wadm(config).await.expect("should start wadm");
 ///     tokio::select! {
 ///         res = wadm.join_next() => {
 ///             match res {
@@ -115,6 +115,7 @@ pub(crate) const WASMBUS_EVENT_STREAM_NAME: &str = "wasmbus_events";
 ///             std::process::exit(0);
 ///         }
 ///     }
+/// };
 /// ```
 pub async fn start_wadm(config: WadmConfig) -> anyhow::Result<JoinSet<anyhow::Result<()>>> {
     // Build storage adapter for lattice state (on by default)
