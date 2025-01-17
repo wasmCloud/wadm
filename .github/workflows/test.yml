@@ -51,6 +51,15 @@ jobs:
         run: |
           cargo build --all-features --all-targets --workspace
 
+      # Make sure the wadm crate works well with feature combinations
+      # The above command builds the workspace and tests with no features
+      - name: Check wadm crate with features
+        run: |
+          cargo check -p wadm --no-default-features
+          cargo check -p wadm --features cli
+          cargo check -p wadm --features http_admin
+          cargo check -p wadm --features cli,http_admin
+
       # Run all tests
       - name: Run tests
         run: |
