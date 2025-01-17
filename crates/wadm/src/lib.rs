@@ -1,13 +1,19 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::Context as _;
 use async_nats::jetstream::{stream::Stream, Context};
 use config::WadmConfig;
+use tokio::{sync::Semaphore, task::JoinSet};
+use tracing::log::debug;
+
+#[cfg(feature = "http_admin")]
+use anyhow::Context as _;
+#[cfg(feature = "http_admin")]
 use hyper::body::Bytes;
+#[cfg(feature = "http_admin")]
 use hyper_util::rt::{TokioExecutor, TokioIo};
-use tokio::{net::TcpListener, sync::Semaphore, task::JoinSet};
-use tracing::{error, log::debug};
+#[cfg(feature = "http_admin")]
+use tokio::net::TcpListener;
 
 use crate::{
     connections::ControlClientConstructor,
@@ -370,13 +376,13 @@ pub async fn start_wadm(config: WadmConfig) -> anyhow::Result<JoinSet<anyhow::Re
                 let stream = match socket.accept().await {
                     Ok((stream, _)) => stream,
                     Err(err) => {
-                        error!(?err, "failed to accept HTTP administration connection");
+                        tracing::error!(?err, "failed to accept HTTP administration connection");
                         continue;
                     }
                 };
                 let svc = svc.clone();
                 if let Err(err) = srv.serve_connection(TokioIo::new(stream), svc).await {
-                    error!(?err, "failed to serve HTTP administration connection");
+                    tracing::error!(?err, "failed to serve HTTP administration connection");
                 }
             }
         });

@@ -1,3 +1,4 @@
+#[cfg(feature = "http_admin")]
 use core::net::SocketAddr;
 use std::path::PathBuf;
 
@@ -295,10 +296,11 @@ impl Default for WadmConfig {
             max_status_stream_bytes: -1,
             max_notify_stream_bytes: -1,
             max_wasmbus_event_stream_bytes: -1,
-            http_admin: None,
             structured_logging: false,
             tracing_enabled: false,
             tracing_endpoint: None,
+            #[cfg(feature = "http_admin")]
+            http_admin: None,
         }
     }
 }
