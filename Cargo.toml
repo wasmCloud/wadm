@@ -37,7 +37,7 @@ tokio = { workspace = true, features = ["full"] }
 tracing = { workspace = true, features = ["log"] }
 tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
-wadm = { workspace = true }
+wadm = { workspace = true, features = ["cli"] }
 wadm-types = { workspace = true }
 
 [workspace.dependencies]
@@ -83,7 +83,7 @@ tracing-subscriber = { version = "0.3.7", features = ["env-filter", "json"] }
 ulid = { version = "1", features = ["serde"] }
 utoipa = "5"
 uuid = "1"
-wadm = { version = "0.19.0", path = "./crates/wadm" }
+wadm = { version = "0.19.0", path = "./crates/wadm"}
 wadm-client = { version = "0.8.0", path = "./crates/wadm-client" }
 wadm-types = { version = "0.8.0", path = "./crates/wadm-types" }
 wasmcloud-control-interface = { version = "2.2.0" }

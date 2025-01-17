@@ -9,6 +9,12 @@ license = "Apache-2.0"
 readme = "../../README.md"
 repository = "https://github.com/wasmcloud/wadm"
 
+[features]
+# Enables clap attributes on the wadm configuration struct
+cli = ["clap"]
+http_admin = ["clap"]
+default = ["http", "http-body-util", "hyper", "hyper-util"]
+
 [package.metadata.cargo-machete]
 ignored = ["cloudevents-sdk"]
 
@@ -17,11 +23,12 @@ anyhow = { workspace = true }
 async-nats = { workspace = true }
 async-trait = { workspace = true }
 chrono = { workspace = true }
+clap = { workspace = true, optional = true, features = ["derive", "cargo", "env"]}
 cloudevents-sdk = { workspace = true }
-http = { workspace = true, features = ["std"] }
-http-body-util = { workspace = true }
-hyper = { workspace = true }
-hyper-util = { workspace = true, features = ["server"] }
+http = { workspace = true, features = ["std"], optional = true }
+http-body-util = { workspace = true, optional = true }
+hyper = { workspace = true, optional = true }
+hyper-util = { workspace = true, features = ["server"], optional = true }
 futures = { workspace = true }
 indexmap = { workspace = true, features = ["serde"] }
 nkeys = { workspace = true }
