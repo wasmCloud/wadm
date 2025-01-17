@@ -327,6 +327,7 @@ pub async fn start_wadm(config: WadmConfig) -> anyhow::Result<JoinSet<anyhow::Re
 
     let mut tasks = JoinSet::new();
 
+    #[cfg(feature = "http_admin")]
     if let Some(addr) = config.http_admin {
         debug!("Setting up HTTP administration endpoint");
         let socket = TcpListener::bind(addr)
