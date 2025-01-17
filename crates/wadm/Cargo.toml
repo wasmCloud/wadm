@@ -18,8 +18,13 @@ async-nats = { workspace = true }
 async-trait = { workspace = true }
 chrono = { workspace = true }
 cloudevents-sdk = { workspace = true }
+http = { workspace = true, features = ["std"] }
+http-body-util = { workspace = true }
+hyper = { workspace = true }
+hyper-util = { workspace = true, features = ["server"] }
 futures = { workspace = true }
 indexmap = { workspace = true, features = ["serde"] }
+nkeys = { workspace = true }
 semver = { workspace = true, features = ["serde"] }
 serde = { workspace = true }
 serde_json = { workspace = true }

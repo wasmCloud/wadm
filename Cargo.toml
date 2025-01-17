@@ -27,10 +27,6 @@ async-trait = { workspace = true }
 bytes = { workspace = true }
 clap = { workspace = true, features = ["derive", "cargo", "env"] }
 futures = { workspace = true }
-http = { workspace = true, features = ["std"] }
-http-body-util = { workspace = true }
-hyper = { workspace = true }
-hyper-util = { workspace = true, features = ["server"] }
 nkeys = { workspace = true }
 # One version back to avoid clashes with 0.10 of otlp
 opentelemetry = { workspace = true, features = ["rt-tokio"] }

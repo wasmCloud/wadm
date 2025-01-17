@@ -1,9 +1,10 @@
+use std::io::IsTerminal;
+
 use opentelemetry::sdk::{
     trace::{IdGenerator, Sampler},
     Resource,
 };
 use opentelemetry_otlp::{Protocol, WithExportConfig};
-use std::io::IsTerminal;
 use tracing::{Event as TracingEvent, Subscriber};
 use tracing_subscriber::fmt::{
     format::{Format, Full, Json, JsonFields, Writer},

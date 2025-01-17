@@ -11,11 +11,10 @@ use async_nats::{
     Client, ConnectOptions,
 };
 
+use crate::DEFAULT_EXPIRY_TIME;
 use tracing::{debug, warn};
-use wadm::DEFAULT_EXPIRY_TIME;
 
-#[derive(Debug, Clone, Copy, Default, clap::ValueEnum)]
-#[clap(rename_all = "lower")]
+#[derive(Debug, Clone, Copy, Default)]
 pub enum StreamPersistence {
     #[default]
     File,
@@ -36,6 +35,16 @@ impl From<StreamPersistence> for StorageType {
         match persistance {
             StreamPersistence::File => StorageType::File,
             StreamPersistence::Memory => StorageType::Memory,
+        }
+    }
+}
+
+impl From<&str> for StreamPersistence {
+    fn from(persistance: &str) -> Self {
+        match persistance {
+            "file" => StreamPersistence::File,
+            "memory" => StreamPersistence::Memory,
+            _ => StreamPersistence::File,
         }
     }
 }
@@ -352,6 +361,7 @@ pub async fn ensure_kv_bucket(
     name: String,
     history_to_keep: i64,
     max_bytes: i64,
+    storage: StorageType,
 ) -> Result<Store> {
     debug!("Ensuring kv bucket {name} exists");
     if let Ok(kv) = context.get_key_value(&name).await {
@@ -362,7 +372,7 @@ pub async fn ensure_kv_bucket(
                 bucket: name,
                 history: history_to_keep,
                 num_replicas: 1,
-                storage: jetstream::stream::StorageType::File,
+                storage,
                 max_bytes,
                 ..Default::default()
             })

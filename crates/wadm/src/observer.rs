@@ -4,7 +4,7 @@ use async_nats::Subscriber;
 use futures::{stream::SelectAll, StreamExt, TryFutureExt};
 use tracing::{debug, error, instrument, trace, warn};
 
-use wadm::{
+use crate::{
     consumers::{
         manager::{ConsumerManager, WorkerCreator},
         CommandConsumer, EventConsumer,
