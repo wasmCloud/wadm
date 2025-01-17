@@ -37,7 +37,7 @@ tokio = { workspace = true, features = ["full"] }
 tracing = { workspace = true, features = ["log"] }
 tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
-wadm = { workspace = true, features = ["cli"] }
+wadm = { workspace = true, features = ["cli", "http_admin"] }
 wadm-types = { workspace = true }
 
 [workspace.dependencies]

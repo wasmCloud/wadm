@@ -12,8 +12,8 @@ repository = "https://github.com/wasmcloud/wadm"
 [features]
 # Enables clap attributes on the wadm configuration struct
 cli = ["clap"]
-http_admin = ["clap"]
-default = ["http", "http-body-util", "hyper", "hyper-util"]
+http_admin = ["http", "http-body-util", "hyper", "hyper-util"]
+default = []
 
 [package.metadata.cargo-machete]
 ignored = ["cloudevents-sdk"]
