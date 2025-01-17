@@ -133,7 +133,7 @@ async fn validate_link_config_names() -> Result<()> {
                     .iter()
                     .all(|f| f.level == ValidationFailureLevel::Error)
                 && failures.len() == expected_errors,
-            "expected {} errors because manifest contains {} duplicated link config names, instead {} errors were found", expected_errors, expected_errors, failures.len().to_string()
+            "expected {} errors because manifest contains {} duplicated link config names, instead {} errors were found", expected_errors, expected_errors, failures.len()
         );
         assert!(
             !failures.valid(),

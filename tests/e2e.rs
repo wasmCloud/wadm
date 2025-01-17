@@ -24,6 +24,7 @@ use wadm_types::{
 use wasmcloud_control_interface::HostInventory;
 
 const LOG_DIR: &str = "tests/e2e_log";
+#[allow(dead_code)]
 pub const DEFAULT_LATTICE_ID: &str = "default";
 // Due to download times and the time needed to stabilize, we still need to wait for just a little bit
 // This number comes from 30s (max backoff time) + 5s of wiggle room

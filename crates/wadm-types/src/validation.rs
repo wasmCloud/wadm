@@ -702,22 +702,13 @@ pub fn validate_link_configs(manifest: &Manifest) -> Vec<ValidationFailure> {
     let mut failures = Vec::new();
     let mut link_config_names = HashSet::new();
     for link_trait in manifest.links() {
-        if let TraitProperty::Link(LinkProperty {
-            target,
-            source,
-            ..
-        }) = &link_trait.properties {
+        if let TraitProperty::Link(LinkProperty { target, source, .. }) = &link_trait.properties {
             for config in target.config.iter() {
                 // Check if config name is unique
-                if !link_config_names.insert((
-                    config.name.clone(),
-                )) {
+                if !link_config_names.insert((config.name.clone(),)) {
                     failures.push(ValidationFailure::new(
                         ValidationFailureLevel::Error,
-                        format!(
-                            "Duplicate link config name found: '{}'",
-                            config.name
-                        ),
+                        format!("Duplicate link config name found: '{}'", config.name),
                     ));
                 }
             }
@@ -725,15 +716,10 @@ pub fn validate_link_configs(manifest: &Manifest) -> Vec<ValidationFailure> {
             if let Some(source) = source {
                 for config in source.config.iter() {
                     // Check if config name is unique
-                    if !link_config_names.insert((
-                        config.name.clone(),
-                    )) {
+                    if !link_config_names.insert((config.name.clone(),)) {
                         failures.push(ValidationFailure::new(
                             ValidationFailureLevel::Error,
-                            format!(
-                                "Duplicate link config name found: '{}'",
-                                config.name
-                            ),
+                            format!("Duplicate link config name found: '{}'", config.name),
                         ));
                     }
                 }
@@ -772,13 +758,13 @@ fn get_deprecated_configs(component: &serde_yaml::Value) -> Vec<ValidationFailur
                     }
                 }
                 if let Some(trait_properties) = trait_.get("properties") {
-                    if let Some(_) = trait_properties.get("source_config") {
+                    if trait_properties.get("source_config").is_some() {
                         failures.push(ValidationFailure {
                             level: ValidationFailureLevel::Warning,
                             msg: "one of the components' link trait contains a source_config key, please use source:config: rather".to_string(),
                         });
                     }
-                    if let Some(_) = trait_properties.get("target_config") {
+                    if trait_properties.get("target_config").is_some() {
                         failures.push(ValidationFailure {
                             level: ValidationFailureLevel::Warning,
                             msg: "one of the components' link trait contains a target_config key, please use target:config: rather".to_string(),

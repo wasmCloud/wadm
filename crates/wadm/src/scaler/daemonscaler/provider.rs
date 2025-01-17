@@ -696,7 +696,7 @@ mod test {
             .await?;
 
         spreadscaler
-            .handle_event(&&Event::ProviderHealthCheckPassed(
+            .handle_event(&Event::ProviderHealthCheckPassed(
                 ProviderHealthCheckPassed {
                     data: ProviderHealthCheckInfo {
                         provider_id: provider_id.to_string(),

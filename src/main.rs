@@ -14,7 +14,7 @@ async fn main() -> anyhow::Result<()> {
         args.tracing_endpoint.clone(),
     );
 
-    let mut wadm = start_wadm(args.into())
+    let mut wadm = start_wadm(args)
         .await
         .context("failed to run wadm")?;
     tokio::select! {
