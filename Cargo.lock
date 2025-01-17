@@ -3583,12 +3583,9 @@ version = "0.19.0"
 dependencies = [
  "anyhow",
  "async-nats",
- "async-trait",
- "bytes",
  "chrono",
  "clap",
  "futures",
- "nkeys",
  "opentelemetry 0.17.0",
  "opentelemetry-otlp",
  "schemars",
