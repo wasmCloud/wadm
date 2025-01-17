@@ -3553,6 +3553,7 @@ dependencies = [
  "async-nats",
  "async-trait",
  "chrono",
+ "clap",
  "cloudevents-sdk",
  "futures",
  "indexmap 2.7.0",
