@@ -8,6 +8,7 @@ keywords = ["webassembly", "wasmcloud", "wadm"]
 license = "Apache-2.0"
 readme = "README.md"
 repository = "https://github.com/wasmcloud/wadm"
+default-run = "wadm"
 
 [workspace.package]
 version = "0.19.0"
@@ -22,12 +23,7 @@ members = ["crates/*"]
 
 [dependencies]
 anyhow = { workspace = true }
-async-nats = { workspace = true }
-async-trait = { workspace = true }
-bytes = { workspace = true }
 clap = { workspace = true, features = ["derive", "cargo", "env"] }
-futures = { workspace = true }
-nkeys = { workspace = true }
 # One version back to avoid clashes with 0.10 of otlp
 opentelemetry = { workspace = true, features = ["rt-tokio"] }
 # 0.10 to avoid protoc dep
@@ -41,7 +37,6 @@ tokio = { workspace = true, features = ["full"] }
 tracing = { workspace = true, features = ["log"] }
 tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
-wasmcloud-control-interface = { workspace = true }
 wadm = { workspace = true }
 wadm-types = { workspace = true }
 
@@ -97,13 +92,16 @@ wit-bindgen-wrpc = { version = "0.9", default-features = false }
 wit-bindgen = { version = "0.36.0", default-features = false }
 
 [dev-dependencies]
+async-nats = { workspace = true }
 chrono = { workspace = true }
+futures = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 serial_test = "3"
 wadm-client = { workspace = true }
 wadm-types = { workspace = true }
+wasmcloud-control-interface = { workspace = true }
 testcontainers = "0.23"
 
 [build-dependencies]
