@@ -50,7 +50,7 @@ impl From<&str> for StreamPersistence {
 }
 
 /// Creates a NATS client from the given options
-pub async fn get_client_and_context(
+pub(crate) async fn get_client_and_context(
     url: String,
     js_domain: Option<String>,
     seed: Option<String>,
