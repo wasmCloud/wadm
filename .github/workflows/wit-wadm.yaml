@@ -3,7 +3,7 @@ name: wit-wasmcloud-wadm-publish
 on:
   push:
     tags:
-      - 'wit-wasmcloud-wadm-v*'
+      - "wit-wasmcloud-wadm-v*"
 
 permissions:
   contents: read
@@ -13,23 +13,35 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      packages: write
     steps:
-    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      with:
-        sparse-checkout: |
-          wit
-    - name: Extract tag context
-      id: ctx
-      run: |
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          sparse-checkout: |
+            wit
+            .github
+      - name: Extract tag context
+        id: ctx
+        run: |
           version=${GITHUB_REF_NAME#wit-wasmcloud-wadm-v}
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "tarball=wit-wasmcloud-wadm-${version}.tar.gz" >> "$GITHUB_OUTPUT"
           echo "version is ${version}"
-    - name: Build
-      run: |
-        tar cvzf ${{ steps.ctx.outputs.tarball }} -C wit wadm/wit
-    - name: Release
-      uses: softprops/action-gh-release@e7a8f85e1c67a31e6ed99a94b41bd0b71bbee6b8 # v2.0.9
-      with:
-        files: ${{ steps.ctx.outputs.tarball }}
-        make_latest: "false"
+      - uses: ./.github/actions/configure-wkg
+        with:
+          oci-username: ${{ github.repository_owner }}
+          oci-password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build
+        working-directory: wit/wadm
+        run: wkg wit build -o package.wasm
+      - name: Push version-tagged WebAssembly binary to GHCR
+        working-directory: wit/wadm
+        run: wkg publish package.wasm
+      - name: Package tarball for release
+        run: |
+          tar cvzf ${{ steps.ctx.outputs.tarball }} -C wit wadm/wit
+      - name: Release
+        uses: softprops/action-gh-release@e7a8f85e1c67a31e6ed99a94b41bd0b71bbee6b8 # v2.0.9
+        with:
+          files: ${{ steps.ctx.outputs.tarball }}
+          make_latest: "false"
