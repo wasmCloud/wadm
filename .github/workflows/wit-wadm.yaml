@@ -32,14 +32,12 @@ jobs:
           oci-username: ${{ github.repository_owner }}
           oci-password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build
-        working-directory: wit/wadm
-        run: wkg wit build -o package.wasm
+        run: wkg wit build --wit-dir wit/wadm -o package.wasm
       - name: Push version-tagged WebAssembly binary to GHCR
-        working-directory: wit/wadm
         run: wkg publish package.wasm
       - name: Package tarball for release
         run: |
-          tar cvzf ${{ steps.ctx.outputs.tarball }} -C wit wadm/wit
+          tar cvzf ${{ steps.ctx.outputs.tarball }} -C wit wit/wadm
       - name: Release
         uses: softprops/action-gh-release@e7a8f85e1c67a31e6ed99a94b41bd0b71bbee6b8 # v2.0.9
         with:
