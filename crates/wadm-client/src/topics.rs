@@ -74,9 +74,8 @@ impl TopicGenerator {
 
     /// Returns the full topic for WADM status subscriptions
     pub fn wadm_status_topic(&self, app_name: &str) -> String {
-        format!(
-            "{}.{}.{}",
-            WADM_STATUS_API_PREFIX, self.topic_prefix, app_name
-        )
+        // Extract just the lattice name from topic_prefix
+        let lattice = self.topic_prefix.split('.').last().unwrap_or("default");
+        format!("{}.{}.{}", WADM_STATUS_API_PREFIX, lattice, app_name)
     }
 }
