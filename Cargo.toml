@@ -64,7 +64,7 @@ opentelemetry-otlp = { version = "0.10", features = [
     "http-proto",
     "reqwest-client",
 ] }
-rand = { version = "0.8", features = ["small_rng"] }
+rand = { version = "0.9", features = ["small_rng"] }
 # NOTE(thomastaylor312): Pinning this temporarily to 1.10 due to transitive dependency with oci
 # crates that are pinned to 1.10
 regex = "~1.10"
