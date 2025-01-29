@@ -186,6 +186,8 @@ async fn test_event_stream() -> Result<()> {
         HELLO_COMPONENT_ID,
         "wasi",
         "http",
+        "--link-name",
+        "default",
         "--ctl-port",
         &ctl_port,
     ])

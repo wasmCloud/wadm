@@ -759,13 +759,13 @@ fn get_deprecated_configs(component: &serde_yaml::Value) -> Vec<ValidationFailur
                     }
                 }
                 if let Some(trait_properties) = trait_.get("properties") {
-                    if let Some(_) = trait_properties.get("source_config") {
+                    if trait_properties.get("source_config").is_some() {
                         failures.push(ValidationFailure {
                             level: ValidationFailureLevel::Warning,
                             msg: "one of the components' link trait contains a source_config key, please use source:config: rather".to_string(),
                         });
                     }
-                    if let Some(_) = trait_properties.get("target_config") {
+                    if trait_properties.get("target_config").is_some() {
                         failures.push(ValidationFailure {
                             level: ValidationFailureLevel::Warning,
                             msg: "one of the components' link trait contains a target_config key, please use target:config: rather".to_string(),

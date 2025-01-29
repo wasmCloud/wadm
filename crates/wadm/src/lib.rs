@@ -388,7 +388,6 @@ pub async fn start_wadm(config: WadmConfig) -> Result<JoinSet<Result<()>>> {
                         continue;
                     }
                 };
-                let svc = svc.clone();
                 if let Err(err) = srv.serve_connection(TokioIo::new(stream), svc).await {
                     tracing::error!(?err, "failed to serve HTTP administration connection");
                 }

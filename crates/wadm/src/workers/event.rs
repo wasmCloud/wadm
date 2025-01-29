@@ -1507,16 +1507,8 @@ mod test {
             2,
             "Should still have 2 components in state"
         );
-        assert_component(
-            &components,
-            &component_1_id,
-            &[(host1_id, 2), (host2_id, 2)],
-        );
-        assert_component(
-            &components,
-            &component_2_id,
-            &[(host1_id, 2), (host2_id, 2)],
-        );
+        assert_component(&components, component_1_id, &[(host1_id, 2), (host2_id, 2)]);
+        assert_component(&components, component_2_id, &[(host1_id, 2), (host2_id, 2)]);
 
         /***********************************************************/
         /************** Component Scale Down Tests *****************/
@@ -1543,12 +1535,8 @@ mod test {
             2,
             "Should still have 2 components in state"
         );
-        assert_component(&components, &component_1_id, &[(host2_id, 2)]);
-        assert_component(
-            &components,
-            &component_2_id,
-            &[(host1_id, 2), (host2_id, 2)],
-        );
+        assert_component(&components, component_1_id, &[(host2_id, 2)]);
+        assert_component(&components, component_2_id, &[(host1_id, 2), (host2_id, 2)]);
 
         let host = store
             .get::<Host>(lattice_id, host2_id)
@@ -1572,11 +1560,7 @@ mod test {
         let components = store.list::<Component>(lattice_id).await.unwrap();
         assert_eq!(components.len(), 1, "Should only have 1 component in state");
         // Double check the the old one is still ok
-        assert_component(
-            &components,
-            &component_2_id,
-            &[(host1_id, 2), (host2_id, 2)],
-        );
+        assert_component(&components, component_2_id, &[(host1_id, 2), (host2_id, 2)]);
 
         /***********************************************************/
         /******************* Provider Stop Tests *******************/
@@ -1735,11 +1719,7 @@ mod test {
         // Double check providers and components are the same
         let components = store.list::<Component>(lattice_id).await.unwrap();
         assert_eq!(components.len(), 1, "Should only have 1 component in state");
-        assert_component(
-            &components,
-            &component_2_id,
-            &[(host1_id, 2), (host2_id, 2)],
-        );
+        assert_component(&components, component_2_id, &[(host1_id, 2), (host2_id, 2)]);
 
         let providers = store.list::<Provider>(lattice_id).await.unwrap();
         assert_eq!(providers.len(), 2, "Should still have 2 providers in state");
@@ -1774,7 +1754,7 @@ mod test {
         // Double check providers and components are the same
         let components = store.list::<Component>(lattice_id).await.unwrap();
         assert_eq!(components.len(), 1, "Should only have 1 component in state");
-        assert_component(&components, &component_2_id, &[(host2_id, 2)]);
+        assert_component(&components, component_2_id, &[(host2_id, 2)]);
 
         let providers = store.list::<Provider>(lattice_id).await.unwrap();
         assert_eq!(providers.len(), 1, "Should now have 1 provider in state");
@@ -1857,7 +1837,7 @@ mod test {
                 ])
                 .host_id(host_id.into())
                 .providers(vec![ProviderDescription::builder()
-                    .id(&provider_id)
+                    .id(provider_id)
                     .revision(0)
                     .build()
                     .expect("failed to build provider description")])
@@ -1893,7 +1873,7 @@ mod test {
                     labels: HashMap::default(),
                     issuer: "".to_string(),
                     providers: vec![ProviderDescription::builder()
-                        .id(&provider_id)
+                        .id(provider_id)
                         .revision(0)
                         .build()
                         .expect("failed to build provider description")],
