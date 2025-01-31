@@ -37,7 +37,9 @@ jobs:
         run: wkg publish package.wasm
       - name: Package tarball for release
         run: |
-          tar cvzf ${{ steps.ctx.outputs.tarball }} -C wit/wadm ./
+          mkdir -p release/wit
+          cp wit/wadm/*.wit release/wit/
+          tar cvzf ${{ steps.ctx.outputs.tarball }} -C release wit
       - name: Release
         uses: softprops/action-gh-release@e7a8f85e1c67a31e6ed99a94b41bd0b71bbee6b8 # v2.0.9
         with:
