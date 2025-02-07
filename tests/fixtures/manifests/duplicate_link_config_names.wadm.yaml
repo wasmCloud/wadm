@@ -20,6 +20,11 @@ spec:
               name: kvredis
               config:
                 - name: redis-url
+                  properties:
+                    url: "redis://127.0.0.1:6379"
+                # this config name is duplicated, but has no properties,
+                # so it references an existing config
+                - name: my_example_app-shared_redis
 
     - name: userinfo2
       type: component
@@ -35,6 +40,11 @@ spec:
               name: kvredis
               config:
                 - name: redis-url
+                  properties:
+                    url: "redis://127.0.0.1:6379"
+                # this config name is duplicated, but has no properties,
+                # so it references an existing config
+                - name: my_example_app-shared_redis
 
     - name: webcap1
       type: capability
@@ -52,8 +62,14 @@ spec:
             source:
               config:
                 - name: default-port
+                  properties:
+                    port: 0.0.0.0:8080
                 - name: alternate-port
+                  properties:
+                    address: 0.0.0.0:8081
                 - name: alternate-port
+                  properties:
+                    address: 0.0.0.0:8081
 
     - name: webcap2
       type: capability
@@ -71,6 +87,8 @@ spec:
             source:
               config:
                 - name: default-port
+                  properties:
+                    address: 0.0.0.0:8080
 
     - name: kvredis
       type: capability

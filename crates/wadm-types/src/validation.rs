@@ -697,16 +697,21 @@ pub fn validate_component_properties(application: &Manifest) -> Vec<ValidationFa
 /// Validates link configs in a WADM application manifest.
 ///
 /// At present this can check for:
-/// - all config names are unique
+/// - all configs that declare `properties` have unique names
+///   (configs without properties refer to existing configs)
 ///
 pub fn validate_link_configs(manifest: &Manifest) -> Vec<ValidationFailure> {
     let mut failures = Vec::new();
     let mut link_config_names = HashSet::new();
     for link_trait in manifest.links() {
         if let TraitProperty::Link(LinkProperty { target, source, .. }) = &link_trait.properties {
-            for config in target.config.iter() {
+            for config in &target.config {
+                // we only need to check for uniqueness of configs with properties
+                if config.properties.is_none() {
+                    continue;
+                }
                 // Check if config name is unique
-                if !link_config_names.insert((config.name.clone(),)) {
+                if !link_config_names.insert(config.name.clone()) {
                     failures.push(ValidationFailure::new(
                         ValidationFailureLevel::Error,
                         format!("Duplicate link config name found: '{}'", config.name),
@@ -715,9 +720,13 @@ pub fn validate_link_configs(manifest: &Manifest) -> Vec<ValidationFailure> {
             }
 
             if let Some(source) = source {
-                for config in source.config.iter() {
+                for config in &source.config {
+                    // we only need to check for uniqueness of configs with properties
+                    if config.properties.is_none() {
+                        continue;
+                    }
                     // Check if config name is unique
-                    if !link_config_names.insert((config.name.clone(),)) {
+                    if !link_config_names.insert(config.name.clone()) {
                         failures.push(ValidationFailure::new(
                             ValidationFailureLevel::Error,
                             format!("Duplicate link config name found: '{}'", config.name),
