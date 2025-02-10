@@ -90,7 +90,7 @@ jobs:
           target: ${{ matrix.config.target }}
 
       - name: Install cargo zigbuild
-        uses: taiki-e/install-action@510b3ecd7915856b6909305605afa7a8a57c1b04 # v2.48.1
+        uses: taiki-e/install-action@5bc300ae6202155e070ca83afb334e8aac18c49c # v2.48.6
         with:
           tool: cargo-zigbuild
 
