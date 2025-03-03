@@ -36,7 +36,7 @@ Common labels
 {{- define "wadm.labels" -}}
 helm.sh/chart: {{ include "wadm.chart" . }}
 {{ include "wadm.selectorLabels" . }}
-app.kubernetes.io/component: manager
+app.kubernetes.io/component: wadm
 {{- if .Chart.AppVersion }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
