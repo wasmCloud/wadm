@@ -36,10 +36,15 @@ Common labels
 {{- define "wadm.labels" -}}
 helm.sh/chart: {{ include "wadm.chart" . }}
 {{ include "wadm.selectorLabels" . }}
+app.kubernetes.io/component: manager
 {{- if .Chart.AppVersion }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
+app.kubernetes.io/part-of: wadm
+{{- with .Values.additionalLabels }}
+{{ . | toYaml }}
+{{- end }}
 {{- end }}
 
 {{/*
