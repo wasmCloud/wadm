@@ -7,6 +7,7 @@ use tokio::sync::RwLock;
 use tracing::{instrument, trace};
 use wadm_types::{api::StatusInfo, Spread, SpreadScalerProperty, TraitProperty};
 
+use crate::events::ConfigSet;
 use crate::scaler::spreadscaler::{
     compute_ineligible_hosts, eligible_hosts, spreadscaler_annotations,
 };
@@ -118,6 +119,9 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ComponentDaemonScaler<S> {
                 } else {
                     Ok(Vec::new())
                 }
+            }
+            Event::ConfigSet(ConfigSet { config_name }) if self.config.contains(config_name) => {
+                self.reconcile().await
             }
             // No other event impacts the job of this scaler so we can ignore it
             _ => Ok(Vec::new()),
