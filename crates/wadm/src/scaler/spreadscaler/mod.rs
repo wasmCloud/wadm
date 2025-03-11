@@ -10,7 +10,7 @@ use wadm_types::{
     api::StatusInfo, Spread, SpreadScalerProperty, TraitProperty, DEFAULT_SPREAD_WEIGHT,
 };
 
-use crate::events::HostHeartbeat;
+use crate::events::{ConfigSet, HostHeartbeat};
 use crate::{
     commands::{Command, ScaleComponent},
     events::{Event, HostStarted, HostStopped},
@@ -113,6 +113,9 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ComponentSpreadScaler<S> {
                 } else {
                     Ok(Vec::new())
                 }
+            }
+            Event::ConfigSet(ConfigSet { config_name }) if self.config.contains(config_name) => {
+                self.reconcile().await
             }
             // No other event impacts the job of this scaler so we can ignore it
             _ => Ok(Vec::new()),

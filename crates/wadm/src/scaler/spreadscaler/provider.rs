@@ -15,7 +15,7 @@ use wadm_types::{
 use crate::{
     commands::{Command, StartProvider, StopProvider},
     events::{
-        Event, HostHeartbeat, HostStarted, HostStopped, ProviderHealthCheckFailed,
+        ConfigSet, Event, HostHeartbeat, HostStarted, HostStopped, ProviderHealthCheckFailed,
         ProviderHealthCheckInfo, ProviderHealthCheckPassed, ProviderInfo, ProviderStarted,
         ProviderStopped,
     },
@@ -172,6 +172,11 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderSpreadScaler<S> {
 
                 // only status needs update no new commands required
                 Ok(Vec::new())
+            }
+            Event::ConfigSet(ConfigSet { config_name })
+                if self.config.provider_config.contains(config_name) =>
+            {
+                self.reconcile().await
             }
             // No other event impacts the job of this scaler so we can ignore it
             _ => Ok(Vec::new()),

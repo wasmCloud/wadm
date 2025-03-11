@@ -9,8 +9,8 @@ use wadm_types::{api::StatusInfo, Spread, SpreadScalerProperty, TraitProperty};
 
 use crate::commands::StopProvider;
 use crate::events::{
-    HostHeartbeat, ProviderHealthCheckFailed, ProviderHealthCheckInfo, ProviderHealthCheckPassed,
-    ProviderInfo, ProviderStarted, ProviderStopped,
+    ConfigSet, HostHeartbeat, ProviderHealthCheckFailed, ProviderHealthCheckInfo,
+    ProviderHealthCheckPassed, ProviderInfo, ProviderStarted, ProviderStopped,
 };
 use crate::scaler::compute_id_sha256;
 use crate::scaler::spreadscaler::{
@@ -155,6 +155,11 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ProviderDaemonScaler<S> {
 
                 // only status needs update no new commands required
                 Ok(Vec::new())
+            }
+            Event::ConfigSet(ConfigSet { config_name })
+                if self.config.provider_config.contains(config_name) =>
+            {
+                self.reconcile().await
             }
             // No other event impacts the job of this scaler so we can ignore it
             _ => Ok(Vec::new()),
