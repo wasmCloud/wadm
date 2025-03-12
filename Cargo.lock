@@ -120,17 +120,18 @@ checksum = "dcfed56ad506cb2c684a14971b8861fdc3baaaae314b9e5f9bb532cbe3ba7a4f"
 
 [[package]]
 name = "async-nats"
-version = "0.36.0"
+version = "0.39.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f71e5a1bab60f46b0b005f4808b8ee83ef6d577608923de938403393c9a30cf8"
+checksum = "a798aab0c0203b31d67d501e5ed1f3ac6c36a329899ce47fc93c3bea53f3ae89"
 dependencies = [
  "base64 0.22.1",
  "bytes",
  "futures",
  "memchr",
  "nkeys",
- "nuid 0.5.0",
+ "nuid",
  "once_cell",
+ "pin-project",
  "portable-atomic",
  "rand 0.8.5",
  "regex",
@@ -147,6 +148,7 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tokio-util 0.7.13",
+ "tokio-websockets",
  "tracing",
  "tryhard",
  "url",
@@ -1668,16 +1670,6 @@ checksum = "77a8165726e8236064dbb45459242600304b42a5ea24ee2948e18e023bf7ba84"
 dependencies = [
  "overload",
  "winapi",
-]
-
-[[package]]
-name = "nuid"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b61b1710432e483e6a67b20b6c60c6afe0e2fad67aabba3bdb912f3f70ff6ae"
-dependencies = [
- "once_cell",
- "rand 0.8.5",
 ]
 
 [[package]]
@@ -3277,6 +3269,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "tokio-websockets"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f591660438b3038dd04d16c938271c79e7e06260ad2ea2885a4861bfb238605d"
+dependencies = [
+ "base64 0.22.1",
+ "bytes",
+ "futures-core",
+ "futures-sink",
+ "http 1.2.0",
+ "httparse",
+ "rand 0.8.5",
+ "ring",
+ "rustls-pki-types",
+ "tokio",
+ "tokio-rustls",
+ "tokio-util 0.7.13",
+ "webpki-roots",
+]
+
+[[package]]
 name = "tonic"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3713,7 +3726,7 @@ dependencies = [
 
 [[package]]
 name = "wadm-client"
-version = "0.8.2"
+version = "0.9.0"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -3753,20 +3766,20 @@ dependencies = [
 
 [[package]]
 name = "wascap"
-version = "0.15.2"
+version = "0.15.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b11a88ff74d38e894ff559c14a48f0d95d7732ba409afbee6ef18d3848803061"
+checksum = "f2178ae194cb7a34c1628eb487bfced22792ea864691ae42e69976ad17e3c91a"
 dependencies = [
  "data-encoding",
  "humantime",
  "nkeys",
- "nuid 0.4.1",
+ "nuid",
  "ring",
  "serde",
  "serde_json",
- "wasm-encoder 0.219.1",
+ "wasm-encoder 0.221.3",
  "wasm-gen",
- "wasmparser 0.219.1",
+ "wasmparser 0.221.3",
 ]
 
 [[package]]
@@ -3853,22 +3866,22 @@ checksum = "943aab3fdaaa029a6e0271b35ea10b72b943135afe9bffca82384098ad0e06a6"
 
 [[package]]
 name = "wasm-encoder"
-version = "0.219.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "29cbbd772edcb8e7d524a82ee8cef8dd046fc14033796a754c3ad246d019fa54"
-dependencies = [
- "leb128",
- "wasmparser 0.219.1",
-]
-
-[[package]]
-name = "wasm-encoder"
 version = "0.220.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ebf48234b389415b226a4daef6562933d38c7b28a8b8f64c5c4130dad1561ab7"
 dependencies = [
  "leb128",
  "wasmparser 0.220.0",
+]
+
+[[package]]
+name = "wasm-encoder"
+version = "0.221.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc8444fe4920de80a4fe5ab564fff2ae58b6b73166b89751f8c6c93509da32e5"
+dependencies = [
+ "leb128",
+ "wasmparser 0.221.3",
 ]
 
 [[package]]
@@ -3925,9 +3938,8 @@ dependencies = [
 
 [[package]]
 name = "wasmcloud-control-interface"
-version = "2.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "63d689ba5097cb8534e73953843343af4155548a1d3f768e75966b3e5f09f8e5"
+version = "2.4.0"
+source = "git+https://github.com/brooksmtownsend/wasmcloud?branch=feat%2Fasync-nats-0.39#e62d8ab8ec9a9713cadaea965a68cc06ee607d7d"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -3981,6 +3993,17 @@ dependencies = [
  "ahash",
  "bitflags 2.6.0",
  "hashbrown 0.14.5",
+ "indexmap 2.7.1",
+ "semver",
+]
+
+[[package]]
+name = "wasmparser"
+version = "0.221.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d06bfa36ab3ac2be0dee563380147a5b81ba10dd8885d7fbbc9eb574be67d185"
+dependencies = [
+ "bitflags 2.6.0",
  "indexmap 2.7.1",
  "semver",
 ]

@@ -42,7 +42,7 @@ wadm-types = { workspace = true }
 
 [workspace.dependencies]
 anyhow = "1"
-async-nats = "0.36"
+async-nats = "0.39"
 async-trait = "0.1"
 bytes = "1"
 chrono = "0.4"
@@ -83,10 +83,10 @@ tracing-subscriber = { version = "0.3.7", features = ["env-filter", "json"] }
 ulid = { version = "1", features = ["serde"] }
 utoipa = "5"
 uuid = "1"
-wadm = { version = "0.20.1", path = "./crates/wadm" }
-wadm-client = { version = "0.8", path = "./crates/wadm-client" }
+wadm = { version = "0.20", path = "./crates/wadm" }
+wadm-client = { version = "0.9", path = "./crates/wadm-client" }
 wadm-types = { version = "0.8", path = "./crates/wadm-types" }
-wasmcloud-control-interface = { version = "2.3.0" }
+wasmcloud-control-interface = { version = "2.4.0", git = "https://github.com/brooksmtownsend/wasmcloud", branch = "feat/async-nats-0.39" }
 wasmcloud-secrets-types = "0.5.0"
 wit-bindgen-wrpc = { version = "0.9", default-features = false }
 wit-bindgen = { version = "0.36.0", default-features = false }
