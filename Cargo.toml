@@ -11,7 +11,7 @@ repository = "https://github.com/wasmcloud/wadm"
 default-run = "wadm"
 
 [workspace.package]
-version = "0.20.3"
+version = "0.21.0"
 
 [features]
 default = []
@@ -47,14 +47,14 @@ async-trait = "0.1"
 bytes = "1"
 chrono = "0.4"
 clap = { version = "4", features = ["derive", "cargo", "env"] }
-cloudevents-sdk = "0.7"
+cloudevents-sdk = "0.8"
 futures = "0.3"
 http = { version = "1", default-features = false }
 http-body-util = { version = "0.1", default-features = false }
 hyper = { version = "1", default-features = false }
 hyper-util = { version = "0.1", default-features = false }
 indexmap = { version = "2", features = ["serde"] }
-jsonschema = "0.17"
+jsonschema = "0.29"
 lazy_static = "1"
 nkeys = "0.4.4"
 # One version back to avoid clashes with 0.10 of otlp
@@ -64,7 +64,7 @@ opentelemetry-otlp = { version = "0.10", features = [
     "http-proto",
     "reqwest-client",
 ] }
-rand = { version = "0.8", features = ["small_rng"] }
+rand = { version = "0.9", features = ["small_rng"] }
 # NOTE(thomastaylor312): Pinning this temporarily to 1.10 due to transitive dependency with oci
 # crates that are pinned to 1.10
 regex = "~1.10"
@@ -83,10 +83,10 @@ tracing-subscriber = { version = "0.3.7", features = ["env-filter", "json"] }
 ulid = { version = "1", features = ["serde"] }
 utoipa = "5"
 uuid = "1"
-wadm = { version = "0.20", path = "./crates/wadm" }
-wadm-client = { version = "0.9", path = "./crates/wadm-client" }
+wadm = { version = "0.21", path = "./crates/wadm" }
+wadm-client = { version = "0.10", path = "./crates/wadm-client" }
 wadm-types = { version = "0.8", path = "./crates/wadm-types" }
-wasmcloud-control-interface = { version = "2.4.0", git = "https://github.com/brooksmtownsend/wasmcloud", branch = "feat/async-nats-0.39" }
+wasmcloud-control-interface = "2.4.0"
 wasmcloud-secrets-types = "0.5.0"
 wit-bindgen-wrpc = { version = "0.9", default-features = false }
 wit-bindgen = { version = "0.36.0", default-features = false }
