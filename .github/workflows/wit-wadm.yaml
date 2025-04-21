@@ -41,7 +41,7 @@ jobs:
           cp wit/wadm/*.wit release/wit/
           tar cvzf ${{ steps.ctx.outputs.tarball }} -C release wit
       - name: Release
-        uses: softprops/action-gh-release@c95fe1489396fe8a9eb87c0abf8aa5b2ef267fda # v2.2.1
+        uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631 # v2.2.2
         with:
           files: ${{ steps.ctx.outputs.tarball }}
           make_latest: "false"
