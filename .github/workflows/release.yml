@@ -78,7 +78,7 @@ jobs:
         run: echo "version=$RELEASE_VERSION" >> $GITHUB_OUTPUT
 
       - name: Install Zig
-        uses: goto-bus-stop/setup-zig@abea47f85e598557f500fa1fd2ab7464fcb39406 # v2.2.1
+        uses: mlugg/setup-zig@a67e68dc5c8281d9608136d3d7ca1b282213e4ac # v1.2.1
         with:
           version: 0.13.0
 
