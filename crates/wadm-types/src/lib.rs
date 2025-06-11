@@ -298,6 +298,9 @@ pub struct ComponentProperties {
     /// these values at runtime using `wasmcloud:secrets/store`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub secrets: Vec<SecretProperty>,
+    /// This Config holds the component's metadata properties like memory limits and execution time limits
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub limits: Vec<LimitsConfig>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Default, ToSchema, JsonSchema)]
@@ -331,6 +334,20 @@ pub struct SecretSourceProperty {
     /// The version of the secret to retrieve. If not supplied, the latest version will be used.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash, ToSchema, JsonSchema)]
+pub struct LimitProperties {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_linear_memory: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_execution_time: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash, ToSchema, JsonSchema)]
+pub struct LimitsConfig {
+    pub name: String,
+    pub properties: LimitProperties,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, ToSchema, JsonSchema)]
@@ -845,6 +862,7 @@ mod test {
                     id: None,
                     config: vec![],
                     secrets: vec![],
+                    limits: vec![],
                 },
             },
             traits: Some(trait_vec),
