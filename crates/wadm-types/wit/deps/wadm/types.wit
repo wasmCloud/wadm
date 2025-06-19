@@ -123,6 +123,17 @@ interface types {
         id: option<string>,
         config: list<config-property>,
         secrets: list<secret-property>,
+        limits: list<limits-config>,
+    }
+
+    record limits-config {
+        name: string,
+        properties: limit-properties,
+    }
+
+    record limit-properties {
+        max-linear-memory: option<string>,
+        max-execution-time: option<string>,
     }
 
     // Properties for a capability
