@@ -41,7 +41,7 @@ jobs:
           fi
       
       - name: install wash
-        uses: taiki-e/install-action@cfe1303741c2e620e5f7daa667105e0da1316db9 # v2.53.0
+        uses: taiki-e/install-action@f3a27926ea13d7be3ee2f4cbb925883cf9442b56 # v2.56.7
         with:
           tool: wash@0.38.0
 
