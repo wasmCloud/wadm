@@ -4,6 +4,7 @@
 use std::{collections::HashMap, time::Duration};
 
 use anyhow::Result;
+use parse_size::parse_size;
 use tracing::{error, warn};
 use wadm_types::{
     api::StatusInfo, CapabilityProperties, Component, ComponentProperties, ConfigProperty,
@@ -195,7 +196,14 @@ fn component_scalers<S, P, L>(
             &properties.secrets,
             policies,
         );
-
+        // write a function call here that converts the limits from componentProperties and unmarshalls them into the correct format
+        // It first checks if the limts are set in their correct foormat, ie humantime for max_execution_time and human readable memory 
+        // for max_memory_limits like "4gb" or so
+        // if successful, they are set in a hashmap with the keys "max_execution_time" and "max_memory_limits" and then passed to the scalers.
+        let limits = properties
+            .limits
+            .as_ref()
+            .and_then(|_| compute_limits(properties));
         config_names.append(&mut secret_names.clone());
         // TODO(#451): Consider a way to report on status of a shared component
         match (trt.trait_type.as_str(), &trt.properties, &properties.image) {
@@ -226,6 +234,7 @@ fn component_scalers<S, P, L>(
                         p.to_owned(),
                         component_name,
                         config_names,
+                        limits,
                     ),
                     notifier.clone(),
                     config_scalers,
@@ -246,6 +255,7 @@ fn component_scalers<S, P, L>(
                         p.to_owned(),
                         component_name,
                         config_names,
+                        limits,
                     ),
                     notifier.clone(),
                     config_scalers,
@@ -738,6 +748,78 @@ fn resolve_manifest_component<'a>(
         (Some(_image), Some(_app)) => {
             Err("Application specified both an image and a shared application reference")
         }
+    }
+}
+
+// add new function to compute the limits from componentProperties and unmarshall them into the correct format
+// It first checks if the limits are set in their correct format, ie humantime for max_execution_time and human readable memory
+/// Parse and validate memory size from human-readable format to bytes
+fn parse_and_validate_memory_size(input: &str) -> Result<usize, String> {
+    let bytes = parse_size(input).map_err(|e| format!("Parse error: {}", e))?;
+
+    if bytes > usize::MAX as u64 {
+        Err(format!(
+            "Size too large: max allowed is {} bytes (got {} bytes)",
+            usize::MAX,
+            bytes
+        ))
+    } else {
+        Ok(bytes as usize)
+    }
+}
+
+/// Parse execution time from humantime format to seconds
+fn parse_and_validate_execution_time(input: &str) -> Result<u64, String> {
+    humantime::parse_duration(input)
+        .map(|duration| duration.as_secs())
+        .map_err(|e| format!("Invalid time format: {}", e))
+}
+
+/// Computes limits for components from ComponentProperties
+/// Converts human-readable formats to numeric values for the control interface
+pub(crate) fn compute_limits(properties: &ComponentProperties) -> Option<HashMap<String, String>> {
+    let mut limits = HashMap::new();
+
+    if let Some(max_execution_time) = properties
+        .limits
+        .as_ref()
+        .and_then(|l| l.properties.max_execution_time.as_ref())
+    {
+        match parse_and_validate_execution_time(max_execution_time) {
+            Ok(seconds) => {
+                limits.insert("max_execution_time".to_string(), seconds.to_string());
+            }
+            Err(e) => {
+                warn!(
+                    "Invalid max_execution_time format '{}': {}",
+                    max_execution_time, e
+                );
+            }
+        }
+    }
+
+    if let Some(max_memory_limits) = &properties
+        .limits
+        .as_ref()
+        .and_then(|l| l.properties.max_linear_memory.as_ref())
+    {
+        match parse_and_validate_memory_size(max_memory_limits) {
+            Ok(bytes) => {
+                limits.insert("max_memory_limit".to_string(), bytes.to_string());
+            }
+            Err(e) => {
+                warn!(
+                    "Invalid max_memory_limits format '{}': {}",
+                    max_memory_limits, e
+                );
+            }
+        }
+    }
+
+    if limits.is_empty() {
+        None
+    } else {
+        Some(limits)
     }
 }
 

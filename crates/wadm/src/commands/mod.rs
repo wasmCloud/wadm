@@ -78,6 +78,7 @@ impl Command {
                 component_id,
                 host_id,
                 count,
+                limits,
                 reference,
                 annotations,
                 model_name,
@@ -94,6 +95,7 @@ impl Command {
                         annotations: annotations.to_owned(),
                         // We don't know this field from the command
                         claims: None,
+                        limits: limits.clone(),
                     }),
                     Some(Event::ComponentScaleFailed(ComponentScaleFailed {
                         component_id: component_id.to_owned(),
@@ -122,6 +124,8 @@ pub struct ScaleComponent {
     pub host_id: String,
     /// The number of components to scale to
     pub count: u32,
+    /// The limits for the component, if any
+    pub limits: Option<HashMap<String, String>>,
     /// The OCI or bindle reference to scale
     pub reference: String,
     /// The name of the model/manifest that generated this command

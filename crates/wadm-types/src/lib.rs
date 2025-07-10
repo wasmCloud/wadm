@@ -299,8 +299,8 @@ pub struct ComponentProperties {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub secrets: Vec<SecretProperty>,
     /// This Config holds the component's metadata properties like memory limits and execution time limits
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub limits: Vec<LimitsConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limits: Option<LimitsConfig>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Default, ToSchema, JsonSchema)]
@@ -862,7 +862,7 @@ mod test {
                     id: None,
                     config: vec![],
                     secrets: vec![],
-                    limits: vec![],
+                    limits: None,
                 },
             },
             traits: Some(trait_vec),

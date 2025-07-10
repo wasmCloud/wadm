@@ -279,7 +279,8 @@ mod test {
                     image_ref: "foo".to_string(),
                     max_instances: 0,
                     component_id: "fooo".to_string(),
-                    host_id: "hostid".to_string()
+                    host_id: "hostid".to_string(),
+                    limits: None,
                 }))
                 .await
                 .expect("handle_event should succeed"),

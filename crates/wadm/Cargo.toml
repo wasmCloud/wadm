@@ -46,6 +46,8 @@ uuid = { workspace = true }
 wadm-types = { workspace = true }
 wasmcloud-control-interface = { workspace = true }
 wasmcloud-secrets-types = { workspace = true }
+humantime = "2.2.0"
+parse-size = "1.1.0"
 
 [dev-dependencies]
 serial_test = "3"

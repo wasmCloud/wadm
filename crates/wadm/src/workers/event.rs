@@ -87,12 +87,14 @@ where
                 // If the component is running and is now scaled down to zero, remove it
                 Some(current_instances) if component.max_instances == 0 => {
                     current_instances.remove(&component.annotations);
+                    // Removing the limits will set the limits to default runtime values
                 }
                 // If a component is already running on a host, update the running count to the scaled max_instances value
                 Some(current_instances) => {
                     current_instances.replace(WadmComponentInfo {
                         count: component.max_instances,
                         annotations: component.annotations.clone(),
+                        limits: component.limits.clone(),
                     });
                 }
                 // Component is not running and now scaled to zero, no action required. This can happen if we
@@ -105,6 +107,7 @@ where
                         HashSet::from([WadmComponentInfo {
                             count: component.max_instances,
                             annotations: component.annotations.clone(),
+                            limits: component.limits.clone(),
                         }]),
                     );
                 }
@@ -481,7 +484,6 @@ where
             .await
             .map_err(anyhow::Error::from)
     }
-
     // END HANDLER FUNCTIONS
     async fn populate_component_info(
         &self,
@@ -495,11 +497,13 @@ where
             .into_iter()
             .map(|component_description| {
                 let instance = HashSet::from_iter([WadmComponentInfo {
+                    // Needs #4451 merged
                     count: component_description.max_instances() as usize,
                     annotations: component_description
                         .annotations()
                         .cloned()
                         .unwrap_or_default(),
+                    limits: None, // Needs #4451 merged for actually setting limits from component description
                 }]);
                 if let Some(component) = components.get(component_description.id()) {
                     // Construct modified Component with new instances included
@@ -1161,6 +1165,7 @@ mod test {
             host_id: host1_id.into(),
             annotations: BTreeMap::default(),
             max_instances: 500,
+            limits: None,
         };
         worker
             .handle_component_scaled(lattice_id, &component1_scaled)
@@ -1182,6 +1187,7 @@ mod test {
             500,
             "Component count should be modified with an increase in scale"
         );
+        // Add assert_eq for the limits check.
 
         let component1_scaled = ComponentScaled {
             claims: Some(ComponentClaims {
@@ -1196,6 +1202,7 @@ mod test {
             host_id: host1_id.into(),
             annotations: BTreeMap::default(),
             max_instances: 200,
+            limits: None,
         };
         worker
             .handle_component_scaled(lattice_id, &component1_scaled)
@@ -1231,6 +1238,7 @@ mod test {
             host_id: host1_id.into(),
             annotations: BTreeMap::default(),
             max_instances: 0,
+            limits: None,
         };
         worker
             .handle_component_scaled(lattice_id, &component1_scaled)
@@ -1262,6 +1270,7 @@ mod test {
             host_id: host1_id.into(),
             annotations: BTreeMap::default(),
             max_instances: 1,
+            limits: None,
         };
         worker
             .handle_component_scaled(lattice_id, &component1_scaled)
@@ -1307,6 +1316,7 @@ mod test {
             component_id: "DARTHVADER".into(),
             annotations: BTreeMap::default(),
             max_instances: 2,
+            limits: None,
         };
 
         worker
@@ -1522,6 +1532,7 @@ mod test {
             component_id: component_1_id.into(),
             host_id: host1_id.into(),
             max_instances: 0,
+            limits: None,
         };
 
         worker
@@ -2076,6 +2087,7 @@ mod test {
                         HashSet::from_iter([WadmComponentInfo {
                             count: 1,
                             annotations: BTreeMap::default(),
+                            limits: None,
                         }]),
                     )]),
                     ..Default::default()

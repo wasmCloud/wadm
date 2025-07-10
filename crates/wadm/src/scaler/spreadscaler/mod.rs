@@ -42,6 +42,8 @@ struct ComponentSpreadConfig {
     model_name: String,
     /// Configuration for this SpreadScaler
     spread_config: SpreadScalerProperty,
+    /// The limits for the respecctive component, if any
+    limits: Option<HashMap<String, String>>,
 }
 
 /// The ComponentSpreadScaler ensures that a certain number of instances are running,
@@ -156,6 +158,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ComponentSpreadScaler<S> {
                         model_name: self.spread_config.model_name.to_owned(),
                         annotations: BTreeMap::new(),
                         config: self.config.clone(),
+                        limits: self.spread_config.limits.clone(), // do i really have to do this here.
                     }))
                 } else {
                     None
@@ -205,7 +208,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ComponentSpreadScaler<S> {
                                                         .map(|v| v == value)
                                                         .unwrap_or(false)
                                                 },
-                                            ).then_some(info.count)
+                                            ).then_some(info.count) // i want to extract the limits from wadmcomponentinfo
                                         })
                                         .sum();
                                     (count > 0).then_some((host_id, count))
@@ -237,6 +240,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ComponentSpreadScaler<S> {
                                 model_name: self.spread_config.model_name.to_owned(),
                                 annotations: spreadscaler_annotations(&spread.name, self.id()),
                                         config: self.config.clone(),
+                                limits: self.spread_config.limits.clone(),
                             })])
                         }
                         // Stop components to reach desired instances
@@ -261,6 +265,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ComponentSpreadScaler<S> {
                                         model_name: self.spread_config.model_name.to_owned(),
                                         annotations: spreadscaler_annotations(&spread.name, self.id()),
                                         config: self.config.clone(),
+                                        limits: self.spread_config.limits.clone(),
                                     }));
                                 }
                                 (current_stopped, commands)
@@ -346,6 +351,7 @@ impl<S: ReadStore + Send + Sync> ComponentSpreadScaler<S> {
         spread_config: SpreadScalerProperty,
         component_name: &str,
         config: Vec<String>,
+        limits: Option<HashMap<String, String>>,
     ) -> Self {
         // Compute the id of this scaler based on all of the configuration values
         // that make it unique. This is used during upgrades to determine if a
@@ -369,6 +375,7 @@ impl<S: ReadStore + Send + Sync> ComponentSpreadScaler<S> {
                 lattice_id,
                 spread_config,
                 model_name,
+                limits,
             },
             id,
             config,
@@ -852,6 +859,7 @@ mod test {
             spread_config,
             "fake_component",
             vec![],
+            None, // No limits for this test
         );
 
         let cmds = spreadscaler.reconcile().await?;
@@ -869,7 +877,8 @@ mod test {
             count: 53,
             model_name: MODEL_NAME.to_string(),
             annotations: spreadscaler_annotations("EastZone", spreadscaler.id()),
-            config: vec![]
+            config: vec![],
+            limits: None,
         })));
 
         assert!(cmds.contains(&Command::ScaleComponent(ScaleComponent {
@@ -879,7 +888,8 @@ mod test {
             count: 3,
             model_name: MODEL_NAME.to_string(),
             annotations: spreadscaler_annotations("WestZone", spreadscaler.id()),
-            config: vec![]
+            config: vec![],
+            limits: None,
         })));
 
         assert!(cmds.contains(&Command::ScaleComponent(ScaleComponent {
@@ -889,7 +899,8 @@ mod test {
             count: 47,
             model_name: MODEL_NAME.to_string(),
             annotations: spreadscaler_annotations("CentralZone", spreadscaler.id()),
-            config: vec![]
+            config: vec![],
+            limits: None,
         })));
 
         Ok(())
@@ -972,6 +983,7 @@ mod test {
             echo_spread_property,
             "fake_echo",
             vec![],
+            None, // No limits for this test
         );
 
         let blobby_spreadscaler = ComponentSpreadScaler::new(
@@ -983,6 +995,7 @@ mod test {
             blobby_spread_property,
             "fake_blobby",
             vec![],
+            None, // No limits for this test
         );
 
         // STATE SETUP BEGIN
@@ -1005,6 +1018,7 @@ mod test {
                                     echo_spreadscaler.id(),
                                 ),
                                 count: 1,
+                                limits: None,
                             }]),
                         ),
                         (
@@ -1016,6 +1030,7 @@ mod test {
                                     echo_spreadscaler.id(),
                                 ),
                                 count: 103,
+                                limits: None,
                             }]),
                         ),
                         (
@@ -1027,6 +1042,7 @@ mod test {
                                     echo_spreadscaler.id(),
                                 ),
                                 count: 400,
+                                limits: None,
                             }]),
                         ),
                     ]),
@@ -1053,6 +1069,7 @@ mod test {
                                     "CrossRegionCustom",
                                     blobby_spreadscaler.id(),
                                 ),
+                                limits: None,
                             }]),
                         ),
                         (
@@ -1064,6 +1081,7 @@ mod test {
                                     "CrossRegionReal",
                                     blobby_spreadscaler.id(),
                                 ),
+                                limits: None,
                             }]),
                         ),
                     ]),
@@ -1218,6 +1236,7 @@ mod test {
             real_spread,
             "fake_component",
             vec![],
+            None, // No limits for this test
         );
 
         // STATE SETUP BEGIN, ONE HOST
@@ -1271,6 +1290,7 @@ mod test {
                             HashSet::from_iter([WadmComponentInfo {
                                 count: 10,
                                 annotations: spreadscaler_annotations("default", spreadscaler.id()),
+                                limits: None,
                             }]),
                         ),
                         (
@@ -1278,6 +1298,7 @@ mod test {
                             HashSet::from_iter([WadmComponentInfo {
                                 count: 10,
                                 annotations: spreadscaler_annotations("default", spreadscaler.id()),
+                                limits: None,
                             }]),
                         ),
                     ]),
@@ -1322,7 +1343,8 @@ mod test {
             count: 0,
             model_name: MODEL_NAME.to_string(),
             annotations: spreadscaler_annotations("default", spreadscaler.id()),
-            config: vec![]
+            config: vec![],
+            limits: None,
         })));
         assert!(cmds.contains(&Command::ScaleComponent(ScaleComponent {
             component_id: component_id.clone(),
@@ -1331,7 +1353,8 @@ mod test {
             count: 0,
             model_name: MODEL_NAME.to_string(),
             annotations: spreadscaler_annotations("default", spreadscaler.id()),
-            config: vec![]
+            config: vec![],
+            limits: None,
         })));
         Ok(())
     }
@@ -1405,6 +1428,7 @@ mod test {
             blobby_spread_property,
             "fake_blobby",
             vec![],
+            None,
         );
 
         // STATE SETUP BEGIN
@@ -1426,6 +1450,7 @@ mod test {
                                     "CrossRegionCustom",
                                     blobby_spreadscaler.id(),
                                 ),
+                                limits: None,
                             }]),
                         ),
                         (
@@ -1437,6 +1462,7 @@ mod test {
                                     "CrossRegionReal",
                                     blobby_spreadscaler.id(),
                                 ),
+                                limits: None,
                             }]),
                         ),
                     ]),
@@ -1577,6 +1603,7 @@ mod test {
             host_id: host_id_two.to_string(),
             max_instances: 0,
             claims: None,
+            limits: None,
         };
 
         worker
@@ -1835,6 +1862,7 @@ mod test {
             spread_property,
             &component_name,
             vec![],
+            None,
         );
 
         spreadscaler.reconcile().await?;
@@ -1895,6 +1923,7 @@ mod test {
             spread_property,
             component_name,
             vec![],
+            None, // No limits for this test
         );
 
         // Create components with the specified labels and add them to the store
@@ -1917,6 +1946,7 @@ mod test {
                                         "realcloud",
                                         spreadscaler.id(),
                                     ),
+                                    limits: None,
                                 },
                                 WadmComponentInfo {
                                     count: 11,
@@ -1924,6 +1954,7 @@ mod test {
                                         "eastcoast",
                                         spreadscaler.id(),
                                     ),
+                                    limits: None,
                                 },
                             ]),
                         ),
@@ -1942,6 +1973,7 @@ mod test {
                                         "realcloud",
                                         spreadscaler.id(),
                                     ),
+                                    limits: None,
                                 },
                                 WadmComponentInfo {
                                     count: 33,
@@ -1949,6 +1981,7 @@ mod test {
                                         "westcoast",
                                         spreadscaler.id(),
                                     ),
+                                    limits: None,
                                 },
                             ]),
                         ),
@@ -1961,6 +1994,7 @@ mod test {
                                     "realcloud",
                                     spreadscaler.id(),
                                 ),
+                                limits: None,
                             }]),
                         ),
                     ]),

@@ -282,6 +282,7 @@ mod test {
                                     HashSet::from_iter([WadmComponentInfo {
                                         annotations: BTreeMap::default(),
                                         count: 1,
+                                        limits: None,
                                     }]),
                                 ),
                                 (
@@ -289,6 +290,7 @@ mod test {
                                     HashSet::from_iter([WadmComponentInfo {
                                         annotations: BTreeMap::default(),
                                         count: 1,
+                                        limits: None,
                                     }]),
                                 ),
                             ]),
@@ -304,6 +306,7 @@ mod test {
                                 HashSet::from_iter([WadmComponentInfo {
                                     annotations: BTreeMap::default(),
                                     count: 1,
+                                    limits: None,
                                 }]),
                             )]),
                             ..Default::default()
@@ -406,6 +409,7 @@ mod test {
                             HashSet::from_iter([WadmComponentInfo {
                                 annotations: BTreeMap::default(),
                                 count: 1,
+                                limits: None,
                             }]),
                         ),
                         (
@@ -413,6 +417,7 @@ mod test {
                             HashSet::from_iter([WadmComponentInfo {
                                 annotations: BTreeMap::default(),
                                 count: 1,
+                                limits: None,
                             }]),
                         ),
                     ]),

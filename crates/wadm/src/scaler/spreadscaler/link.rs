@@ -574,6 +574,7 @@ mod test {
                 component_id: echo_id.to_string(),
                 max_instances: 1,
                 host_id: host_id_one.to_string(),
+                limits: None,
             }))
             .await
             .expect("should be able to handle components started event");
