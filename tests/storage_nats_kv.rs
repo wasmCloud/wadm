@@ -37,6 +37,7 @@ async fn test_round_trip() {
             HashSet::from_iter([WadmComponentInfo {
                 count: 1,
                 annotations: BTreeMap::new(),
+                limits: None,
             }]),
         )]),
         reference: "fake.oci.repo/testcomponent:0.1.0".to_string(),
@@ -51,6 +52,7 @@ async fn test_round_trip() {
             HashSet::from_iter([WadmComponentInfo {
                 count: 1,
                 annotations: BTreeMap::new(),
+                limits: None,
             }]),
         )]),
         reference: "fake.oci.repo/anothercomponent:0.1.0".to_string(),
@@ -235,6 +237,7 @@ async fn test_multiple_lattice() {
             HashSet::from_iter([WadmComponentInfo {
                 count: 1,
                 annotations: BTreeMap::new(),
+                limits: None,
             }]),
         )]),
         reference: "fake.oci.repo/testcomponent:0.1.0".to_string(),
@@ -249,6 +252,7 @@ async fn test_multiple_lattice() {
             HashSet::from_iter([WadmComponentInfo {
                 count: 1,
                 annotations: BTreeMap::new(),
+                limits: None,
             }]),
         )]),
         reference: "fake.oci.repo/anothercomponent:0.1.0".to_string(),
@@ -322,6 +326,7 @@ async fn test_store_and_delete_many() {
             HashSet::from_iter([WadmComponentInfo {
                 count: 1,
                 annotations: BTreeMap::new(),
+                limits: None,
             }]),
         )]),
         reference: "fake.oci.repo/testcomponent:0.1.0".to_string(),
@@ -336,6 +341,7 @@ async fn test_store_and_delete_many() {
             HashSet::from_iter([WadmComponentInfo {
                 count: 1,
                 annotations: BTreeMap::new(),
+                limits: None,
             }]),
         )]),
         reference: "fake.oci.repo/anothercomponent:0.1.0".to_string(),

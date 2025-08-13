@@ -300,6 +300,7 @@ pub struct ComponentScaled {
     pub claims: Option<ComponentClaims>,
     pub image_ref: String,
     pub max_instances: usize,
+    pub limits: Option<HashMap<String, String>>,
     pub component_id: String,
     #[serde(default)]
     pub host_id: String,

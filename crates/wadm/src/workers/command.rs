@@ -42,7 +42,7 @@ impl Worker for CommandWorker {
                         &component.component_id,
                         component.count,
                         Some(annotations.into_iter().collect()),
-                        component.config.clone(),
+                        component.config.clone(), // Add the limits field here after final merge of #4451
                     )
                     .await
             }

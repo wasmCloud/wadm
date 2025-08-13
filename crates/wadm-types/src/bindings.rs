@@ -113,6 +113,7 @@ impl From<ComponentProperties> for wadm::types::ComponentProperties {
             id: properties.id,
             config: properties.config.into_iter().map(|c| c.into()).collect(),
             secrets: properties.secrets.into_iter().map(|c| c.into()).collect(),
+            limits: properties.limits.into_iter().map(|c| c.into()).collect(),
         }
     }
 }
@@ -431,6 +432,7 @@ impl From<wadm::types::ComponentProperties> for ComponentProperties {
             id: properties.id,
             config: properties.config.into_iter().map(|c| c.into()).collect(),
             secrets: properties.secrets.into_iter().map(|c| c.into()).collect(),
+            limits: properties.limits.map(Into::into),
         }
     }
 }

@@ -1,5 +1,5 @@
 use std::cmp::Ordering;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -38,6 +38,8 @@ struct ComponentSpreadConfig {
     model_name: String,
     /// Configuration for this DaemonScaler
     spread_config: SpreadScalerProperty,
+    /// The limits for the respecctive component, if any
+    limits: Option<HashMap<String, String>>,
 }
 
 /// The ComponentDaemonScaler ensures that a certain number of instances are running on every host, according to a
@@ -159,6 +161,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ComponentDaemonScaler<S> {
                         model_name: self.spread_config.model_name.to_owned(),
                         annotations: BTreeMap::new(),
                         config: self.config.clone(),
+                        limits: self.spread_config.limits.clone(),
                     }))
                 } else {
                     None
@@ -242,6 +245,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ComponentDaemonScaler<S> {
                                                 self.id(),
                                             ),
                                             config: self.config.clone(),
+                                            limits: self.spread_config.limits.clone(),
                                         }))
                                     }
                                 }
@@ -313,6 +317,7 @@ impl<S: ReadStore + Send + Sync> ComponentDaemonScaler<S> {
         spread_config: SpreadScalerProperty,
         component_name: &str,
         config: Vec<String>,
+        limits: Option<HashMap<String, String>>,
     ) -> Self {
         // Compute the id of this scaler based on all of the configuration values
         // that make it unique. This is used during upgrades to determine if a
@@ -344,6 +349,7 @@ impl<S: ReadStore + Send + Sync> ComponentDaemonScaler<S> {
                 lattice_id,
                 spread_config,
                 model_name,
+                limits,
             },
             id,
             status: RwLock::new(StatusInfo::reconciling("")),
@@ -441,6 +447,7 @@ mod test {
             complex_spread,
             "fake_component",
             vec![],
+            None,
         );
 
         let cmds = daemonscaler.reconcile().await?;
@@ -453,6 +460,7 @@ mod test {
             model_name: MODEL_NAME.to_string(),
             annotations: spreadscaler_annotations("ComplexOne", daemonscaler.id()),
             config: vec![],
+            limits: None,
         })));
         assert!(cmds.contains(&Command::ScaleComponent(ScaleComponent {
             component_id: component_id.to_string(),
@@ -462,6 +470,7 @@ mod test {
             model_name: MODEL_NAME.to_string(),
             annotations: spreadscaler_annotations("ComplexTwo", daemonscaler.id()),
             config: vec![],
+            limits: None,
         })));
         assert!(cmds.contains(&Command::ScaleComponent(ScaleComponent {
             component_id: component_id.to_string(),
@@ -471,6 +480,7 @@ mod test {
             model_name: MODEL_NAME.to_string(),
             annotations: spreadscaler_annotations("ComplexThree", daemonscaler.id()),
             config: vec![],
+            limits: None,
         })));
         assert!(cmds.contains(&Command::ScaleComponent(ScaleComponent {
             component_id: component_id.to_string(),
@@ -480,6 +490,7 @@ mod test {
             model_name: MODEL_NAME.to_string(),
             annotations: spreadscaler_annotations("ComplexFour", daemonscaler.id()),
             config: vec![],
+            limits: None,
         })));
 
         Ok(())
@@ -562,6 +573,7 @@ mod test {
             echo_spread_property,
             "fake_echo",
             vec![],
+            None,
         );
 
         let blobby_daemonscaler = ComponentDaemonScaler::new(
@@ -573,6 +585,7 @@ mod test {
             blobby_spread_property,
             "fake_blobby",
             vec![],
+            None,
         );
 
         // STATE SETUP BEGIN
@@ -595,6 +608,7 @@ mod test {
                                     "RunInFakeCloud",
                                     echo_daemonscaler.id(),
                                 ),
+                                limits: None,
                             }]),
                         ),
                         (
@@ -606,6 +620,7 @@ mod test {
                                     "RunInRealCloud",
                                     echo_daemonscaler.id(),
                                 ),
+                                limits: None,
                             }]),
                         ),
                         (
@@ -617,6 +632,7 @@ mod test {
                                     "RunInPurgatoryCloud",
                                     echo_daemonscaler.id(),
                                 ),
+                                limits: None,
                             }]),
                         ),
                     ]),
@@ -643,6 +659,7 @@ mod test {
                                     "CrossRegionCustom",
                                     blobby_daemonscaler.id(),
                                 ),
+                                limits: None,
                             }]),
                         ),
                         (
@@ -654,6 +671,7 @@ mod test {
                                     "CrossRegionReal",
                                     blobby_daemonscaler.id(),
                                 ),
+                                limits: None,
                             }]),
                         ),
                     ]),
@@ -849,6 +867,7 @@ mod test {
             blobby_spread_property,
             "fake_blobby",
             vec![],
+            None,
         );
 
         // STATE SETUP BEGIN
@@ -870,6 +889,7 @@ mod test {
                                     "HighAvailability",
                                     blobby_daemonscaler.id(),
                                 ),
+                                limits: None,
                             }]),
                         ),
                         (
@@ -881,6 +901,7 @@ mod test {
                                     "HighAvailability",
                                     blobby_daemonscaler.id(),
                                 ),
+                                limits: None,
                             }]),
                         ),
                         (
@@ -1042,6 +1063,7 @@ mod test {
                                     "HighAvailability",
                                     blobby_daemonscaler.id(),
                                 ),
+                                limits: None,
                             }]),
                         ),
                         (
@@ -1053,6 +1075,7 @@ mod test {
                                     "HighAvailability",
                                     blobby_daemonscaler.id(),
                                 ),
+                                limits: None,
                             }]),
                         ),
                     ]),

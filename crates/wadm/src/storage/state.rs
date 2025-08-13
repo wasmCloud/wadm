@@ -109,6 +109,7 @@ impl From<&ProviderStarted> for Provider {
 pub struct WadmComponentInfo {
     pub annotations: BTreeMap<String, String>,
     pub count: usize,
+    pub limits: Option<HashMap<String, String>>,
 }
 
 impl PartialEq for WadmComponentInfo {
@@ -186,6 +187,7 @@ impl From<ComponentScaled> for Component {
                 HashSet::from_iter([WadmComponentInfo {
                     annotations: value.annotations,
                     count: value.max_instances,
+                    limits: value.limits,
                 }]),
             )]),
         }
@@ -212,6 +214,7 @@ impl From<&ComponentScaled> for Component {
                 HashSet::from_iter([WadmComponentInfo {
                     annotations: value.annotations.clone(),
                     count: value.max_instances,
+                    limits: value.limits.clone(),
                 }]),
             )]),
         }

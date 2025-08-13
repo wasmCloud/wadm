@@ -53,6 +53,7 @@ async fn test_commands() {
             model_name: "fake".into(),
             annotations: BTreeMap::new(),
             config: vec![],
+            limits: None,
         })
         .await;
 
@@ -295,6 +296,7 @@ async fn test_commands() {
             model_name: "fake".into(),
             annotations: BTreeMap::new(),
             config: vec![],
+            limits: None,
         })
         .await;
 
@@ -433,6 +435,7 @@ async fn test_annotation_stop() {
             model_name: "fake".into(),
             annotations: BTreeMap::from_iter([("fake".to_string(), "wake".to_string())]),
             config: vec![],
+            limits: None,
         })
         .await;
 
