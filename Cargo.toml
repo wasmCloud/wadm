@@ -102,7 +102,7 @@ serial_test = "3"
 wadm-client = { workspace = true }
 wadm-types = { workspace = true }
 wasmcloud-control-interface = { workspace = true }
-testcontainers = "0.24"
+testcontainers = "0.25"
 
 [build-dependencies]
 schemars = { workspace = true }
