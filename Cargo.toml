@@ -79,7 +79,7 @@ tokio = { version = "1", default-features = false }
 tracing = { version = "0.1", features = ["log"] }
 tracing-futures = "0.2"
 tracing-opentelemetry = { version = "0.17" }
-tracing-subscriber = { version = "0.3.7", features = ["env-filter", "json"] }
+tracing-subscriber = { version = "0.3.20", features = ["env-filter", "json"] }
 ulid = { version = "1", features = ["serde"] }
 utoipa = "5"
 uuid = "1"
