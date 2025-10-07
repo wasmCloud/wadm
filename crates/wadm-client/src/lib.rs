@@ -10,8 +10,8 @@ use wadm_types::{
     api::{
         DeleteModelRequest, DeleteModelResponse, DeleteResult, DeployModelRequest,
         DeployModelResponse, DeployResult, GetModelRequest, GetModelResponse, GetResult,
-        ModelSummary, PutModelResponse, PutResult, Status, StatusResponse, StatusResult,
-        VersionInfo, VersionResponse,
+        ListModelsResponse, ModelSummary, PutModelResponse, PutResult, Status, StatusResponse,
+        StatusResult, VersionInfo, VersionResponse,
     },
     Manifest,
 };
@@ -129,9 +129,12 @@ impl Client {
             .client
             .request(topic, Vec::with_capacity(0).into())
             .await?;
-        let body: Vec<ModelSummary> =
+        let body: ListModelsResponse =
             serde_json::from_slice(&resp.payload).map_err(SerializationError::from)?;
-        Ok(body)
+        if matches!(body.result, GetResult::Error) {
+            return Err(ClientError::ApiError(body.message));
+        }
+        Ok(body.models)
     }
 
     /// Gets a manifest from the lattice by name and optionally its version. If no version is set,
