@@ -29,6 +29,7 @@ async fn test_consumer_stream() {
             model_name: "fake".into(),
             annotations: BTreeMap::new(),
             config: vec![],
+            allow_update: false,
         })
         .await;
     wrapper
@@ -166,6 +167,7 @@ async fn test_nack_and_rereceive() {
             model_name: "fake".into(),
             annotations: BTreeMap::new(),
             config: vec![],
+            allow_update: false,
         })
         .await;
 
