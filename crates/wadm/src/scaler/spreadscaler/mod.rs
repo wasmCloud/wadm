@@ -156,6 +156,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ComponentSpreadScaler<S> {
                         model_name: self.spread_config.model_name.to_owned(),
                         annotations: BTreeMap::new(),
                         config: self.config.clone(),
+                        allow_update: false,
                     }))
                 } else {
                     None
@@ -237,6 +238,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ComponentSpreadScaler<S> {
                                 model_name: self.spread_config.model_name.to_owned(),
                                 annotations: spreadscaler_annotations(&spread.name, self.id()),
                                         config: self.config.clone(),
+                                allow_update: true,
                             })])
                         }
                         // Stop components to reach desired instances
@@ -261,6 +263,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ComponentSpreadScaler<S> {
                                         model_name: self.spread_config.model_name.to_owned(),
                                         annotations: spreadscaler_annotations(&spread.name, self.id()),
                                         config: self.config.clone(),
+                                        allow_update: false,
                                     }));
                                 }
                                 (current_stopped, commands)
@@ -869,7 +872,8 @@ mod test {
             count: 53,
             model_name: MODEL_NAME.to_string(),
             annotations: spreadscaler_annotations("EastZone", spreadscaler.id()),
-            config: vec![]
+            config: vec![],
+            allow_update: false,
         })));
 
         assert!(cmds.contains(&Command::ScaleComponent(ScaleComponent {
@@ -879,7 +883,8 @@ mod test {
             count: 3,
             model_name: MODEL_NAME.to_string(),
             annotations: spreadscaler_annotations("WestZone", spreadscaler.id()),
-            config: vec![]
+            config: vec![],
+            allow_update: false,
         })));
 
         assert!(cmds.contains(&Command::ScaleComponent(ScaleComponent {
@@ -889,7 +894,8 @@ mod test {
             count: 47,
             model_name: MODEL_NAME.to_string(),
             annotations: spreadscaler_annotations("CentralZone", spreadscaler.id()),
-            config: vec![]
+            config: vec![],
+            allow_update: false,
         })));
 
         Ok(())
@@ -1322,7 +1328,8 @@ mod test {
             count: 0,
             model_name: MODEL_NAME.to_string(),
             annotations: spreadscaler_annotations("default", spreadscaler.id()),
-            config: vec![]
+            config: vec![],
+            allow_update: false,
         })));
         assert!(cmds.contains(&Command::ScaleComponent(ScaleComponent {
             component_id: component_id.clone(),
@@ -1331,7 +1338,8 @@ mod test {
             count: 0,
             model_name: MODEL_NAME.to_string(),
             annotations: spreadscaler_annotations("default", spreadscaler.id()),
-            config: vec![]
+            config: vec![],
+            allow_update: false,
         })));
         Ok(())
     }
