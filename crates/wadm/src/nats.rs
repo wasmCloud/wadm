@@ -8,7 +8,7 @@ use async_nats::{
         stream::{Config as StreamConfig, Source, StorageType, Stream, SubjectTransform},
         Context,
     },
-    Client, ConnectOptions,
+    Client, ConnectOptions, ToServerAddrs,
 };
 
 use crate::DEFAULT_EXPIRY_TIME;
@@ -58,16 +58,28 @@ pub(crate) async fn get_client_and_context(
     creds_path: Option<PathBuf>,
     ca_path: Option<PathBuf>,
 ) -> Result<(Client, Context)> {
-    let client = if seed.is_none() && jwt.is_none() && creds_path.is_none() {
+    let opts = if seed.is_none() && jwt.is_none() && creds_path.is_none() {
         let mut opts = async_nats::ConnectOptions::new();
         if let Some(ca) = ca_path {
             opts = opts.add_root_certificates(ca).require_tls(true);
         }
-        opts.connect(url).await?
+
+        // If clear text credentials are explicitly embedded in the url by the user, use it
+        if let Ok(mut addrs) = url.to_server_addrs() {
+            if let Some(addr) = addrs.next() {
+                if addr.has_user_pass() {
+                    if let (Some(user), Some(pass)) = (addr.username(), addr.password()) {
+                        opts = opts.user_and_password(user.to_string(), pass.to_string());
+                    }
+                }
+            }
+        }
+        opts
     } else {
-        let opts = build_nats_options(seed, jwt, creds_path, ca_path).await?;
-        async_nats::connect_with_options(url, opts).await?
+        build_nats_options(seed, jwt, creds_path, ca_path).await?
     };
+
+    let client = opts.connect(&url).await?;
 
     let context = if let Some(domain) = js_domain {
         jetstream::with_domain(client.clone(), domain)
