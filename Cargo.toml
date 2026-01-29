@@ -11,7 +11,7 @@ repository = "https://github.com/wasmcloud/wadm"
 default-run = "wadm"
 
 [workspace.package]
-version = "0.21.0"
+version = "0.21.1"
 
 [features]
 default = []
