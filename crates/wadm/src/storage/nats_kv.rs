@@ -23,7 +23,7 @@ use async_nats::{
 use async_trait::async_trait;
 use futures::Future;
 use serde::{de::DeserializeOwned, Serialize};
-use tracing::{debug, error, field::Empty, instrument, trace};
+use tracing::{debug, field::Empty, instrument, trace};
 use tracing_futures::Instrument;
 
 use super::{ReadStore, StateKind, Store};
