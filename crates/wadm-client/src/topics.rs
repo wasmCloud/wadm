@@ -49,7 +49,7 @@ impl TopicGenerator {
 
     /// Returns the full topic for a model list operation
     pub fn model_list_topic(&self) -> String {
-        format!("{}.list", self.model_prefix())
+        format!("{}.get", self.model_prefix())
     }
 
     /// Returns the full topic for listing the versions of a model
