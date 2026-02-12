@@ -43,6 +43,7 @@ impl Worker for CommandWorker {
                         component.count,
                         Some(annotations.into_iter().collect()),
                         component.config.clone(),
+                        // TODO: component.allow_update
                     )
                     .await
             }
