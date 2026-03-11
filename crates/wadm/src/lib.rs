@@ -474,6 +474,8 @@ where
             command_publisher,
             status_publisher,
             manager,
+            Some(self.manifest_store.clone()),
+            multitenant_prefix.map(|s| s.to_string()),
         ))
     }
 }

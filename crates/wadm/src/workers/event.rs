@@ -14,6 +14,7 @@ use crate::consumers::{
 use crate::events::*;
 use crate::publisher::Publisher;
 use crate::scaler::manager::{ScalerList, ScalerManager};
+use crate::server::ModelStorage;
 use crate::storage::{Component, Host, Provider, ProviderStatus, Store, WadmComponentInfo};
 use crate::APP_SPEC_ANNOTATION;
 
@@ -25,6 +26,8 @@ pub struct EventWorker<StateStore, C: Clone, P: Clone> {
     command_publisher: CommandPublisher<P>,
     status_publisher: StatusPublisher<P>,
     scalers: ScalerManager<StateStore, P, C>,
+    manifest_store: Option<ModelStorage>,
+    account_id: Option<String>,
 }
 
 impl<StateStore, C, P> EventWorker<StateStore, C, P>
@@ -48,6 +51,8 @@ where
         command_publisher: CommandPublisher<P>,
         status_publisher: StatusPublisher<P>,
         manager: ScalerManager<StateStore, P, C>,
+        manifest_store: Option<async_nats::jetstream::kv::Store>,
+        account_id: Option<String>,
     ) -> EventWorker<StateStore, C, P> {
         EventWorker {
             store,
@@ -55,6 +60,8 @@ where
             command_publisher,
             status_publisher,
             scalers: manager,
+            manifest_store: manifest_store.map(ModelStorage::new),
+            account_id,
         }
     }
 
@@ -686,7 +693,20 @@ where
             .scalers
             .remove_raw_scalers(&data.manifest.metadata.name)
             .await;
-        let scalers = self.scalers.scalers_for_manifest(&data.manifest);
+
+        let deployed_apps = if let Some(manifest_store) = &self.manifest_store {
+            manifest_store
+                .list(self.account_id.as_deref(), lattice_id)
+                .await?
+                .into_iter()
+                .filter_map(|manifest| manifest.get_deployed().cloned())
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let scalers = self
+            .scalers
+            .scalers_for_manifest(&data.manifest, &deployed_apps);
 
         // Refresh the snapshot data before cleaning up and/or adding scalers
         self.scalers.refresh_data().await?;
@@ -1075,6 +1095,8 @@ mod test {
                 lattice_source,
             )
             .await,
+            None,
+            None,
         );
 
         let host1_id = "DS1";
@@ -1809,6 +1831,8 @@ mod test {
                 lattice_source,
             )
             .await,
+            None,
+            None,
         );
 
         let provider_id = "HYPERDRIVE";
@@ -1955,6 +1979,8 @@ mod test {
                 lattice_source,
             )
             .await,
+            None,
+            None,
         );
 
         let host_id = "CLOUDCITY";
@@ -2059,6 +2085,8 @@ mod test {
                 lattice_source,
             )
             .await,
+            None,
+            None,
         );
 
         let host_id = "jabbaspalace";
