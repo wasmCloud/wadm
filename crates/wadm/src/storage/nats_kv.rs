@@ -31,11 +31,11 @@ use super::{ReadStore, StateKind, Store};
 /// Errors that can be encountered by NATS KV Store implemenation
 #[derive(Debug, thiserror::Error)]
 pub enum NatsStoreError {
-    /// An I/O error occured
+    /// An I/O error occurred
     #[error("I/O Error: {0}")]
     Io(#[from] IoError),
 
-    /// An error occured when performing a NATS operation
+    /// An error occurred when performing a NATS operation
     #[error("NATS error: {0:?}")]
     Nats(#[from] NatsError),
 
