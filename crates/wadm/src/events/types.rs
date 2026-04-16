@@ -283,7 +283,7 @@ pub enum ConversionError {
     /// If an event of the right type was found, but no data was contained within that event
     #[error("No data found")]
     NoData,
-    /// An error occured while trying to deserialize the data
+    /// An error occurred while trying to deserialize the data
     #[error("Error when deserializing: {0}")]
     Deser(#[from] serde_json::Error),
 }
