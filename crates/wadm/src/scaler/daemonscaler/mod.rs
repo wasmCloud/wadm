@@ -159,6 +159,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ComponentDaemonScaler<S> {
                         model_name: self.spread_config.model_name.to_owned(),
                         annotations: BTreeMap::new(),
                         config: self.config.clone(),
+                        allow_update: false,
                     }))
                 } else {
                     None
@@ -242,6 +243,7 @@ impl<S: ReadStore + Send + Sync + Clone> Scaler for ComponentDaemonScaler<S> {
                                                 self.id(),
                                             ),
                                             config: self.config.clone(),
+                                            allow_update: true,
                                         }))
                                     }
                                 }
@@ -453,6 +455,7 @@ mod test {
             model_name: MODEL_NAME.to_string(),
             annotations: spreadscaler_annotations("ComplexOne", daemonscaler.id()),
             config: vec![],
+            allow_update: false,
         })));
         assert!(cmds.contains(&Command::ScaleComponent(ScaleComponent {
             component_id: component_id.to_string(),
@@ -462,6 +465,7 @@ mod test {
             model_name: MODEL_NAME.to_string(),
             annotations: spreadscaler_annotations("ComplexTwo", daemonscaler.id()),
             config: vec![],
+            allow_update: false,
         })));
         assert!(cmds.contains(&Command::ScaleComponent(ScaleComponent {
             component_id: component_id.to_string(),
@@ -471,6 +475,7 @@ mod test {
             model_name: MODEL_NAME.to_string(),
             annotations: spreadscaler_annotations("ComplexThree", daemonscaler.id()),
             config: vec![],
+            allow_update: false,
         })));
         assert!(cmds.contains(&Command::ScaleComponent(ScaleComponent {
             component_id: component_id.to_string(),
@@ -480,6 +485,7 @@ mod test {
             model_name: MODEL_NAME.to_string(),
             annotations: spreadscaler_annotations("ComplexFour", daemonscaler.id()),
             config: vec![],
+            allow_update: false,
         })));
 
         Ok(())

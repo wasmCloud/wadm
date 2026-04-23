@@ -131,6 +131,9 @@ pub struct ScaleComponent {
     /// Named configuration to pass to the component.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub config: Vec<String>,
+    /// Whether to perform allow updates to the component (triggering a separate update)
+    #[serde(default)]
+    pub allow_update: bool,
 }
 
 from_impl!(ScaleComponent);
