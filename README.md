@@ -1,3 +1,7 @@
+> [!WARNING]
+> This repository is archived and is no longer maintained. wasmCloud 1.x is fully deprecated and receives no bug fixes or security updates.
+> For current wasmCloud development and deployment tooling, see [wasmCloud/wasmCloud](https://github.com/wasmCloud/wasmCloud) and the [current documentation](https://wasmcloud.com/docs/).
+
 <img align="right" src="./static/images/wadm_128.png" alt="wadm logo" />
 
 # wasmCloud Application Deployment Manager (wadm)
