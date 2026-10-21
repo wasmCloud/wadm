@@ -26,6 +26,7 @@ use crate::{
     events::Event,
     publisher::Publisher,
     scaler::{Command, Scaler},
+    server::ModelStorage,
     storage::{snapshot::SnapshotStore, ReadStore},
     workers::{CommandPublisher, ConfigSource, LinkSource, SecretSource, StatusPublisher},
 };
@@ -109,6 +110,8 @@ pub struct ScalerManager<StateStore, P: Clone, L: Clone> {
     command_publisher: CommandPublisher<P>,
     status_publisher: StatusPublisher<P>,
     snapshot_data: SnapshotStore<StateStore, L>,
+    account_id: Option<String>,
+    manifest_store: Option<ModelStorage>,
 }
 
 impl<StateStore, P: Clone, L: Clone> Drop for ScalerManager<StateStore, P, L> {
@@ -179,6 +182,13 @@ where
             .filter_map(|manifest| manifest.transpose())
             .map(|res| res.map(|(manifest, _)| manifest))
             .collect::<Result<Vec<_>>>()?;
+
+        let deployed_apps = all_manifests
+            .clone()
+            .into_iter()
+            .filter_map(|m| m.get_deployed().cloned())
+            .collect::<Vec<_>>();
+
         let snapshot_data = SnapshotStore::new(
             state_store.clone(),
             link_getter.clone(),
@@ -197,6 +207,7 @@ where
                     &subject,
                     &client,
                     &snapshot_data,
+                    &deployed_apps,
                 );
                 Some((name, scalers))
             })
@@ -213,6 +224,8 @@ where
             command_publisher,
             status_publisher,
             snapshot_data,
+            manifest_store: Some(manifest_store),
+            account_id: multitenant_prefix.map(|s| s.to_string()),
         };
         let cloned = manager.clone();
         let handle = tokio::spawn(async move { cloned.notify(messages).await });
@@ -245,6 +258,8 @@ where
             command_publisher,
             status_publisher,
             snapshot_data,
+            manifest_store: None,
+            account_id: None,
         }
     }
 
@@ -279,7 +294,11 @@ where
             .ok_or_else(|| anyhow::anyhow!("Data error: scalers no longer exist after creation"))
     }
 
-    pub fn scalers_for_manifest<'a>(&'a self, manifest: &'a Manifest) -> ScalerList {
+    pub fn scalers_for_manifest<'a>(
+        &'a self,
+        manifest: &'a Manifest,
+        deployed_apps: &'a [Manifest],
+    ) -> ScalerList {
         manifest_components_to_scalers(
             &manifest.spec.components,
             &manifest.policy_lookup(),
@@ -288,6 +307,7 @@ where
             &self.subject,
             &self.client,
             &self.snapshot_data,
+            deployed_apps,
         )
     }
 
@@ -429,6 +449,16 @@ where
 
                             match notification {
                                 Notifications::CreateScalers(manifest) => {
+                                    let deployed_apps = if let Some(manifest_store) = &self.manifest_store {
+                                        manifest_store
+                                            .list(self.account_id.as_deref(), &self.lattice_id)
+                                            .await?
+                                            .into_iter()
+                                            .filter_map(|manifest| manifest.get_deployed().cloned())
+                                            .collect()
+                                    } else {
+                                        Vec::new()
+                                    };
                                     // We don't want to trigger the notification, so just create the scalers and then insert
                                     let scalers = manifest_components_to_scalers(
                                         &manifest.spec.components,
@@ -438,6 +468,8 @@ where
                                         &self.subject,
                                         &self.client,
                                         &self.snapshot_data,
+                                        &deployed_apps
+
                                     );
                                     let num_scalers = scalers.len();
                                     self.add_raw_scalers(&manifest.metadata.name, scalers).await;

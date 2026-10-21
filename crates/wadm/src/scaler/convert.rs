@@ -7,8 +7,9 @@ use anyhow::Result;
 use tracing::{error, warn};
 use wadm_types::{
     api::StatusInfo, CapabilityProperties, Component, ComponentProperties, ConfigProperty,
-    LinkProperty, Policy, Properties, SecretProperty, SharedApplicationComponentProperties,
-    SpreadScalerProperty, Trait, TraitProperty, DAEMONSCALER_TRAIT, LINK_TRAIT, SPREADSCALER_TRAIT,
+    LinkProperty, Manifest, Policy, Properties, SecretProperty,
+    SharedApplicationComponentProperties, SpreadScalerProperty, Trait, TraitProperty,
+    DAEMONSCALER_TRAIT, LINK_TRAIT, SPREADSCALER_TRAIT,
 };
 use wasmcloud_secrets_types::SECRET_PREFIX;
 
@@ -59,6 +60,7 @@ pub(crate) fn manifest_components_to_scalers<S, P, L>(
     notifier_subject: &str,
     notifier: &P,
     snapshot_data: &SnapshotStore<S, L>,
+    deployed_apps: &[Manifest],
 ) -> ScalerList
 where
     S: ReadStore + Send + Sync + Clone + 'static,
@@ -103,6 +105,7 @@ where
                     notifier_subject,
                     notifier,
                     snapshot_data,
+                    deployed_apps,
                 )
             }
             Properties::Capability { properties } => {
@@ -138,6 +141,7 @@ where
                     notifier_subject,
                     notifier,
                     snapshot_data,
+                    deployed_apps,
                 )
             }
         });
@@ -175,6 +179,7 @@ fn component_scalers<S, P, L>(
     notifier_subject: &str,
     notifier: &P,
     snapshot_data: &SnapshotStore<S, L>,
+    deployed_apps: &[Manifest],
 ) where
     S: ReadStore + Send + Sync + Clone + 'static,
     P: Publisher + Clone + Send + Sync + 'static,
@@ -185,7 +190,8 @@ fn component_scalers<S, P, L>(
         let component_id = if properties.image.is_some() {
             compute_component_id(manifest_name, properties.id.as_ref(), component_name)
         } else {
-            compute_component_id(application_name, properties.id.as_ref(), component_name)
+            let component_id = resolve_shared_id(properties.id.as_ref(), properties.application.as_ref(), deployed_apps);
+            compute_component_id(application_name, component_id.as_ref(), component_name)
         };
         let (config_scalers, mut config_names) =
             config_to_scalers(snapshot_data, manifest_name, &properties.config);
@@ -291,6 +297,7 @@ fn component_scalers<S, P, L>(
                             notifier_subject,
                             notifier,
                             snapshot_data,
+                            deployed_apps,
                         )),
                         _ => None,
                     })
@@ -330,6 +337,7 @@ fn provider_scalers<S, P, L>(
     notifier_subject: &str,
     notifier: &P,
     snapshot_data: &SnapshotStore<S, L>,
+    deployed_apps: &[Manifest],
 ) where
     S: ReadStore + Send + Sync + Clone + 'static,
     P: Publisher + Clone + Send + Sync + 'static,
@@ -339,7 +347,12 @@ fn provider_scalers<S, P, L>(
     let provider_id = if properties.image.is_some() {
         compute_component_id(manifest_name, properties.id.as_ref(), component_name)
     } else {
-        compute_component_id(application_name, properties.id.as_ref(), component_name)
+        let component_id = resolve_shared_id(
+            properties.id.as_ref(),
+            properties.application.as_ref(),
+            deployed_apps,
+        );
+        compute_component_id(application_name, component_id.as_ref(), component_name)
     };
 
     let mut scaler_specified = false;
@@ -461,6 +474,7 @@ fn provider_scalers<S, P, L>(
                             notifier_subject,
                             notifier,
                             snapshot_data,
+                            deployed_apps
                         )),
                         _ => None,
                     })
@@ -540,6 +554,7 @@ fn link_scaler<S, P, L>(
     notifier_subject: &str,
     notifier: &P,
     snapshot_data: &SnapshotStore<S, L>,
+    deployed_apps: &[Manifest],
 ) -> BoxedScaler
 where
     S: ReadStore + Send + Sync + Clone + 'static,
@@ -597,7 +612,12 @@ where
                 )) as BoxedScaler;
             }
         };
-    let target = compute_component_id(target_manifest_name, target_id, target_component_name);
+    let target_id = resolve_shared_id(target_id, shared, deployed_apps);
+    let target = compute_component_id(
+        target_manifest_name,
+        target_id.as_ref(),
+        target_component_name,
+    );
     Box::new(BackoffWrapper::new(
         LinkScaler::new(
             snapshot_data.clone(),
@@ -738,6 +758,35 @@ fn resolve_manifest_component<'a>(
         (Some(_image), Some(_app)) => {
             Err("Application specified both an image and a shared application reference")
         }
+    }
+}
+
+fn resolve_shared_id<'a>(
+    target_id: Option<&'_ String>,
+    shared_app_info: Option<&'a SharedApplicationComponentProperties>,
+    deployed_apps: &[Manifest],
+) -> Option<String> {
+    if let Some(shared_app) = shared_app_info {
+        let manifest = deployed_apps
+            .iter()
+            .find(|m| m.metadata.name == shared_app.name);
+
+        if let Some(manifest) = manifest {
+            manifest
+                .spec
+                .components
+                .iter()
+                .find(|comp| comp.name == shared_app.component)
+                .and_then(|comp| match &comp.properties {
+                    Properties::Component { properties } => properties.id.clone(),
+                    Properties::Capability { properties } => properties.id.clone(),
+                })
+        } else {
+            warn!("Shared application not found");
+            target_id.cloned()
+        }
+    } else {
+        target_id.cloned()
     }
 }
 

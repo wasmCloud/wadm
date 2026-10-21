@@ -1365,6 +1365,8 @@ mod test {
                 lattice_source,
             )
             .await,
+            None,
+            None,
         );
         let blobby_spread_property = SpreadScalerProperty {
             instances: 9,
