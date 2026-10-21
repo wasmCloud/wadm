@@ -7,8 +7,8 @@ use wadm_types::{api::StatusInfo, TraitProperty};
 use crate::{
     commands::{Command, DeleteLink, PutLink},
     events::{
-        Event, LinkdefDeleted, LinkdefSet, ProviderHealthCheckInfo, ProviderHealthCheckPassed,
-        ProviderHealthCheckStatus,
+        ConfigSet, Event, LinkdefDeleted, LinkdefSet, ProviderHealthCheckInfo,
+        ProviderHealthCheckPassed, ProviderHealthCheckStatus,
     },
     scaler::{compute_id_sha256, Scaler},
     storage::ReadStore,
@@ -128,6 +128,11 @@ where
             {
                 *self.status.write().await = StatusInfo::deployed("");
                 Ok(Vec::new())
+            }
+            Event::ConfigSet(ConfigSet { config_name })
+                if self.config.source_config.contains(config_name)
+                    || self.config.target_config.contains(config_name) => {
+                self.reconcile().await
             }
             _ => Ok(Vec::new()),
         }
