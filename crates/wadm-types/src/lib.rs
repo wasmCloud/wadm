@@ -179,7 +179,7 @@ pub struct Metadata {
     /// The name of the manifest. This must be unique per lattice
     pub name: String,
     /// Optional data for annotating this manifest see <https://github.com/oam-dev/spec/blob/master/metadata.md#annotations-format>
-    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub annotations: BTreeMap<String, String>,
     /// Optional data for labeling this manifest, see <https://github.com/oam-dev/spec/blob/master/metadata.md#label-format>
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]

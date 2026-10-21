@@ -157,3 +157,25 @@ async fn validate_deprecated_configs_raw_yaml() -> Result<()> {
     );
     Ok(())
 }
+
+/// Ensure that empty metadata.annotations is rejected
+#[tokio::test]
+async fn validate_empty_annotations() -> Result<()> {
+    let (_manifest, failures) =
+        validate_manifest_file("./tests/fixtures/manifests/empty-annotations.wadm.yaml")
+            .await
+            .context("failed to validate manifest")?;
+    assert!(
+        !failures.is_empty(),
+        "expected failures for empty annotations"
+    );
+    assert!(
+        failures
+            .iter()
+            .any(|f| f.level == ValidationFailureLevel::Error
+                && f.msg.contains("metadata.annotations")),
+        "expected error about empty metadata.annotations"
+    );
+    assert!(!failures.valid(), "manifest should not be valid");
+    Ok(())
+}

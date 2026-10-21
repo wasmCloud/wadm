@@ -1,0 +1,16 @@
+---
+apiVersion: core.oam.dev/v1beta1
+kind: Application
+metadata:
+  name: test
+  annotations:
+spec:
+  components:
+    - name: http-component
+      type: component
+      properties:
+        image: ghcr.io/wasmcloud/component-http-hello-world:0.1.0
+      traits:
+        - type: spreadscaler
+          properties:
+            instances: 1

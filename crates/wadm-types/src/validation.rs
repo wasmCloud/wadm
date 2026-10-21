@@ -357,8 +357,33 @@ pub fn validate_raw_yaml(content: &[u8]) -> Result<Vec<ValidationFailure>> {
     let mut failures = Vec::new();
     let raw_content: serde_yaml::Value =
         serde_yaml::from_slice(content).context("failed read raw yaml content")?;
+    failures.extend(validate_metadata_annotations(&raw_content));
     failures.extend(validate_components_configs(&raw_content));
     Ok(failures)
+}
+
+/// Validates that if the `metadata.annotations` key is present in the raw YAML,
+/// it contains valid key-value pairs rather than being null or empty.
+fn validate_metadata_annotations(raw_content: &serde_yaml::Value) -> Vec<ValidationFailure> {
+    let mut failures = Vec::new();
+    if let Some(metadata) = raw_content.get("metadata") {
+        if let Some(annotations) = metadata.get("annotations") {
+            if annotations.is_null() {
+                failures.push(ValidationFailure::new(
+                    ValidationFailureLevel::Error,
+                    "metadata.annotations is present but empty, either remove the key or provide valid annotation key-value pairs".to_string(),
+                ));
+            } else if let Some(mapping) = annotations.as_mapping() {
+                if mapping.is_empty() {
+                    failures.push(ValidationFailure::new(
+                        ValidationFailureLevel::Error,
+                        "metadata.annotations is present but empty, either remove the key or provide valid annotation key-value pairs".to_string(),
+                    ));
+                }
+            }
+        }
+    }
+    failures
 }
 
 fn core_validation(manifest: &Manifest) -> Vec<ValidationFailure> {
